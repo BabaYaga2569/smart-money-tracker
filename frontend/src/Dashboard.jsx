@@ -1,61 +1,39 @@
-import { useEffect, useState } from "react";
-import Sidebar from "./components/Sidebar";
-import Tile from "./components/Tile";
+import React from "react";
+import { FaWallet, FaExchangeAlt, FaChartPie, FaFileInvoiceDollar, FaRedo, FaBullseye, FaThList, FaMoneyBillWave, FaCalendarAlt } from "react-icons/fa";
 
 const tiles = [
-  { title: "Accounts", link: "/accounts" },
-  { title: "Transactions", link: "/transactions" },
-  { title: "Spendability", link: "/spendability" },
-  { title: "Bills", link: "/bills" },
-  { title: "Recurring", link: "/recurring" },
-  { title: "Goals", link: "/goals" },
-  { title: "Categories", link: "/categories" },
-  { title: "Cash Flow", link: "/cashflow" },
-  { title: "Pay Cycle", link: "/paycycle" },
+  { title: "Accounts", icon: <FaWallet />, description: "Preview coming soon..." },
+  { title: "Transactions", icon: <FaExchangeAlt />, description: "Preview coming soon..." },
+  { title: "Spendability", icon: <FaChartPie />, description: "Preview coming soon..." },
+  { title: "Bills", icon: <FaFileInvoiceDollar />, description: "Preview coming soon..." },
+  { title: "Recurring", icon: <FaRedo />, description: "Preview coming soon..." },
+  { title: "Goals", icon: <FaBullseye />, description: "Preview coming soon..." },
+  { title: "Categories", icon: <FaThList />, description: "Preview coming soon..." },
+  { title: "Cash Flow", icon: <FaMoneyBillWave />, description: "Preview coming soon..." },
+  { title: "Pay Cycle", icon: <FaCalendarAlt />, description: "Preview coming soon..." },
 ];
 
 export default function Dashboard() {
-  const [apiMsg, setApiMsg] = useState("Checking API...");
-
-  useEffect(() => {
-    fetch(`${import.meta.env.VITE_API_URL}/api/hello`)
-      .then((r) => r.json())
-      .then((d) => setApiMsg(d.message || "OK"))
-      .catch(() => setApiMsg("API call failed"));
-  }, []);
-
   return (
-    <div style={{ display: "flex" }}>
-      <Sidebar />
-      <main
-        style={{
-          marginLeft: "220px", // same width as sidebar
-          padding: "2rem",
-          flex: 1,
-          background: "#000",
-          color: "#00ff99",
-          minHeight: "100vh",
-        }}
-      >
-        <header style={{ marginBottom: "2rem" }}>
-          <h1>Smart Money Tracker</h1>
-          <small>Backend status: {apiMsg}</small>
-        </header>
+    <div className="p-8">
+      <h1 className="text-4xl font-bold mb-6 text-green-400">Smart Money Tracker</h1>
+      <p className="mb-8 text-green-300">Backend status: Backend is working!</p>
 
-        <section
-          style={{
-            display: "grid",
-            gridTemplateColumns: "repeat(auto-fill, minmax(250px, 1fr))",
-            gap: "1rem",
-          }}
-        >
-          {tiles.map((t) => (
-            <Tile key={t.title} title={t.title} link={t.link}>
-              <em>Preview coming soon…</em>
-            </Tile>
-          ))}
-        </section>
-      </main>
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
+        {tiles.map((tile, index) => (
+          <div
+            key={index}
+            className="bg-black border border-green-500 p-6 rounded-2xl shadow-lg hover:shadow-green-400 hover:scale-105 transition-transform duration-200"
+          >
+            <div className="text-4xl mb-4 text-green-400">{tile.icon}</div>
+            <h2 className="text-xl font-bold text-green-300">{tile.title}</h2>
+            <p className="text-green-200">{tile.description}</p>
+            <button className="mt-4 px-4 py-2 border border-green-500 rounded-lg text-green-300 hover:bg-green-500 hover:text-black transition">
+              View All
+            </button>
+          </div>
+        ))}
+      </div>
     </div>
   );
 }
