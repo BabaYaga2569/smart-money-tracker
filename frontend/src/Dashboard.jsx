@@ -1,34 +1,35 @@
 import React from "react";
-import { FaWallet, FaExchangeAlt, FaChartPie, FaFileInvoiceDollar, FaRedo, FaBullseye, FaThList, FaMoneyBillWave, FaCalendarAlt } from "react-icons/fa";
+import { FaWallet, FaExchangeAlt, FaMoneyBillWave, FaFileInvoice, FaRedo, FaBullseye, FaThLarge, FaChartLine, FaCalendarAlt } from "react-icons/fa";
 
 const tiles = [
-  { title: "Accounts", icon: <FaWallet />, description: "Preview coming soon..." },
-  { title: "Transactions", icon: <FaExchangeAlt />, description: "Preview coming soon..." },
-  { title: "Spendability", icon: <FaChartPie />, description: "Preview coming soon..." },
-  { title: "Bills", icon: <FaFileInvoiceDollar />, description: "Preview coming soon..." },
-  { title: "Recurring", icon: <FaRedo />, description: "Preview coming soon..." },
-  { title: "Goals", icon: <FaBullseye />, description: "Preview coming soon..." },
-  { title: "Categories", icon: <FaThList />, description: "Preview coming soon..." },
-  { title: "Cash Flow", icon: <FaMoneyBillWave />, description: "Preview coming soon..." },
-  { title: "Pay Cycle", icon: <FaCalendarAlt />, description: "Preview coming soon..." },
+  { title: "Accounts", icon: <FaWallet /> },
+  { title: "Transactions", icon: <FaExchangeAlt /> },
+  { title: "Spendability", icon: <FaMoneyBillWave /> },
+  { title: "Bills", icon: <FaFileInvoice /> },
+  { title: "Recurring", icon: <FaRedo /> },
+  { title: "Goals", icon: <FaBullseye /> },
+  { title: "Categories", icon: <FaThLarge /> },
+  { title: "Cash Flow", icon: <FaChartLine /> },
+  { title: "Pay Cycle", icon: <FaCalendarAlt /> },
 ];
 
 export default function Dashboard() {
   return (
-    <div className="p-8">
-      <h1 className="text-4xl font-bold mb-6 text-green-400">Smart Money Tracker</h1>
-      <p className="mb-8 text-green-300">Backend status: Backend is working!</p>
-
+    <div className="p-6">
+      <h1 className="text-4xl font-bold text-green-400 mb-8">Smart Money Tracker</h1>
+      <p className="text-green-300 mb-6">Backend status: Backend is working!</p>
+      
+      {/* Grid layout */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
         {tiles.map((tile, index) => (
           <div
             key={index}
-            className="bg-black border border-green-500 p-6 rounded-2xl shadow-lg hover:shadow-green-400 hover:scale-105 transition-transform duration-200"
+            className="bg-black border border-green-600 rounded-xl shadow-md p-6 flex flex-col items-center text-center hover:shadow-green-500/50 transition"
           >
-            <div className="text-4xl mb-4 text-green-400">{tile.icon}</div>
-            <h2 className="text-xl font-bold text-green-300">{tile.title}</h2>
-            <p className="text-green-200">{tile.description}</p>
-            <button className="mt-4 px-4 py-2 border border-green-500 rounded-lg text-green-300 hover:bg-green-500 hover:text-black transition">
+            <div className="text-4xl text-green-400 mb-4">{tile.icon}</div>
+            <h2 className="text-xl font-bold text-green-300 mb-2">{tile.title}</h2>
+            <p className="text-sm text-green-500 mb-4">Preview coming soon…</p>
+            <button className="px-4 py-2 border border-green-500 text-green-400 rounded-lg hover:bg-green-500 hover:text-black transition">
               View All
             </button>
           </div>
