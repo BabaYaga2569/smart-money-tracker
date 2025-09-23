@@ -26,7 +26,6 @@ const Spendability = () => {
   useEffect(() => {
     const loadFinancialData = async () => {
       try {
-        // For now, we'll use a fixed user ID. Later we'll add authentication
         const userId = "steve-colburn";
         
         // Load account data
@@ -36,7 +35,6 @@ const Spendability = () => {
         if (accountSnap.exists()) {
           setAccountData(accountSnap.data());
         } else {
-          // Create initial data if it doesn't exist
           const initialAccountData = {
             checking: 2847.50,
             savings: 5420.00,
@@ -106,7 +104,7 @@ const Spendability = () => {
     
     // Filter bills that are actually due between now and next payday
     const billsDueBeforePayday = upcomingBills.filter(bill => {
-      if (!bill.dueDate) return false; // Skip bills without due dates
+      if (!bill.dueDate) return false;
       
       const billDueDate = new Date(bill.dueDate);
       
@@ -129,6 +127,8 @@ const Spendability = () => {
   const safeSpendAmount = spendabilityResult.safeAmount;
   const billsDueBeforePayday = spendabilityResult.billsDueBeforePayday;
   const totalBillsDue = spendabilityResult.totalBillsDue;
+  
+  const canSpendRequested = requestedAmount ? parseFloat(requestedAmount) <= safeSpendAmount : null;
 
   if (loading) {
     return (
@@ -149,67 +149,6 @@ const Spendability = () => {
       </div>
     );
   }
-
-  return (
-    <div className="spendability">
-      <div className="spendability-header">
-        <h1>Spendability Calculator</h1>
-        <p>Find out how much you can safely spend until your next payday</p>
-        <p className="firebase-status">✅ Connected to Firebase</p>
-      </div>
-
-      <div className="spendability-grid">
-        {/* Quick Answer Section */}
-        <div className="quick-check card">
-          <h2>Can I spend this amount?</h2>
-          <div className="amount-input">
-            <span className="dollar-sign">$</span>
-            <input
-              type="number"
-              placeholder="0.00"
-              value={requestedAmount}
-              onChange={(e) => setRequestedAmount(e.target.value)}
-            />
-          </div>
-          
-          {canSpendRequested !== null && (
-            <div className={`answer ${canSpendRequested ? 'safe' : 'unsafe'}`}>
-              {canSpendRequested 
-                ? "✅ Yes, you can safely spend this amount" 
-                : "❌ No, this would exceed your safe spending limit"
-              }
-            </div>
-          )}
-        </div>
-
-        {/* Safe Amount Display */}
-        <div className="safe-amount card">
-          <h2>Safe to Spend</h2>
-          <div className="amount-display">
-            <span className="currency">$</span>
-            <span className="amount">{safeSpendAmount.toFixed(2)}</span>
-          </div>
-          <p>Available until {payCycle.nextPayday}</p>
-        </div>
-
-        {/* Account Balances */}
-        <div className="balances card">
-          <h3>Current Balances</h3>
-          <div className="balance-item">
-            <span>Checking</span>
-            <span>${accountData.checking.toFixed(2)}</span>
-          </div>
-          <div className="balance-item">
-            <span>Savings</span>
-            <span>${accountData.savings.toFixed(2)}</span>
-          </div>
-          <div className="balance-total">
-            <span>Total Available</span>
-            <span>${accountData.total.toFixed(2)}</span>
-          </div>
-        </div>
-
-  const canSpendRequested = requestedAmount ? parseFloat(requestedAmount) <= safeSpendAmount : null;
 
   return (
     <div className="spendability">
