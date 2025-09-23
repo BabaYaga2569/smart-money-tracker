@@ -7,6 +7,8 @@ const Settings = () => {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [successMessage, setSuccessMessage] = useState("");
+  const [uploadedBills, setUploadedBills] = useState([]);
+  const [showUploadPreview, setShowUploadPreview] = useState(false);
 
   // User info
   const [userInfo, setUserInfo] = useState({
@@ -121,6 +123,88 @@ const Settings = () => {
 
     loadSettings();
   }, []);
+
+  // Handle file upload
+  const handleFileUpload = (event) => {
+    const file = event.target.files[0];
+    if (!file) return;
+
+    const reader = new FileReader();
+    
+    reader.onload = (e) => {
+      const text = e.target.result;
+      const isCSV = file.name.toLowerCase().endsWith('.csv');
+      
+      if (isCSV) {
+        parseCSV(text);
+      } else {
+        // Handle Excel files here if needed
+        alert('Excel support coming soon. Please use CSV format for now.');
+      }
+    };
+    
+    reader.readAsText(file);
+  };
+
+  // Parse CSV data
+  const parseCSV = (text) => {
+    const lines = text.split('\n').filter(line => line.trim());
+    if (lines.length < 2) {
+      alert('CSV must have at least a header row and one data row');
+      return;
+    }
+
+    const headers = lines[0].split(',').map(h => h.trim().toLowerCase());
+    const parsedBills = [];
+
+    // Find column indices
+    const nameIndex = headers.findIndex(h => h.includes('name') || h.includes('bill') || h.includes('payee'));
+    const amountIndex = headers.findIndex(h => h.includes('amount') || h.includes('cost') || h.includes('payment'));
+    const dateIndex = headers.findIndex(h => h.includes('date') || h.includes('due'));
+
+    if (nameIndex === -1 || amountIndex === -1) {
+      alert('CSV must have columns for bill name and amount. Optional: due date');
+      return;
+    }
+
+    // Parse data rows
+    for (let i = 1; i < lines.length; i++) {
+      const values = lines[i].split(',').map(v => v.trim().replace(/"/g, ''));
+      
+      if (values.length > Math.max(nameIndex, amountIndex)) {
+        const bill = {
+          name: values[nameIndex] || '',
+          amount: values[amountIndex]?.replace(/[^0-9.-]/g, '') || '',
+          dueDate: dateIndex !== -1 ? formatDate(values[dateIndex]) : '',
+          recurring: true
+        };
+        
+        if (bill.name && bill.amount) {
+          parsedBills.push(bill);
+        }
+      }
+    }
+
+    setUploadedBills(parsedBills);
+    setShowUploadPreview(true);
+  };
+
+  // Format date to YYYY-MM-DD
+  const formatDate = (dateStr) => {
+    if (!dateStr) return '';
+    const date = new Date(dateStr);
+    if (isNaN(date)) return '';
+    return date.toISOString().split('T')[0];
+  };
+
+  // Import uploaded bills
+  const importUploadedBills = () => {
+    setBills([...bills.filter(bill => bill.name || bill.amount), ...uploadedBills]);
+    setUploadedBills([]);
+    setShowUploadPreview(false);
+    setSuccessMessage('Bills imported successfully!');
+    setTimeout(() => setSuccessMessage(''), 3000);
+  };
 
   // Save settings to Firebase
   const saveSettings = async () => {
@@ -415,6 +499,48 @@ const Settings = () => {
         {/* Bills */}
         <div className="settings-section full-width">
           <h2>Recurring Bills</h2>
+          
+          {/* File Upload Section */}
+          <div className="upload-section">
+            <h3>Import from Spreadsheet</h3>
+            <div className="upload-instructions">
+              <p>Upload a CSV file with columns for: Bill Name, Amount, Due Date (optional)</p>
+              <p>Example: <code>Bill Name,Amount,Due Date</code></p>
+            </div>
+            <input
+              type="file"
+              accept=".csv"
+              onChange={handleFileUpload}
+              className="file-input"
+            />
+          </div>
+
+          {/* Upload Preview */}
+          {showUploadPreview && (
+            <div className="upload-preview">
+              <h3>Preview Imported Bills ({uploadedBills.length} found)</h3>
+              <div className="preview-table">
+                {uploadedBills.slice(0, 5).map((bill, index) => (
+                  <div key={index} className="preview-row">
+                    <span>{bill.name}</span>
+                    <span>${bill.amount}</span>
+                    <span>{bill.dueDate || 'No date'}</span>
+                  </div>
+                ))}
+                {uploadedBills.length > 5 && <p>...and {uploadedBills.length - 5} more</p>}
+              </div>
+              <div className="preview-actions">
+                <button onClick={importUploadedBills} className="import-btn">
+                  Import All Bills
+                </button>
+                <button onClick={() => setShowUploadPreview(false)} className="cancel-btn">
+                  Cancel
+                </button>
+              </div>
+            </div>
+          )}
+
+          {/* Manual Bill Entry */}
           {bills.map((bill, index) => (
             <div key={index} className="bill-row">
               <input
