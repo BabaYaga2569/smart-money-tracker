@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from "react";
 import { doc, getDoc, setDoc } from 'firebase/firestore';
 import { db } from '../firebase';
+import { PayCycleCalculator } from '../utils/PayCycleCalculator';
 import "./Settings.css";
 
 const Settings = () => {
@@ -16,12 +17,12 @@ const Settings = () => {
     spouseName: ""
   });
 
-  // Pay schedules with safe defaults
+  // Pay schedules with dynamic calculation structure
   const [paySchedules, setPaySchedules] = useState({
     yours: {
       type: "bi-weekly",
       amount: "",
-      nextPayDate: "",
+      lastPaydate: "", // Changed from nextPayDate to lastPaydate
       bankSplit: {
         fixedAmount: { bank: "SoFi", amount: "" },
         remainder: { bank: "BofA" }
@@ -274,7 +275,7 @@ const Settings = () => {
     setSaving(false);
   };
 
-  // Update financial data for calculations
+  // Update financial data for calculations using dynamic pay cycle
   const updateFinancialData = async () => {
     const totalBalance = Object.values(bankAccounts).reduce((sum, account) => 
       sum + (parseFloat(account.balance) || 0), 0
@@ -292,49 +293,11 @@ const Settings = () => {
       dueDate: bill.dueDate
     }));
 
-    // Calculate next payday (comparing both schedules)
-    const calculateNextPayday = () => {
-      const today = new Date();
-      const currentMonth = today.getMonth();
-      const currentYear = today.getFullYear();
-      
-      // Calculate wife's next payday (15th or 30th)
-      let wifeNext15th = new Date(currentYear, currentMonth, 15);
-      let wifeNext30th = new Date(currentYear, currentMonth + 1, 0); // Last day of current month
-      
-      // If 15th already passed this month, use next month's 15th
-      if (wifeNext15th <= today) {
-        wifeNext15th = new Date(currentYear, currentMonth + 1, 15);
-      }
-      
-      // If end of month already passed, use next month's end
-      if (wifeNext30th <= today) {
-        wifeNext30th = new Date(currentYear, currentMonth + 2, 0); // Last day of next month
-      }
-      
-      // Find wife's next payday (whichever comes first)
-      const wifeNextPayday = wifeNext15th < wifeNext30th ? wifeNext15th : wifeNext30th;
-      
-      // Your payday from settings
-      const yourNextPayday = paySchedules.yours.nextPayDate ? 
-        new Date(paySchedules.yours.nextPayDate) : 
-        new Date(currentYear, currentMonth + 1, 3); // Default fallback
-      
-      // Compare and use whichever comes first
-      const nextPayday = wifeNextPayday < yourNextPayday ? wifeNextPayday : yourNextPayday;
-      const paydaySource = wifeNextPayday < yourNextPayday ? 'spouse' : 'yours';
-      
-      return {
-        date: nextPayday.toISOString().split('T')[0],
-        daysUntil: Math.ceil((nextPayday - today) / (1000 * 60 * 60 * 24)),
-        source: paydaySource,
-        amount: paydaySource === 'spouse' ? 
-          parseFloat(paySchedules.spouse.amount) || 0 : 
-          parseFloat(paySchedules.yours.amount) || 0
-      };
-    };
-
-    const nextPaydayInfo = calculateNextPayday();
+    // Use PayCycleCalculator for dynamic payday calculation
+    const nextPaydayInfo = PayCycleCalculator.calculateNextPayday(
+      paySchedules.yours,
+      paySchedules.spouse
+    );
 
     const payCycleData = {
       nextPayday: nextPaydayInfo.date,
@@ -425,15 +388,16 @@ const Settings = () => {
             />
           </div>
           <div className="form-group">
-            <label>Next Pay Date</label>
+            <label>Last Pay Date</label>
             <input
               type="date"
-              value={paySchedules.yours.nextPayDate}
+              value={paySchedules.yours.lastPaydate}
               onChange={(e) => setPaySchedules({
                 ...paySchedules,
-                yours: {...paySchedules.yours, nextPayDate: e.target.value}
+                yours: {...paySchedules.yours, lastPaydate: e.target.value}
               })}
             />
+            <small>Your most recent payday - we'll calculate future paydays automatically</small>
           </div>
           <div className="form-group">
             <label>Fixed Amount to SoFi</label>
