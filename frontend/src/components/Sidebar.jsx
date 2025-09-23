@@ -1,4 +1,3 @@
-import { Link } from "react-router-dom";
 import "./Sidebar.css";
 
 export default function Sidebar() {
@@ -7,16 +6,16 @@ export default function Sidebar() {
       <h2 className="sidebar-title">💰 Tracker</h2>
       <nav>
         <ul>
-          <li><Link to="/">Dashboard</Link></li>
-          <li><Link to="/accounts">Accounts</Link></li>
-          <li><Link to="/transactions">Transactions</Link></li>
-          <li><Link to="/spendability">Spendability</Link></li>
-          <li><Link to="/bills">Bills</Link></li>
-          <li><Link to="/recurring">Recurring</Link></li>
-          <li><Link to="/goals">Goals</Link></li>
-          <li><Link to="/categories">Categories</Link></li>
-          <li><Link to="/cashflow">Cash Flow</Link></li>
-          <li><Link to="/paycycle">Pay Cycle</Link></li>
+          <li><a href="/">Dashboard</a></li>
+          <li><a href="#accounts">Accounts</a></li>
+          <li><a href="#transactions">Transactions</a></li>
+          <li><a href="#spendability">Spendability</a></li>
+          <li><a href="#bills">Bills</a></li>
+          <li><a href="#recurring">Recurring</a></li>
+          <li><a href="#goals">Goals</a></li>
+          <li><a href="#categories">Categories</a></li>
+          <li><a href="#cashflow">Cash Flow</a></li>
+          <li><a href="#paycycle">Pay Cycle</a></li>
         </ul>
       </nav>
     </div>
