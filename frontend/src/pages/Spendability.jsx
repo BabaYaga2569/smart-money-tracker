@@ -97,6 +97,17 @@ const Spendability = () => {
     loadFinancialData();
   }, []);
 
+  // Format date for display without timezone conversion
+  const formatDateForDisplay = (dateStr) => {
+    if (!dateStr) return '';
+    
+    // Parse YYYY-MM-DD format manually to avoid timezone issues
+    const [year, month, day] = dateStr.split('-').map(num => parseInt(num));
+    const date = new Date(year, month - 1, day); // month is 0-indexed
+    
+    return date.toLocaleDateString();
+  };
+
   // Calculate safe spendable amount with proper bill filtering
   const calculateSpendability = () => {
     const today = new Date();
@@ -223,7 +234,7 @@ const Spendability = () => {
                   <span>{bill.name}</span>
                   <div className="bill-details">
                     <span>${bill.amount.toFixed(2)}</span>
-                    <small className="due-date">Due: {new Date(bill.dueDate).toLocaleDateString()}</small>
+                    <small className="due-date">Due: {formatDateForDisplay(bill.dueDate)}</small>
                   </div>
                 </div>
               ))}
