@@ -1,9 +1,10 @@
 body {
   margin: 0;
-  font-family: Arial, sans-serif;  
+  font-family: Arial, sans-serif;
   color: #00ff99;
 }
 
+/* Headings */
 h1 {
   text-align: center;
   margin: 20px 0;
@@ -16,57 +17,14 @@ h1 {
   color: #00ff99;
 }
 
-.tile-grid {
-  display: grid;
-  grid-template-columns: repeat(3, 1fr); /* 3 tiles per row */
-  gap: 20px;
-  padding: 20px;
-  max-width: 1200px;
-  margin: 0 auto;
-}
-
-.tile {
-  background-color: #111;
-  border: 1px solid #00ff99;
-  border-radius: 10px;
-  padding: 20px;
-  text-align: center;
-  transition: transform 0.2s ease-in-out;
-}
-
-.tile:hover {
-  transform: scale(1.05);
-  border-color: #00ffaa;
-}
-
-.tile-icon {
-  font-size: 2rem;
-  margin-bottom: 10px;
-}
-
-button {
-  background-color: transparent;
-  border: 1px solid #00ff99;
-  color: #00ff99;
-  padding: 5px 10px;
-  border-radius: 5px;
-  cursor: pointer;
-  margin-top: 10px;
-  transition: background 0.2s, color 0.2s;
-}
-
-button:hover {
-  background-color: #00ff99;
-  color: #000;
-}
-/* Layout */
+/* Layout wrapper */
 .layout {
   display: flex;
-  min-height: 100vh;  
+  min-height: 100vh;
   color: #00ff99;
 }
 
-/* Sidebar stays fixed width */
+/* Sidebar */
 .sidebar {
   width: 220px;
   background: #0a0a0a;
@@ -74,7 +32,7 @@ button:hover {
   border-right: 1px solid #00ff99;
 }
 
-/* Main content area (dashboard & routes) */
+/* Main content area (uses Dashboard.css for bg) */
 .main-content {
   flex: 1;
   padding: 2rem;
@@ -83,12 +41,12 @@ button:hover {
 
 /* Generic Page Styling */
 .page {
-  min-height: 100vh;  
+  min-height: 100vh;
   padding: 2rem;
+  color: #00ff99;
 }
 
 .page h1 {
-  color: #00ff99;
   margin-bottom: 1rem;
 }
 
@@ -96,14 +54,14 @@ button:hover {
   color: #00ff99;
   text-decoration: underline;
 }
-/* Sidebar + main area layout */
+
+/* Dashboard + tiles (Dashboard.css also applies here) */
 .dashboard {
   flex: 1;
   padding: 1rem;
   color: #00ff99;
 }
 
-/* Grid of tiles */
 .tile-grid {
   display: grid;
   grid-template-columns: repeat(3, 1fr); /* 3 tiles per row */
@@ -111,7 +69,6 @@ button:hover {
   margin-top: 2rem;
 }
 
-/* Individual tile styling */
 .tile {
   background: #111;
   border: 1px solid #00ff99;
@@ -146,4 +103,3 @@ button:hover {
   background: #00ff99;
   color: #000;
 }
-
