@@ -67,3 +67,41 @@
 .tile button:hover {
   background: #00cc77;
 }
+.dashboard {
+  padding: 2rem;
+  color: #00ff99;
+  text-align: center;
+  background: #000; /* keep black background */
+  min-height: 100vh;
+}
+
+.backend-status {
+  margin-bottom: 2rem;
+  font-size: 1rem;
+  color: #00ff99;
+}
+
+.tile-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 1.5rem;
+  margin-top: 2rem;
+}
+
+.tile {
+  background: #111;
+  border: 2px solid #00ff99;
+  border-radius: 12px;
+  padding: 1.5rem;
+  transition: transform 0.2s, box-shadow 0.2s;
+}
+
+.tile:hover {
+  transform: translateY(-5px);
+  box-shadow: 0 0 20px #00ff99;
+}
+
+.tile-icon {
+  font-size: 2rem;
+  margin-bottom: 0.5rem;
+}
