@@ -113,14 +113,16 @@ const Spendability = () => {
     const today = new Date();
     const nextPaydayDate = new Date(payCycle.nextPayday);
     
-    // Filter bills that are actually due between now and next payday
+    // Filter bills that are due BEFORE payday (not including payday itself)
+    // Bills due ON payday will be covered by the incoming paycheck
     const billsDueBeforePayday = upcomingBills.filter(bill => {
       if (!bill.dueDate) return false;
       
       const billDueDate = new Date(bill.dueDate);
       
-      // Only include bills due between today and next payday
-      return billDueDate >= today && billDueDate <= nextPaydayDate;
+      // Only include bills due between today and BEFORE payday
+      // Bills due ON payday don't count since income arrives same day
+      return billDueDate >= today && billDueDate < nextPaydayDate;
     });
     
     const totalBillsDue = billsDueBeforePayday.reduce((sum, bill) => sum + bill.amount, 0);
