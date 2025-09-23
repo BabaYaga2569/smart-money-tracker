@@ -1,23 +1,42 @@
-import "./Sidebar.css";
+import React from "react";
+import { Link, useLocation } from "react-router-dom";
 
-export default function Sidebar() {
+const Sidebar = () => {
+  const location = useLocation();
+
+  const menuItems = [
+  { name: "Dashboard", path: "/dashboard" },
+  { name: "Accounts", path: "/accounts" },
+  { name: "Transactions", path: "/transactions" },
+  { name: "Spendability", path: "/spendability" },
+  { name: "Bills", path: "/bills" },
+  { name: "Recurring", path: "/recurring" },
+  { name: "Goals", path: "/goals" },
+  { name: "Categories", path: "/categories" },
+  { name: "Cash Flow", path: "/cash-flow" },
+  { name: "Pay Cycle", path: "/pay-cycle" },
+  { name: "Settings", path: "/settings" }
+];
+
   return (
-    <div className="sidebar">
-      <h2 className="sidebar-title">💰 Tracker</h2>
+    <aside className="sidebar">
+      <h2 className="sidebar-title">💰 Smart Money</h2>
       <nav>
         <ul>
-          <li><a href="/">Dashboard</a></li>
-          <li><a href="#accounts">Accounts</a></li>
-          <li><a href="#transactions">Transactions</a></li>
-          <li><a href="#spendability">Spendability</a></li>
-          <li><a href="#bills">Bills</a></li>
-          <li><a href="#recurring">Recurring</a></li>
-          <li><a href="#goals">Goals</a></li>
-          <li><a href="#categories">Categories</a></li>
-          <li><a href="#cashflow">Cash Flow</a></li>
-          <li><a href="#paycycle">Pay Cycle</a></li>
+          {menuItems.map((item) => (
+            <li key={item.name}>
+              <Link 
+                to={item.path}
+                className={location.pathname === item.path || (location.pathname === "/" && item.path === "/dashboard") ? "active" : ""}
+              >
+                {item.name}
+              </Link>
+            </li>
+          ))}
         </ul>
       </nav>
-    </div>
+    </aside>
   );
-}
+};
+
+export default Sidebar;
