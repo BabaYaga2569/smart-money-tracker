@@ -99,16 +99,36 @@ const Spendability = () => {
     loadFinancialData();
   }, []);
 
-  // Calculate safe spendable amount
+  // Calculate safe spendable amount with proper bill filtering
   const calculateSpendability = () => {
-    const totalBills = upcomingBills.reduce((sum, bill) => sum + bill.amount, 0);
+    const today = new Date();
+    const nextPaydayDate = new Date(payCycle.nextPayday);
+    
+    // Filter bills that are actually due between now and next payday
+    const billsDueBeforePayday = upcomingBills.filter(bill => {
+      if (!bill.dueDate) return false; // Skip bills without due dates
+      
+      const billDueDate = new Date(bill.dueDate);
+      
+      // Only include bills due between today and next payday
+      return billDueDate >= today && billDueDate <= nextPaydayDate;
+    });
+    
+    const totalBillsDue = billsDueBeforePayday.reduce((sum, bill) => sum + bill.amount, 0);
     const essentialsNeeded = weeklyEssentials * (payCycle.daysUntilPay / 7);
-    const totalReserved = totalBills + essentialsNeeded + safetyBuffer;
-    return accountData.total - totalReserved;
+    const totalReserved = totalBillsDue + essentialsNeeded + safetyBuffer;
+    
+    return {
+      safeAmount: accountData.total - totalReserved,
+      billsDueBeforePayday: billsDueBeforePayday,
+      totalBillsDue: totalBillsDue
+    };
   };
 
-  const safeSpendAmount = calculateSpendability();
-  const canSpendRequested = requestedAmount ? parseFloat(requestedAmount) <= safeSpendAmount : null;
+  const spendabilityResult = calculateSpendability();
+  const safeSpendAmount = spendabilityResult.safeAmount;
+  const billsDueBeforePayday = spendabilityResult.billsDueBeforePayday;
+  const totalBillsDue = spendabilityResult.totalBillsDue;
 
   if (loading) {
     return (
@@ -189,19 +209,91 @@ const Spendability = () => {
           </div>
         </div>
 
-        {/* Upcoming Bills */}
+  const canSpendRequested = requestedAmount ? parseFloat(requestedAmount) <= safeSpendAmount : null;
+
+  return (
+    <div className="spendability">
+      <div className="spendability-header">
+        <h1>Spendability Calculator</h1>
+        <p>Find out how much you can safely spend until your next payday</p>
+        <p className="firebase-status">✅ Connected to Firebase</p>
+      </div>
+
+      <div className="spendability-grid">
+        {/* Quick Answer Section */}
+        <div className="quick-check card">
+          <h2>Can I spend this amount?</h2>
+          <div className="amount-input">
+            <span className="dollar-sign">$</span>
+            <input
+              type="number"
+              placeholder="0.00"
+              value={requestedAmount}
+              onChange={(e) => setRequestedAmount(e.target.value)}
+            />
+          </div>
+          
+          {canSpendRequested !== null && (
+            <div className={`answer ${canSpendRequested ? 'safe' : 'unsafe'}`}>
+              {canSpendRequested 
+                ? "✅ Yes, you can safely spend this amount" 
+                : "❌ No, this would exceed your safe spending limit"
+              }
+            </div>
+          )}
+        </div>
+
+        {/* Safe Amount Display */}
+        <div className="safe-amount card">
+          <h2>Safe to Spend</h2>
+          <div className="amount-display">
+            <span className="currency">$</span>
+            <span className="amount">{safeSpendAmount.toFixed(2)}</span>
+          </div>
+          <p>Available until {payCycle.nextPayday}</p>
+        </div>
+
+        {/* Account Balances */}
+        <div className="balances card">
+          <h3>Current Balances</h3>
+          <div className="balance-item">
+            <span>Checking</span>
+            <span>${accountData.checking.toFixed(2)}</span>
+          </div>
+          <div className="balance-item">
+            <span>Savings</span>
+            <span>${accountData.savings.toFixed(2)}</span>
+          </div>
+          <div className="balance-total">
+            <span>Total Available</span>
+            <span>${accountData.total.toFixed(2)}</span>
+          </div>
+        </div>
+
+        {/* Upcoming Bills - Only bills due before payday */}
         <div className="bills card">
           <h3>Bills Due Before Payday</h3>
-          {upcomingBills.map((bill, index) => (
-            <div key={index} className="bill-item">
-              <span>{bill.name}</span>
-              <span>${bill.amount.toFixed(2)}</span>
+          {billsDueBeforePayday.length === 0 ? (
+            <div className="no-bills">
+              <p>No bills due before your next payday!</p>
             </div>
-          ))}
-          <div className="bills-total">
-            <span>Total Bills</span>
-            <span>${upcomingBills.reduce((sum, bill) => sum + bill.amount, 0).toFixed(2)}</span>
-          </div>
+          ) : (
+            <>
+              {billsDueBeforePayday.map((bill, index) => (
+                <div key={index} className="bill-item">
+                  <span>{bill.name}</span>
+                  <div className="bill-details">
+                    <span>${bill.amount.toFixed(2)}</span>
+                    <small className="due-date">Due: {new Date(bill.dueDate).toLocaleDateString()}</small>
+                  </div>
+                </div>
+              ))}
+              <div className="bills-total">
+                <span>Total Bills Due</span>
+                <span>${totalBillsDue.toFixed(2)}</span>
+              </div>
+            </>
+          )}
         </div>
 
         {/* Breakdown */}
@@ -212,11 +304,11 @@ const Spendability = () => {
             <span>${accountData.total.toFixed(2)}</span>
           </div>
           <div className="breakdown-item">
-            <span>- Upcoming Bills</span>
-            <span>-${upcomingBills.reduce((sum, bill) => sum + bill.amount, 0).toFixed(2)}</span>
+            <span>- Bills Due Before Payday</span>
+            <span>-${totalBillsDue.toFixed(2)}</span>
           </div>
           <div className="breakdown-item">
-            <span>- Weekly Essentials</span>
+            <span>- Weekly Essentials ({payCycle.daysUntilPay} days)</span>
             <span>-${(weeklyEssentials * (payCycle.daysUntilPay / 7)).toFixed(2)}</span>
           </div>
           <div className="breakdown-item">
