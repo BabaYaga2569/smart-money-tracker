@@ -5,9 +5,9 @@ import Sidebar from "./components/Sidebar";
 export default function App() {
   return (
     <Router>
-      <div style={{ display: "flex" }}>
+      <div className="layout">
         <Sidebar />
-        <div style={{ marginLeft: "220px", padding: "1rem", flex: 1 }}>
+        <main className="main-content">
           <Routes>
             <Route path="/" element={<Dashboard />} />
             <Route path="/accounts" element={<Page title="Accounts" />} />
@@ -20,7 +20,7 @@ export default function App() {
             <Route path="/cashflow" element={<Page title="Cash Flow" />} />
             <Route path="/paycycle" element={<Page title="Pay Cycle" />} />
           </Routes>
-        </div>
+        </main>
       </div>
     </Router>
   );
@@ -28,10 +28,10 @@ export default function App() {
 
 function Page({ title }) {
   return (
-    <div style={{ minHeight: "100vh", background: "#000", color: "#00ff99", padding: "2rem" }}>
+    <div className="page">
       <h1>{title}</h1>
       <p>Content coming soon…</p>
-      <a href="/" style={{ color: "#00ff99", textDecoration: "underline" }}>← Back to Dashboard</a>
+      <a href="/">← Back to Dashboard</a>
     </div>
   );
 }

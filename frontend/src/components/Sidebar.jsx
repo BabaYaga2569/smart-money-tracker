@@ -4,12 +4,13 @@ import "./Sidebar.css";
 export default function Sidebar() {
   return (
     <div className="sidebar">
-      <h2>💰 Tracker</h2>
+      <h2 className="sidebar-title">💰 Tracker</h2>
       <nav>
         <ul>
           <li><Link to="/">Dashboard</Link></li>
           <li><Link to="/accounts">Accounts</Link></li>
           <li><Link to="/transactions">Transactions</Link></li>
+          <li><Link to="/spendability">Spendability</Link></li>
           <li><Link to="/bills">Bills</Link></li>
           <li><Link to="/recurring">Recurring</Link></li>
           <li><Link to="/goals">Goals</Link></li>
