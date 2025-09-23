@@ -160,10 +160,10 @@ const Settings = () => {
     // Find column indices
     const nameIndex = headers.findIndex(h => h.includes('name') || h.includes('bill') || h.includes('payee'));
     const amountIndex = headers.findIndex(h => h.includes('amount') || h.includes('cost') || h.includes('payment'));
-    const dateIndex = headers.findIndex(h => h.includes('date') || h.includes('due'));
+    const dateIndex = headers.findIndex(h => h.includes('date') || h.includes('due') || h.includes('day'));
 
     if (nameIndex === -1 || amountIndex === -1) {
-      alert('CSV must have columns for bill name and amount. Optional: due date');
+      alert('CSV must have columns for bill name and amount. Optional: due date or day of month');
       return;
     }
 
@@ -172,10 +172,12 @@ const Settings = () => {
       const values = lines[i].split(',').map(v => v.trim().replace(/"/g, ''));
       
       if (values.length > Math.max(nameIndex, amountIndex)) {
+        const rawDate = dateIndex !== -1 ? values[dateIndex] : '';
+        
         const bill = {
           name: values[nameIndex] || '',
           amount: values[amountIndex]?.replace(/[^0-9.-]/g, '') || '',
-          dueDate: dateIndex !== -1 ? formatDate(values[dateIndex]) : '',
+          dueDate: smartFormatDate(rawDate),
           recurring: true
         };
         
@@ -189,9 +191,37 @@ const Settings = () => {
     setShowUploadPreview(true);
   };
 
-  // Format date to YYYY-MM-DD
-  const formatDate = (dateStr) => {
+  // Smart date formatting for recurring bills
+  const smartFormatDate = (dateStr) => {
     if (!dateStr) return '';
+    
+    // If it's just a number (day of month), convert to next occurrence
+    const dayOnly = parseInt(dateStr);
+    if (!isNaN(dayOnly) && dayOnly >= 1 && dayOnly <= 31) {
+      const today = new Date();
+      const currentMonth = today.getMonth();
+      const currentYear = today.getFullYear();
+      const currentDay = today.getDate();
+      
+      // If the day hasn't passed this month, use this month
+      // Otherwise, use next month
+      let targetMonth = currentMonth;
+      let targetYear = currentYear;
+      
+      if (dayOnly <= currentDay) {
+        // Day already passed this month, use next month
+        targetMonth += 1;
+        if (targetMonth > 11) {
+          targetMonth = 0;
+          targetYear += 1;
+        }
+      }
+      
+      const nextDueDate = new Date(targetYear, targetMonth, dayOnly);
+      return nextDueDate.toISOString().split('T')[0];
+    }
+    
+    // Otherwise, try to parse as a full date
     const date = new Date(dateStr);
     if (isNaN(date)) return '';
     return date.toISOString().split('T')[0];
