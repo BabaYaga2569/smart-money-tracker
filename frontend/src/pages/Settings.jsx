@@ -191,7 +191,7 @@ const Settings = () => {
     setShowUploadPreview(true);
   };
 
-  // Smart date formatting for recurring bills
+  // Smart date formatting for recurring bills - FIXED TIMEZONE ISSUE
   const smartFormatDate = (dateStr) => {
     if (!dateStr) return '';
     
@@ -217,14 +217,27 @@ const Settings = () => {
         }
       }
       
+      // Create date in local timezone and format without UTC conversion
       const nextDueDate = new Date(targetYear, targetMonth, dayOnly);
-      return nextDueDate.toISOString().split('T')[0];
+      
+      // Format as YYYY-MM-DD without timezone conversion
+      const year = nextDueDate.getFullYear();
+      const month = String(nextDueDate.getMonth() + 1).padStart(2, '0');
+      const day = String(nextDueDate.getDate()).padStart(2, '0');
+      
+      return `${year}-${month}-${day}`;
     }
     
     // Otherwise, try to parse as a full date
     const date = new Date(dateStr);
     if (isNaN(date)) return '';
-    return date.toISOString().split('T')[0];
+    
+    // Format without timezone conversion
+    const year = date.getFullYear();
+    const month = String(date.getMonth() + 1).padStart(2, '0');
+    const day = String(date.getDate()).padStart(2, '0');
+    
+    return `${year}-${month}-${day}`;
   };
 
   // Import uploaded bills
