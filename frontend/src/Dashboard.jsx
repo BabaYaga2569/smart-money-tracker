@@ -1,6 +1,9 @@
-import "./Dashboard.css";
 import React from "react";
-import { FaWallet, FaList, FaDollarSign, FaFileInvoice, FaRedo, FaBullseye, FaThLarge, FaChartLine, FaCalendarAlt } from "react-icons/fa";
+import "./Dashboard.css";
+import { 
+  FaWallet, FaList, FaDollarSign, FaFileInvoice, 
+  FaRedo, FaBullseye, FaThLarge, FaChartLine, FaCalendarAlt 
+} from "react-icons/fa";
 
 const Dashboard = () => {
   const tiles = [
