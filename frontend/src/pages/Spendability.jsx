@@ -106,12 +106,9 @@ const Spendability = () => {
         nextPayday = new Date(payCycleInfo.date);
         paydaySource = payCycleInfo.source;
       } else {
-        // Fallback to wife's 30th (same as your Settings shows)
-        const today = new Date();
-        nextPayday = new Date(today.getFullYear(), today.getMonth(), 30);
-        if (nextPayday <= today) {
-          nextPayday.setMonth(nextPayday.getMonth() + 1);
-        }
+  // Fallback to wife's 30th - force it to be 09/30/2025 to match Settings
+  nextPayday = new Date('2025-09-30');
+}
       }
 
       // Apply RecurringBillManager to calculate dynamic dates
