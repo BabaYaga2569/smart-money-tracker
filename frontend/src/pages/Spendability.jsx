@@ -13,46 +13,76 @@ const Spendability = () => {
 
   useEffect(() => {
     const fetchData = async () => {
-  try {
-    setLoading(true);
-    setError(null);
+      try {
+        setLoading(true);
+        setError(null);
+        
+        const userId = "steve-colburn";
 
-    // Fetch financial data from Firestore
-    const financialDocRef = doc(db, 'financialData', 'main');
-    const financialDocSnap = await getDoc(financialDocRef);
-    
-    if (!financialDocSnap.exists()) {
-      throw new Error('No financial data found. Please set up your finances in Settings first.');
-    }
+        // Fetch financial accounts data
+        const accountsRef = doc(db, 'users', userId, 'financial', 'accounts');
+        const accountsSnap = await getDoc(accountsRef);
+        
+        // Fetch pay cycle data
+        const payCycleRef = doc(db, 'users', userId, 'financial', 'payCycle');
+        const payCycleSnap = await getDoc(payCycleRef);
+        
+        // Fetch settings data for pay schedule info
+        const settingsRef = doc(db, 'users', userId, 'settings', 'personal');
+        const settingsSnap = await getDoc(settingsRef);
+        
+        if (!accountsSnap.exists() && !settingsSnap.exists()) {
+          throw new Error('No financial data found. Please set up your finances in Settings first.');
+        }
 
-    const data = financialDocSnap.data();
-    setFinancialData(data);
+        // Combine the data into expected format
+        const accountsData = accountsSnap.exists() ? accountsSnap.data() : {};
+        const payCycleData = payCycleSnap.exists() ? payCycleSnap.data() : {};
+        const settingsData = settingsSnap.exists() ? settingsSnap.data() : {};
+        
+        // Create unified financial data object
+        const unifiedFinancialData = {
+          // Account balances - map from Settings bankAccounts structure
+          bankOfAmericaChecking: settingsData.bankAccounts?.bofa?.balance || 0,
+          bankOfAmericaSavings: 0, // Not in current structure
+          sofiChecking: settingsData.bankAccounts?.sofi?.balance || 0,
+          sofiSavings: 0, // Not in current structure
+          totalBalance: accountsData.total || 0,
+          
+          // Pay schedule data
+          lastPayDate: settingsData.paySchedules?.yours?.lastPaydate || '',
+          wifePayAmount: settingsData.paySchedules?.spouse?.amount || 0,
+          
+          // Pay cycle info
+          nextPayday: payCycleData.nextPayday,
+          daysUntilPay: payCycleData.daysUntilPay,
+          paydaySource: payCycleData.paydaySource,
+          paydayAmount: payCycleData.paydayAmount
+        };
 
-    // Fetch bills from Firestore
-    const billsCollectionRef = collection(db, 'bills');
-    const billsQuerySnapshot = await getDocs(billsCollectionRef);
-    
-    if (!billsQuerySnapshot.empty) {
-      const billsArray = [];
-      billsQuerySnapshot.forEach((doc) => {
-        billsArray.push({
-          id: doc.id,
-          ...doc.data(),
-          // Set default recurrence if not specified
-          recurrence: doc.data().recurrence || 'monthly'
-        });
-      });
-      setBills(billsArray);
-    } else {
-      setBills([]);
-    }
-  } catch (err) {
-    console.error('Error fetching data:', err);
-    setError(err.message);
-  } finally {
-    setLoading(false);
-  }
-};
+        setFinancialData(unifiedFinancialData);
+
+        // Fetch bills from settings
+        if (settingsData.bills && Array.isArray(settingsData.bills)) {
+          const billsWithRecurrence = settingsData.bills.map(bill => ({
+            id: bill.name.replace(/\s+/g, '-').toLowerCase(),
+            name: bill.name,
+            amount: bill.amount,
+            dueDate: bill.dueDate,
+            recurrence: bill.recurring ? 'monthly' : 'one-time'
+          }));
+          setBills(billsWithRecurrence);
+        } else {
+          setBills([]);
+        }
+        
+      } catch (err) {
+        console.error('Error fetching data:', err);
+        setError(err.message);
+      } finally {
+        setLoading(false);
+      }
+    };
 
     fetchData();
   }, []);
@@ -96,11 +126,18 @@ const Spendability = () => {
     }
 
     try {
-      // Calculate next payday using PayCycleCalculator
-      const nextPayday = PayCycleCalculator.getNextPayday(
-        financialData.lastPayDate,
-        financialData.wifePayAmount || 0
-      );
+      // Use next payday from Settings calculation if available, otherwise calculate it
+      let nextPayday;
+      if (financialData.nextPayday) {
+        nextPayday = new Date(financialData.nextPayday);
+      } else if (financialData.lastPayDate) {
+        // Calculate next bi-weekly payday from last pay date
+        const lastPay = new Date(financialData.lastPayDate);
+        nextPayday = new Date(lastPay);
+        nextPayday.setDate(lastPay.getDate() + 14);
+      } else {
+        throw new Error('No payday information available');
+      }
 
       // Process bills with RecurringBillManager to get calculated due dates
       const processedBills = RecurringBillManager.processBills(bills);
@@ -113,12 +150,10 @@ const Spendability = () => {
         return sum + parseFloat(bill.amount || 0);
       }, 0);
 
-      // Calculate total available funds
+      // Calculate total available funds from your bank accounts
       const totalAvailable = 
         parseFloat(financialData.bankOfAmericaChecking || 0) +
-        parseFloat(financialData.bankOfAmericaSavings || 0) +
-        parseFloat(financialData.sofiChecking || 0) +
-        parseFloat(financialData.sofiSavings || 0);
+        parseFloat(financialData.sofiChecking || 0);
 
       // Calculate safe to spend amount
       const safeToSpend = totalAvailable - totalBillAmount;

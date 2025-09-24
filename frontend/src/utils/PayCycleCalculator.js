@@ -1,190 +1,159 @@
 // PayCycleCalculator.js - Dynamic pay cycle calculations
-
 export class PayCycleCalculator {
-  
-  // Calculate next bi-weekly payday from a reference date
-  static calculateNextBiWeeklyPayday(lastPaydateStr) {
-    if (!lastPaydateStr) return null;
     
-    const lastPaydate = new Date(lastPaydateStr);
-    const today = new Date();
-    
-    // Find the next bi-weekly occurrence
-    let nextPayday = new Date(lastPaydate);
-    
-    while (nextPayday <= today) {
-      nextPayday.setDate(nextPayday.getDate() + 14);
-    }
-    
-    return {
-      date: this.formatDateString(nextPayday),
-      daysUntil: this.calculateDaysUntil(nextPayday)
-    };
-  }
-  
-  // Calculate next 15th/30th payday with Friday rule
-  static calculateNextBiMonthlyPayday() {
-    const today = new Date();
-    const currentYear = today.getFullYear();
-    const currentMonth = today.getMonth();
-    const currentDay = today.getDate();
-    
-    // Calculate potential 15th and 30th dates for this month
-    let next15th = new Date(currentYear, currentMonth, 15);
-    let next30th = new Date(currentYear, currentMonth + 1, 0); // Last day of current month
-    
-    // If 15th already passed, use next month
-    if (next15th <= today) {
-      next15th = new Date(currentYear, currentMonth + 1, 15);
-    }
-    
-    // If 30th already passed, use next month
-    if (next30th <= today) {
-      next30th = new Date(currentYear, currentMonth + 2, 0);
-    }
-    
-    // Apply Friday rule for weekends
-    next15th = this.adjustForWeekend(next15th);
-    next30th = this.adjustForWeekend(next30th);
-    
-    // Return whichever comes first
-    const nextPayday = next15th <= next30th ? next15th : next30th;
-    
-    return {
-      date: this.formatDateString(nextPayday),
-      daysUntil: this.calculateDaysUntil(nextPayday),
-      type: next15th <= next30th ? '15th' : '30th'
-    };
-  }
-  
-  // Apply Friday rule - if weekend, move to Friday before
-  static adjustForWeekend(date) {
-    const dayOfWeek = date.getDay();
-    const adjustedDate = new Date(date);
-    
-    if (dayOfWeek === 6) { // Saturday
-      adjustedDate.setDate(date.getDate() - 1); // Move to Friday
-    } else if (dayOfWeek === 0) { // Sunday
-      adjustedDate.setDate(date.getDate() - 2); // Move to Friday
-    }
-    
-    return adjustedDate;
-  }
-  
-  // Calculate the next combined payday (yours vs spouse)
-  static calculateNextPayday(yourPaySchedule, spousePaySchedule) {
-    const yourNext = yourPaySchedule.lastPaydate ? 
-      this.calculateNextBiWeeklyPayday(yourPaySchedule.lastPaydate) : null;
-    const spouseNext = this.calculateNextBiMonthlyPayday();
-    
-    // Compare and return the earlier payday
-    if (!yourNext) {
-      return {
-        ...spouseNext,
-        source: 'spouse',
-        amount: parseFloat(spousePaySchedule.amount) || 0
-      };
-    }
-    
-    const yourDate = new Date(yourNext.date);
-    const spouseDate = new Date(spouseNext.date);
-    
-    if (yourDate <= spouseDate) {
-      return {
-        ...yourNext,
-        source: 'yours',
-        amount: parseFloat(yourPaySchedule.amount) || 0
-      };
-    } else {
-      return {
-        ...spouseNext,
-        source: 'spouse',
-        amount: parseFloat(spousePaySchedule.amount) || 0
-      };
-    }
-  }
-  
-  // Helper function to format date as YYYY-MM-DD
-  static formatDateString(date) {
-    const year = date.getFullYear();
-    const month = String(date.getMonth() + 1).padStart(2, '0');
-    const day = String(date.getDate()).padStart(2, '0');
-    return `${year}-${month}-${day}`;
-  }
-  
-  // Helper function to calculate days until a date
-  static calculateDaysUntil(targetDate) {
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
-    targetDate.setHours(0, 0, 0, 0);
-    
-    const diffTime = targetDate - today;
-    const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
-    return Math.max(0, diffDays);
-  }
-  
-  // Calculate all future paydays for a given period (useful for planning)
-  static calculatePaydaySchedule(yourPaySchedule, spousePaySchedule, monthsAhead = 3) {
-    const schedule = [];
-    const startDate = new Date();
-    const endDate = new Date();
-    endDate.setMonth(endDate.getMonth() + monthsAhead);
-    
-    // Generate your paydays
-    if (yourPaySchedule.lastPaydate) {
-      let currentPayday = new Date(yourPaySchedule.lastPaydate);
-      while (currentPayday <= endDate) {
-        if (currentPayday > startDate) {
-          schedule.push({
-            date: this.formatDateString(currentPayday),
-            source: 'yours',
-            amount: parseFloat(yourPaySchedule.amount) || 0,
-            type: 'bi-weekly'
-          });
+    /**
+     * Calculate the next payday from either your bi-weekly or spouse's bi-monthly schedule
+     * @param {Date|string} lastPayDate - Your last payday
+     * @param {number} wifePayAmount - Wife's pay amount  
+     * @returns {Date} Next payday date
+     */
+    static getNextPayday(lastPayDate, wifePayAmount = 0) {
+        const today = new Date();
+        
+        // Calculate your next bi-weekly payday
+        const lastPay = new Date(lastPayDate);
+        const yourNextPay = new Date(lastPay);
+        yourNextPay.setDate(lastPay.getDate() + 14);
+        
+        // Calculate wife's next payday (15th or 30th)
+        const wifeNextPay = this.getWifeNextPayday();
+        
+        // Return whichever comes first
+        if (wifePayAmount > 0 && wifeNextPay < yourNextPay) {
+            return wifeNextPay;
         }
-        currentPayday.setDate(currentPayday.getDate() + 14);
-      }
+        return yourNextPay;
+    }
+
+    /**
+     * Calculate next payday with detailed info (for Settings component)
+     * @param {Object} yoursSchedule - Your pay schedule object
+     * @param {Object} spouseSchedule - Spouse pay schedule object
+     * @returns {Object} Detailed payday info
+     */
+    static calculateNextPayday(yoursSchedule, spouseSchedule) {
+        try {
+            const today = new Date();
+            
+            // Calculate your next bi-weekly payday
+            let yourNextPay = null;
+            let yourAmount = 0;
+            
+            if (yoursSchedule.lastPaydate && yoursSchedule.amount) {
+                const lastPay = new Date(yoursSchedule.lastPaydate);
+                yourNextPay = new Date(lastPay);
+                yourNextPay.setDate(lastPay.getDate() + 14);
+                yourAmount = parseFloat(yoursSchedule.amount) || 0;
+            }
+            
+            // Calculate spouse's next payday (15th or 30th)
+            let spouseNextPay = null;
+            let spouseAmount = 0;
+            
+            if (spouseSchedule.amount) {
+                spouseNextPay = this.getWifeNextPayday();
+                spouseAmount = parseFloat(spouseSchedule.amount) || 0;
+            }
+            
+            // Determine which comes first
+            let nextPayday, source, amount;
+            
+            if (yourNextPay && spouseNextPay) {
+                if (spouseNextPay < yourNextPay) {
+                    nextPayday = spouseNextPay;
+                    source = "spouse";
+                    amount = spouseAmount;
+                } else {
+                    nextPayday = yourNextPay;
+                    source = "yours";
+                    amount = yourAmount;
+                }
+            } else if (yourNextPay) {
+                nextPayday = yourNextPay;
+                source = "yours";
+                amount = yourAmount;
+            } else if (spouseNextPay) {
+                nextPayday = spouseNextPay;
+                source = "spouse";
+                amount = spouseAmount;
+            } else {
+                throw new Error("No payday information available");
+            }
+            
+            // Calculate days until payday
+            const daysUntil = Math.ceil((nextPayday - today) / (1000 * 60 * 60 * 24));
+            
+            return {
+                date: nextPayday.toISOString().split('T')[0], // YYYY-MM-DD format
+                daysUntil: daysUntil,
+                source: source,
+                amount: amount
+            };
+            
+        } catch (error) {
+            console.error('PayCycleCalculator error:', error);
+            return {
+                date: new Date().toISOString().split('T')[0],
+                daysUntil: 0,
+                source: "error",
+                amount: 0
+            };
+        }
     }
     
-    // Generate spouse paydays (15th and 30th)
-    let currentMonth = startDate.getMonth();
-    let currentYear = startDate.getFullYear();
-    
-    while (currentYear < endDate.getFullYear() || 
-           (currentYear === endDate.getFullYear() && currentMonth <= endDate.getMonth())) {
-      
-      // Add 15th
-      const fifteenth = this.adjustForWeekend(new Date(currentYear, currentMonth, 15));
-      if (fifteenth > startDate && fifteenth <= endDate) {
-        schedule.push({
-          date: this.formatDateString(fifteenth),
-          source: 'spouse',
-          amount: parseFloat(spousePaySchedule.amount) || 0,
-          type: '15th'
-        });
-      }
-      
-      // Add 30th (last day of month)
-      const lastDay = this.adjustForWeekend(new Date(currentYear, currentMonth + 1, 0));
-      if (lastDay > startDate && lastDay <= endDate) {
-        schedule.push({
-          date: this.formatDateString(lastDay),
-          source: 'spouse',
-          amount: parseFloat(spousePaySchedule.amount) || 0,
-          type: '30th'
-        });
-      }
-      
-      currentMonth++;
-      if (currentMonth > 11) {
-        currentMonth = 0;
-        currentYear++;
-      }
+    /**
+     * Calculate wife's next payday (15th or 30th with Friday rule)
+     * @returns {Date} Next payday for wife
+     */
+    static getWifeNextPayday() {
+        const today = new Date();
+        const currentYear = today.getFullYear();
+        const currentMonth = today.getMonth();
+        const currentDay = today.getDate();
+        
+        // Check 15th of current month
+        const fifteenth = new Date(currentYear, currentMonth, 15);
+        const adjustedFifteenth = this.adjustForWeekend(fifteenth);
+        
+        // Check 30th of current month (or last day if shorter month)
+        const lastDayOfMonth = new Date(currentYear, currentMonth + 1, 0).getDate();
+        const monthEnd = new Date(currentYear, currentMonth, Math.min(30, lastDayOfMonth));
+        const adjustedMonthEnd = this.adjustForWeekend(monthEnd);
+        
+        // If both dates this month are in the future, return the earlier one
+        if (adjustedFifteenth > today && adjustedMonthEnd > today) {
+            return adjustedFifteenth < adjustedMonthEnd ? adjustedFifteenth : adjustedMonthEnd;
+        }
+        
+        // If only 30th is in the future this month
+        if (adjustedMonthEnd > today) {
+            return adjustedMonthEnd;
+        }
+        
+        // Both dates have passed, calculate for next month
+        const nextMonth = currentMonth + 1;
+        const nextYear = nextMonth > 11 ? currentYear + 1 : currentYear;
+        const adjustedMonth = nextMonth > 11 ? 0 : nextMonth;
+        
+        const nextFifteenth = new Date(nextYear, adjustedMonth, 15);
+        return this.adjustForWeekend(nextFifteenth);
     }
     
-    // Sort by date
-    schedule.sort((a, b) => new Date(a.date) - new Date(b.date));
-    
-    return schedule;
-  }
+    /**
+     * Adjust payday to Friday if it falls on weekend
+     * @param {Date} date - Original payday
+     * @returns {Date} Adjusted payday
+     */
+    static adjustForWeekend(date) {
+        const dayOfWeek = date.getDay();
+        const adjustedDate = new Date(date);
+        
+        if (dayOfWeek === 0) { // Sunday
+            adjustedDate.setDate(date.getDate() - 2); // Move to Friday
+        } else if (dayOfWeek === 6) { // Saturday
+            adjustedDate.setDate(date.getDate() - 1); // Move to Friday
+        }
+        
+        return adjustedDate;
+    }
 }
