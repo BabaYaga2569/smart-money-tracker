@@ -41,7 +41,7 @@ const Spendability = () => {
             name: billData.name,
             amount: parseFloat(billData.amount) || 0,
             dueDate: billData.dueDate,
-            recurring: true, // Most bills are recurring monthly
+            recurring: true,
             recurrence: 'monthly'
           });
         });
@@ -94,7 +94,7 @@ const Spendability = () => {
     }
 
     try {
-      // Use SAME payday calculation logic as Settings (the working version)
+      // Use SAME payday calculation logic as Settings
       let nextPayday;
       let paydaySource = 'calculated';
       
@@ -106,16 +106,14 @@ const Spendability = () => {
         nextPayday = new Date(payCycleInfo.date);
         paydaySource = payCycleInfo.source;
       } else {
-  // Fallback to wife's 30th - force it to be 09/30/2025 to match Settings
-  nextPayday = new Date('2025-09-30');
-}
+        // Force to match Settings payday (09/30/2025)
+        nextPayday = new Date('2025-09-30');
       }
 
       // Apply RecurringBillManager to calculate dynamic dates
       const billsWithCalculatedDates = RecurringBillManager.processBills(bills);
 
-      // Use SAME bill filtering logic as working Settings component
-      // Bills due BEFORE next payday (not including payday itself)
+      // Filter bills due BEFORE next payday (same logic as Settings)
       const billsBeforePayday = billsWithCalculatedDates.filter(bill => {
         const dueDate = new Date(bill.nextDueDate);
         return dueDate < nextPayday;
@@ -167,15 +165,15 @@ const Spendability = () => {
   return (
     <div className="spendability-container">
       <div className="page-header">
-  <h2>💰 Spendability Calculator</h2>
-  <p>See how much you can safely spend before your next payday</p>
-</div>
+        <h2>💰 Spendability Calculator</h2>
+        <p>See how much you can safely spend before your next payday</p>
+      </div>
 
-<div style={{background: 'red', padding: '10px', color: 'white'}}>
-  DEBUG: Version {new Date().toISOString()} - If you see this, the component updated
-</div>
+      <div style={{background: 'red', padding: '10px', color: 'white'}}>
+        DEBUG: Version {new Date().toISOString()} - If you see this, the component updated
+      </div>
 
-      {/* Summary Cards - SAME as Settings layout */}
+      {/* Summary Cards */}
       <div className="summary-grid">
         <div className="summary-card total-available">
           <h3>Total Available</h3>
