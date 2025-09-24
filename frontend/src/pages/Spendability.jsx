@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { doc, getDoc } from 'firebase/firestore';
+import { doc, getDoc, collection, getDocs } from 'firebase/firestore';
 import { db } from '../firebase';
 import { PayCycleCalculator } from '../utils/PayCycleCalculator';
 import { RecurringBillManager } from '../utils/RecurringBillManager';
@@ -7,7 +7,8 @@ import './Spendability.css';
 
 const Spendability = () => {
   const [settingsData, setSettingsData] = useState(null);
-  const [payCycleData, setPayCycleData] = useState(null);
+  const [bills, setBills] = useState([]);
+  const [accounts, setAccounts] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
 
@@ -16,37 +17,52 @@ const Spendability = () => {
       try {
         setLoading(true);
         setError(null);
-        
-        const userId = "steve-colburn";
 
-        // Fetch settings data (same path Settings component uses)
-        const settingsRef = doc(db, 'users', userId, 'settings', 'personal');
+        // Fetch settings from users/steve-colburn/settings/personal
+        const settingsRef = doc(db, 'users', 'steve-colburn', 'settings', 'personal');
         const settingsSnap = await getDoc(settingsRef);
         
-        // Fetch calculated pay cycle data
-        const payCycleRef = doc(db, 'users', userId, 'financial', 'payCycle');
-        const payCycleSnap = await getDoc(payCycleRef);
+        // Fetch bills from root bills collection
+        const billsCollectionRef = collection(db, 'bills');
+        const billsSnapshot = await getDocs(billsCollectionRef);
         
-        if (!settingsSnap.exists()) {
-          throw new Error('No settings found. Please configure your finances in Settings first.');
-        }
+        // Fetch accounts from root accounts collection  
+        const accountsCollectionRef = collection(db, 'accounts');
+        const accountsSnapshot = await getDocs(accountsCollectionRef);
 
-        const settings = settingsSnap.data();
-        setSettingsData(settings);
-        
-        // If no saved pay cycle data, calculate it fresh
-        let payCycle = null;
-        if (payCycleSnap.exists()) {
-          payCycle = payCycleSnap.data();
-        } else if (settings.paySchedules) {
-          // Calculate fresh using same logic as Settings
-          payCycle = PayCycleCalculator.calculateNextPayday(
-            settings.paySchedules.yours,
-            settings.paySchedules.spouse
-          );
+        // Process settings data
+        let settings = null;
+        if (settingsSnap.exists()) {
+          settings = settingsSnap.data();
         }
-        
-        setPayCycleData(payCycle);
+        setSettingsData(settings);
+
+        // Process bills data
+        const billsArray = [];
+        billsSnapshot.forEach((doc) => {
+          const billData = doc.data();
+          billsArray.push({
+            id: doc.id,
+            name: billData.name,
+            amount: parseFloat(billData.amount) || 0,
+            dueDate: billData.dueDate,
+            frequency: billData.frequency || 'Monthly',
+            recurrence: billData.frequency === 'Monthly' ? 'monthly' : 'one-time'
+          });
+        });
+        setBills(billsArray);
+
+        // Process accounts data
+        const accountsArray = [];
+        accountsSnapshot.forEach((doc) => {
+          const accountData = doc.data();
+          accountsArray.push({
+            id: doc.id,
+            name: accountData.name || 'Unknown Account',
+            balance: parseFloat(accountData.balance) || 0
+          });
+        });
+        setAccounts(accountsArray);
         
       } catch (err) {
         console.error('Error fetching data:', err);
@@ -83,77 +99,83 @@ const Spendability = () => {
     }
   };
 
-  const calculateUnifiedSpendability = () => {
-    if (!settingsData || !payCycleData) {
+  const calculateSpendability = () => {
+    if (!bills.length && !accounts.length) {
       return {
         totalAvailable: 0,
         billsDue: 0,
         safeToSpend: 0,
-        nextPayday: 'Not calculated',
+        nextPayday: 'No data',
         billsBeforePayday: [],
-        allBillsWithDates: [],
-        paydaySource: 'Unknown'
+        allBillsWithDates: []
       };
     }
 
     try {
-      // Use the calculated payday from Settings (same source of truth)
-      const nextPaydayDate = new Date(payCycleData.date);
-
-      // Get bills from Settings with enhanced recurrence info
-      const bills = (settingsData.bills || []).map((bill, index) => ({
-        id: `bill-${index}`,
-        name: bill.name,
-        amount: parseFloat(bill.amount) || 0,
-        dueDate: bill.dueDate,
-        recurrence: bill.recurring ? 'monthly' : 'one-time',
-        recurring: bill.recurring
-      }));
+      // Calculate next payday (simplified logic for now)
+      let nextPayday;
+      if (settingsData && settingsData.paySchedules) {
+        const payCycleInfo = PayCycleCalculator.calculateNextPayday(
+          settingsData.paySchedules.yours,
+          settingsData.paySchedules.spouse
+        );
+        nextPayday = new Date(payCycleInfo.date);
+      } else {
+        // Fallback: assume next payday is wife's 30th (Sept 30th)
+        const today = new Date();
+        nextPayday = new Date(today.getFullYear(), today.getMonth(), 30);
+        if (nextPayday <= today) {
+          nextPayday.setMonth(nextPayday.getMonth() + 1);
+        }
+      }
 
       // Apply RecurringBillManager to calculate dynamic due dates
       const billsWithCalculatedDates = RecurringBillManager.processBills(bills);
 
-      // Filter bills due BEFORE next payday (enhanced logic)
-      const billsBeforePayday = RecurringBillManager.getBillsDueBefore(billsWithCalculatedDates, nextPaydayDate);
+      // Filter bills due BEFORE next payday
+      const billsBeforePayday = RecurringBillManager.getBillsDueBefore(billsWithCalculatedDates, nextPayday);
 
       // Calculate total bills amount
       const totalBillAmount = billsBeforePayday.reduce((sum, bill) => {
         return sum + (bill.amount || 0);
       }, 0);
 
-      // Calculate total available from bank accounts (same as Settings)
-      const bankAccounts = settingsData.bankAccounts || {};
-      const totalAvailable = Object.values(bankAccounts).reduce((sum, account) => 
-        sum + (parseFloat(account.balance) || 0), 0
+      // Calculate total available from accounts
+      const totalAvailable = accounts.reduce((sum, account) => 
+        sum + (account.balance || 0), 0
       );
 
+      // If no accounts, try to get total from settings
+      let finalTotalAvailable = totalAvailable;
+      if (totalAvailable === 0 && settingsData && settingsData.bankAccounts) {
+        finalTotalAvailable = Object.values(settingsData.bankAccounts).reduce((sum, account) => 
+          sum + (parseFloat(account.balance) || 0), 0
+        );
+      }
+
       // Calculate safe spending amount
-      const safeToSpend = totalAvailable - totalBillAmount;
+      const safeToSpend = finalTotalAvailable - totalBillAmount;
 
       return {
-        totalAvailable: totalAvailable.toFixed(2),
+        totalAvailable: finalTotalAvailable.toFixed(2),
         billsDue: totalBillAmount.toFixed(2),
         safeToSpend: safeToSpend.toFixed(2),
-        nextPayday: formatDateForDisplay(payCycleData.date),
+        nextPayday: formatDateForDisplay(nextPayday),
         billsBeforePayday: billsBeforePayday,
         allBillsWithDates: billsWithCalculatedDates.sort((a, b) => 
           new Date(a.nextDueDate) - new Date(b.nextDueDate)
-        ),
-        paydaySource: payCycleData.source || 'Unknown',
-        daysUntilPay: payCycleData.daysUntil || 0,
-        paydayAmount: payCycleData.amount || 0
+        )
       };
       
     } catch (error) {
-      console.error('Unified calculation error:', error);
+      console.error('Calculation error:', error);
       return {
         totalAvailable: 0,
         billsDue: 0,
         safeToSpend: 0,
         nextPayday: 'Error calculating',
         billsBeforePayday: [],
-        allBillsWithDates: [],
-        paydaySource: 'Error'
+        allBillsWithDates: []
       };
     }
   };
@@ -161,21 +183,21 @@ const Spendability = () => {
   if (loading) return <div className="loading">Loading your financial data...</div>;
   if (error) return <div className="error">Error: {error}</div>;
 
-  const calculation = calculateUnifiedSpendability();
+  const calculation = calculateSpendability();
 
   return (
     <div className="spendability-container">
       <div className="page-header">
         <h2>💰 Smart Spendability Calculator</h2>
-        <p>See exactly how much you can safely spend with dynamic bill tracking</p>
+        <p>Reading from your actual Firebase data structure</p>
       </div>
 
-      {/* Enhanced Summary Cards */}
+      {/* Summary Cards */}
       <div className="summary-grid">
         <div className="summary-card total-available">
           <h3>Total Available</h3>
           <div className="amount">${calculation.totalAvailable}</div>
-          <small>Combined account balances</small>
+          <small>From {accounts.length} accounts + settings data</small>
         </div>
 
         <div className="summary-card bills-due">
@@ -193,27 +215,16 @@ const Spendability = () => {
         <div className="summary-card next-payday">
           <h3>Next Payday</h3>
           <div className="amount">{calculation.nextPayday}</div>
-          <small>
-            {calculation.paydaySource === 'yours' ? 'Your paycheck' : 'Wife\'s paycheck'} 
-            ({calculation.daysUntilPay} days)
-          </small>
+          <small>Calculated payday</small>
         </div>
       </div>
 
-      {/* Enhanced Payday Information */}
-      <div className="payday-info-section">
-        <h3>📅 Payday Intelligence</h3>
-        <div className="payday-details">
-          <div className="payday-item">
-            <strong>Next Income:</strong> ${calculation.paydayAmount?.toLocaleString()} in {calculation.daysUntilPay} days
-          </div>
-          <div className="payday-item">
-            <strong>Source:</strong> {calculation.paydaySource === 'yours' ? 'Your bi-weekly paycheck' : 'Wife\'s 15th/30th paycheck'}
-          </div>
-          <div className="payday-item">
-            <strong>Logic:</strong> System automatically chose the earliest upcoming payday
-          </div>
-        </div>
+      {/* Data Sources Debug Info */}
+      <div className="debug-info" style={{ background: '#1a1a1b', padding: '1rem', borderRadius: '8px', margin: '1rem 0' }}>
+        <h4>📊 Data Sources</h4>
+        <p>Bills found: {bills.length} from root bills collection</p>
+        <p>Accounts found: {accounts.length} from root accounts collection</p>
+        <p>Settings found: {settingsData ? 'Yes' : 'No'} from users/steve-colburn/settings/personal</p>
       </div>
 
       {/* Bills Due Before Payday */}
@@ -227,9 +238,7 @@ const Spendability = () => {
                   <span className="bill-name">{bill.name}</span>
                   <small className="due-date">
                     Next Due: {formatDateForDisplay(bill.nextDueDate)}
-                    {bill.recurrence && bill.recurrence !== 'one-time' && (
-                      <span className="recurrence-badge">({bill.recurrence})</span>
-                    )}
+                    <span className="recurrence-badge">({bill.frequency || bill.recurrence})</span>
                   </small>
                 </div>
                 <span className="bill-amount">${bill.amount.toFixed(2)}</span>
@@ -255,9 +264,7 @@ const Spendability = () => {
                         (was {formatDateForDisplay(bill.originalDueDate)})
                       </span>
                     )}
-                    {bill.recurrence && bill.recurrence !== 'one-time' && (
-                      <span className="recurrence-badge">({bill.recurrence})</span>
-                    )}
+                    <span className="recurrence-badge">({bill.frequency || bill.recurrence})</span>
                   </small>
                 </div>
                 <span className="bill-amount">${bill.amount.toFixed(2)}</span>
@@ -267,10 +274,25 @@ const Spendability = () => {
         </div>
       )}
 
-      {/* Current Account Balances */}
-      {settingsData.bankAccounts && (
+      {/* Account Balances */}
+      {accounts.length > 0 && (
         <div className="accounts-section">
-          <h3>🏦 Current Account Balances</h3>
+          <h3>🏦 Account Balances (from accounts collection)</h3>
+          <div className="accounts-grid">
+            {accounts.map((account) => (
+              <div key={account.id} className="account-item">
+                <span>{account.name}</span>
+                <span className="account-balance">${account.balance.toFixed(2)}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Settings Bank Accounts (if accounts collection is empty) */}
+      {accounts.length === 0 && settingsData && settingsData.bankAccounts && (
+        <div className="accounts-section">
+          <h3>🏦 Bank Accounts (from settings)</h3>
           <div className="accounts-grid">
             {Object.entries(settingsData.bankAccounts).map(([key, account]) => (
               <div key={key} className="account-item">
@@ -282,42 +304,6 @@ const Spendability = () => {
           </div>
         </div>
       )}
-
-      {/* Smart Financial Tips */}
-      <div className="tips-section">
-        <h3>💡 Smart Financial Insights</h3>
-        <div className="tips-grid">
-          {parseFloat(calculation.safeToSpend) < 0 ? (
-            <div className="tip negative">
-              <strong>⚠️ Cashflow Warning</strong>
-              <p>You have ${Math.abs(parseFloat(calculation.safeToSpend)).toFixed(2)} more in bills than available funds before your next payday.</p>
-              <ul>
-                <li>Consider moving some bills to after payday if possible</li>
-                <li>Check if any bills can be paid from the upcoming paycheck instead</li>
-                <li>Review if any bills might auto-advance to next month</li>
-              </ul>
-            </div>
-          ) : parseFloat(calculation.safeToSpend) < 100 ? (
-            <div className="tip warning">
-              <strong>💛 Tight Budget</strong>
-              <p>You can safely spend ${calculation.safeToSpend} before your next payday, but you're cutting it close.</p>
-              <p>Consider keeping emergency expenses minimal until payday.</p>
-            </div>
-          ) : (
-            <div className="tip positive">
-              <strong>✅ Healthy Financial Position</strong>
-              <p>You can safely spend ${calculation.safeToSpend} before your next payday while covering all due bills.</p>
-              <p>Your dynamic bill tracking ensures this calculation stays accurate as due dates advance.</p>
-            </div>
-          )}
-          
-          <div className="tip general">
-            <strong>📊 Dynamic Bill Intelligence</strong>
-            <p>Your bills automatically update their due dates. Monthly bills advance from Sept 30th → Oct 30th → Nov 30th without manual updates.</p>
-            <p>The system excludes bills due ON payday since your income arrives the same day.</p>
-          </div>
-        </div>
-      </div>
     </div>
   );
 };
