@@ -126,23 +126,18 @@ const Spendability = () => {
     }
 
     try {
-      // Use next payday from Settings calculation if available, otherwise calculate it
+      // Use the EXACT same payday that Settings calculated and saved
       let nextPayday;
       if (financialData.nextPayday) {
         nextPayday = new Date(financialData.nextPayday);
-      } else if (financialData.lastPayDate) {
-        // Calculate next bi-weekly payday from last pay date
-        const lastPay = new Date(financialData.lastPayDate);
-        nextPayday = new Date(lastPay);
-        nextPayday.setDate(lastPay.getDate() + 14);
       } else {
-        throw new Error('No payday information available');
+        throw new Error('No payday information available - please refresh Settings');
       }
 
       // Process bills with RecurringBillManager to get calculated due dates
       const processedBills = RecurringBillManager.processBills(bills);
 
-      // Filter bills that are due BEFORE the next payday (excluding bills due ON payday)
+      // Filter bills that are due BEFORE the next payday (excluding bills due ON payday)  
       const billsBeforePayday = RecurringBillManager.getBillsDueBefore(processedBills, nextPayday);
 
       // Calculate total amount
