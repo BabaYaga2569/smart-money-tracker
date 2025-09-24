@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
-import { ref, get } from 'firebase/database';
-import { database } from '../firebase';
+import { doc, getDoc, collection, getDocs } from 'firebase/firestore';
+import { db } from '../firebase';
 import { PayCycleCalculator } from '../utils/PayCycleCalculator';
 import { RecurringBillManager } from '../utils/RecurringBillManager';
 import './Spendability.css';
