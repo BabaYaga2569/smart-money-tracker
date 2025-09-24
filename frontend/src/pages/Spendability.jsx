@@ -170,9 +170,13 @@ const Spendability = () => {
   return (
     <div className="spendability-container">
       <div className="page-header">
-        <h2>💰 Spendability Calculator</h2>
-        <p>See how much you can safely spend before your next payday</p>
-      </div>
+  <h2>💰 Spendability Calculator</h2>
+  <p>See how much you can safely spend before your next payday</p>
+</div>
+
+<div style={{background: 'red', padding: '10px', color: 'white'}}>
+  DEBUG: Version {new Date().toISOString()} - If you see this, the component updated
+</div>
 
       {/* Summary Cards - SAME as Settings layout */}
       <div className="summary-grid">
