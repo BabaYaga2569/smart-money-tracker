@@ -1,284 +1,291 @@
-import React, { useState, useEffect } from "react";
-import { doc, getDoc, setDoc } from 'firebase/firestore';
-import { db } from '../firebase';
-import "./Spendability.css";
+import React, { useState, useEffect } from 'react';
+import { ref, get } from 'firebase/database';
+import { database } from '../firebase';
+import { PayCycleCalculator } from '../utils/PayCycleCalculator';
+import { RecurringBillManager } from '../utils/RecurringBillManager';
+import './Spendability.css';
 
 const Spendability = () => {
-  const [accountData, setAccountData] = useState({
-    checking: 0,
-    savings: 0,
-    total: 0
-  });
-
-  const [upcomingBills, setUpcomingBills] = useState([]);
-  const [payCycle, setPayCycle] = useState({
-    nextPayday: "",
-    daysUntilPay: 0
-  });
-
-  const [safetyBuffer, setSafetyBuffer] = useState(200);
-  const [weeklyEssentials, setWeeklyEssentials] = useState(150);
-  const [requestedAmount, setRequestedAmount] = useState("");
+  const [financialData, setFinancialData] = useState(null);
+  const [bills, setBills] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
 
-  // Load data from Firebase
   useEffect(() => {
-    const loadFinancialData = async () => {
+    const fetchData = async () => {
       try {
-        const userId = "steve-colburn";
+        setLoading(true);
+        setError(null);
+
+        // Fetch financial data
+        const financialRef = ref(database, 'financialData');
+        const financialSnapshot = await get(financialRef);
         
-        // Load account data
-        const accountRef = doc(db, 'users', userId, 'financial', 'accounts');
-        const accountSnap = await getDoc(accountRef);
+        if (!financialSnapshot.exists()) {
+          throw new Error('No financial data found. Please set up your finances in Settings first.');
+        }
+
+        const data = financialSnapshot.val();
+        setFinancialData(data);
+
+        // Fetch bills
+        const billsRef = ref(database, 'bills');
+        const billsSnapshot = await get(billsRef);
         
-        if (accountSnap.exists()) {
-          setAccountData(accountSnap.data());
+        if (billsSnapshot.exists()) {
+          const billsData = billsSnapshot.val();
+          const billsArray = Object.entries(billsData).map(([id, bill]) => ({
+            id,
+            ...bill,
+            // Set default recurrence if not specified
+            recurrence: bill.recurrence || 'monthly'
+          }));
+          setBills(billsArray);
         } else {
-          const initialAccountData = {
-            checking: 2847.50,
-            savings: 5420.00,
-            total: 8267.50
-          };
-          await setDoc(accountRef, initialAccountData);
-          setAccountData(initialAccountData);
+          setBills([]);
         }
-
-        // Load bills data
-        const billsRef = doc(db, 'users', userId, 'financial', 'bills');
-        const billsSnap = await getDoc(billsRef);
-        
-        if (billsSnap.exists()) {
-          setUpcomingBills(billsSnap.data().upcoming || []);
-        } else {
-          const initialBills = [
-            { name: "Rent", amount: 1200, dueDate: "2025-09-25" },
-            { name: "Electric", amount: 89.50, dueDate: "2025-09-28" },
-            { name: "Phone", amount: 65.00, dueDate: "2025-09-30" },
-            { name: "Car Insurance", amount: 125.00, dueDate: "2025-10-01" }
-          ];
-          await setDoc(billsRef, { upcoming: initialBills });
-          setUpcomingBills(initialBills);
-        }
-
-        // Load pay cycle data
-        const payCycleRef = doc(db, 'users', userId, 'financial', 'payCycle');
-        const payCycleSnap = await getDoc(payCycleRef);
-        
-        if (payCycleSnap.exists()) {
-          setPayCycle(payCycleSnap.data());
-        } else {
-          const initialPayCycle = {
-            nextPayday: "2025-10-05",
-            daysUntilPay: 13
-          };
-          await setDoc(payCycleRef, initialPayCycle);
-          setPayCycle(initialPayCycle);
-        }
-
-        // Load settings
-        const settingsRef = doc(db, 'users', userId, 'financial', 'settings');
-        const settingsSnap = await getDoc(settingsRef);
-        
-        if (settingsSnap.exists()) {
-          const settings = settingsSnap.data();
-          setSafetyBuffer(settings.safetyBuffer || 200);
-          setWeeklyEssentials(settings.weeklyEssentials || 150);
-        }
-
-        setLoading(false);
       } catch (err) {
-        console.error("Error loading financial data:", err);
-        setError("Could not load financial data. Check console for details.");
+        console.error('Error fetching data:', err);
+        setError(err.message);
+      } finally {
         setLoading(false);
       }
     };
 
-    loadFinancialData();
+    fetchData();
   }, []);
 
-  // Format date for display without timezone conversion
-  const formatDateForDisplay = (dateStr) => {
-    if (!dateStr) return '';
+  // Helper function to format dates for display without timezone issues
+  const formatDateForDisplay = (dateString) => {
+    if (!dateString) return 'No date';
     
-    // Parse YYYY-MM-DD format manually to avoid timezone issues
-    const [year, month, day] = dateStr.split('-').map(num => parseInt(num));
-    const date = new Date(year, month - 1, day); // month is 0-indexed
-    
-    return date.toLocaleDateString();
+    try {
+      // Handle both Date objects and date strings
+      let date;
+      if (dateString instanceof Date) {
+        date = dateString;
+      } else {
+        // Parse date string as local date to avoid timezone shifts
+        const [year, month, day] = dateString.split('-');
+        date = new Date(parseInt(year), parseInt(month) - 1, parseInt(day));
+      }
+      
+      return date.toLocaleDateString('en-US', {
+        year: 'numeric',
+        month: '2-digit',
+        day: '2-digit'
+      });
+    } catch (error) {
+      console.error('Date formatting error:', error);
+      return 'Invalid date';
+    }
   };
 
-  // Calculate safe spendable amount with proper bill filtering
   const calculateSpendability = () => {
-    const today = new Date();
-    const nextPaydayDate = new Date(payCycle.nextPayday);
-    
-    // Filter bills that are due BEFORE payday (not including payday itself)
-    // Bills due ON payday will be covered by the incoming paycheck
-    const billsDueBeforePayday = upcomingBills.filter(bill => {
-      if (!bill.dueDate) return false;
-      
-      const billDueDate = new Date(bill.dueDate);
-      
-      // Only include bills due between today and BEFORE payday
-      // Bills due ON payday don't count since income arrives same day
-      return billDueDate >= today && billDueDate < nextPaydayDate;
-    });
-    
-    const totalBillsDue = billsDueBeforePayday.reduce((sum, bill) => sum + bill.amount, 0);
-    const essentialsNeeded = weeklyEssentials * (payCycle.daysUntilPay / 7);
-    const totalReserved = totalBillsDue + essentialsNeeded + safetyBuffer;
-    
-    return {
-      safeAmount: accountData.total - totalReserved,
-      billsDueBeforePayday: billsDueBeforePayday,
-      totalBillsDue: totalBillsDue
-    };
+    if (!financialData || !bills) {
+      return {
+        totalAvailable: 0,
+        billsDue: 0,
+        safeToSpend: 0,
+        nextPayday: 'Not set',
+        billsBeforePayday: [],
+        processedBills: []
+      };
+    }
+
+    try {
+      // Calculate next payday using PayCycleCalculator
+      const nextPayday = PayCycleCalculator.getNextPayday(
+        financialData.lastPayDate,
+        financialData.wifePayAmount || 0
+      );
+
+      // Process bills with RecurringBillManager to get calculated due dates
+      const processedBills = RecurringBillManager.processBills(bills);
+
+      // Filter bills that are due BEFORE the next payday (excluding bills due ON payday)
+      const billsBeforePayday = RecurringBillManager.getBillsDueBefore(processedBills, nextPayday);
+
+      // Calculate total amount
+      const totalBillAmount = billsBeforePayday.reduce((sum, bill) => {
+        return sum + parseFloat(bill.amount || 0);
+      }, 0);
+
+      // Calculate total available funds
+      const totalAvailable = 
+        parseFloat(financialData.bankOfAmericaChecking || 0) +
+        parseFloat(financialData.bankOfAmericaSavings || 0) +
+        parseFloat(financialData.sofiChecking || 0) +
+        parseFloat(financialData.sofiSavings || 0);
+
+      // Calculate safe to spend amount
+      const safeToSpend = totalAvailable - totalBillAmount;
+
+      return {
+        totalAvailable: totalAvailable.toFixed(2),
+        billsDue: totalBillAmount.toFixed(2),
+        safeToSpend: safeToSpend.toFixed(2),
+        nextPayday: formatDateForDisplay(nextPayday),
+        billsBeforePayday,
+        processedBills
+      };
+    } catch (error) {
+      console.error('Calculation error:', error);
+      return {
+        totalAvailable: 0,
+        billsDue: 0,
+        safeToSpend: 0,
+        nextPayday: 'Error calculating',
+        billsBeforePayday: [],
+        processedBills: []
+      };
+    }
   };
 
-  const spendabilityResult = calculateSpendability();
-  const safeSpendAmount = spendabilityResult.safeAmount;
-  const billsDueBeforePayday = spendabilityResult.billsDueBeforePayday;
-  const totalBillsDue = spendabilityResult.totalBillsDue;
-  
-  const canSpendRequested = requestedAmount ? parseFloat(requestedAmount) <= safeSpendAmount : null;
+  if (loading) return <div className="loading">Loading spendability data...</div>;
+  if (error) return <div className="error">Error: {error}</div>;
 
-  if (loading) {
-    return (
-      <div className="spendability">
-        <div className="loading">Loading your financial data...</div>
-      </div>
-    );
-  }
-
-  if (error) {
-    return (
-      <div className="spendability">
-        <div className="error">
-          <h2>Firebase Connection Error</h2>
-          <p>{error}</p>
-          <p>Make sure you've enabled Firestore in your Firebase console.</p>
-        </div>
-      </div>
-    );
-  }
+  const calculation = calculateSpendability();
 
   return (
-    <div className="spendability">
-      <div className="spendability-header">
-        <h1>Spendability Calculator</h1>
-        <p>Find out how much you can safely spend until your next payday</p>
-        <p className="firebase-status">✅ Connected to Firebase</p>
+    <div className="spendability-container">
+      <div className="page-header">
+        <h2>💰 Spendability Calculator</h2>
+        <p>See how much you can safely spend before your next payday</p>
       </div>
 
-      <div className="spendability-grid">
-        {/* Quick Answer Section */}
-        <div className="quick-check card">
-          <h2>Can I spend this amount?</h2>
-          <div className="amount-input">
-            <span className="dollar-sign">$</span>
-            <input
-              type="number"
-              placeholder="0.00"
-              value={requestedAmount}
-              onChange={(e) => setRequestedAmount(e.target.value)}
-            />
-          </div>
-          
-          {canSpendRequested !== null && (
-            <div className={`answer ${canSpendRequested ? 'safe' : 'unsafe'}`}>
-              {canSpendRequested 
-                ? "✅ Yes, you can safely spend this amount" 
-                : "❌ No, this would exceed your safe spending limit"
-              }
-            </div>
-          )}
+      {/* Summary Cards */}
+      <div className="summary-grid">
+        <div className="summary-card total-available">
+          <h3>Total Available</h3>
+          <div className="amount">${calculation.totalAvailable}</div>
+          <small>Current account balances</small>
         </div>
 
-        {/* Safe Amount Display */}
-        <div className="safe-amount card">
-          <h2>Safe to Spend</h2>
-          <div className="amount-display">
-            <span className="currency">$</span>
-            <span className="amount">{safeSpendAmount.toFixed(2)}</span>
-          </div>
-          <p>Available until {payCycle.nextPayday}</p>
-        </div>
-
-        {/* Account Balances */}
-        <div className="balances card">
-          <h3>Current Balances</h3>
-          <div className="balance-item">
-            <span>Checking</span>
-            <span>${accountData.checking.toFixed(2)}</span>
-          </div>
-          <div className="balance-item">
-            <span>Savings</span>
-            <span>${accountData.savings.toFixed(2)}</span>
-          </div>
-          <div className="balance-total">
-            <span>Total Available</span>
-            <span>${accountData.total.toFixed(2)}</span>
-          </div>
-        </div>
-
-        {/* Upcoming Bills - Only bills due before payday */}
-        <div className="bills card">
+        <div className="summary-card bills-due">
           <h3>Bills Due Before Payday</h3>
-          {billsDueBeforePayday.length === 0 ? (
-            <div className="no-bills">
-              <p>No bills due before your next payday!</p>
-            </div>
-          ) : (
-            <>
-              {billsDueBeforePayday.map((bill, index) => (
-                <div key={index} className="bill-item">
-                  <span>{bill.name}</span>
-                  <div className="bill-details">
-                    <span>${bill.amount.toFixed(2)}</span>
-                    <small className="due-date">Due: {formatDateForDisplay(bill.dueDate)}</small>
+          <div className="amount">${calculation.billsDue}</div>
+          <small>Must be paid before {calculation.nextPayday}</small>
+        </div>
+
+        <div className={`summary-card safe-to-spend ${parseFloat(calculation.safeToSpend) < 0 ? 'negative' : ''}`}>
+          <h3>Safe to Spend</h3>
+          <div className="amount">${calculation.safeToSpend}</div>
+          <small>After covering bills due before payday</small>
+        </div>
+
+        <div className="summary-card next-payday">
+          <h3>Next Payday</h3>
+          <div className="amount">{calculation.nextPayday}</div>
+          <small>Your next income date</small>
+        </div>
+      </div>
+
+      {/* Bills Breakdown */}
+      {calculation.billsBeforePayday.length > 0 && (
+        <div className="bills-section">
+          <h3>📋 Bills Due Before Next Payday ({calculation.nextPayday})</h3>
+          <div className="bills-list">
+            {calculation.billsBeforePayday.map((bill) => (
+              <div key={bill.id || bill.name} className="bill-item">
+                <div className="bill-info">
+                  <span className="bill-name">{bill.name}</span>
+                  <small className="due-date">
+                    Next Due: {formatDateForDisplay(bill.nextDueDate)}
+                    {bill.recurrence && bill.recurrence !== 'one-time' && (
+                      <span className="recurrence-badge">({bill.recurrence})</span>
+                    )}
+                  </small>
+                </div>
+                <span className="bill-amount">${parseFloat(bill.amount || 0).toFixed(2)}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* All Bills Preview */}
+      {calculation.processedBills.length > 0 && (
+        <div className="bills-section">
+          <h3>📅 All Bills (Next Due Dates)</h3>
+          <div className="bills-list">
+            {calculation.processedBills
+              .sort((a, b) => new Date(a.nextDueDate) - new Date(b.nextDueDate))
+              .map((bill) => (
+                <div key={bill.id || bill.name} className="bill-item">
+                  <div className="bill-info">
+                    <span className="bill-name">{bill.name}</span>
+                    <small className="due-date">
+                      Next Due: {formatDateForDisplay(bill.nextDueDate)}
+                      {bill.recurrence && bill.recurrence !== 'one-time' && (
+                        <span className="recurrence-badge">({bill.recurrence})</span>
+                      )}
+                    </small>
                   </div>
+                  <span className="bill-amount">${parseFloat(bill.amount || 0).toFixed(2)}</span>
                 </div>
               ))}
-              <div className="bills-total">
-                <span>Total Bills Due</span>
-                <span>${totalBillsDue.toFixed(2)}</span>
+          </div>
+        </div>
+      )}
+
+      {/* Account Balances */}
+      {financialData && (
+        <div className="accounts-section">
+          <h3>🏦 Current Account Balances</h3>
+          <div className="accounts-grid">
+            {financialData.bankOfAmericaChecking && (
+              <div className="account-item">
+                <span>BofA Checking</span>
+                <span>${parseFloat(financialData.bankOfAmericaChecking).toFixed(2)}</span>
               </div>
-            </>
+            )}
+            {financialData.bankOfAmericaSavings && (
+              <div className="account-item">
+                <span>BofA Savings</span>
+                <span>${parseFloat(financialData.bankOfAmericaSavings).toFixed(2)}</span>
+              </div>
+            )}
+            {financialData.sofiChecking && (
+              <div className="account-item">
+                <span>SoFi Checking</span>
+                <span>${parseFloat(financialData.sofiChecking).toFixed(2)}</span>
+              </div>
+            )}
+            {financialData.sofiSavings && (
+              <div className="account-item">
+                <span>SoFi Savings</span>
+                <span>${parseFloat(financialData.sofiSavings).toFixed(2)}</span>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* Helpful Tips */}
+      <div className="tips-section">
+        <h3>💡 Financial Tips</h3>
+        <div className="tips-grid">
+          {parseFloat(calculation.safeToSpend) < 0 ? (
+            <div className="tip negative">
+              <strong>⚠️ Negative Balance Warning</strong>
+              <p>You have more bills due before payday than available funds. Consider:</p>
+              <ul>
+                <li>Moving some bills to after payday</li>
+                <li>Using emergency funds if available</li>
+                <li>Contacting creditors to adjust payment dates</li>
+              </ul>
+            </div>
+          ) : (
+            <div className="tip positive">
+              <strong>✅ Good Financial Position</strong>
+              <p>You can safely spend ${calculation.safeToSpend} before your next payday while covering all bills due.</p>
+            </div>
           )}
-        </div>
-
-        {/* Breakdown */}
-        <div className="breakdown card">
-          <h3>Calculation Breakdown</h3>
-          <div className="breakdown-item">
-            <span>Total Available</span>
-            <span>${accountData.total.toFixed(2)}</span>
-          </div>
-          <div className="breakdown-item">
-            <span>- Bills Due Before Payday</span>
-            <span>-${totalBillsDue.toFixed(2)}</span>
-          </div>
-          <div className="breakdown-item">
-            <span>- Weekly Essentials ({payCycle.daysUntilPay} days)</span>
-            <span>-${(weeklyEssentials * (payCycle.daysUntilPay / 7)).toFixed(2)}</span>
-          </div>
-          <div className="breakdown-item">
-            <span>- Safety Buffer</span>
-            <span>-${safetyBuffer.toFixed(2)}</span>
-          </div>
-          <div className="breakdown-total">
-            <span>Safe to Spend</span>
-            <span>${safeSpendAmount.toFixed(2)}</span>
-          </div>
-        </div>
-
-        {/* Pay Cycle Info */}
-        <div className="paycycle card">
-          <h3>Next Payday</h3>
-          <div className="payday-info">
-            <div className="payday-date">{payCycle.nextPayday}</div>
-            <div className="days-remaining">{payCycle.daysUntilPay} days</div>
+          
+          <div className="tip general">
+            <strong>📊 Smart Spending</strong>
+            <p>Consider keeping 10-20% of your safe-to-spend amount as a buffer for unexpected expenses.</p>
           </div>
         </div>
       </div>
