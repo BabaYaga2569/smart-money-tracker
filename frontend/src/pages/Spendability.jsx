@@ -13,46 +13,44 @@ const Spendability = () => {
 
   useEffect(() => {
     const fetchData = async () => {
-  try {
-    setLoading(true);
-    setError(null);
+      try {
+        setLoading(true);
+        setError(null);
 
-    // Fetch financial data from Firestore
-    const financialDocRef = doc(db, 'financialData', 'main');
-    const financialDocSnap = await getDoc(financialDocRef);
-    
-    if (!financialDocSnap.exists()) {
-      throw new Error('No financial data found. Please set up your finances in Settings first.');
-    }
+        // Fetch financial data
+        const financialRef = ref(database, 'financialData');
+        const financialSnapshot = await get(financialRef);
+        
+        if (!financialSnapshot.exists()) {
+          throw new Error('No financial data found. Please set up your finances in Settings first.');
+        }
 
-    const data = financialDocSnap.data();
-    setFinancialData(data);
+        const data = financialSnapshot.val();
+        setFinancialData(data);
 
-    // Fetch bills from Firestore
-    const billsCollectionRef = collection(db, 'bills');
-    const billsQuerySnapshot = await getDocs(billsCollectionRef);
-    
-    if (!billsQuerySnapshot.empty) {
-      const billsArray = [];
-      billsQuerySnapshot.forEach((doc) => {
-        billsArray.push({
-          id: doc.id,
-          ...doc.data(),
-          // Set default recurrence if not specified
-          recurrence: doc.data().recurrence || 'monthly'
-        });
-      });
-      setBills(billsArray);
-    } else {
-      setBills([]);
-    }
-  } catch (err) {
-    console.error('Error fetching data:', err);
-    setError(err.message);
-  } finally {
-    setLoading(false);
-  }
-};
+        // Fetch bills
+        const billsRef = ref(database, 'bills');
+        const billsSnapshot = await get(billsRef);
+        
+        if (billsSnapshot.exists()) {
+          const billsData = billsSnapshot.val();
+          const billsArray = Object.entries(billsData).map(([id, bill]) => ({
+            id,
+            ...bill,
+            // Set default recurrence if not specified
+            recurrence: bill.recurrence || 'monthly'
+          }));
+          setBills(billsArray);
+        } else {
+          setBills([]);
+        }
+      } catch (err) {
+        console.error('Error fetching data:', err);
+        setError(err.message);
+      } finally {
+        setLoading(false);
+      }
+    };
 
     fetchData();
   }, []);
