@@ -1,628 +1,328 @@
-import React, { useState, useEffect } from "react";
-import { doc, getDoc, setDoc } from 'firebase/firestore';
+import React, { useState, useEffect } from 'react';
+import { doc, getDoc, collection, getDocs } from 'firebase/firestore';
 import { db } from '../firebase';
 import { PayCycleCalculator } from '../utils/PayCycleCalculator';
-import "./Settings.css";
+import { RecurringBillManager } from '../utils/RecurringBillManager';
+import './Spendability.css';
 
-const Settings = () => {
+const Spendability = () => {
+  const [financialData, setFinancialData] = useState(null);
+  const [bills, setBills] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [saving, setSaving] = useState(false);
-  const [successMessage, setSuccessMessage] = useState("");
-  const [uploadedBills, setUploadedBills] = useState([]);
-  const [showUploadPreview, setShowUploadPreview] = useState(false);
+  const [error, setError] = useState(null);
 
-  // User info
-  const [userInfo, setUserInfo] = useState({
-    yourName: "",
-    spouseName: ""
-  });
-
-  // Pay schedules with dynamic calculation structure
-  const [paySchedules, setPaySchedules] = useState({
-    yours: {
-      type: "bi-weekly",
-      amount: "",
-      lastPaydate: "", // Changed from nextPayDate to lastPaydate
-      bankSplit: {
-        fixedAmount: { bank: "SoFi", amount: "" },
-        remainder: { bank: "BofA" }
-      }
-    },
-    spouse: {
-      type: "bi-monthly", 
-      amount: "",
-      dates: [15, 30]
-    }
-  });
-
-  // Bank accounts
-  const [bankAccounts, setBankAccounts] = useState({
-    bofa: { name: "Bank of America", type: "checking", balance: "", primary: true },
-    sofi: { name: "SoFi", type: "savings", balance: "", primary: false },
-    usaa: { name: "USAA", type: "checking", balance: "", primary: false },
-    cap1: { name: "Capital One", type: "savings", balance: "", primary: false }
-  });
-
-  // Bills
-  const [bills, setBills] = useState([
-    { name: "", amount: "", dueDate: "", recurring: true }
-  ]);
-
-  // Settings
-  const [preferences, setPreferences] = useState({
-    safetyBuffer: 200,
-    weeklyEssentials: 150,
-    autoCalculatePayday: true
-  });
-
-  const userId = "steve-colburn";
-
-  // Load existing data
   useEffect(() => {
-    const loadSettings = async () => {
+    const fetchData = async () => {
       try {
+        setLoading(true);
+        setError(null);
+        
+        const userId = "steve-colburn";
+
+        // Fetch financial accounts data
+        const accountsRef = doc(db, 'users', userId, 'financial', 'accounts');
+        const accountsSnap = await getDoc(accountsRef);
+        
+        // Fetch pay cycle data
+        const payCycleRef = doc(db, 'users', userId, 'financial', 'payCycle');
+        const payCycleSnap = await getDoc(payCycleRef);
+        
+        // Fetch settings data for pay schedule info
         const settingsRef = doc(db, 'users', userId, 'settings', 'personal');
         const settingsSnap = await getDoc(settingsRef);
         
-        if (settingsSnap.exists()) {
-          const data = settingsSnap.data();
+        if (!accountsSnap.exists() && !settingsSnap.exists()) {
+          throw new Error('No financial data found. Please set up your finances in Settings first.');
+        }
+
+        // Combine the data into expected format
+        const accountsData = accountsSnap.exists() ? accountsSnap.data() : {};
+        const payCycleData = payCycleSnap.exists() ? payCycleSnap.data() : {};
+        const settingsData = settingsSnap.exists() ? settingsSnap.data() : {};
+        
+        // Create unified financial data object
+        const unifiedFinancialData = {
+          // Account balances - map from Settings bankAccounts structure
+          bankOfAmericaChecking: settingsData.bankAccounts?.bofa?.balance || 0,
+          bankOfAmericaSavings: 0, // Not in current structure
+          sofiChecking: settingsData.bankAccounts?.sofi?.balance || 0,
+          sofiSavings: 0, // Not in current structure
+          totalBalance: accountsData.total || 0,
           
-          // Handle user info
-          if (data.userInfo) {
-            setUserInfo(data.userInfo);
-          }
+          // Pay schedule data
+          lastPayDate: settingsData.paySchedules?.yours?.lastPaydate || '',
+          wifePayAmount: settingsData.paySchedules?.spouse?.amount || 0,
           
-          // Handle pay schedules with migration
-          if (data.paySchedules) {
-            const loadedPaySchedules = { ...paySchedules };
-            
-            if (data.paySchedules.yours) {
-              loadedPaySchedules.yours = {
-                ...loadedPaySchedules.yours,
-                ...data.paySchedules.yours
-              };
-              
-              // Migrate old percentage structure to new fixed amount structure
-              if (data.paySchedules.yours.bankSplit && !data.paySchedules.yours.bankSplit.fixedAmount) {
-                loadedPaySchedules.yours.bankSplit = {
-                  fixedAmount: { bank: "SoFi", amount: "" },
-                  remainder: { bank: "BofA" }
-                };
-              }
-            }
-            
-            if (data.paySchedules.spouse) {
-              loadedPaySchedules.spouse = {
-                ...loadedPaySchedules.spouse,
-                ...data.paySchedules.spouse
-              };
-            }
-            
-            setPaySchedules(loadedPaySchedules);
-          }
-          
-          // Handle other data
-          if (data.bankAccounts) {
-            setBankAccounts({ ...bankAccounts, ...data.bankAccounts });
-          }
-          
-          if (data.bills && Array.isArray(data.bills)) {
-            setBills(data.bills.length > 0 ? data.bills : bills);
-          }
-          
-          if (data.preferences) {
-            setPreferences({ ...preferences, ...data.preferences });
-          }
+          // Pay cycle info
+          nextPayday: payCycleData.nextPayday,
+          daysUntilPay: payCycleData.daysUntilPay,
+          paydaySource: payCycleData.paydaySource,
+          paydayAmount: payCycleData.paydayAmount
+        };
+
+        setFinancialData(unifiedFinancialData);
+
+        // Fetch bills from settings
+        if (settingsData.bills && Array.isArray(settingsData.bills)) {
+          const billsWithRecurrence = settingsData.bills.map(bill => ({
+            id: bill.name.replace(/\s+/g, '-').toLowerCase(),
+            name: bill.name,
+            amount: bill.amount,
+            dueDate: bill.dueDate,
+            recurrence: bill.recurring ? 'monthly' : 'one-time'
+          }));
+          setBills(billsWithRecurrence);
+        } else {
+          setBills([]);
         }
         
-        setLoading(false);
-      } catch (error) {
-        console.error("Error loading settings:", error);
+      } catch (err) {
+        console.error('Error fetching data:', err);
+        setError(err.message);
+      } finally {
         setLoading(false);
       }
     };
 
-    loadSettings();
+    fetchData();
   }, []);
 
-  // Handle file upload
-  const handleFileUpload = (event) => {
-    const file = event.target.files[0];
-    if (!file) return;
-
-    const reader = new FileReader();
+  // Helper function to format dates for display without timezone issues
+  const formatDateForDisplay = (dateString) => {
+    if (!dateString) return 'No date';
     
-    reader.onload = (e) => {
-      const text = e.target.result;
-      const isCSV = file.name.toLowerCase().endsWith('.csv');
-      
-      if (isCSV) {
-        parseCSV(text);
-      } else {
-        // Handle Excel files here if needed
-        alert('Excel support coming soon. Please use CSV format for now.');
-      }
-    };
-    
-    reader.readAsText(file);
-  };
-
-  // Parse CSV data
-  const parseCSV = (text) => {
-    const lines = text.split('\n').filter(line => line.trim());
-    if (lines.length < 2) {
-      alert('CSV must have at least a header row and one data row');
-      return;
-    }
-
-    const headers = lines[0].split(',').map(h => h.trim().toLowerCase());
-    const parsedBills = [];
-
-    // Find column indices
-    const nameIndex = headers.findIndex(h => h.includes('name') || h.includes('bill') || h.includes('payee'));
-    const amountIndex = headers.findIndex(h => h.includes('amount') || h.includes('cost') || h.includes('payment'));
-    const dateIndex = headers.findIndex(h => h.includes('date') || h.includes('due') || h.includes('day'));
-
-    if (nameIndex === -1 || amountIndex === -1) {
-      alert('CSV must have columns for bill name and amount. Optional: due date or day of month');
-      return;
-    }
-
-    // Parse data rows
-    for (let i = 1; i < lines.length; i++) {
-      const values = lines[i].split(',').map(v => v.trim().replace(/"/g, ''));
-      
-      if (values.length > Math.max(nameIndex, amountIndex)) {
-        const rawDate = dateIndex !== -1 ? values[dateIndex] : '';
-        
-        const bill = {
-          name: values[nameIndex] || '',
-          amount: values[amountIndex]?.replace(/[^0-9.-]/g, '') || '',
-          dueDate: smartFormatDate(rawDate),
-          recurring: true
-        };
-        
-        if (bill.name && bill.amount) {
-          parsedBills.push(bill);
-        }
-      }
-    }
-
-    setUploadedBills(parsedBills);
-    setShowUploadPreview(true);
-  };
-
-  // Smart date formatting for recurring bills - FIXED TIMEZONE ISSUE
-  const smartFormatDate = (dateStr) => {
-    if (!dateStr) return '';
-    
-    // If it's just a number (day of month), convert to next occurrence
-    const dayOnly = parseInt(dateStr);
-    if (!isNaN(dayOnly) && dayOnly >= 1 && dayOnly <= 31) {
-      const today = new Date();
-      const currentMonth = today.getMonth();
-      const currentYear = today.getFullYear();
-      const currentDay = today.getDate();
-      
-      // If the day hasn't passed this month, use this month
-      // Otherwise, use next month
-      let targetMonth = currentMonth;
-      let targetYear = currentYear;
-      
-      if (dayOnly <= currentDay) {
-        // Day already passed this month, use next month
-        targetMonth += 1;
-        if (targetMonth > 11) {
-          targetMonth = 0;
-          targetYear += 1;
-        }
-      }
-      
-      // Create date in local timezone and format without UTC conversion
-      const nextDueDate = new Date(targetYear, targetMonth, dayOnly);
-      
-      // Format as YYYY-MM-DD without timezone conversion
-      const year = nextDueDate.getFullYear();
-      const month = String(nextDueDate.getMonth() + 1).padStart(2, '0');
-      const day = String(nextDueDate.getDate()).padStart(2, '0');
-      
-      return `${year}-${month}-${day}`;
-    }
-    
-    // Otherwise, try to parse as a full date
-    const date = new Date(dateStr);
-    if (isNaN(date)) return '';
-    
-    // Format without timezone conversion
-    const year = date.getFullYear();
-    const month = String(date.getMonth() + 1).padStart(2, '0');
-    const day = String(date.getDate()).padStart(2, '0');
-    
-    return `${year}-${month}-${day}`;
-  };
-
-  // Import uploaded bills
-  const importUploadedBills = () => {
-    setBills([...bills.filter(bill => bill.name || bill.amount), ...uploadedBills]);
-    setUploadedBills([]);
-    setShowUploadPreview(false);
-    setSuccessMessage('Bills imported successfully!');
-    setTimeout(() => setSuccessMessage(''), 3000);
-  };
-
-  // Save settings to Firebase
-  const saveSettings = async () => {
-    setSaving(true);
     try {
-      const settingsData = {
-        userInfo,
-        paySchedules,
-        bankAccounts,
-        bills: bills.filter(bill => bill.name && bill.amount),
-        preferences,
-        lastUpdated: new Date().toISOString()
-      };
-
-      const settingsRef = doc(db, 'users', userId, 'settings', 'personal');
-      await setDoc(settingsRef, settingsData);
-      await updateFinancialData();
-
-      setSuccessMessage("Settings saved successfully!");
-      setTimeout(() => setSuccessMessage(""), 3000);
+      // Handle both Date objects and date strings
+      let date;
+      if (dateString instanceof Date) {
+        date = dateString;
+      } else {
+        // Parse date string as local date to avoid timezone shifts
+        const [year, month, day] = dateString.split('-');
+        date = new Date(parseInt(year), parseInt(month) - 1, parseInt(day));
+      }
+      
+      return date.toLocaleDateString('en-US', {
+        year: 'numeric',
+        month: '2-digit',
+        day: '2-digit'
+      });
     } catch (error) {
-      console.error("Error saving settings:", error);
+      console.error('Date formatting error:', error);
+      return 'Invalid date';
     }
-    setSaving(false);
   };
 
-  // Update financial data for calculations using dynamic pay cycle
-  const updateFinancialData = async () => {
-    const totalBalance = Object.values(bankAccounts).reduce((sum, account) => 
-      sum + (parseFloat(account.balance) || 0), 0
-    );
-    
-    const accountData = {
-      checking: Object.values(bankAccounts).filter(acc => acc.type === 'checking').reduce((sum, acc) => sum + (parseFloat(acc.balance) || 0), 0),
-      savings: Object.values(bankAccounts).filter(acc => acc.type === 'savings').reduce((sum, acc) => sum + (parseFloat(acc.balance) || 0), 0),
-      total: totalBalance
-    };
+  const calculateSpendability = () => {
+    if (!financialData || !bills) {
+      return {
+        totalAvailable: 0,
+        billsDue: 0,
+        safeToSpend: 0,
+        nextPayday: 'Not set',
+        billsBeforePayday: [],
+        processedBills: []
+      };
+    }
 
-    const upcomingBills = bills.filter(bill => bill.name && bill.amount).map(bill => ({
-      name: bill.name,
-      amount: parseFloat(bill.amount) || 0,
-      dueDate: bill.dueDate
-    }));
+    try {
+      // Calculate next payday using PayCycleCalculator
+      const nextPayday = PayCycleCalculator.getNextPayday(
+        financialData.lastPayDate,
+        financialData.wifePayAmount || 0
+      );
 
-    // Use PayCycleCalculator for dynamic payday calculation
-    const nextPaydayInfo = PayCycleCalculator.calculateNextPayday(
-      paySchedules.yours,
-      paySchedules.spouse
-    );
+      // Process bills with RecurringBillManager to get calculated due dates
+      const processedBills = RecurringBillManager.processBills(bills);
 
-    const payCycleData = {
-      nextPayday: nextPaydayInfo.date,
-      daysUntilPay: nextPaydayInfo.daysUntil,
-      paydaySource: nextPaydayInfo.source,
-      paydayAmount: nextPaydayInfo.amount
-    };
+      // Filter bills that are due BEFORE the next payday (excluding bills due ON payday)
+      const billsBeforePayday = RecurringBillManager.getBillsDueBefore(processedBills, nextPayday);
 
-    await setDoc(doc(db, 'users', userId, 'financial', 'accounts'), accountData);
-    await setDoc(doc(db, 'users', userId, 'financial', 'bills'), { upcoming: upcomingBills });
-    await setDoc(doc(db, 'users', userId, 'financial', 'payCycle'), payCycleData);
-    await setDoc(doc(db, 'users', userId, 'financial', 'settings'), {
-      safetyBuffer: preferences.safetyBuffer,
-      weeklyEssentials: preferences.weeklyEssentials
-    });
+      // Calculate total amount
+      const totalBillAmount = billsBeforePayday.reduce((sum, bill) => {
+        return sum + parseFloat(bill.amount || 0);
+      }, 0);
+
+      // Calculate total available funds
+      const totalAvailable = 
+        parseFloat(financialData.bankOfAmericaChecking || 0) +
+        parseFloat(financialData.bankOfAmericaSavings || 0) +
+        parseFloat(financialData.sofiChecking || 0) +
+        parseFloat(financialData.sofiSavings || 0);
+
+      // Calculate safe to spend amount
+      const safeToSpend = totalAvailable - totalBillAmount;
+
+      return {
+        totalAvailable: totalAvailable.toFixed(2),
+        billsDue: totalBillAmount.toFixed(2),
+        safeToSpend: safeToSpend.toFixed(2),
+        nextPayday: formatDateForDisplay(nextPayday),
+        billsBeforePayday,
+        processedBills
+      };
+    } catch (error) {
+      console.error('Calculation error:', error);
+      return {
+        totalAvailable: 0,
+        billsDue: 0,
+        safeToSpend: 0,
+        nextPayday: 'Error calculating',
+        billsBeforePayday: [],
+        processedBills: []
+      };
+    }
   };
 
-  // Add new bill
-  const addBill = () => {
-    setBills([...bills, { name: "", amount: "", dueDate: "", recurring: true }]);
-  };
+  if (loading) return <div className="loading">Loading spendability data...</div>;
+  if (error) return <div className="error">Error: {error}</div>;
 
-  // Remove bill
-  const removeBill = (index) => {
-    setBills(bills.filter((_, i) => i !== index));
-  };
-
-  // Update bill
-  const updateBill = (index, field, value) => {
-    const updatedBills = [...bills];
-    updatedBills[index][field] = value;
-    setBills(updatedBills);
-  };
-
-  if (loading) {
-    return (
-      <div className="settings">
-        <div className="loading">Loading settings...</div>
-      </div>
-    );
-  }
+  const calculation = calculateSpendability();
 
   return (
-    <div className="settings">
-      <div className="settings-header">
-        <h1>Financial Settings</h1>
-        <p>Configure your pay schedules, bank accounts, and bills</p>
-        {successMessage && <div className="success-message">{successMessage}</div>}
+    <div className="spendability-container">
+      <div className="page-header">
+        <h2>💰 Spendability Calculator</h2>
+        <p>See how much you can safely spend before your next payday</p>
       </div>
 
-      <div className="settings-grid">
-        {/* User Information */}
-        <div className="settings-section">
-          <h2>Personal Information</h2>
-          <div className="form-group">
-            <label>Your Name</label>
-            <input
-              type="text"
-              value={userInfo.yourName}
-              onChange={(e) => setUserInfo({...userInfo, yourName: e.target.value})}
-              placeholder="Your name"
-            />
-          </div>
-          <div className="form-group">
-            <label>Spouse Name</label>
-            <input
-              type="text"
-              value={userInfo.spouseName}
-              onChange={(e) => setUserInfo({...userInfo, spouseName: e.target.value})}
-              placeholder="Spouse name"
-            />
-          </div>
+      {/* Summary Cards */}
+      <div className="summary-grid">
+        <div className="summary-card total-available">
+          <h3>Total Available</h3>
+          <div className="amount">${calculation.totalAvailable}</div>
+          <small>Current account balances</small>
         </div>
 
-        {/* Your Pay Schedule */}
-        <div className="settings-section">
-          <h2>Your Pay Schedule (Bi-Weekly)</h2>
-          <div className="form-group">
-            <label>Pay Amount</label>
-            <input
-              type="number"
-              value={paySchedules.yours.amount}
-              onChange={(e) => setPaySchedules({
-                ...paySchedules,
-                yours: {...paySchedules.yours, amount: e.target.value}
-              })}
-              placeholder="2500.00"
-            />
-          </div>
-          <div className="form-group">
-            <label>Last Pay Date</label>
-            <input
-              type="date"
-              value={paySchedules.yours.lastPaydate}
-              onChange={(e) => setPaySchedules({
-                ...paySchedules,
-                yours: {...paySchedules.yours, lastPaydate: e.target.value}
-              })}
-            />
-            <small>Your most recent payday - we'll calculate future paydays automatically</small>
-          </div>
-          <div className="form-group">
-            <label>Fixed Amount to SoFi</label>
-            <input
-              type="number"
-              value={paySchedules.yours.bankSplit?.fixedAmount?.amount || ""}
-              onChange={(e) => setPaySchedules({
-                ...paySchedules,
-                yours: {
-                  ...paySchedules.yours,
-                  bankSplit: {
-                    ...paySchedules.yours.bankSplit,
-                    fixedAmount: {
-                      ...paySchedules.yours.bankSplit.fixedAmount,
-                      amount: e.target.value
-                    }
-                  }
-                }
-              })}
-              placeholder="500.00"
-            />
-            <small>Fixed amount that goes to SoFi each paycheck</small>
-          </div>
-          <div className="form-group">
-            <label>Remainder Goes To</label>
-            <select
-              value={paySchedules.yours.bankSplit?.remainder?.bank || "BofA"}
-              onChange={(e) => setPaySchedules({
-                ...paySchedules,
-                yours: {
-                  ...paySchedules.yours,
-                  bankSplit: {
-                    ...paySchedules.yours.bankSplit,
-                    remainder: {bank: e.target.value}
-                  }
-                }
-              })}
-            >
-              <option value="BofA">Bank of America</option>
-              <option value="SoFi">SoFi</option>
-              <option value="USAA">USAA</option>
-              <option value="Cap1">Capital One</option>
-            </select>
-            <small>Where the rest of your paycheck goes</small>
-          </div>
+        <div className="summary-card bills-due">
+          <h3>Bills Due Before Payday</h3>
+          <div className="amount">${calculation.billsDue}</div>
+          <small>Must be paid before {calculation.nextPayday}</small>
         </div>
 
-        {/* Spouse Pay Schedule */}
-        <div className="settings-section">
-          <h2>Spouse Pay Schedule (15th & 30th)</h2>
-          <div className="form-group">
-            <label>Pay Amount</label>
-            <input
-              type="number"
-              value={paySchedules.spouse.amount}
-              onChange={(e) => setPaySchedules({
-                ...paySchedules,
-                spouse: {...paySchedules.spouse, amount: e.target.value}
-              })}
-              placeholder="3000.00"
-            />
-          </div>
-          <div className="pay-dates">
-            <span>Pays on the 15th and 30th of each month</span>
-            <small>(If weekend, pays Friday before)</small>
-          </div>
+        <div className={`summary-card safe-to-spend ${parseFloat(calculation.safeToSpend) < 0 ? 'negative' : ''}`}>
+          <h3>Safe to Spend</h3>
+          <div className="amount">${calculation.safeToSpend}</div>
+          <small>After covering bills due before payday</small>
         </div>
 
-        {/* Bank Accounts */}
-        <div className="settings-section full-width">
-          <h2>Bank Accounts</h2>
-          <div className="bank-grid">
-            {Object.entries(bankAccounts).map(([key, account]) => (
-              <div key={key} className="bank-account">
-                <h3>{account.name}</h3>
-                <div className="form-group">
-                  <label>Account Type</label>
-                  <select
-                    value={account.type}
-                    onChange={(e) => setBankAccounts({
-                      ...bankAccounts,
-                      [key]: {...account, type: e.target.value}
-                    })}
-                  >
-                    <option value="checking">Checking</option>
-                    <option value="savings">Savings</option>
-                  </select>
+        <div className="summary-card next-payday">
+          <h3>Next Payday</h3>
+          <div className="amount">{calculation.nextPayday}</div>
+          <small>Your next income date</small>
+        </div>
+      </div>
+
+      {/* Bills Breakdown */}
+      {calculation.billsBeforePayday.length > 0 && (
+        <div className="bills-section">
+          <h3>📋 Bills Due Before Next Payday ({calculation.nextPayday})</h3>
+          <div className="bills-list">
+            {calculation.billsBeforePayday.map((bill) => (
+              <div key={bill.id || bill.name} className="bill-item">
+                <div className="bill-info">
+                  <span className="bill-name">{bill.name}</span>
+                  <small className="due-date">
+                    Next Due: {formatDateForDisplay(bill.nextDueDate)}
+                    {bill.recurrence && bill.recurrence !== 'one-time' && (
+                      <span className="recurrence-badge">({bill.recurrence})</span>
+                    )}
+                  </small>
                 </div>
-                <div className="form-group">
-                  <label>Current Balance</label>
-                  <input
-                    type="number"
-                    value={account.balance}
-                    onChange={(e) => setBankAccounts({
-                      ...bankAccounts,
-                      [key]: {...account, balance: e.target.value}
-                    })}
-                    placeholder="0.00"
-                  />
-                </div>
+                <span className="bill-amount">${parseFloat(bill.amount || 0).toFixed(2)}</span>
               </div>
             ))}
           </div>
         </div>
+      )}
 
-        {/* Bills */}
-        <div className="settings-section full-width">
-          <h2>Recurring Bills</h2>
-          
-          {/* File Upload Section */}
-          <div className="upload-section">
-            <h3>Import from Spreadsheet</h3>
-            <div className="upload-instructions">
-              <p>Upload a CSV file with columns for: Bill Name, Amount, Due Date (optional)</p>
-              <p>Example: <code>Bill Name,Amount,Due Date</code></p>
-            </div>
-            <input
-              type="file"
-              accept=".csv"
-              onChange={handleFileUpload}
-              className="file-input"
-            />
-          </div>
-
-          {/* Upload Preview */}
-          {showUploadPreview && (
-            <div className="upload-preview">
-              <h3>Preview Imported Bills ({uploadedBills.length} found)</h3>
-              <div className="preview-table">
-                {uploadedBills.slice(0, 5).map((bill, index) => (
-                  <div key={index} className="preview-row">
-                    <span>{bill.name}</span>
-                    <span>${bill.amount}</span>
-                    <span>{bill.dueDate || 'No date'}</span>
+      {/* All Bills Preview */}
+      {calculation.processedBills.length > 0 && (
+        <div className="bills-section">
+          <h3>📅 All Bills (Next Due Dates)</h3>
+          <div className="bills-list">
+            {calculation.processedBills
+              .sort((a, b) => new Date(a.nextDueDate) - new Date(b.nextDueDate))
+              .map((bill) => (
+                <div key={bill.id || bill.name} className="bill-item">
+                  <div className="bill-info">
+                    <span className="bill-name">{bill.name}</span>
+                    <small className="due-date">
+                      Next Due: {formatDateForDisplay(bill.nextDueDate)}
+                      {bill.recurrence && bill.recurrence !== 'one-time' && (
+                        <span className="recurrence-badge">({bill.recurrence})</span>
+                      )}
+                    </small>
                   </div>
-                ))}
-                {uploadedBills.length > 5 && <p>...and {uploadedBills.length - 5} more</p>}
+                  <span className="bill-amount">${parseFloat(bill.amount || 0).toFixed(2)}</span>
+                </div>
+              ))}
+          </div>
+        </div>
+      )}
+
+      {/* Account Balances */}
+      {financialData && (
+        <div className="accounts-section">
+          <h3>🏦 Current Account Balances</h3>
+          <div className="accounts-grid">
+            {financialData.bankOfAmericaChecking && (
+              <div className="account-item">
+                <span>BofA Checking</span>
+                <span>${parseFloat(financialData.bankOfAmericaChecking).toFixed(2)}</span>
               </div>
-              <div className="preview-actions">
-                <button onClick={importUploadedBills} className="import-btn">
-                  Import All Bills
-                </button>
-                <button onClick={() => setShowUploadPreview(false)} className="cancel-btn">
-                  Cancel
-                </button>
+            )}
+            {financialData.bankOfAmericaSavings && (
+              <div className="account-item">
+                <span>BofA Savings</span>
+                <span>${parseFloat(financialData.bankOfAmericaSavings).toFixed(2)}</span>
               </div>
+            )}
+            {financialData.sofiChecking && (
+              <div className="account-item">
+                <span>SoFi Checking</span>
+                <span>${parseFloat(financialData.sofiChecking).toFixed(2)}</span>
+              </div>
+            )}
+            {financialData.sofiSavings && (
+              <div className="account-item">
+                <span>SoFi Savings</span>
+                <span>${parseFloat(financialData.sofiSavings).toFixed(2)}</span>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* Helpful Tips */}
+      <div className="tips-section">
+        <h3>💡 Financial Tips</h3>
+        <div className="tips-grid">
+          {parseFloat(calculation.safeToSpend) < 0 ? (
+            <div className="tip negative">
+              <strong>⚠️ Negative Balance Warning</strong>
+              <p>You have more bills due before payday than available funds. Consider:</p>
+              <ul>
+                <li>Moving some bills to after payday</li>
+                <li>Using emergency funds if available</li>
+                <li>Contacting creditors to adjust payment dates</li>
+              </ul>
+            </div>
+          ) : (
+            <div className="tip positive">
+              <strong>✅ Good Financial Position</strong>
+              <p>You can safely spend ${calculation.safeToSpend} before your next payday while covering all bills due.</p>
             </div>
           )}
-
-          {/* Manual Bill Entry */}
-          {bills.map((bill, index) => (
-            <div key={index} className="bill-row">
-              <input
-                type="text"
-                placeholder="Bill name"
-                value={bill.name}
-                onChange={(e) => updateBill(index, 'name', e.target.value)}
-              />
-              <input
-                type="number"
-                placeholder="Amount"
-                value={bill.amount}
-                onChange={(e) => updateBill(index, 'amount', e.target.value)}
-              />
-              <input
-                type="date"
-                value={bill.dueDate}
-                onChange={(e) => updateBill(index, 'dueDate', e.target.value)}
-              />
-              <button 
-                type="button" 
-                onClick={() => removeBill(index)}
-                className="remove-btn"
-              >
-                Remove
-              </button>
-            </div>
-          ))}
-          <button type="button" onClick={addBill} className="add-btn">
-            Add Bill
-          </button>
-        </div>
-
-        {/* Preferences */}
-        <div className="settings-section">
-          <h2>Spending Preferences</h2>
-          <div className="form-group">
-            <label>Safety Buffer</label>
-            <input
-              type="number"
-              value={preferences.safetyBuffer}
-              onChange={(e) => setPreferences({
-                ...preferences,
-                safetyBuffer: parseFloat(e.target.value) || 0
-              })}
-            />
-            <small>Emergency fund amount to keep untouched</small>
-          </div>
-          <div className="form-group">
-            <label>Weekly Essentials</label>
-            <input
-              type="number"
-              value={preferences.weeklyEssentials}
-              onChange={(e) => setPreferences({
-                ...preferences,
-                weeklyEssentials: parseFloat(e.target.value) || 0
-              })}
-            />
-            <small>Groceries, gas, and other essentials per week</small>
+          
+          <div className="tip general">
+            <strong>📊 Smart Spending</strong>
+            <p>Consider keeping 10-20% of your safe-to-spend amount as a buffer for unexpected expenses.</p>
           </div>
         </div>
-      </div>
-
-      {/* Save Button */}
-      <div className="save-section">
-        <button 
-          onClick={saveSettings} 
-          disabled={saving}
-          className="save-btn"
-        >
-          {saving ? "Saving..." : "Save Settings"}
-        </button>
       </div>
     </div>
   );
 };
 
-export default Settings;
+export default Spendability;
