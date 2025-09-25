@@ -186,17 +186,28 @@
 .bill-item {
   display: flex;
   justify-content: space-between;
+  align-items: center;
   padding: 8px 0;
   border-bottom: 1px solid #333;
+  gap: 10px;
 }
 
 .bill-name {
   color: #ccc;
+  flex: 1;
+  min-width: 0;
+}
+
+.bill-due-date {
+  color: #888;
+  font-size: 0.9rem;
+  flex-shrink: 0;
 }
 
 .bill-amount {
   color: #00ff88;
   font-weight: 500;
+  flex-shrink: 0;
 }
 
 .no-bills {

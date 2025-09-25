@@ -229,6 +229,7 @@ const Spendability = () => {
               financialData.billsBeforePayday.map((bill, index) => (
                 <div key={index} className="bill-item">
                   <span className="bill-name">{bill.name}</span>
+                  <span className="bill-due-date">Due: {formatDate(bill.nextDueDate)}</span>
                   <span className="bill-amount">{formatCurrency(bill.amount)}</span>
                 </div>
               ))
