@@ -3,6 +3,8 @@
   background: #000;
   color: #fff;
   min-height: 100vh;
+  max-width: 1400px;
+  margin: 0 auto;
 }
 
 .page-header {
@@ -13,12 +15,14 @@
 .page-header h2 {
   color: #00ff88;
   margin: 0 0 10px 0;
-  font-size: 2rem;
+  font-size: 2.5rem;
+  font-weight: bold;
 }
 
 .page-header p {
   color: #ccc;
-  margin: 0 0 20px 0;
+  margin: 0 0 15px 0;
+  font-size: 1.1rem;
 }
 
 .message {
@@ -47,6 +51,7 @@
   grid-template-columns: repeat(3, 1fr);
   gap: 20px;
   max-width: 1400px;
+  margin: 0 auto;
 }
 
 /* Make Bills tile larger - spans 2 columns and taller */
