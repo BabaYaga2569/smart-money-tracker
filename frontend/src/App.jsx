@@ -1,41 +1,42 @@
-import React from "react";
-import { BrowserRouter as Router, Routes, Route } from "react-router-dom";
-import Dashboard from "./Dashboard";
-import Sidebar from "./components/Sidebar";
-import "./App.css";
-import Spendability from "./pages/Spendability";
-import Settings from "./pages/Settings";
+import React from 'react';
+import { BrowserRouter as Router, Routes, Route } from 'react-router-dom';
+import Sidebar from './components/Sidebar';
+import Dashboard from './pages/Dashboard';
+import Accounts from './pages/Accounts';
+import Transactions from './pages/Transactions';
+import Spendability from './pages/Spendability';
+import Bills from './pages/Bills';
+import Recurring from './pages/Recurring';
+import Goals from './pages/Goals';
+import Categories from './pages/Categories';
+import CashFlow from './pages/CashFlow';
+import PayCycle from './pages/PayCycle';
+import Settings from './pages/Settings';
+import './App.css';
 
-// Placeholder components for future pages
-const PlaceholderPage = ({ title }) => (
-  <div className="placeholder-page">
-    <h1>{title}</h1>
-    <p>Content coming soon...</p>
-  </div>
-);
-
-export default function App() {
+function App() {
   return (
     <Router>
-      <div className="layout">
+      <div className="app">
         <Sidebar />
         <main className="main-content">
           <Routes>
             <Route path="/" element={<Dashboard />} />
-            <Route path="/dashboard" element={<Dashboard />} />
-            <Route path="/accounts" element={<PlaceholderPage title="Accounts" />} />
-            <Route path="/transactions" element={<PlaceholderPage title="Transactions" />} />
+            <Route path="/accounts" element={<Accounts />} />
+            <Route path="/transactions" element={<Transactions />} />
             <Route path="/spendability" element={<Spendability />} />
-            <Route path="/bills" element={<PlaceholderPage title="Bills" />} />
+            <Route path="/bills" element={<Bills />} />
+            <Route path="/recurring" element={<Recurring />} />
+            <Route path="/goals" element={<Goals />} />
+            <Route path="/categories" element={<Categories />} />
+            <Route path="/cashflow" element={<CashFlow />} />
+            <Route path="/paycycle" element={<PayCycle />} />
             <Route path="/settings" element={<Settings />} />
-            <Route path="/recurring" element={<PlaceholderPage title="Recurring" />} />
-            <Route path="/goals" element={<PlaceholderPage title="Goals" />} />
-            <Route path="/categories" element={<PlaceholderPage title="Categories" />} />
-            <Route path="/cash-flow" element={<PlaceholderPage title="Cash Flow" />} />
-            <Route path="/pay-cycle" element={<PlaceholderPage title="Pay Cycle" />} />
           </Routes>
         </main>
       </div>
     </Router>
   );
 }
+
+export default App;
