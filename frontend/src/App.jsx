@@ -9,8 +9,8 @@ import Bills from './pages/Bills';
 import Recurring from './pages/Recurring';
 import Goals from './pages/Goals';
 import Categories from './pages/Categories';
-import Cashflow from './pages/Cashflow';      // ✅ Fixed: lowercase 'f' to match GitHub
-import Paycycle from './pages/Paycycle';      // ✅ Fixed: lowercase 'c' to match GitHub
+import Cashflow from './pages/Cashflow';      // ✅ lowercase 'f'
+import Paycycle from './pages/Paycycle';      // ✅ lowercase 'c' 
 import Settings from './pages/Settings';
 import './App.css';
 
