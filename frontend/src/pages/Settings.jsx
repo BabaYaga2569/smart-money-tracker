@@ -9,13 +9,11 @@ const Settings = () => {
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState('');
   
-  // Personal Information
   const [personalInfo, setPersonalInfo] = useState({
     yourName: '',
     spouseName: ''
   });
 
-  // Pay schedules
   const [paySchedules, setPaySchedules] = useState({
     yours: {
       type: 'bi-weekly',
@@ -33,7 +31,6 @@ const Settings = () => {
     }
   });
 
-  // Bank accounts
   const [bankAccounts, setBankAccounts] = useState({
     bofa: { name: 'Bank of America', type: 'Checking', balance: '' },
     sofi: { name: 'SoFi', type: 'Savings', balance: '' },
@@ -41,10 +38,8 @@ const Settings = () => {
     cap1: { name: 'Capital One', type: 'Credit', balance: '' }
   });
 
-  // Bills
   const [bills, setBills] = useState([]);
 
-  // Preferences
   const [preferences, setPreferences] = useState({
     safetyBuffer: 200,
     weeklyEssentials: 150
@@ -94,7 +89,6 @@ const Settings = () => {
 
       await setDoc(doc(db, 'users', 'steve-colburn', 'settings', 'personal'), settingsData);
 
-      // Calculate and save pay cycle data
       const nextPaydayInfo = PayCycleCalculator.calculateNextPayday(
         paySchedules.yours,
         paySchedules.spouse
@@ -113,18 +107,28 @@ const Settings = () => {
     }
   };
 
+  // Fixed Add Bill function
   const addBill = () => {
-    setBills([...bills, { name: '', amount: '', dueDate: '', recurrence: 'monthly' }]);
+    console.log('Adding new bill...'); // Debug log
+    const newBill = { 
+      name: '', 
+      amount: '', 
+      dueDate: '', 
+      recurrence: 'monthly' 
+    };
+    setBills(prevBills => [...prevBills, newBill]);
   };
 
   const updateBill = (index, field, value) => {
-    const updatedBills = [...bills];
-    updatedBills[index][field] = value;
-    setBills(updatedBills);
+    setBills(prevBills => {
+      const updatedBills = [...prevBills];
+      updatedBills[index] = { ...updatedBills[index], [field]: value };
+      return updatedBills;
+    });
   };
 
   const removeBill = (index) => {
-    setBills(bills.filter((_, i) => i !== index));
+    setBills(prevBills => prevBills.filter((_, i) => i !== index));
   };
 
   const handleCSVUpload = (event) => {
@@ -133,42 +137,47 @@ const Settings = () => {
 
     const reader = new FileReader();
     reader.onload = (e) => {
-      const text = e.target.result;
-      const lines = text.split('\n').filter(line => line.trim());
-      
-      if (lines.length < 2) {
-        setMessage('CSV file must have header and data rows');
-        return;
-      }
+      try {
+        const text = e.target.result;
+        const lines = text.split('\n').filter(line => line.trim());
+        
+        if (lines.length < 2) {
+          setMessage('CSV file must have header and data rows');
+          return;
+        }
 
-      const headers = lines[0].split(',').map(h => h.trim().toLowerCase());
-      const data = lines.slice(1).map(line => {
-        const values = line.split(',').map(v => v.trim());
-        const row = {};
-        headers.forEach((header, index) => {
-          row[header] = values[index] || '';
+        const headers = lines[0].split(',').map(h => h.trim().toLowerCase());
+        const data = lines.slice(1).map(line => {
+          const values = line.split(',').map(v => v.trim());
+          const row = {};
+          headers.forEach((header, index) => {
+            row[header] = values[index] || '';
+          });
+          return row;
         });
-        return row;
-      });
 
-      const nameColumn = headers.find(h => h.includes('name') || h.includes('bill'));
-      const amountColumn = headers.find(h => h.includes('amount') || h.includes('cost'));
-      const dateColumn = headers.find(h => h.includes('date') || h.includes('due'));
+        const nameColumn = headers.find(h => h.includes('name') || h.includes('bill'));
+        const amountColumn = headers.find(h => h.includes('amount') || h.includes('cost'));
+        const dateColumn = headers.find(h => h.includes('date') || h.includes('due'));
 
-      if (!nameColumn || !amountColumn) {
-        setMessage('CSV must have name and amount columns');
-        return;
+        if (!nameColumn || !amountColumn) {
+          setMessage('CSV must have name and amount columns');
+          return;
+        }
+
+        const processedBills = data.map(row => ({
+          name: row[nameColumn] || '',
+          amount: parseFloat(row[amountColumn]) || 0,
+          dueDate: dateColumn ? formatDate(row[dateColumn]) : '',
+          recurrence: 'monthly'
+        })).filter(bill => bill.name && bill.amount > 0);
+
+        setBills(prevBills => [...prevBills, ...processedBills]);
+        setMessage(`Imported ${processedBills.length} bills from CSV`);
+      } catch (error) {
+        console.error('CSV parsing error:', error);
+        setMessage('Error parsing CSV file');
       }
-
-      const processedBills = data.map(row => ({
-        name: row[nameColumn] || '',
-        amount: parseFloat(row[amountColumn]) || 0,
-        dueDate: dateColumn ? formatDate(row[dateColumn]) : '',
-        recurrence: 'monthly'
-      })).filter(bill => bill.name && bill.amount > 0);
-
-      setBills([...bills, ...processedBills]);
-      setMessage(`Imported ${processedBills.length} bills from CSV`);
     };
 
     reader.readAsText(file);
@@ -388,6 +397,7 @@ const Settings = () => {
                 <label>{account.name} ({account.type})</label>
                 <input
                   type="number"
+                  step="0.01"
                   value={account.balance}
                   onChange={(e) => setBankAccounts({
                     ...bankAccounts,
@@ -400,7 +410,7 @@ const Settings = () => {
           </div>
         </div>
 
-        {/* Tile 6: Recurring Bills - Made Larger */}
+        {/* Tile 6: Recurring Bills - Made Larger with Working Add Button */}
         <div className="settings-tile bills-tile">
           <h3>📄 Recurring Bills</h3>
           <div className="tile-content">
@@ -417,40 +427,45 @@ const Settings = () => {
               <small>CSV format: Bill Name, Amount, Due Date</small>
             </div>
 
-            {/* Add Bill Section */}
+            {/* Add Bill Section with Working Button */}
             <div className="add-bill-section">
               <h4>Add Bill</h4>
-              <button onClick={addBill} className="add-bill-btn">
+              <button 
+                type="button"
+                onClick={addBill} 
+                className="add-bill-btn"
+              >
                 + Add New Bill
               </button>
             </div>
 
-            {/* Bills List with Larger Inputs */}
+            {/* Bills List with Large, Readable Inputs */}
             <div className="bills-list">
               {bills.map((bill, index) => (
                 <div key={index} className="bill-row">
                   <input
                     type="text"
-                    value={bill.name}
+                    value={bill.name || ''}
                     onChange={(e) => updateBill(index, 'name', e.target.value)}
                     placeholder="Bill name"
                     className="bill-name-input"
                   />
                   <input
                     type="number"
-                    value={bill.amount}
+                    step="0.01"
+                    value={bill.amount || ''}
                     onChange={(e) => updateBill(index, 'amount', e.target.value)}
                     placeholder="Amount"
                     className="bill-amount-input"
                   />
                   <input
                     type="date"
-                    value={bill.dueDate}
+                    value={bill.dueDate || ''}
                     onChange={(e) => updateBill(index, 'dueDate', e.target.value)}
                     className="bill-date-input"
                   />
                   <select
-                    value={bill.recurrence}
+                    value={bill.recurrence || 'monthly'}
                     onChange={(e) => updateBill(index, 'recurrence', e.target.value)}
                     className="bill-recurrence-select"
                   >
@@ -461,11 +476,21 @@ const Settings = () => {
                     <option value="annually">Annually</option>
                     <option value="one-time">One-time</option>
                   </select>
-                  <button onClick={() => removeBill(index)} className="remove-btn">
+                  <button 
+                    type="button"
+                    onClick={() => removeBill(index)} 
+                    className="remove-btn"
+                  >
                     Remove
                   </button>
                 </div>
               ))}
+              
+              {bills.length === 0 && (
+                <div className="no-bills-message">
+                  <p>No bills added yet. Click "Add New Bill" to start.</p>
+                </div>
+              )}
             </div>
           </div>
         </div>
