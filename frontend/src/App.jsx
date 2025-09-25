@@ -9,8 +9,8 @@ import Bills from './pages/Bills';
 import Recurring from './pages/Recurring';
 import Goals from './pages/Goals';
 import Categories from './pages/Categories';
-import CashFlow from './pages/CashFlow';      // ✅ Matches CashFlow.jsx
-import PayCycle from './pages/PayCycle';      // ✅ Matches PayCycle.jsx
+import Cashflow from './pages/Cashflow';      // ✅ Fixed: lowercase 'f' to match GitHub
+import Paycycle from './pages/Paycycle';      // ✅ Fixed: lowercase 'c' to match GitHub
 import Settings from './pages/Settings';
 import './App.css';
 
@@ -29,8 +29,8 @@ function App() {
             <Route path="/recurring" element={<Recurring />} />
             <Route path="/goals" element={<Goals />} />
             <Route path="/categories" element={<Categories />} />
-            <Route path="/cashflow" element={<CashFlow />} />
-            <Route path="/paycycle" element={<PayCycle />} />
+            <Route path="/cashflow" element={<Cashflow />} />
+            <Route path="/paycycle" element={<Paycycle />} />
             <Route path="/settings" element={<Settings />} />
           </Routes>
         </main>
