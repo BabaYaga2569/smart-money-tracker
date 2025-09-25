@@ -1,59 +1,25 @@
 import React from 'react';
+import './CashFlow.css';
 
 const CashFlow = () => {
   return (
-    <div style={{
-      padding: '20px',
-      background: '#000',
-      color: '#fff',
-      minHeight: '100vh'
-    }}>
-      <div style={{
-        marginBottom: '30px',
-        textAlign: 'center'
-      }}>
-        <h2 style={{
-          color: '#00ff88',
-          margin: '0 0 10px 0',
-          fontSize: '2rem'
-        }}>📈 Cash Flow</h2>
-        <p style={{
-          color: '#ccc',
-          margin: '0'
-        }}>Income vs expenses over time</p>
+    <div className="cashflow-container">
+      <div className="page-header">
+        <h2>📈 Cash Flow</h2>
+        <p>Analyze your income vs expenses over time</p>
       </div>
 
-      <div style={{
-        background: '#1a1a1a',
-        border: '2px solid #333',
-        borderRadius: '12px',
-        padding: '30px',
-        textAlign: 'center'
-      }}>
-        <h3 style={{
-          color: '#00ff88',
-          margin: '0 0 15px 0'
-        }}>🚧 Coming Soon</h3>
-        <p style={{
-          color: '#ccc',
-          margin: '10px 0'
-        }}>Cash flow analysis coming after Phase 3 (Plaid Integration).</p>
-        
-        <div style={{
-          display: 'grid',
-          gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))',
-          gap: '20px',
-          marginTop: '20px'
-        }}>
-          <div style={{
-            background: '#333',
-            padding: '15px',
-            borderRadius: '8px'
-          }}>
-            <h4 style={{ color: '#00ff88', margin: '0 0 5px 0' }}>+$543</h4>
-            <p style={{ color: '#ccc', margin: '0', fontSize: '0.9rem' }}>This month</p>
-          </div>
+      <div className="cashflow-summary">
+        <div className="summary-card">
+          <h3>This Month</h3>
+          <div className="total-amount positive">+$543</div>
+          <small>Net cash flow</small>
         </div>
+      </div>
+
+      <div className="coming-soon">
+        <h3>🚧 Coming Soon</h3>
+        <p>Cash flow analysis and visualization will be available after Phase 3 (Plaid Integration).</p>
       </div>
     </div>
   );
