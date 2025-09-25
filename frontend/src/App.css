@@ -74,3 +74,25 @@
   color: #888;
   font-size: 1.2rem;
 }
+/* Add these rules to your existing App.css */
+.app {
+  display: flex;
+  min-height: 100vh;
+}
+
+.main-content {
+  flex: 1;
+  margin-left: 250px; /* Adjust based on your sidebar width */
+  padding: 0; /* Remove padding to let Dashboard control its own padding */
+  background: #000;
+}
+
+/* Make sure sidebar has fixed positioning */
+.sidebar {
+  position: fixed;
+  left: 0;
+  top: 0;
+  width: 250px; /* Match the margin-left above */
+  height: 100vh;
+  z-index: 1000;
+}

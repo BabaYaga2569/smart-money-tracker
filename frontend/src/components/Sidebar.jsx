@@ -5,18 +5,18 @@ const Sidebar = () => {
   const location = useLocation();
 
   const menuItems = [
-  { name: "Dashboard", path: "/dashboard" },
-  { name: "Accounts", path: "/accounts" },
-  { name: "Transactions", path: "/transactions" },
-  { name: "Spendability", path: "/spendability" },
-  { name: "Bills", path: "/bills" },
-  { name: "Recurring", path: "/recurring" },
-  { name: "Goals", path: "/goals" },
-  { name: "Categories", path: "/categories" },
-  { name: "Cash Flow", path: "/cash-flow" },
-  { name: "Pay Cycle", path: "/pay-cycle" },
-  { name: "Settings", path: "/settings" }
-];
+    { name: "Dashboard", path: "/" },              // ✅ Fixed: "/" not "/dashboard"
+    { name: "Accounts", path: "/accounts" },
+    { name: "Transactions", path: "/transactions" },
+    { name: "Spendability", path: "/spendability" },
+    { name: "Bills", path: "/bills" },
+    { name: "Recurring", path: "/recurring" },
+    { name: "Goals", path: "/goals" },
+    { name: "Categories", path: "/categories" },
+    { name: "Cash Flow", path: "/cashflow" },      // ✅ Fixed: "/cashflow" not "/cash-flow"
+    { name: "Pay Cycle", path: "/paycycle" },      // ✅ Fixed: "/paycycle" not "/pay-cycle"
+    { name: "Settings", path: "/settings" }
+  ];
 
   return (
     <aside className="sidebar">
@@ -27,7 +27,7 @@ const Sidebar = () => {
             <li key={item.name}>
               <Link 
                 to={item.path}
-                className={location.pathname === item.path || (location.pathname === "/" && item.path === "/dashboard") ? "active" : ""}
+                className={location.pathname === item.path ? "active" : ""}
               >
                 {item.name}
               </Link>
