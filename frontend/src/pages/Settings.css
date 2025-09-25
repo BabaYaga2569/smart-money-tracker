@@ -18,15 +18,14 @@
 
 .page-header p {
   color: #ccc;
-  margin: 0 0 20px 0;
+  margin: 0;
 }
 
 .message {
-  padding: 12px 20px;
+  padding: 15px;
   border-radius: 8px;
-  margin: 10px 0;
+  margin-bottom: 20px;
   text-align: center;
-  font-weight: 500;
 }
 
 .message.success {
@@ -41,13 +40,19 @@
   color: #ff4444;
 }
 
-/* Settings Tiles Grid */
+/* Settings Tiles Grid - Updated Layout */
 .settings-tiles-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(350px, 1fr));
+  grid-template-columns: repeat(3, 1fr);
+  grid-template-rows: auto auto auto;
   gap: 20px;
-  max-width: 1200px;
-  margin: 0 auto;
+  max-width: 1400px;
+}
+
+/* Make Bills tile span 2 columns and be taller */
+.settings-tile.bills-tile {
+  grid-column: span 2;
+  grid-row: span 2;
 }
 
 .settings-tile {
@@ -56,7 +61,6 @@
   border-radius: 12px;
   padding: 20px;
   transition: all 0.3s ease;
-  height: fit-content;
 }
 
 .settings-tile:hover {
@@ -81,7 +85,6 @@
   gap: 15px;
 }
 
-/* Form Elements */
 .form-group {
   display: flex;
   flex-direction: column;
@@ -99,7 +102,7 @@
   background: #333;
   border: 2px solid #555;
   border-radius: 6px;
-  padding: 10px 12px;
+  padding: 10px;
   color: #fff;
   font-size: 1rem;
   transition: border-color 0.3s ease;
@@ -111,209 +114,204 @@
   border-color: #00ff88;
 }
 
-.form-group input::placeholder {
-  color: #777;
-}
-
 .form-group small {
-  color: #ccc;
+  color: #888;
   font-size: 0.8rem;
   font-style: italic;
 }
 
-/* Pay Schedule Note */
-.pay-schedule-note {
-  background: rgba(0, 255, 136, 0.05);
-  border: 1px solid #333;
-  border-radius: 6px;
+.automatic-schedule {
+  background: #2a2a2a;
+  border-radius: 8px;
   padding: 15px;
   margin-top: 10px;
 }
 
-.pay-schedule-note p {
+.automatic-schedule h4 {
+  color: #00ff88;
+  margin: 0 0 10px 0;
+  font-size: 1rem;
+}
+
+.automatic-schedule p {
   margin: 5px 0;
   color: #ccc;
   font-size: 0.9rem;
 }
 
-.pay-schedule-note strong {
-  color: #00ff88;
+.save-btn {
+  background: #00ff88;
+  color: #000;
+  border: none;
+  padding: 12px 24px;
+  border-radius: 8px;
+  font-weight: bold;
+  font-size: 1rem;
+  cursor: pointer;
+  transition: background 0.3s ease;
+  margin-top: 10px;
 }
 
-/* CSV Upload Section */
+.save-btn:hover:not(:disabled) {
+  background: #00cc6a;
+}
+
+.save-btn:disabled {
+  background: #666;
+  cursor: not-allowed;
+}
+
+/* Bills Tile Specific Styles */
 .csv-upload-section {
-  background: rgba(0, 255, 136, 0.05);
-  border: 1px dashed #00ff88;
+  background: #2a2a2a;
   border-radius: 8px;
   padding: 15px;
-  text-align: center;
+  margin-bottom: 20px;
 }
 
-.csv-upload-section input[type="file"] {
-  background: #333;
-  border: 1px solid #555;
-  border-radius: 4px;
-  padding: 8px;
-  color: #fff;
-  width: 100%;
-  margin: 10px 0;
-}
-
-/* CSV Preview */
-.csv-preview {
-  background: rgba(0, 255, 136, 0.1);
-  border: 1px solid #00ff88;
-  border-radius: 8px;
-  padding: 15px;
-  margin: 15px 0;
-}
-
-.csv-preview h4 {
+.csv-upload-section h4 {
   color: #00ff88;
   margin: 0 0 10px 0;
 }
 
-.preview-list {
-  max-height: 100px;
-  overflow-y: auto;
-  margin: 10px 0;
+.csv-input {
+  width: 100%;
+  margin-bottom: 10px;
 }
 
-.preview-item {
-  color: #ccc;
+.csv-preview {
+  background: #2a2a2a;
+  border-radius: 8px;
+  padding: 15px;
+  margin-bottom: 20px;
+}
+
+.preview-bills {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-bottom: 15px;
+  max-height: 150px;
+  overflow-y: auto;
+}
+
+.preview-bill {
+  display: grid;
+  grid-template-columns: 2fr 1fr 1fr;
+  gap: 10px;
+  padding: 8px;
+  background: #333;
+  border-radius: 4px;
   font-size: 0.9rem;
-  padding: 2px 0;
-  border-bottom: 1px solid #333;
+}
+
+.preview-actions {
+  display: flex;
+  gap: 10px;
+}
+
+.import-btn,
+.cancel-btn {
+  padding: 8px 16px;
+  border: none;
+  border-radius: 6px;
+  cursor: pointer;
+  font-weight: 500;
 }
 
 .import-btn {
   background: #00ff88;
   color: #000;
+}
+
+.cancel-btn {
+  background: #666;
+  color: #fff;
+}
+
+.add-bill-section {
+  background: #2a2a2a;
+  border-radius: 8px;
+  padding: 15px;
+  margin-bottom: 20px;
+}
+
+.add-bill-section h4 {
+  color: #00ff88;
+  margin: 0 0 15px 0;
+}
+
+.add-bill-form {
+  display: grid;
+  grid-template-columns: 2fr 1fr 1fr 1fr auto;
+  gap: 10px;
+  align-items: end;
+}
+
+.add-btn {
+  background: #00ff88;
+  color: #000;
   border: none;
+  padding: 10px 16px;
   border-radius: 6px;
-  padding: 8px 15px;
   font-weight: bold;
   cursor: pointer;
-  transition: background-color 0.3s ease;
+  white-space: nowrap;
 }
 
-.import-btn:hover {
-  background: #00cc6a;
-}
-
-/* Bills List */
 .bills-list {
-  max-height: 200px;
+  max-height: 300px;
   overflow-y: auto;
-  border: 1px solid #333;
-  border-radius: 6px;
-  padding: 10px;
 }
 
 .bill-row {
   display: grid;
-  grid-template-columns: 1fr 80px 120px 100px 30px;
-  gap: 8px;
+  grid-template-columns: 2fr 1fr 1fr 1fr auto;
+  gap: 10px;
   align-items: center;
-  padding: 5px 0;
+  padding: 10px 0;
   border-bottom: 1px solid #333;
-}
-
-.bill-row input,
-.bill-row select {
-  background: #222;
-  border: 1px solid #444;
-  border-radius: 4px;
-  padding: 6px 8px;
-  color: #fff;
-  font-size: 0.9rem;
 }
 
 .remove-btn {
   background: #ff4444;
   color: #fff;
   border: none;
+  padding: 6px 12px;
   border-radius: 4px;
-  padding: 4px;
   cursor: pointer;
   font-size: 0.8rem;
-  width: 24px;
-  height: 24px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
 }
 
 .remove-btn:hover {
   background: #cc3333;
 }
 
-.add-bill-btn {
-  background: #333;
-  color: #00ff88;
-  border: 2px dashed #00ff88;
-  border-radius: 6px;
-  padding: 10px;
-  cursor: pointer;
-  font-weight: 500;
-  transition: all 0.3s ease;
-  width: 100%;
-}
-
-.add-bill-btn:hover {
-  background: rgba(0, 255, 136, 0.1);
-}
-
-/* Save Button */
-.save-btn {
-  background: #00ff88;
-  color: #000;
-  border: none;
-  border-radius: 8px;
-  padding: 12px 20px;
-  font-size: 1.1rem;
-  font-weight: bold;
-  cursor: pointer;
-  transition: all 0.3s ease;
-  margin-top: 20px;
-  width: 100%;
-}
-
-.save-btn:hover:not(:disabled) {
-  background: #00cc6a;
-  transform: translateY(-1px);
-}
-
-.save-btn:disabled {
-  background: #666;
-  cursor: not-allowed;
-  transform: none;
-}
-
-/* Bills Tile Specific */
-.bills-tile {
-  grid-column: 1 / -1; /* Full width for bills tile */
-}
-
 /* Responsive Design */
+@media (max-width: 1200px) {
+  .settings-tiles-grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+  
+  .settings-tile.bills-tile {
+    grid-column: span 2;
+  }
+}
+
 @media (max-width: 768px) {
   .settings-tiles-grid {
     grid-template-columns: 1fr;
   }
   
-  .bill-row {
-    grid-template-columns: 1fr;
-    gap: 8px;
+  .settings-tile.bills-tile {
+    grid-column: span 1;
   }
   
-  .form-group input,
-  .form-group select {
-    font-size: 16px; /* Prevent zoom on iOS */
+  .add-bill-form {
+    grid-template-columns: 1fr;
   }
-}
-
-@media (min-width: 1200px) {
-  .settings-tiles-grid {
-    grid-template-columns: repeat(3, 1fr);
+  
+  .bill-row {
+    grid-template-columns: 1fr;
   }
 }
