@@ -9,8 +9,8 @@ import Bills from './pages/Bills';
 import Recurring from './pages/Recurring';
 import Goals from './pages/Goals';
 import Categories from './pages/Categories';
-import CashFlow from './pages/CashFlow';
-import PayCycle from './pages/PayCycle';
+import CashFlow from './pages/CashFlow';      // ✅ Matches CashFlow.jsx
+import PayCycle from './pages/PayCycle';      // ✅ Matches PayCycle.jsx
 import Settings from './pages/Settings';
 import './App.css';
 
