@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { doc, getDoc, collection, getDocs } from 'firebase/firestore';
+import { doc, getDoc } from 'firebase/firestore';
 import { db } from '../firebase';
 import { PayCycleCalculator } from '../utils/PayCycleCalculator';
 import { RecurringBillManager } from '../utils/RecurringBillManager';
@@ -11,7 +11,6 @@ const Spendability = () => {
   const [spendAmount, setSpendAmount] = useState('');
   const [canSpend, setCanSpend] = useState(null);
   
-  // Financial data state
   const [financialData, setFinancialData] = useState({
     totalAvailable: 0,
     checking: 0,
@@ -34,7 +33,6 @@ const Spendability = () => {
       setLoading(true);
       setError(null);
 
-      // Read from same paths as Settings component
       const settingsDocRef = doc(db, 'users', 'steve-colburn', 'settings', 'personal');
       const settingsDocSnap = await getDoc(settingsDocRef);
       
@@ -48,13 +46,11 @@ const Spendability = () => {
       const settingsData = settingsDocSnap.data();
       const payCycleData = payCycleDocSnap.exists() ? payCycleDocSnap.data() : null;
 
-      // Calculate account totals
       const bankAccounts = settingsData.bankAccounts || {};
       const totalAvailable = Object.values(bankAccounts).reduce((sum, account) => {
         return sum + (parseFloat(account.balance) || 0);
       }, 0);
 
-      // Get next payday info
       let nextPayday = '2025-09-30';
       let daysUntilPayday = 0;
       
@@ -65,7 +61,6 @@ const Spendability = () => {
         daysUntilPayday = Math.ceil((paydayDate - today) / (1000 * 60 * 60 * 24));
       }
 
-      // Process bills with RecurringBillManager
       const bills = settingsData.bills || [];
       const billsWithRecurrence = bills.map(bill => ({
         ...bill,
@@ -79,7 +74,6 @@ const Spendability = () => {
         return sum + (parseFloat(bill.amount) || 0);
       }, 0);
 
-      // Calculate safe to spend
       const preferences = settingsData.preferences || {};
       const weeklyEssentials = preferences.weeklyEssentials || 0;
       const safetyBuffer = preferences.safetyBuffer || 0;
@@ -175,7 +169,6 @@ const Spendability = () => {
         </div>
       </div>
 
-      {/* Tile Grid Layout */}
       <div className="tiles-grid">
         
         {/* Tile 1: Can I Spend This Amount? */}
