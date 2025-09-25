@@ -54,7 +54,13 @@ const Spendability = () => {
       let nextPayday = '2025-09-30';
       let daysUntilPayday = 0;
       
-      if (payCycleData && payCycleData.date) {
+      // Check for manual override first
+      if (settingsData.nextPaydayOverride) {
+        nextPayday = settingsData.nextPaydayOverride;
+        const today = new Date();
+        const paydayDate = new Date(nextPayday);
+        daysUntilPayday = Math.ceil((paydayDate - today) / (1000 * 60 * 60 * 24));
+      } else if (payCycleData && payCycleData.date) {
         nextPayday = payCycleData.date;
         const today = new Date();
         const paydayDate = new Date(nextPayday);

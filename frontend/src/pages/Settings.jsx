@@ -45,6 +45,8 @@ const Settings = () => {
     weeklyEssentials: 150
   });
 
+  const [nextPaydayOverride, setNextPaydayOverride] = useState('');
+
   useEffect(() => {
     loadSettings();
   }, []);
@@ -64,6 +66,7 @@ const Settings = () => {
         setBankAccounts(data.bankAccounts || bankAccounts);
         setBills(data.bills || []);
         setPreferences(data.preferences || preferences);
+        setNextPaydayOverride(data.nextPaydayOverride || '');
       }
     } catch (error) {
       console.error('Error loading settings:', error);
@@ -84,15 +87,30 @@ const Settings = () => {
         bankAccounts,
         bills: bills.filter(bill => bill.name && bill.amount),
         preferences,
+        nextPaydayOverride,
         lastUpdated: new Date().toISOString()
       };
 
       await setDoc(doc(db, 'users', 'steve-colburn', 'settings', 'personal'), settingsData);
 
-      const nextPaydayInfo = PayCycleCalculator.calculateNextPayday(
-        paySchedules.yours,
-        paySchedules.spouse
-      );
+      // Use override date if provided, otherwise calculate next payday
+      let nextPaydayInfo;
+      if (nextPaydayOverride) {
+        const overrideDate = new Date(nextPaydayOverride);
+        const today = new Date();
+        const daysUntil = Math.ceil((overrideDate - today) / (1000 * 60 * 60 * 24));
+        nextPaydayInfo = {
+          date: nextPaydayOverride,
+          daysUntil: daysUntil,
+          source: "manual_override",
+          amount: 0
+        };
+      } else {
+        nextPaydayInfo = PayCycleCalculator.calculateNextPayday(
+          paySchedules.yours,
+          paySchedules.spouse
+        );
+      }
 
       if (nextPaydayInfo) {
         await setDoc(doc(db, 'users', 'steve-colburn', 'financial', 'payCycle'), nextPaydayInfo);
@@ -358,6 +376,16 @@ const Settings = () => {
         <div className="settings-tile">
           <h3>💡 Spending Preferences</h3>
           <div className="tile-content">
+            <div className="form-group">
+              <label>Next Payday Date (Override)</label>
+              <input
+                type="date"
+                value={nextPaydayOverride}
+                onChange={(e) => setNextPaydayOverride(e.target.value)}
+                placeholder="Override calculated payday"
+              />
+              <small>Leave blank to use automatic calculation. Set to 2025-09-30 to fix current issue.</small>
+            </div>
             <div className="form-group">
               <label>Safety Buffer</label>
               <input
