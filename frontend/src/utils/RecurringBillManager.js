@@ -1,4 +1,6 @@
 // RecurringBillManager.js - Automatic bill date calculations
+import { parseLocalDate } from './dateUtils';
+
 export class RecurringBillManager {
     
     /**
@@ -9,10 +11,10 @@ export class RecurringBillManager {
      */
     static getNextDueDate(bill, currentDate = new Date()) {
         if (!bill.recurrence || bill.recurrence === 'one-time') {
-            return new Date(bill.dueDate); // Return original date for one-time bills
+            return parseLocalDate(bill.dueDate) || new Date(bill.dueDate); // Use parseLocalDate to avoid timezone issues
         }
 
-        const lastDue = new Date(bill.lastDueDate || bill.dueDate);
+        const lastDue = parseLocalDate(bill.lastDueDate || bill.dueDate) || new Date(bill.lastDueDate || bill.dueDate);
         let nextDue;
 
         switch (bill.recurrence) {
@@ -32,7 +34,7 @@ export class RecurringBillManager {
                 nextDue = this.calculateNextAnnualDate(lastDue, currentDate);
                 break;
             default:
-                nextDue = new Date(bill.dueDate); // Fallback to original date
+                nextDue = parseLocalDate(bill.dueDate) || new Date(bill.dueDate); // Fallback to original date
         }
 
         return nextDue;
@@ -145,7 +147,7 @@ export class RecurringBillManager {
      */
     static getBillsDueBefore(bills, beforeDate) {
         return bills.filter(bill => {
-            const dueDate = bill.nextDueDate || new Date(bill.dueDate);
+            const dueDate = bill.nextDueDate || parseLocalDate(bill.dueDate) || new Date(bill.dueDate);
             return dueDate < beforeDate;
         });
     }
@@ -159,7 +161,7 @@ export class RecurringBillManager {
      */
     static getBillsInRange(bills, startDate, endDate) {
         return bills.filter(bill => {
-            const dueDate = bill.nextDueDate || new Date(bill.dueDate);
+            const dueDate = bill.nextDueDate || parseLocalDate(bill.dueDate) || new Date(bill.dueDate);
             return dueDate >= startDate && dueDate <= endDate;
         });
     }

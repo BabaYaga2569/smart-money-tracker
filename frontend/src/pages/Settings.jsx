@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { doc, getDoc, setDoc } from 'firebase/firestore';
 import { db } from '../firebase';
 import { PayCycleCalculator } from '../utils/PayCycleCalculator';
+import { parseLocalDate, formatToLocalISOString } from '../utils/dateUtils';
 import './Settings.css';
 
 const Settings = () => {
@@ -213,15 +214,16 @@ const Settings = () => {
       
       if (thisMonth < today) {
         const nextMonth = new Date(year, month + 1, day);
-        return `${nextMonth.getFullYear()}-${String(nextMonth.getMonth() + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+        return formatToLocalISOString(nextMonth);
       } else {
-        return `${year}-${String(month + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+        return formatToLocalISOString(thisMonth);
       }
     }
     
-    const date = new Date(dateInput);
-    if (!isNaN(date.getTime())) {
-      return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
+    // Use parseLocalDate to avoid timezone issues
+    const date = parseLocalDate(dateInput);
+    if (date && !isNaN(date.getTime())) {
+      return formatToLocalISOString(date);
     }
     
     return dateInput;
