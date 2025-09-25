@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { doc, getDoc } from 'firebase/firestore';
 import { db } from '../firebase';
 import { RecurringBillManager } from '../utils/RecurringBillManager';
+import { formatDateForDisplay } from '../utils/DateUtils';
 import './Bills.css';
 
 const Bills = () => {
@@ -44,11 +45,7 @@ const Bills = () => {
   };
 
   const formatDate = (dateStr) => {
-    return new Date(dateStr).toLocaleDateString('en-US', {
-      month: 'short',
-      day: 'numeric',
-      year: 'numeric'
-    });
+    return formatDateForDisplay(dateStr, 'short');
   };
 
   if (loading) {

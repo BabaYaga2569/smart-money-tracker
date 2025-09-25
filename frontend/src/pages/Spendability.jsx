@@ -3,6 +3,7 @@ import { doc, getDoc } from 'firebase/firestore';
 import { db } from '../firebase';
 import { PayCycleCalculator } from '../utils/PayCycleCalculator';
 import { RecurringBillManager } from '../utils/RecurringBillManager';
+import { formatDateForDisplay } from '../utils/DateUtils';
 import './Spendability.css';
 
 const Spendability = () => {
@@ -128,18 +129,7 @@ const Spendability = () => {
   };
 
   const formatDate = (dateString) => {
-    if (!dateString || dateString === 'No date') return 'No date';
-    
-    try {
-      const date = new Date(dateString);
-      return date.toLocaleDateString('en-US', {
-        year: 'numeric',
-        month: '2-digit',
-        day: '2-digit'
-      });
-    } catch (error) {
-      return dateString;
-    }
+    return formatDateForDisplay(dateString, 'numeric');
   };
 
   if (loading) {
