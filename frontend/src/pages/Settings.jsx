@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { doc, getDoc, setDoc } from 'firebase/firestore';
 import { db } from '../firebase';
 import { PayCycleCalculator } from '../utils/PayCycleCalculator';
+import { parseLocalDate, formatDateForInput } from '../utils/DateUtils';
 import './Settings.css';
 
 const Settings = () => {
@@ -186,7 +187,7 @@ const Settings = () => {
         const processedBills = data.map(row => ({
           name: row[nameColumn] || '',
           amount: parseFloat(row[amountColumn]) || 0,
-          dueDate: dateColumn ? formatDate(row[dateColumn]) : '',
+          dueDate: dateColumn ? formatDateForInput(parseLocalDate(row[dateColumn])) : '',
           recurrence: 'monthly'
         })).filter(bill => bill.name && bill.amount > 0);
 
@@ -199,32 +200,6 @@ const Settings = () => {
     };
 
     reader.readAsText(file);
-  };
-
-  const formatDate = (dateInput) => {
-    if (!dateInput) return '';
-    
-    if (/^\d{1,2}$/.test(dateInput.toString())) {
-      const day = parseInt(dateInput);
-      const today = new Date();
-      const year = today.getFullYear();
-      const month = today.getMonth();
-      const thisMonth = new Date(year, month, day);
-      
-      if (thisMonth < today) {
-        const nextMonth = new Date(year, month + 1, day);
-        return `${nextMonth.getFullYear()}-${String(nextMonth.getMonth() + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
-      } else {
-        return `${year}-${String(month + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
-      }
-    }
-    
-    const date = new Date(dateInput);
-    if (!isNaN(date.getTime())) {
-      return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
-    }
-    
-    return dateInput;
   };
 
   if (loading) {
