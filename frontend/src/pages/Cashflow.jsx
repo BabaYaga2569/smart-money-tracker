@@ -1,5 +1,5 @@
 import React from 'react';
-import './CashFlow.css';
+import './Cashflow.css';
 
 const CashFlow = () => {
   return (
