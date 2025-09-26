@@ -3,6 +3,18 @@
   --green-dark: #073;
   --bg: #000;
   --card: #0a0a0a;
+  
+  /* Electric color palette for better contrast */
+  --electric-blue: #00b4ff;
+  --neon-green: #00ff88;
+  --electric-red: #ff073a;
+  --electric-yellow: #ffdd00;
+  --electric-purple: #bf00ff;
+  
+  /* Text colors for contrast */
+  --text-primary: #f9fafb;
+  --text-secondary: #d1d5db;
+  --text-muted: #9ca3af;
 }
 
 * { box-sizing: border-box; }
