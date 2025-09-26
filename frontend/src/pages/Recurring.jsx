@@ -113,7 +113,12 @@ const Recurring = () => {
         autoPay: true,
         status: 'active',
         lastPaymentStatus: 'success',
-        description: 'Regular monthly salary'
+        description: 'Regular monthly salary',
+        history: [
+          { date: '2025-09-01', status: 'success', amount: 2500 },
+          { date: '2025-08-01', status: 'success', amount: 2500 },
+          { date: '2025-07-01', status: 'success', amount: 2500 }
+        ]
       },
       {
         id: 'netflix-1',
@@ -127,7 +132,14 @@ const Recurring = () => {
         autoPay: true,
         status: 'active',
         lastPaymentStatus: 'success',
-        description: 'Netflix streaming subscription'
+        description: 'Netflix streaming subscription',
+        history: [
+          { date: '2025-09-03', status: 'success', amount: 15.99 },
+          { date: '2025-08-03', status: 'success', amount: 15.99 },
+          { date: '2025-07-03', status: 'success', amount: 15.99 },
+          { date: '2025-06-03', status: 'failed', amount: 15.99 },
+          { date: '2025-05-03', status: 'success', amount: 15.99 }
+        ]
       },
       {
         id: 'rent-1',
@@ -141,7 +153,12 @@ const Recurring = () => {
         autoPay: false,
         status: 'active',
         lastPaymentStatus: 'success',
-        description: 'Monthly apartment rent'
+        description: 'Monthly apartment rent',
+        history: [
+          { date: '2025-09-01', status: 'success', amount: 1200 },
+          { date: '2025-08-01', status: 'success', amount: 1200 },
+          { date: '2025-07-01', status: 'success', amount: 1200 }
+        ]
       },
       {
         id: 'spotify-1',
@@ -155,7 +172,13 @@ const Recurring = () => {
         autoPay: true,
         status: 'active',
         lastPaymentStatus: 'success',
-        description: 'Spotify music streaming'
+        description: 'Spotify music streaming',
+        history: [
+          { date: '2025-09-15', status: 'success', amount: 9.99 },
+          { date: '2025-08-15', status: 'success', amount: 9.99 },
+          { date: '2025-07-15', status: 'skipped', amount: 9.99 },
+          { date: '2025-06-15', status: 'success', amount: 9.99 }
+        ]
       },
       {
         id: 'insurance-1',
@@ -169,7 +192,12 @@ const Recurring = () => {
         autoPay: true,
         status: 'active',
         lastPaymentStatus: 'success',
-        description: 'Monthly car insurance premium'
+        description: 'Monthly car insurance premium',
+        history: [
+          { date: '2025-09-12', status: 'success', amount: 125 },
+          { date: '2025-08-12', status: 'success', amount: 125 },
+          { date: '2025-07-12', status: 'success', amount: 125 }
+        ]
       }
     ];
     setRecurringItems(sampleItems);
@@ -372,7 +400,9 @@ const Recurring = () => {
   };
 
   const handleShowHistory = (item) => {
-    setSelectedItem(item);
+    // Find the item from processedItems which includes history data
+    const itemWithHistory = processedItems.find(i => i.id === item.id) || item;
+    setSelectedItem(itemWithHistory);
     setShowHistoryModal(true);
   };
 

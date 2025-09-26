@@ -54,7 +54,9 @@ export class RecurringManager {
                 ...item,
                 nextOccurrence: nextOccurrence,
                 status: status,
-                amount: parseFloat(item.amount) || 0
+                amount: parseFloat(item.amount) || 0,
+                // Preserve existing history
+                history: item.history || []
             };
         });
     }
