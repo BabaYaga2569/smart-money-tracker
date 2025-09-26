@@ -194,13 +194,21 @@ const Spendability = () => {
       // Update account balance
       await updateAccountBalance('bofa', transaction.amount);
 
-      // Update bill status in Firebase
-      await updateBillAsPaid(bill);
+      // Update bill status in Firebase and get updated bill data
+      const updatedBill = await updateBillAsPaid(bill);
 
       // Refresh the financial data
       await fetchFinancialData();
 
-      showNotification(`${bill.name} bill marked as paid! Transaction added and balance updated.`, 'success');
+      // Show enhanced notification with next due date
+      const nextDueDateStr = updatedBill && updatedBill.nextDueDate 
+        ? formatDate(updatedBill.nextDueDate)
+        : 'next billing cycle';
+      
+      showNotification(
+        `${bill.name} bill marked as paid! Next due: ${nextDueDateStr}. Transaction added and balance updated.`, 
+        'success'
+      );
     } catch (error) {
       console.error('Error marking bill as paid:', error);
       showNotification('Error processing bill payment', 'error');
@@ -244,10 +252,13 @@ const Spendability = () => {
       const currentData = currentDoc.exists() ? currentDoc.data() : {};
       
       const bills = currentData.bills || [];
+      let updatedBill = null;
+      
       const updatedBills = bills.map(b => {
         if (b.name === bill.name && b.amount === bill.amount) {
           // Mark as paid and update last payment date
-          return RecurringBillManager.markBillAsPaid(b, new Date());
+          updatedBill = RecurringBillManager.markBillAsPaid(b, new Date());
+          return updatedBill;
         }
         return b;
       });
@@ -256,6 +267,8 @@ const Spendability = () => {
         ...currentData,
         bills: updatedBills
       });
+      
+      return updatedBill;
     } catch (error) {
       console.error('Error updating bill status:', error);
       throw error;

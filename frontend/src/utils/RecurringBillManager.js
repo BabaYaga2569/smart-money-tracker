@@ -179,17 +179,31 @@ export class RecurringBillManager {
     }
 
     /**
-     * Mark a bill as paid and update its lastDueDate
+     * Mark a bill as paid and update its next due date for the upcoming cycle
      * @param {Object} bill - Bill object
      * @param {Date} paymentDate - Date the bill was paid
      * @returns {Object} Updated bill object
      */
     static markBillAsPaid(bill, paymentDate = new Date()) {
+        const currentDueDate = bill.nextDueDate || bill.dueDate;
+        
+        // Create a temporary bill object with the current due date as last due date
+        const tempBill = {
+            ...bill,
+            lastDueDate: currentDueDate,
+            dueDate: currentDueDate
+        };
+        
+        // Calculate the next due date for the upcoming billing cycle
+        const nextDueDate = this.getNextDueDate(tempBill, paymentDate);
+        
         return {
             ...bill,
-            lastDueDate: bill.nextDueDate || bill.dueDate,
+            lastDueDate: currentDueDate,
             lastPaidDate: paymentDate,
-            isPaid: true
+            nextDueDate: nextDueDate,
+            isPaid: true,
+            status: 'paid'
         };
     }
 
