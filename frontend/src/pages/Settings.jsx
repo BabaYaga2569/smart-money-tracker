@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { doc, getDoc, setDoc } from 'firebase/firestore';
 import { db } from '../firebase';
 import { PayCycleCalculator } from '../utils/PayCycleCalculator';
-import { parseLocalDate, formatDateForInput } from '../utils/DateUtils';
+import { parseLocalDate, formatDateForInput, getDaysUntilDateInPacific } from '../utils/DateUtils';
 import './Settings.css';
 
 const Settings = () => {
@@ -97,9 +97,7 @@ const Settings = () => {
       // Use override date if provided, otherwise calculate next payday
       let nextPaydayInfo;
       if (nextPaydayOverride) {
-        const overrideDate = new Date(nextPaydayOverride);
-        const today = new Date();
-        const daysUntil = Math.ceil((overrideDate - today) / (1000 * 60 * 60 * 24));
+        const daysUntil = getDaysUntilDateInPacific(nextPaydayOverride);
         nextPaydayInfo = {
           date: nextPaydayOverride,
           daysUntil: daysUntil,
