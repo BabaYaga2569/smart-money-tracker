@@ -9,9 +9,12 @@
 export const parseLocalDate = (dateString) => {
   if (!dateString) return null;
   
+  // Convert to string if it's not already
+  const dateStr = String(dateString);
+  
   // Handle MM/DD/YYYY or M/D/YYYY format (common in CSV files)
-  if (dateString.includes('/')) {
-    const parts = dateString.split('/');
+  if (dateStr.includes('/')) {
+    const parts = dateStr.split('/');
     if (parts.length === 3) {
       const month = parseInt(parts[0]) - 1; // Month is 0-indexed in Date constructor
       const day = parseInt(parts[1]);
@@ -28,8 +31,8 @@ export const parseLocalDate = (dateString) => {
   }
   
   // Handle YYYY-MM-DD format (ISO-like but ensure local interpretation)
-  if (dateString.includes('-') && dateString.match(/^\d{4}-\d{1,2}-\d{1,2}$/)) {
-    const parts = dateString.split('-');
+  if (dateStr.includes('-') && dateStr.match(/^\d{4}-\d{1,2}-\d{1,2}$/)) {
+    const parts = dateStr.split('-');
     if (parts.length === 3) {
       const year = parseInt(parts[0]);
       const month = parseInt(parts[1]) - 1; // Month is 0-indexed
@@ -46,8 +49,8 @@ export const parseLocalDate = (dateString) => {
   }
   
   // Handle single numbers (day of month)
-  if (/^\d{1,2}$/.test(dateString.toString())) {
-    const day = parseInt(dateString);
+  if (/^\d{1,2}$/.test(dateStr)) {
+    const day = parseInt(dateStr);
     const today = new Date();
     const year = today.getFullYear();
     const month = today.getMonth();
@@ -62,14 +65,14 @@ export const parseLocalDate = (dateString) => {
   }
   
   // Fallback: try the original Date constructor but warn about potential issues
-  const fallbackDate = new Date(dateString);
+  const fallbackDate = new Date(dateStr);
   if (!isNaN(fallbackDate.getTime())) {
-    console.warn(`DateUtils.parseLocalDate: Using fallback Date constructor for "${dateString}". This may cause timezone issues.`);
+    console.warn(`DateUtils.parseLocalDate: Using fallback Date constructor for "${dateStr}". This may cause timezone issues.`);
     return fallbackDate;
   }
   
   // If all parsing attempts failed, return null
-  console.error(`DateUtils.parseLocalDate: Unable to parse date string "${dateString}"`);
+  console.error(`DateUtils.parseLocalDate: Unable to parse date string "${dateStr}"`);
   return null;
 };
 

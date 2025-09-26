@@ -724,3 +724,224 @@
     padding: 20px;
   }
 }
+
+/* Urgency Indicators */
+.urgency-indicator {
+  font-size: 1.2rem;
+  margin-right: 8px;
+  animation: pulse 2s infinite;
+}
+
+.urgency-label {
+  font-size: 0.8rem;
+  font-weight: 600;
+  padding: 2px 6px;
+  border-radius: 4px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  margin-top: 4px;
+}
+
+.urgency-overdue {
+  background: rgba(239, 68, 68, 0.1);
+  color: #dc2626;
+  border: 1px solid rgba(239, 68, 68, 0.3);
+}
+
+.urgency-urgent {
+  background: rgba(245, 158, 11, 0.1);
+  color: #d97706;
+  border: 1px solid rgba(245, 158, 11, 0.3);
+}
+
+.urgency-upcoming {
+  background: rgba(251, 191, 36, 0.1);
+  color: #ca8a04;
+  border: 1px solid rgba(251, 191, 36, 0.3);
+}
+
+.urgency-future {
+  background: rgba(34, 197, 94, 0.1);
+  color: #059669;
+  border: 1px solid rgba(34, 197, 94, 0.3);
+}
+
+/* Recurring item urgency styles */
+.recurring-item.urgency-overdue {
+  border-left: 4px solid #dc2626;
+  background: rgba(239, 68, 68, 0.05);
+}
+
+.recurring-item.urgency-urgent {
+  border-left: 4px solid #d97706;
+  background: rgba(245, 158, 11, 0.05);
+}
+
+.recurring-item.urgency-upcoming {
+  border-left: 4px solid #ca8a04;
+}
+
+.recurring-item.urgency-future {
+  border-left: 4px solid #059669;
+}
+
+/* Migration Button */
+.migration-button {
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  color: white;
+  border: none;
+  padding: 10px 16px;
+  border-radius: 8px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: transform 0.2s, box-shadow 0.2s;
+  position: relative;
+  overflow: hidden;
+}
+
+.migration-button:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 8px 20px rgba(102, 126, 234, 0.3);
+}
+
+.migration-button:disabled {
+  background: #ccc;
+  cursor: not-allowed;
+  transform: none;
+  box-shadow: none;
+}
+
+.migration-button::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: -100%;
+  width: 100%;
+  height: 100%;
+  background: linear-gradient(90deg, transparent, rgba(255,255,255,0.2), transparent);
+  transition: left 0.5s;
+}
+
+.migration-button:hover::before {
+  left: 100%;
+}
+
+/* Sort Select */
+.sort-select {
+  background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%) !important;
+  color: white !important;
+  border: none !important;
+  font-weight: 600;
+}
+
+.sort-select option {
+  background: white;
+  color: #333;
+}
+
+/* Pulse animation for overdue items */
+@keyframes pulse {
+  0% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.7;
+  }
+  100% {
+    opacity: 1;
+  }
+}
+
+.urgency-overdue .urgency-indicator {
+  animation: pulse 1s infinite;
+}
+
+/* Enhanced item next date styling */
+.item-next-date {
+  font-weight: 500;
+  color: #666;
+}
+
+.urgency-overdue .item-next-date {
+  color: #dc2626;
+  font-weight: 600;
+}
+
+.urgency-urgent .item-next-date {
+  color: #d97706;
+  font-weight: 600;
+}
+
+/* Migration notification styles */
+.migration-notice {
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  color: white;
+  padding: 16px;
+  border-radius: 12px;
+  margin-bottom: 20px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  animation: slideInFromTop 0.5s ease-out;
+}
+
+.migration-notice-content {
+  display: flex;
+  align-items: center;
+}
+
+.migration-notice-icon {
+  font-size: 1.5rem;
+  margin-right: 12px;
+}
+
+.migration-notice-text {
+  flex: 1;
+}
+
+.migration-notice-text h4 {
+  margin: 0 0 4px 0;
+  font-size: 1.1rem;
+}
+
+.migration-notice-text p {
+  margin: 0;
+  opacity: 0.9;
+  font-size: 0.9rem;
+}
+
+@keyframes slideInFromTop {
+  from {
+    transform: translateY(-20px);
+    opacity: 0;
+  }
+  to {
+    transform: translateY(0);
+    opacity: 1;
+  }
+}
+
+/* Urgency breakdown in summary cards */
+.urgency-breakdown {
+  display: flex;
+  gap: 8px;
+  margin-top: 8px;
+  flex-wrap: wrap;
+}
+
+.urgency-stat {
+  font-size: 0.75rem;
+  padding: 2px 6px;
+  border-radius: 4px;
+  font-weight: 500;
+}
+
+.urgency-stat.overdue {
+  background: rgba(239, 68, 68, 0.2);
+  color: #dc2626;
+}
+
+.urgency-stat.urgent {
+  background: rgba(245, 158, 11, 0.2);
+  color: #d97706;
+}

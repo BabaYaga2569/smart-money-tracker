@@ -5,6 +5,9 @@ import { RecurringManager } from '../utils/RecurringManager';
 import { formatDateForInput } from '../utils/DateUtils';
 import { TRANSACTION_CATEGORIES, getCategoryIcon } from '../constants/categories';
 import CSVImportModal from '../components/CSVImportModal';
+import SettingsMigrationModal from '../components/SettingsMigrationModal';
+import { BillMigrationManager } from '../utils/BillMigrationManager';
+import { BillSortingManager } from '../utils/BillSortingManager';
 import './Recurring.css';
 
 const Recurring = () => {
@@ -18,12 +21,16 @@ const Recurring = () => {
   const [showHistoryModal, setShowHistoryModal] = useState(false);
   const [selectedItem, setSelectedItem] = useState(null);
   const [showCSVImport, setShowCSVImport] = useState(false);
+  const [showSettingsMigration, setShowSettingsMigration] = useState(false);
+  const [settingsBills, setSettingsBills] = useState([]);
+  const [migrationAnalysis, setMigrationAnalysis] = useState(null);
   
   // Filters and search
   const [filterType, setFilterType] = useState('all');
   const [filterCategory, setFilterCategory] = useState('all');
   const [filterStatus, setFilterStatus] = useState('all');
   const [searchTerm, setSearchTerm] = useState('');
+  const [sortOrder, setSortOrder] = useState('dueDate'); // dueDate, alphabetical, amount
   
   // Form state
   const [newItem, setNewItem] = useState({
@@ -53,10 +60,19 @@ const Recurring = () => {
     }
   }, [recurringItems]);
 
+  useEffect(() => {
+    if (settingsBills.length > 0 && recurringItems.length >= 0) {
+      const analysis = BillMigrationManager.analyzeMigrationNeed(settingsBills, recurringItems);
+      setMigrationAnalysis(analysis);
+    }
+  }, [settingsBills, recurringItems]);
+
   const loadRecurringData = async () => {
     try {
       setLoading(true);
       await Promise.all([loadRecurringItems(), loadAccounts()]);
+      // Load settings bills after recurring items are loaded
+      await loadSettingsBillsAndAnalyzeMigration();
     } catch (error) {
       console.error('Error loading recurring data:', error);
       // Load sample data for demo
@@ -98,6 +114,27 @@ const Recurring = () => {
         usaa: { name: "USAA", type: "checking" },
         capone: { name: "Capital One", type: "credit" }
       });
+    }
+  };
+
+  const loadSettingsBillsAndAnalyzeMigration = async () => {
+    try {
+      const settingsDocRef = doc(db, 'users', 'steve-colburn', 'settings', 'personal');
+      const settingsDocSnap = await getDoc(settingsDocRef);
+      
+      if (settingsDocSnap.exists()) {
+        const data = settingsDocSnap.data();
+        const bills = data.bills || [];
+        setSettingsBills(bills);
+        
+        // Analyze migration needs
+        const analysis = BillMigrationManager.analyzeMigrationNeed(bills, recurringItems);
+        setMigrationAnalysis(analysis);
+      }
+    } catch (error) {
+      console.error('Error loading settings bills:', error);
+      setSettingsBills([]);
+      setMigrationAnalysis(null);
     }
   };
 
@@ -242,6 +279,10 @@ const Recurring = () => {
     // Get failed/missed items
     const failedItems = processedItems.filter(item => item.status === 'failed');
     
+    // Add urgency statistics using BillSortingManager
+    const processedWithUrgency = BillSortingManager.processBillsWithUrgency(activeItems);
+    const urgencySummary = BillSortingManager.getBillsUrgencySummary(processedWithUrgency);
+    
     return {
       ...totals,
       totalActive: activeItems.length,
@@ -250,20 +291,26 @@ const Recurring = () => {
       failedCount: failedItems.length,
       upcomingItems,
       dueSoonItems,
-      failedItems
+      failedItems,
+      urgency: urgencySummary
     };
   };
 
   const metrics = calculateMetrics();
 
-  // Filter items based on search and filters
-  const filteredItems = processedItems.filter(item => {
-    const matchesSearch = item.name.toLowerCase().includes(searchTerm.toLowerCase());
-    const matchesType = filterType === 'all' || item.type === filterType;
-    const matchesCategory = filterCategory === 'all' || item.category === filterCategory;
-    const matchesStatus = filterStatus === 'all' || item.status === filterStatus;
-    return matchesSearch && matchesType && matchesCategory && matchesStatus;
-  });
+  // Filter items based on search and filters, then apply smart sorting
+  const filteredItems = (() => {
+    const filtered = processedItems.filter(item => {
+      const matchesSearch = item.name.toLowerCase().includes(searchTerm.toLowerCase());
+      const matchesType = filterType === 'all' || item.type === filterType;
+      const matchesCategory = filterCategory === 'all' || item.category === filterCategory;
+      const matchesStatus = filterStatus === 'all' || item.status === filterStatus;
+      return matchesSearch && matchesType && matchesCategory && matchesStatus;
+    });
+    
+    // Apply smart sorting with urgency information
+    return BillSortingManager.processBillsWithUrgency(filtered, sortOrder);
+  })();
 
   const handleAddItem = () => {
     setEditingItem(null);
@@ -477,6 +524,83 @@ const Recurring = () => {
     setShowHistoryModal(true);
   };
 
+  const handleSettingsMigration = () => {
+    setShowSettingsMigration(true);
+  };
+
+  const handleMigrationImport = async (migratedItems, conflicts) => {
+    try {
+      setSaving(true);
+      
+      const settingsDocRef = doc(db, 'users', 'steve-colburn', 'settings', 'personal');
+      const currentDoc = await getDoc(settingsDocRef);
+      const currentData = currentDoc.exists() ? currentDoc.data() : {};
+      
+      const existingItems = currentData.recurringItems || [];
+      
+      // Process conflicts - merge, replace, or skip items based on resolution
+      const mergeUpdates = [];
+      conflicts.forEach(conflict => {
+        if (conflict.resolution === 'merge') {
+          const existingIndex = existingItems.findIndex(item => item.id === conflict.existing.id);
+          if (existingIndex !== -1) {
+            // Update existing item with new data, keeping original creation date
+            const mergedItem = {
+              ...existingItems[existingIndex],
+              ...conflict.incoming,
+              id: conflict.existing.id, // Keep existing ID
+              createdAt: existingItems[existingIndex].createdAt, // Keep original creation date
+              updatedAt: new Date().toISOString()
+            };
+            mergeUpdates.push({ index: existingIndex, item: mergedItem });
+          }
+        } else if (conflict.resolution === 'replace') {
+          const existingIndex = existingItems.findIndex(item => item.id === conflict.existing.id);
+          if (existingIndex !== -1) {
+            const replacementItem = {
+              ...conflict.incoming,
+              id: conflict.existing.id, // Keep existing ID for consistency
+              createdAt: existingItems[existingIndex].createdAt, // Keep original creation date
+              updatedAt: new Date().toISOString()
+            };
+            mergeUpdates.push({ index: existingIndex, item: replacementItem });
+          }
+        }
+      });
+
+      // Apply merge/replace updates
+      let updatedItems = [...existingItems];
+      mergeUpdates.forEach(({ index, item }) => {
+        updatedItems[index] = item;
+      });
+
+      // Add new items (excluding those that were skipped or merged)
+      const itemsToAdd = migratedItems.filter(item => {
+        const conflict = conflicts.find(c => c.incoming.id === item.id);
+        return !conflict || (conflict.resolution !== 'skip' && conflict.resolution !== 'merge' && conflict.resolution !== 'replace');
+      });
+
+      updatedItems = [...updatedItems, ...itemsToAdd];
+
+      await updateDoc(settingsDocRef, {
+        ...currentData,
+        recurringItems: updatedItems
+      });
+
+      // Reload data to reflect changes
+      await loadRecurringItems();
+      await loadSettingsBillsAndAnalyzeMigration();
+      
+      showNotification(`Successfully imported ${migratedItems.length} bills from Settings!`, 'success');
+      setShowSettingsMigration(false);
+    } catch (error) {
+      console.error('Error importing from settings:', error);
+      showNotification('Error importing bills from Settings', 'error');
+    } finally {
+      setSaving(false);
+    }
+  };
+
   const getStatusBadgeClass = (status) => {
     const statusClasses = {
       'active': 'status-active',
@@ -544,10 +668,26 @@ const Recurring = () => {
         </div>
         
         <div className="summary-card upcoming">
-          <div className="summary-icon">⏰</div>
+          <div className="summary-icon">
+            {metrics.urgency?.overdue > 0 ? '🔴' : metrics.urgency?.urgent > 0 ? '🟠' : '⏰'}
+          </div>
           <div className="summary-content">
-            <div className="summary-amount">{metrics.dueSoonCount}</div>
-            <div className="summary-label">Due Next 7 Days</div>
+            <div className="summary-amount">
+              {metrics.urgency?.overdue > 0 ? metrics.urgency.overdue : metrics.dueSoonCount}
+            </div>
+            <div className="summary-label">
+              {metrics.urgency?.overdue > 0 ? 'Overdue Bills' : 'Due Next 7 Days'}
+            </div>
+            {metrics.urgency && (metrics.urgency.overdue > 0 || metrics.urgency.urgent > 0) && (
+              <div className="urgency-breakdown">
+                {metrics.urgency.overdue > 0 && (
+                  <span className="urgency-stat overdue">🔴 {metrics.urgency.overdue} overdue</span>
+                )}
+                {metrics.urgency.urgent > 0 && (
+                  <span className="urgency-stat urgent">🟠 {metrics.urgency.urgent} urgent</span>
+                )}
+              </div>
+            )}
           </div>
         </div>
       </div>
@@ -594,9 +734,29 @@ const Recurring = () => {
             <option value="paused">Paused</option>
             <option value="failed">Failed</option>
           </select>
+          
+          <select 
+            value={sortOrder} 
+            onChange={(e) => setSortOrder(e.target.value)}
+            className="filter-select sort-select"
+          >
+            <option value="dueDate">🔥 By Due Date</option>
+            <option value="alphabetical">🔤 Alphabetical</option>
+            <option value="amount">💰 By Amount</option>
+          </select>
         </div>
         
         <div className="action-buttons">
+          {migrationAnalysis?.hasUnmigratedBills && (
+            <button 
+              className="migration-button"
+              onClick={handleSettingsMigration}
+              disabled={saving}
+              title={`Import ${migrationAnalysis.unmigratedCount} bills from Settings`}
+            >
+              📦 Import from Settings ({migrationAnalysis.unmigratedCount})
+            </button>
+          )}
           <button 
             className="import-button"
             onClick={() => setShowCSVImport(true)}
@@ -620,13 +780,20 @@ const Recurring = () => {
         <div className="recurring-table">
           {filteredItems.length > 0 ? (
             filteredItems.map((item) => (
-              <div key={item.id} className={`recurring-item ${getTypeClass(item.type)}`}>
+              <div key={item.id} className={`recurring-item ${getTypeClass(item.type)} ${item.urgencyInfo?.className || ''}`}>
                 <div className="item-main-info">
                   <div className="item-icon">
                     {getCategoryIcon(item.category)}
                   </div>
                   <div className="item-details">
-                    <h4>{item.name}</h4>
+                    <h4>
+                      {item.urgencyInfo && (
+                        <span className="urgency-indicator" title={item.urgencyInfo.label}>
+                          {item.urgencyInfo.indicator}
+                        </span>
+                      )}
+                      {item.name}
+                    </h4>
                     <div className="item-meta">
                       <span className={`item-type ${item.type}`}>
                         {item.type === 'income' ? '📈' : '📉'} {item.type}
@@ -642,8 +809,13 @@ const Recurring = () => {
                     {item.type === 'income' ? '+' : '-'}{formatCurrency(Math.abs(item.amount))}
                   </div>
                   <div className="item-next-date">
-                    Next: {formatDate(item.nextOccurrence)}
+                    {item.formattedDueDate || `Next: ${formatDate(item.nextOccurrence)}`}
                   </div>
+                  {item.urgencyInfo && (
+                    <div className={`urgency-label ${item.urgencyInfo.className}`}>
+                      {item.urgencyInfo.label}
+                    </div>
+                  )}
                 </div>
                 
                 <div className="item-status-section">
@@ -868,6 +1040,16 @@ const Recurring = () => {
           existingItems={recurringItems}
           onImport={handleCSVImport}
           onCancel={() => setShowCSVImport(false)}
+        />
+      )}
+
+      {/* Settings Migration Modal */}
+      {showSettingsMigration && (
+        <SettingsMigrationModal
+          settingsBills={settingsBills}
+          existingItems={recurringItems}
+          onImport={handleMigrationImport}
+          onCancel={() => setShowSettingsMigration(false)}
         />
       )}
     </div>
