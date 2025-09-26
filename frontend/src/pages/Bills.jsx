@@ -52,6 +52,66 @@ const Bills = () => {
       }
     } catch (error) {
       console.error('Error loading bills:', error);
+      
+      // Use sample data when Firebase is offline for demonstration
+      const sampleBills = [
+        {
+          name: 'NV Energy',
+          amount: '254.50',
+          dueDate: '2025-10-15',
+          recurrence: 'monthly',
+          category: 'Utilities',
+          account: 'bofa',
+          status: 'pending'
+        },
+        {
+          name: 'Southwest Gas',
+          amount: '36.62',
+          dueDate: '2025-10-08',
+          recurrence: 'monthly',
+          category: 'Utilities',
+          account: 'bofa',
+          status: 'overdue'
+        },
+        {
+          name: 'Netflix',
+          amount: '15.99',
+          dueDate: '2025-10-20',
+          recurrence: 'monthly',
+          category: 'Subscriptions',
+          account: 'chase',
+          status: 'pending'
+        },
+        {
+          name: 'Car Insurance',
+          amount: '89.00',
+          dueDate: '2025-09-15',
+          lastPaidDate: '2025-09-15',
+          recurrence: 'monthly',
+          category: 'Insurance',
+          account: 'bofa',
+          status: 'paid'
+        },
+        {
+          name: 'Mortgage',
+          amount: '1850.00',
+          dueDate: '2025-10-01',
+          recurrence: 'monthly',
+          category: 'Housing',
+          account: 'bofa',
+          status: 'pending'
+        }
+      ];
+      
+      setBills(sampleBills);
+      
+      // Process sample bills
+      const processed = RecurringBillManager.processBills(sampleBills).map(bill => ({
+        ...bill,
+        status: determineBillStatus(bill),
+        category: bill.category || 'Other'
+      }));
+      setProcessedBills(processed);
     } finally {
       setLoading(false);
     }
@@ -212,6 +272,83 @@ const Bills = () => {
   const showNotification = (message, type) => {
     // Simple notification - can be enhanced with a proper notification system
     console.log(`${type.toUpperCase()}: ${message}`);
+  };
+
+  const handleSaveBill = async (billData) => {
+    try {
+      const settingsDocRef = doc(db, 'users', 'steve-colburn', 'settings', 'personal');
+      const currentDoc = await getDoc(settingsDocRef);
+      const currentData = currentDoc.exists() ? currentDoc.data() : {};
+      
+      const bills = currentData.bills || [];
+      
+      if (editingBill) {
+        // Update existing bill
+        const updatedBills = bills.map(bill => {
+          if (bill.name === editingBill.name && bill.amount === editingBill.amount) {
+            return { ...billData, originalDueDate: billData.dueDate };
+          }
+          return bill;
+        });
+        
+        await updateDoc(settingsDocRef, {
+          ...currentData,
+          bills: updatedBills
+        });
+        
+        showNotification('Bill updated successfully!', 'success');
+      } else {
+        // Add new bill
+        const newBill = {
+          ...billData,
+          originalDueDate: billData.dueDate,
+          status: 'pending'
+        };
+        
+        await updateDoc(settingsDocRef, {
+          ...currentData,
+          bills: [...bills, newBill]
+        });
+        
+        showNotification('Bill added successfully!', 'success');
+      }
+      
+      // Reload bills and close modal
+      await loadBills();
+      setShowModal(false);
+      setEditingBill(null);
+    } catch (error) {
+      console.error('Error saving bill:', error);
+      showNotification('Error saving bill', 'error');
+    }
+  };
+
+  const handleDeleteBill = async (billToDelete) => {
+    if (!confirm(`Are you sure you want to delete ${billToDelete.name}?`)) {
+      return;
+    }
+
+    try {
+      const settingsDocRef = doc(db, 'users', 'steve-colburn', 'settings', 'personal');
+      const currentDoc = await getDoc(settingsDocRef);
+      const currentData = currentDoc.exists() ? currentDoc.data() : {};
+      
+      const bills = currentData.bills || [];
+      const updatedBills = bills.filter(bill => 
+        !(bill.name === billToDelete.name && bill.amount === billToDelete.amount)
+      );
+      
+      await updateDoc(settingsDocRef, {
+        ...currentData,
+        bills: updatedBills
+      });
+      
+      await loadBills();
+      showNotification('Bill deleted successfully!', 'success');
+    } catch (error) {
+      console.error('Error deleting bill:', error);
+      showNotification('Error deleting bill', 'error');
+    }
   };
 
   const formatCurrency = (amount) => {
@@ -388,7 +525,12 @@ const Bills = () => {
                   >
                     Edit
                   </button>
-                  <button className="action-btn danger">Delete</button>
+                  <button 
+                    className="action-btn danger"
+                    onClick={() => handleDeleteBill(bill)}
+                  >
+                    Delete
+                  </button>
                 </div>
               </div>
             ))
@@ -407,6 +549,204 @@ const Bills = () => {
             </div>
           )}
         </div>
+      </div>
+
+      {/* Add/Edit Bill Modal */}
+      {showModal && (
+        <BillModal
+          bill={editingBill}
+          categories={Object.keys(BILL_CATEGORIES)}
+          onSave={handleSaveBill}
+          onCancel={() => {
+            setShowModal(false);
+            setEditingBill(null);
+          }}
+        />
+      )}
+    </div>
+  );
+};
+
+// Bill Modal Component
+const BillModal = ({ bill, categories, onSave, onCancel }) => {
+  const [formData, setFormData] = useState({
+    name: bill?.name || '',
+    amount: bill?.amount || '',
+    dueDate: bill?.dueDate || '',
+    recurrence: bill?.recurrence || 'monthly',
+    category: bill?.category || 'Other',
+    account: bill?.account || 'bofa',
+    notes: bill?.notes || ''
+  });
+
+  const [errors, setErrors] = useState({});
+
+  const accounts = [
+    { key: 'bofa', name: 'Bank of America' },
+    { key: 'chase', name: 'Chase' },
+    { key: 'wells', name: 'Wells Fargo' },
+    { key: 'capital_one', name: 'Capital One' }
+  ];
+
+  const frequencies = [
+    { value: 'monthly', label: 'Monthly' },
+    { value: 'bi-weekly', label: 'Bi-weekly' },
+    { value: 'weekly', label: 'Weekly' },
+    { value: 'quarterly', label: 'Quarterly' },
+    { value: 'annually', label: 'Annually' },
+    { value: 'one-time', label: 'One-time' }
+  ];
+
+  const handleInputChange = (field, value) => {
+    setFormData(prev => ({ ...prev, [field]: value }));
+    // Clear error when user starts typing
+    if (errors[field]) {
+      setErrors(prev => ({ ...prev, [field]: '' }));
+    }
+  };
+
+  const validateForm = () => {
+    const newErrors = {};
+    
+    if (!formData.name.trim()) {
+      newErrors.name = 'Bill name is required';
+    }
+    
+    if (!formData.amount || parseFloat(formData.amount) <= 0) {
+      newErrors.amount = 'Valid amount is required';
+    }
+    
+    if (!formData.dueDate) {
+      newErrors.dueDate = 'Due date is required';
+    }
+    
+    setErrors(newErrors);
+    return Object.keys(newErrors).length === 0;
+  };
+
+  const handleSubmit = (e) => {
+    e.preventDefault();
+    
+    if (validateForm()) {
+      onSave({
+        ...formData,
+        amount: parseFloat(formData.amount).toString() // Ensure amount is stored as string for consistency
+      });
+    }
+  };
+
+  return (
+    <div className="modal-overlay" onClick={onCancel}>
+      <div className="modal-content" onClick={(e) => e.stopPropagation()}>
+        <div className="modal-header">
+          <h3>{bill ? 'Edit Bill' : 'Add New Bill'}</h3>
+          <button className="modal-close" onClick={onCancel}>×</button>
+        </div>
+        
+        <form className="modal-form" onSubmit={handleSubmit}>
+          <div className="form-row">
+            <div className="form-group">
+              <label>Bill Name *</label>
+              <input
+                type="text"
+                value={formData.name}
+                onChange={(e) => handleInputChange('name', e.target.value)}
+                placeholder="e.g., NV Energy, Southwest Gas"
+                className={errors.name ? 'error' : ''}
+              />
+              {errors.name && <span className="error-text">{errors.name}</span>}
+            </div>
+            
+            <div className="form-group">
+              <label>Amount *</label>
+              <input
+                type="number"
+                step="0.01"
+                value={formData.amount}
+                onChange={(e) => handleInputChange('amount', e.target.value)}
+                placeholder="0.00"
+                className={errors.amount ? 'error' : ''}
+              />
+              {errors.amount && <span className="error-text">{errors.amount}</span>}
+            </div>
+          </div>
+          
+          <div className="form-row">
+            <div className="form-group">
+              <label>Due Date *</label>
+              <input
+                type="date"
+                value={formData.dueDate}
+                onChange={(e) => handleInputChange('dueDate', e.target.value)}
+                className={errors.dueDate ? 'error' : ''}
+              />
+              {errors.dueDate && <span className="error-text">{errors.dueDate}</span>}
+            </div>
+            
+            <div className="form-group">
+              <label>Frequency</label>
+              <select
+                value={formData.recurrence}
+                onChange={(e) => handleInputChange('recurrence', e.target.value)}
+              >
+                {frequencies.map(freq => (
+                  <option key={freq.value} value={freq.value}>
+                    {freq.label}
+                  </option>
+                ))}
+              </select>
+            </div>
+          </div>
+          
+          <div className="form-row">
+            <div className="form-group">
+              <label>Category</label>
+              <select
+                value={formData.category}
+                onChange={(e) => handleInputChange('category', e.target.value)}
+              >
+                {categories.map(category => (
+                  <option key={category} value={category}>
+                    {category}
+                  </option>
+                ))}
+              </select>
+            </div>
+            
+            <div className="form-group">
+              <label>Account to Debit</label>
+              <select
+                value={formData.account}
+                onChange={(e) => handleInputChange('account', e.target.value)}
+              >
+                {accounts.map(account => (
+                  <option key={account.key} value={account.key}>
+                    {account.name}
+                  </option>
+                ))}
+              </select>
+            </div>
+          </div>
+          
+          <div className="form-group">
+            <label>Notes (Optional)</label>
+            <textarea
+              value={formData.notes}
+              onChange={(e) => handleInputChange('notes', e.target.value)}
+              placeholder="Additional notes about this bill..."
+              rows={3}
+            />
+          </div>
+          
+          <div className="modal-actions">
+            <button type="button" className="btn-cancel" onClick={onCancel}>
+              Cancel
+            </button>
+            <button type="submit" className="btn-save">
+              {bill ? 'Update Bill' : 'Add Bill'}
+            </button>
+          </div>
+        </form>
       </div>
     </div>
   );
