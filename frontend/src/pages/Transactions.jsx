@@ -33,6 +33,8 @@ const Transactions = () => {
     type: 'expense'
   });
 
+  const [categoryManuallySelected, setCategoryManuallySelected] = useState(false);
+
   const [filters, setFilters] = useState({
     search: '',
     category: '',
@@ -45,21 +47,28 @@ const Transactions = () => {
   const [showTemplates, setShowTemplates] = useState(false);
   const [templates, setTemplates] = useState([
     { name: 'Coffee', amount: '4.50', category: 'Food & Dining', type: 'expense' },
-    { name: 'Gas Station', amount: '35.00', category: 'Transportation', type: 'expense' },
-    { name: 'Grocery Store', amount: '75.00', category: 'Food & Dining', type: 'expense' },
+    { name: 'Gas Station', amount: '35.00', category: 'Gas & Fuel', type: 'expense' },
+    { name: 'Grocery Store', amount: '75.00', category: 'Groceries', type: 'expense' },
     { name: 'Monthly Salary', amount: '2500.00', category: 'Income', type: 'income' }
   ]);
 
-  // Smart categories with auto-categorization keywords
+  // Enhanced smart categories with comprehensive auto-categorization keywords
   const categories = {
-    "Food & Dining": ["restaurant", "grocery", "coffee", "food", "dining", "pizza", "mcdonalds", "starbucks", "uber eats", "doordash"],
-    "Transportation": ["gas", "uber", "lyft", "parking", "car", "metro", "bus", "taxi", "automotive", "fuel", "shell", "chevron"],
-    "Bills & Utilities": ["electric", "gas", "water", "internet", "phone", "utility", "bill", "verizon", "at&t", "comcast"],
-    "Entertainment": ["movie", "netflix", "spotify", "game", "entertainment", "hulu", "disney", "theater", "concert"],
-    "Shopping": ["amazon", "target", "walmart", "store", "shopping", "costco", "ebay", "clothing", "electronics"],
-    "Healthcare": ["doctor", "pharmacy", "medical", "hospital", "cvs", "walgreens", "health", "dental", "vision"],
-    "Income": ["payroll", "salary", "bonus", "freelance", "income", "wages", "deposit", "payment", "refund"],
-    "Transfer": ["transfer", "deposit", "withdrawal", "atm", "cash", "bank"]
+    "Groceries": ["groceries", "grocery", "walmart", "target", "kroger", "safeway", "food shopping", "supermarket", "costco", "sam's club", "aldi", "whole foods"],
+    "Food & Dining": ["restaurant", "mcdonalds", "starbucks", "pizza", "takeout", "dining", "coffee", "fast food", "burger king", "taco bell", "subway", "kfc", "dominos", "chipotle"],
+    "Gas & Fuel": ["gas", "shell", "chevron", "exxon", "bp", "fuel", "gas station", "texaco", "mobil", "arco", "speedway", "circle k"],
+    "Transportation": ["uber", "lyft", "taxi", "bus", "train", "parking", "car repair", "metro", "automotive", "public transport", "rideshare", "car wash"],
+    "Bills & Utilities": ["electric", "electricity", "water", "internet", "phone", "cable", "utility", "verizon", "at&t", "comcast", "xfinity", "nv energy", "duke energy"],
+    "Household Items": ["cleaning", "paper towels", "household", "home supplies", "detergent", "toilet paper", "cleaning supplies", "home depot", "lowes", "ace hardware"],
+    "Clothing": ["clothes", "shirt", "shoes", "pants", "clothing", "apparel", "nike", "adidas", "h&m", "zara", "gap", "old navy", "macy's"],
+    "Healthcare": ["doctor", "hospital", "medical", "dentist", "health", "clinic", "kaiser", "urgent care", "prescription"],
+    "Pharmacy": ["pharmacy", "cvs", "walgreens", "prescription", "medicine", "drugs", "rite aid", "medication"],
+    "Personal Care": ["haircut", "salon", "cosmetics", "personal care", "beauty", "barbershop", "spa", "nails", "massage"],
+    "Entertainment": ["movie", "theater", "game", "entertainment", "concert", "sports", "amusement park", "netflix", "spotify", "hulu", "disney"],
+    "Subscriptions": ["netflix", "spotify", "amazon prime", "subscription", "monthly service", "hulu", "disney+", "apple music", "youtube premium"],
+    "Shopping": ["amazon", "online shopping", "store", "retail", "ebay", "etsy", "best buy", "electronics", "shopping mall"],
+    "Income": ["payroll", "salary", "bonus", "freelance", "income", "paycheck", "wages", "deposit", "payment", "refund", "tax refund"],
+    "Transfer": ["transfer", "deposit", "withdrawal", "bank transfer", "atm", "cash", "venmo", "paypal", "zelle"]
   };
 
   useEffect(() => {
@@ -150,12 +159,26 @@ const Transactions = () => {
   };
 
   const autoCategorizTransaction = (description) => {
-    const desc = description.toLowerCase();
+    if (!description) return '';
+    
+    const desc = description.toLowerCase().trim();
+    
+    // First, try exact matches for better accuracy
     for (const [category, keywords] of Object.entries(categories)) {
-      if (keywords.some(keyword => desc.includes(keyword))) {
-        return category;
+      // Check for exact word matches first (more accurate)
+      for (const keyword of keywords) {
+        const lowerKeyword = keyword.toLowerCase();
+        // Handle variations with punctuation and word boundaries
+        if (desc === lowerKeyword || 
+            desc.includes(` ${lowerKeyword} `) ||
+            desc.startsWith(lowerKeyword + ' ') ||
+            desc.endsWith(' ' + lowerKeyword) ||
+            desc.includes(lowerKeyword)) {
+          return category;
+        }
       }
     }
+    
     return '';
   };
 
@@ -207,6 +230,7 @@ const Transactions = () => {
         date: formatDateForInput(new Date()),
         type: 'expense'
       });
+      setCategoryManuallySelected(false);
       setShowAddForm(false);
       
       showNotification('Transaction added successfully!', 'success');
@@ -560,11 +584,17 @@ const Transactions = () => {
                   value={newTransaction.description}
                   onChange={(e) => {
                     const desc = e.target.value;
-                    setNewTransaction({ 
+                    const updatedTransaction = { 
                       ...newTransaction, 
-                      description: desc,
-                      category: newTransaction.category || autoCategorizTransaction(desc)
-                    });
+                      description: desc
+                    };
+                    
+                    // Only auto-categorize if category wasn't manually selected
+                    if (!categoryManuallySelected) {
+                      updatedTransaction.category = autoCategorizTransaction(desc);
+                    }
+                    
+                    setNewTransaction(updatedTransaction);
                   }}
                   placeholder="What was this transaction for?"
                 />
@@ -573,7 +603,12 @@ const Transactions = () => {
                 <label>Category</label>
                 <select
                   value={newTransaction.category}
-                  onChange={(e) => setNewTransaction({ ...newTransaction, category: e.target.value })}
+                  onChange={(e) => {
+                    const selectedCategory = e.target.value;
+                    setNewTransaction({ ...newTransaction, category: selectedCategory });
+                    // Set manual selection flag (except for empty/auto-detect)
+                    setCategoryManuallySelected(selectedCategory !== '');
+                  }}
                 >
                   <option value="">Auto-detect</option>
                   {Object.keys(categories).map(category => (
