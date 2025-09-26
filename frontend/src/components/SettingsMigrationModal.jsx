@@ -134,9 +134,9 @@ const SettingsMigrationModal = ({ settingsBills, existingItems, onImport, onCanc
         <button 
           className="proceed-btn" 
           onClick={migrationPreview?.hasConflicts ? () => setStep('conflicts') : handleProceedWithMigration}
-          disabled={!migrationPreview?.itemsToMigrate?.length}
+          disabled={!migrationPreview?.itemsToMigrate?.length || loading}
         >
-          {migrationPreview?.hasConflicts ? 'Review Conflicts' : 'Import Bills'}
+          {loading ? 'Processing...' : migrationPreview?.hasConflicts ? 'Review Conflicts' : 'Import Bills'}
         </button>
       </div>
     </div>
@@ -224,8 +224,8 @@ const SettingsMigrationModal = ({ settingsBills, existingItems, onImport, onCanc
         <button className="back-btn" onClick={() => setStep('preview')}>
           Back
         </button>
-        <button className="proceed-btn" onClick={handleProceedWithMigration}>
-          Import with Resolutions
+        <button className="proceed-btn" onClick={handleProceedWithMigration} disabled={loading}>
+          {loading ? 'Importing...' : 'Import with Resolutions'}
         </button>
       </div>
     </div>
