@@ -1,14 +1,32 @@
 import React, { useState, useEffect } from 'react';
-import { doc, getDoc } from 'firebase/firestore';
+import { doc, getDoc, updateDoc, collection, addDoc } from 'firebase/firestore';
 import { db } from '../firebase';
 import { RecurringBillManager } from '../utils/RecurringBillManager';
-import { formatDateForDisplay } from '../utils/DateUtils';
+import { formatDateForDisplay, formatDateForInput, getPacificTime } from '../utils/DateUtils';
 import './Bills.css';
 
 const Bills = () => {
   const [loading, setLoading] = useState(true);
   const [bills, setBills] = useState([]);
-  const [upcomingBills, setUpcomingBills] = useState([]);
+  const [processedBills, setProcessedBills] = useState([]);
+  const [showModal, setShowModal] = useState(false);
+  const [editingBill, setEditingBill] = useState(null);
+  const [filterCategory, setFilterCategory] = useState('all');
+  const [filterStatus, setFilterStatus] = useState('all');
+  const [searchTerm, setSearchTerm] = useState('');
+  const [payingBill, setPayingBill] = useState(null);
+
+  // Bill categories with icons
+  const BILL_CATEGORIES = {
+    'Housing': '🏠',
+    'Utilities': '⚡',
+    'Transportation': '🚗',
+    'Credit Cards': '💳',
+    'Insurance': '🏥',
+    'Subscriptions': '📺',
+    'Education': '🎓',
+    'Other': '💰'
+  };
 
   useEffect(() => {
     loadBills();
@@ -24,17 +42,176 @@ const Bills = () => {
         const billsData = data.bills || [];
         setBills(billsData);
         
-        const processedBills = RecurringBillManager.processBills(billsData);
-        const nextMonth = new Date();
-        nextMonth.setMonth(nextMonth.getMonth() + 1);
-        const upcoming = RecurringBillManager.getBillsDueBefore(processedBills, nextMonth);
-        setUpcomingBills(upcoming);
+        // Process bills with next due dates and status
+        const processed = RecurringBillManager.processBills(billsData).map(bill => ({
+          ...bill,
+          status: determineBillStatus(bill),
+          category: bill.category || 'Other'
+        }));
+        setProcessedBills(processed);
       }
     } catch (error) {
       console.error('Error loading bills:', error);
     } finally {
       setLoading(false);
     }
+  };
+
+  const determineBillStatus = (bill) => {
+    const now = new Date();
+    const dueDate = new Date(bill.nextDueDate || bill.dueDate);
+    
+    if (bill.status === 'paid' || bill.isPaid) {
+      return 'paid';
+    } else if (dueDate < now) {
+      return 'overdue';
+    } else {
+      return 'pending';
+    }
+  };
+
+  // Calculate dashboard metrics
+  const calculateMetrics = () => {
+    const now = new Date();
+    const currentMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+    const nextMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0);
+    
+    const totalMonthlyBills = processedBills.reduce((sum, bill) => sum + (parseFloat(bill.amount) || 0), 0);
+    
+    const paidThisMonth = processedBills
+      .filter(bill => {
+        if (bill.status !== 'paid') return false;
+        const lastPaidDate = new Date(bill.lastPaidDate);
+        return lastPaidDate >= currentMonth && lastPaidDate <= nextMonth;
+      })
+      .reduce((sum, bill) => sum + (parseFloat(bill.amount) || 0), 0);
+    
+    const upcomingBills = processedBills.filter(bill => {
+      const dueDate = new Date(bill.nextDueDate || bill.dueDate);
+      return bill.status === 'pending' && dueDate <= nextMonth;
+    });
+    
+    const overdueBills = processedBills.filter(bill => bill.status === 'overdue');
+    
+    const nextBillDue = processedBills
+      .filter(bill => bill.status === 'pending')
+      .sort((a, b) => new Date(a.nextDueDate || a.dueDate) - new Date(b.nextDueDate || b.dueDate))[0];
+    
+    return {
+      totalMonthlyBills,
+      paidThisMonth,
+      upcomingBills: upcomingBills.reduce((sum, bill) => sum + (parseFloat(bill.amount) || 0), 0),
+      upcomingCount: upcomingBills.length,
+      overdueBills: overdueBills.reduce((sum, bill) => sum + (parseFloat(bill.amount) || 0), 0),
+      overdueCount: overdueBills.length,
+      nextBillDue
+    };
+  };
+
+  const metrics = calculateMetrics();
+
+  // Filter bills based on search and filters
+  const filteredBills = processedBills.filter(bill => {
+    const matchesSearch = bill.name.toLowerCase().includes(searchTerm.toLowerCase());
+    const matchesCategory = filterCategory === 'all' || bill.category === filterCategory;
+    const matchesStatus = filterStatus === 'all' || bill.status === filterStatus;
+    return matchesSearch && matchesCategory && matchesStatus;
+  });
+
+  const handleMarkAsPaid = async (bill) => {
+    if (payingBill) return;
+    setPayingBill(bill.name);
+
+    try {
+      // Create transaction
+      const transaction = {
+        amount: -Math.abs(parseFloat(bill.amount)),
+        description: `${bill.name} Payment`,
+        category: 'Bills & Utilities',
+        account: 'bofa', // Default to main account
+        date: formatDateForInput(getPacificTime()),
+        timestamp: Date.now(),
+        type: 'expense'
+      };
+
+      // Add transaction to Firebase
+      const transactionsRef = collection(db, 'users', 'steve-colburn', 'transactions');
+      await addDoc(transactionsRef, transaction);
+
+      // Update account balance
+      await updateAccountBalance('bofa', transaction.amount);
+
+      // Update bill status
+      await updateBillAsPaid(bill);
+
+      // Reload bills to refresh the data
+      await loadBills();
+
+      showNotification(`${bill.name} marked as paid!`, 'success');
+    } catch (error) {
+      console.error('Error marking bill as paid:', error);
+      showNotification('Error processing payment', 'error');
+    } finally {
+      setPayingBill(null);
+    }
+  };
+
+  const updateAccountBalance = async (accountKey, amount) => {
+    try {
+      const settingsDocRef = doc(db, 'users', 'steve-colburn', 'settings', 'personal');
+      const currentDoc = await getDoc(settingsDocRef);
+      const currentData = currentDoc.exists() ? currentDoc.data() : {};
+      
+      const bankAccounts = currentData.bankAccounts || {};
+      const currentBalance = parseFloat(bankAccounts[accountKey]?.balance || 0);
+      const newBalance = currentBalance + amount;
+      
+      const updatedAccounts = {
+        ...bankAccounts,
+        [accountKey]: {
+          ...bankAccounts[accountKey],
+          balance: newBalance.toString()
+        }
+      };
+      
+      await updateDoc(settingsDocRef, {
+        ...currentData,
+        bankAccounts: updatedAccounts
+      });
+    } catch (error) {
+      console.error('Error updating account balance:', error);
+      throw error;
+    }
+  };
+
+  const updateBillAsPaid = async (bill) => {
+    try {
+      const settingsDocRef = doc(db, 'users', 'steve-colburn', 'settings', 'personal'); 
+      const currentDoc = await getDoc(settingsDocRef);
+      const currentData = currentDoc.exists() ? currentDoc.data() : {};
+      
+      const bills = currentData.bills || [];
+      
+      const updatedBills = bills.map(b => {
+        if (b.name === bill.name && b.amount === bill.amount) {
+          return RecurringBillManager.markBillAsPaid(b, getPacificTime());
+        }
+        return b;
+      });
+      
+      await updateDoc(settingsDocRef, {
+        ...currentData,
+        bills: updatedBills
+      });
+    } catch (error) {
+      console.error('Error updating bill status:', error);
+      throw error;
+    }
+  };
+
+  const showNotification = (message, type) => {
+    // Simple notification - can be enhanced with a proper notification system
+    console.log(`${type.toUpperCase()}: ${message}`);
   };
 
   const formatCurrency = (amount) => {
@@ -46,6 +223,15 @@ const Bills = () => {
 
   const formatDate = (dateStr) => {
     return formatDateForDisplay(dateStr, 'short');
+  };
+
+  const getStatusBadgeClass = (status) => {
+    switch (status) {
+      case 'paid': return 'status-badge status-paid';
+      case 'overdue': return 'status-badge status-overdue';
+      case 'pending': return 'status-badge status-pending';
+      default: return 'status-badge';
+    }
   };
 
   if (loading) {
@@ -61,49 +247,165 @@ const Bills = () => {
 
   return (
     <div className="bills-container">
+      {/* Header with Add Bill Button */}
       <div className="page-header">
-        <h2>🧾 Bills Management</h2>
-        <p>Track and manage your upcoming bills</p>
+        <div className="header-content">
+          <div>
+            <h2>🧾 Bills Management</h2>
+            <p>Complete bill lifecycle management and automation</p>
+          </div>
+          <button 
+            className="add-bill-btn-header"
+            onClick={() => {
+              setEditingBill(null);
+              setShowModal(true);
+            }}
+          >
+            + Add New Bill
+          </button>
+        </div>
       </div>
 
-      <div className="bills-summary">
-        <div className="summary-grid">
-          <div className="summary-card">
-            <h3>Total Bills</h3>
-            <div className="summary-value">{bills.length}</div>
+      {/* Enhanced Overview Dashboard */}
+      <div className="bills-overview">
+        <div className="overview-grid">
+          <div className="overview-card">
+            <h3>Total Monthly Bills</h3>
+            <div className="overview-value">{formatCurrency(metrics.totalMonthlyBills)}</div>
+            <div className="overview-label">{processedBills.length} bills</div>
           </div>
-          <div className="summary-card">
-            <h3>Due This Month</h3>
-            <div className="summary-value">{upcomingBills.length}</div>
+          <div className="overview-card">
+            <h3>Paid This Month</h3>
+            <div className="overview-value paid">{formatCurrency(metrics.paidThisMonth)}</div>
+            <div className="overview-label">Successfully paid</div>
           </div>
-          <div className="summary-card">
-            <h3>Monthly Total</h3>
-            <div className="summary-value">
-              {formatCurrency(upcomingBills.reduce((sum, bill) => sum + (parseFloat(bill.amount) || 0), 0))}
+          <div className="overview-card">
+            <h3>Upcoming Bills</h3>
+            <div className="overview-value upcoming">{formatCurrency(metrics.upcomingBills)}</div>
+            <div className="overview-label">{metrics.upcomingCount} bills due</div>
+          </div>
+          <div className="overview-card">
+            <h3>Overdue Bills</h3>
+            <div className="overview-value overdue">{formatCurrency(metrics.overdueBills)}</div>
+            <div className="overview-label">{metrics.overdueCount} bills overdue</div>
+          </div>
+          <div className="overview-card">
+            <h3>Next Bill Due</h3>
+            <div className="overview-value">
+              {metrics.nextBillDue ? formatCurrency(metrics.nextBillDue.amount) : '--'}
+            </div>
+            <div className="overview-label">
+              {metrics.nextBillDue ? `${metrics.nextBillDue.name} on ${formatDate(metrics.nextBillDue.nextDueDate)}` : 'No upcoming bills'}
             </div>
           </div>
         </div>
       </div>
 
-      <div className="upcoming-bills">
-        <h3>Upcoming Bills</h3>
+      {/* Search and Filter Controls */}
+      <div className="bills-controls">
+        <div className="search-box">
+          <input
+            type="text"
+            placeholder="Search bills..."
+            value={searchTerm}
+            onChange={(e) => setSearchTerm(e.target.value)}
+            className="search-input"
+          />
+        </div>
+        <div className="filter-controls">
+          <select 
+            value={filterCategory} 
+            onChange={(e) => setFilterCategory(e.target.value)}
+            className="filter-select"
+          >
+            <option value="all">All Categories</option>
+            {Object.keys(BILL_CATEGORIES).map(category => (
+              <option key={category} value={category}>
+                {BILL_CATEGORIES[category]} {category}
+              </option>
+            ))}
+          </select>
+          <select 
+            value={filterStatus} 
+            onChange={(e) => setFilterStatus(e.target.value)}
+            className="filter-select"
+          >
+            <option value="all">All Status</option>
+            <option value="pending">Pending</option>
+            <option value="paid">Paid</option>
+            <option value="overdue">Overdue</option>
+          </select>
+        </div>
+      </div>
+
+      {/* Enhanced Bills List */}
+      <div className="bills-list-section">
+        <h3>Bills ({filteredBills.length})</h3>
         <div className="bills-list">
-          {upcomingBills.map((bill, index) => (
-            <div key={index} className="bill-item">
-              <div className="bill-info">
-                <h4>{bill.name}</h4>
-                <p>Due: {formatDate(bill.nextDueDate)}</p>
-                <span className="bill-recurrence">{bill.recurrence}</span>
+          {filteredBills.length > 0 ? (
+            filteredBills.map((bill, index) => (
+              <div key={index} className="bill-item">
+                <div className="bill-main-info">
+                  <div className="bill-icon">
+                    {BILL_CATEGORIES[bill.category] || '💰'}
+                  </div>
+                  <div className="bill-details">
+                    <h4>{bill.name}</h4>
+                    <div className="bill-meta">
+                      <span className="bill-category">{bill.category}</span>
+                      <span className="bill-frequency">{bill.recurrence}</span>
+                    </div>
+                  </div>
+                </div>
+                
+                <div className="bill-amount-section">
+                  <div className="bill-amount">{formatCurrency(bill.amount)}</div>
+                  <div className="bill-due-date">Due: {formatDate(bill.nextDueDate || bill.dueDate)}</div>
+                </div>
+                
+                <div className="bill-status-section">
+                  <span className={getStatusBadgeClass(bill.status)}>
+                    {bill.status}
+                  </span>
+                </div>
+                
+                <div className="bill-actions">
+                  {bill.status !== 'paid' && (
+                    <button 
+                      className="action-btn mark-paid"
+                      onClick={() => handleMarkAsPaid(bill)}
+                      disabled={payingBill === bill.name}
+                    >
+                      {payingBill === bill.name ? 'Processing...' : 'Mark Paid'}
+                    </button>
+                  )}
+                  <button 
+                    className="action-btn secondary"
+                    onClick={() => {
+                      setEditingBill(bill);
+                      setShowModal(true);
+                    }}
+                  >
+                    Edit
+                  </button>
+                  <button className="action-btn danger">Delete</button>
+                </div>
               </div>
-              <div className="bill-amount">
-                {formatCurrency(bill.amount)}
-              </div>
-              <div className="bill-actions">
-                <button className="action-btn">Mark Paid</button>
-                <button className="action-btn secondary">Edit</button>
-              </div>
+            ))
+          ) : (
+            <div className="no-bills">
+              <p>No bills found matching your criteria.</p>
+              <button 
+                className="add-first-bill-btn"
+                onClick={() => {
+                  setEditingBill(null);
+                  setShowModal(true);
+                }}
+              >
+                Add Your First Bill
+              </button>
             </div>
-          ))}
+          )}
         </div>
       </div>
     </div>
