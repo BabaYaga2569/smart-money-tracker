@@ -52,66 +52,6 @@ const Bills = () => {
       }
     } catch (error) {
       console.error('Error loading bills:', error);
-      
-      // Use sample data when Firebase is offline for demonstration
-      const sampleBills = [
-        {
-          name: 'NV Energy',
-          amount: '254.50',
-          dueDate: '2025-10-15',
-          recurrence: 'monthly',
-          category: 'Utilities',
-          account: 'bofa',
-          status: 'pending'
-        },
-        {
-          name: 'Southwest Gas',
-          amount: '36.62',
-          dueDate: '2025-10-08',
-          recurrence: 'monthly',
-          category: 'Utilities',
-          account: 'bofa',
-          status: 'overdue'
-        },
-        {
-          name: 'Netflix',
-          amount: '15.99',
-          dueDate: '2025-10-20',
-          recurrence: 'monthly',
-          category: 'Subscriptions',
-          account: 'chase',
-          status: 'pending'
-        },
-        {
-          name: 'Car Insurance',
-          amount: '89.00',
-          dueDate: '2025-09-15',
-          lastPaidDate: '2025-09-15',
-          recurrence: 'monthly',
-          category: 'Insurance',
-          account: 'bofa',
-          status: 'paid'
-        },
-        {
-          name: 'Mortgage',
-          amount: '1850.00',
-          dueDate: '2025-10-01',
-          recurrence: 'monthly',
-          category: 'Housing',
-          account: 'bofa',
-          status: 'pending'
-        }
-      ];
-      
-      setBills(sampleBills);
-      
-      // Process sample bills
-      const processed = RecurringBillManager.processBills(sampleBills).map(bill => ({
-        ...bill,
-        status: determineBillStatus(bill),
-        category: bill.category || 'Other'
-      }));
-      setProcessedBills(processed);
     } finally {
       setLoading(false);
     }
