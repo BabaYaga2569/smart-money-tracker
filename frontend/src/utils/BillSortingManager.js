@@ -67,7 +67,7 @@ export class BillSortingManager {
     }
 
     /**
-     * Sort bills by due date proximity (smart sorting)
+     * Sort bills by due date proximity (smart sorting with paid bills at bottom)
      * @param {Array} bills - Array of bills/recurring items
      * @param {string} sortOrder - 'dueDate' (default), 'alphabetical', 'amount', 'custom'
      * @returns {Array} Sorted bills array
@@ -82,20 +82,40 @@ export class BillSortingManager {
 
         switch (sortOrder) {
             case 'alphabetical':
-                return billsCopy.sort((a, b) => (a.name || '').localeCompare(b.name || ''));
+                return billsCopy.sort((a, b) => {
+                    // Paid bills go to bottom first
+                    if (a.status === 'paid' && b.status !== 'paid') return 1;
+                    if (a.status !== 'paid' && b.status === 'paid') return -1;
+                    return (a.name || '').localeCompare(b.name || '');
+                });
             
             case 'amount':
-                return billsCopy.sort((a, b) => (parseFloat(b.amount) || 0) - (parseFloat(a.amount) || 0));
+                return billsCopy.sort((a, b) => {
+                    // Paid bills go to bottom first
+                    if (a.status === 'paid' && b.status !== 'paid') return 1;
+                    if (a.status !== 'paid' && b.status === 'paid') return -1;
+                    return (parseFloat(b.amount) || 0) - (parseFloat(a.amount) || 0);
+                });
             
             case 'custom':
                 // For custom sorting, maintain existing order or use a custom order field
-                return billsCopy.sort((a, b) => (a.customOrder || 0) - (b.customOrder || 0));
+                return billsCopy.sort((a, b) => {
+                    // Paid bills go to bottom first
+                    if (a.status === 'paid' && b.status !== 'paid') return 1;
+                    if (a.status !== 'paid' && b.status === 'paid') return -1;
+                    return (a.customOrder || 0) - (b.customOrder || 0);
+                });
             
             case 'dueDate':
             default:
                 return billsCopy.sort((a, b) => {
-                    const aDays = this.calculateDaysUntilDue(a.nextOccurrence || a.dueDate);
-                    const bDays = this.calculateDaysUntilDue(b.nextOccurrence || b.dueDate);
+                    // Priority 1: Paid bills always go to bottom
+                    if (a.status === 'paid' && b.status !== 'paid') return 1;
+                    if (a.status !== 'paid' && b.status === 'paid') return -1;
+                    
+                    // Priority 2: Among unpaid bills, sort by urgency
+                    const aDays = this.calculateDaysUntilDue(a.nextOccurrence || a.nextDueDate || a.dueDate);
+                    const bDays = this.calculateDaysUntilDue(b.nextOccurrence || b.nextDueDate || b.dueDate);
                     
                     // Primary sort: by days until due
                     if (aDays !== bDays) {
