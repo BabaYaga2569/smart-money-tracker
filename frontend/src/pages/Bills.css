@@ -168,6 +168,35 @@
   transition: all 0.2s ease;
 }
 
+/* Urgency-based styling for bill cards */
+.bill-item.urgency-overdue {
+  border: 2px solid #ff073a !important;
+  box-shadow: 0 0 16px rgba(255, 7, 58, 0.3) !important;
+  animation: pulse-urgent 2s infinite;
+}
+
+.bill-item.urgency-urgent {
+  border: 2px solid #ff6b00 !important;
+  box-shadow: 0 0 12px rgba(255, 107, 0, 0.2) !important;
+}
+
+.bill-item.urgency-upcoming {
+  border: 2px solid #ffdd00 !important;
+  box-shadow: 0 0 8px rgba(255, 221, 0, 0.2) !important;
+}
+
+.bill-item.urgency-future {
+  border: 2px solid #00ff88 !important;
+  box-shadow: 0 0 8px rgba(0, 255, 136, 0.2) !important;
+}
+
+/* Pulse animation for urgent bills */
+@keyframes pulse-urgent {
+  0% { box-shadow: 0 0 16px rgba(255, 7, 58, 0.3); }
+  50% { box-shadow: 0 0 24px rgba(255, 7, 58, 0.5); }
+  100% { box-shadow: 0 0 16px rgba(255, 7, 58, 0.3); }
+}
+
 /* Glow effect on hover for bill names */
 .bill-item:hover .bill-details h4 {
   text-shadow: 0 0 12px rgba(0, 255, 136, 0.6) !important;
@@ -215,6 +244,42 @@
   color: var(--text-secondary, #d1d5db) !important;
   text-transform: capitalize;
   font-size: 14px;
+}
+
+/* Urgency indicator styling */
+.urgency-indicator {
+  color: #ffffff !important;
+  background: rgba(255, 255, 255, 0.1);
+  padding: 2px 6px;
+  border-radius: 4px;
+  font-size: 10px !important;
+  font-weight: 700 !important;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.urgency-overdue .urgency-indicator {
+  color: #ff073a !important;
+  background: rgba(255, 7, 58, 0.2);
+  text-shadow: 0 0 6px rgba(255, 7, 58, 0.6);
+}
+
+.urgency-urgent .urgency-indicator {
+  color: #ff6b00 !important;
+  background: rgba(255, 107, 0, 0.2);
+  text-shadow: 0 0 6px rgba(255, 107, 0, 0.6);
+}
+
+.urgency-upcoming .urgency-indicator {
+  color: #ffdd00 !important;
+  background: rgba(255, 221, 0, 0.2);
+  text-shadow: 0 0 6px rgba(255, 221, 0, 0.6);
+}
+
+.urgency-future .urgency-indicator {
+  color: #00ff88 !important;
+  background: rgba(0, 255, 136, 0.2);
+  text-shadow: 0 0 6px rgba(0, 255, 136, 0.6);
 }
 
 .bill-amount-section {

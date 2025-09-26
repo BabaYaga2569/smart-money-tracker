@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { doc, getDoc, updateDoc, collection, addDoc } from 'firebase/firestore';
 import { db } from '../firebase';
 import { RecurringBillManager } from '../utils/RecurringBillManager';
+import { BillSortingManager } from '../utils/BillSortingManager';
 import { formatDateForDisplay, formatDateForInput, getPacificTime } from '../utils/DateUtils';
 import { TRANSACTION_CATEGORIES, CATEGORY_ICONS, getCategoryIcon, migrateLegacyCategory } from '../constants/categories';
 import './Bills.css';
@@ -169,13 +170,18 @@ const Bills = () => {
 
   const metrics = calculateMetrics();
 
-  // Filter bills based on search and filters
-  const filteredBills = processedBills.filter(bill => {
-    const matchesSearch = bill.name.toLowerCase().includes(searchTerm.toLowerCase());
-    const matchesCategory = filterCategory === 'all' || bill.category === filterCategory;
-    const matchesStatus = filterStatus === 'all' || bill.status === filterStatus;
-    return matchesSearch && matchesCategory && matchesStatus;
-  });
+  // Filter bills based on search and filters, then apply smart sorting
+  const filteredBills = (() => {
+    const filtered = processedBills.filter(bill => {
+      const matchesSearch = bill.name.toLowerCase().includes(searchTerm.toLowerCase());
+      const matchesCategory = filterCategory === 'all' || bill.category === filterCategory;
+      const matchesStatus = filterStatus === 'all' || bill.status === filterStatus;
+      return matchesSearch && matchesCategory && matchesStatus;
+    });
+
+    // Apply smart sorting with urgency information
+    return BillSortingManager.processBillsWithUrgency(filtered, 'dueDate');
+  })();
 
   const handleMarkAsPaid = async (bill) => {
     if (payingBill) return;
@@ -480,7 +486,7 @@ const Bills = () => {
         <div className="bills-list">
           {filteredBills.length > 0 ? (
             filteredBills.map((bill, index) => (
-              <div key={index} className="bill-item">
+              <div key={index} className={`bill-item ${bill.urgencyInfo?.className || ''}`}>
                 <div className="bill-main-info">
                   <div className="bill-icon">
                     {getCategoryIcon(bill.category)}
@@ -490,13 +496,18 @@ const Bills = () => {
                     <div className="bill-meta">
                       <span className="bill-category">{bill.category}</span>
                       <span className="bill-frequency">{bill.recurrence}</span>
+                      {bill.urgencyInfo && (
+                        <span className="urgency-indicator">{bill.urgencyInfo.indicator} {bill.urgencyInfo.label}</span>
+                      )}
                     </div>
                   </div>
                 </div>
                 
                 <div className="bill-amount-section">
                   <div className="bill-amount">{formatCurrency(bill.amount)}</div>
-                  <div className="bill-due-date">Due: {formatDate(bill.nextDueDate || bill.dueDate)}</div>
+                  <div className="bill-due-date">
+                    {bill.formattedDueDate || `Due: ${formatDate(bill.nextDueDate || bill.dueDate)}`}
+                  </div>
                 </div>
                 
                 <div className="bill-status-section">
