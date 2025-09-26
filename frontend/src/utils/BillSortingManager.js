@@ -83,41 +83,28 @@ export class BillSortingManager {
         switch (sortOrder) {
             case 'alphabetical':
                 return billsCopy.sort((a, b) => {
-                    // Paid bills go to bottom first
-                    if (a.status === 'paid' && b.status !== 'paid') return 1;
-                    if (a.status !== 'paid' && b.status === 'paid') return -1;
                     return (a.name || '').localeCompare(b.name || '');
                 });
             
             case 'amount':
                 return billsCopy.sort((a, b) => {
-                    // Paid bills go to bottom first
-                    if (a.status === 'paid' && b.status !== 'paid') return 1;
-                    if (a.status !== 'paid' && b.status === 'paid') return -1;
                     return (parseFloat(b.amount) || 0) - (parseFloat(a.amount) || 0);
                 });
             
             case 'custom':
                 // For custom sorting, maintain existing order or use a custom order field
                 return billsCopy.sort((a, b) => {
-                    // Paid bills go to bottom first
-                    if (a.status === 'paid' && b.status !== 'paid') return 1;
-                    if (a.status !== 'paid' && b.status === 'paid') return -1;
                     return (a.customOrder || 0) - (b.customOrder || 0);
                 });
             
             case 'dueDate':
             default:
                 return billsCopy.sort((a, b) => {
-                    // Priority 1: Paid bills always go to bottom
-                    if (a.status === 'paid' && b.status !== 'paid') return 1;
-                    if (a.status !== 'paid' && b.status === 'paid') return -1;
-                    
-                    // Priority 2: Among unpaid bills, sort by urgency
+                    // Sort by urgency - overdue first, then by days until due
                     const aDays = this.calculateDaysUntilDue(a.nextOccurrence || a.nextDueDate || a.dueDate);
                     const bDays = this.calculateDaysUntilDue(b.nextOccurrence || b.nextDueDate || b.dueDate);
                     
-                    // Primary sort: by days until due
+                    // Primary sort: by days until due (overdue bills first)
                     if (aDays !== bDays) {
                         return aDays - bDays;
                     }
