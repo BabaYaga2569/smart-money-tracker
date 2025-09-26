@@ -1,1 +1,448 @@
 @import './SharedPages.css';
+
+/* Cash Flow Specific Styles */
+
+/* Loading State */
+.loading {
+  text-align: center;
+  padding: 60px 20px;
+}
+
+.loading h3 {
+  color: #00ff88;
+  margin-bottom: 20px;
+}
+
+.loading-spinner {
+  width: 40px;
+  height: 40px;
+  border: 4px solid #333;
+  border-top: 4px solid #00ff88;
+  border-radius: 50%;
+  animation: spin 1s linear infinite;
+  margin: 0 auto;
+}
+
+@keyframes spin {
+  0% { transform: rotate(0deg); }
+  100% { transform: rotate(360deg); }
+}
+
+/* Controls Section */
+.controls-section {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 30px;
+  gap: 20px;
+  flex-wrap: wrap;
+}
+
+.period-selector,
+.tab-selector {
+  display: flex;
+  gap: 10px;
+}
+
+.period-selector button,
+.tab-selector button {
+  padding: 10px 16px;
+  background: #1a1a1a;
+  border: 2px solid #333;
+  color: #fff;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: all 0.3s ease;
+  font-weight: 500;
+}
+
+.period-selector button:hover,
+.tab-selector button:hover {
+  border-color: #00ff88;
+  transform: translateY(-2px);
+}
+
+.period-selector button.active,
+.tab-selector button.active {
+  background: #00ff88;
+  color: #000;
+  border-color: #00ff88;
+}
+
+/* Tab Content */
+.tab-content {
+  min-height: 600px;
+}
+
+/* Charts Grid */
+.charts-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(400px, 1fr));
+  gap: 30px;
+  margin-top: 30px;
+}
+
+.chart-container {
+  background: #1a1a1a;
+  border: 2px solid #333;
+  border-radius: 12px;
+  padding: 20px;
+  height: 400px;
+  transition: all 0.3s ease;
+}
+
+.chart-container:hover {
+  border-color: #00ff88;
+  transform: translateY(-2px);
+  box-shadow: 0 8px 20px rgba(0, 255, 136, 0.1);
+}
+
+.chart-container.large {
+  grid-column: span 2;
+  height: 450px;
+}
+
+.chart-container.mega {
+  grid-column: span 2;
+  height: 500px;
+}
+
+/* Summary Grids */
+.overview-tab .cashflow-summary,
+.trends-summary,
+.forecast-summary {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 20px;
+  margin-bottom: 30px;
+}
+
+/* Trends Tab Specific */
+.trends-summary .summary-card h3 {
+  font-size: 0.9rem;
+}
+
+/* Forecast Tab Specific */
+.forecast-factors {
+  background: #1a1a1a;
+  border: 2px solid #333;
+  border-radius: 12px;
+  padding: 25px;
+  margin-top: 30px;
+}
+
+.forecast-factors h3 {
+  color: #00ff88;
+  margin-bottom: 20px;
+  font-size: 1.3rem;
+}
+
+.factors-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 15px;
+}
+
+.factor-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: #333;
+  padding: 8px 15px;
+  border-radius: 20px;
+  border: 1px solid #555;
+}
+
+.factor-icon {
+  font-size: 1.2rem;
+}
+
+.factor-text {
+  color: #fff;
+  font-size: 0.9rem;
+  font-weight: 500;
+}
+
+.no-factors {
+  color: #888;
+  font-style: italic;
+  margin: 0;
+}
+
+/* Insights Tab */
+.insights-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(350px, 1fr));
+  gap: 25px;
+}
+
+.insight-card {
+  background: #1a1a1a;
+  border: 2px solid #333;
+  border-radius: 12px;
+  padding: 25px;
+  transition: all 0.3s ease;
+  position: relative;
+  overflow: hidden;
+}
+
+.insight-card:hover {
+  transform: translateY(-3px);
+  box-shadow: 0 10px 25px rgba(0, 0, 0, 0.3);
+}
+
+.insight-card.positive {
+  border-left: 4px solid #00ff88;
+}
+
+.insight-card.positive:hover {
+  border-color: #00ff88;
+  box-shadow: 0 10px 25px rgba(0, 255, 136, 0.2);
+}
+
+.insight-card.warning {
+  border-left: 4px solid #ffaa00;
+}
+
+.insight-card.warning:hover {
+  border-color: #ffaa00;
+  box-shadow: 0 10px 25px rgba(255, 170, 0, 0.2);
+}
+
+.insight-card.info {
+  border-left: 4px solid #4ecdc4;
+}
+
+.insight-card.info:hover {
+  border-color: #4ecdc4;
+  box-shadow: 0 10px 25px rgba(78, 205, 196, 0.2);
+}
+
+.insight-header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 15px;
+}
+
+.insight-icon {
+  font-size: 1.5rem;
+}
+
+.insight-header h3 {
+  color: #00ff88;
+  margin: 0;
+  font-size: 1.1rem;
+}
+
+.insight-message {
+  color: #ccc;
+  line-height: 1.5;
+  margin-bottom: 15px;
+  font-size: 0.95rem;
+}
+
+.insight-priority {
+  position: absolute;
+  top: 15px;
+  right: 15px;
+  padding: 4px 8px;
+  border-radius: 12px;
+  font-size: 0.7rem;
+  font-weight: bold;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.insight-priority.high {
+  background: rgba(255, 107, 107, 0.2);
+  color: #ff6b6b;
+}
+
+.insight-priority.medium {
+  background: rgba(255, 170, 0, 0.2);
+  color: #ffaa00;
+}
+
+.insight-priority.low {
+  background: rgba(78, 205, 196, 0.2);
+  color: #4ecdc4;
+}
+
+.no-insights {
+  grid-column: 1 / -1;
+  text-align: center;
+  padding: 60px 20px;
+  background: #1a1a1a;
+  border: 2px solid #333;
+  border-radius: 12px;
+}
+
+.no-insights h3 {
+  color: #00ff88;
+  margin-bottom: 15px;
+}
+
+.no-insights p {
+  color: #888;
+  max-width: 500px;
+  margin: 0 auto;
+}
+
+/* Empty State */
+.empty-state {
+  text-align: center;
+  padding: 80px 20px;
+  background: #1a1a1a;
+  border: 2px solid #333;
+  border-radius: 12px;
+  margin-top: 30px;
+}
+
+.empty-state h3 {
+  color: #00ff88;
+  margin-bottom: 15px;
+  font-size: 1.5rem;
+}
+
+.empty-state p {
+  color: #888;
+  max-width: 600px;
+  margin: 0 auto;
+  font-size: 1.1rem;
+}
+
+/* Responsive Design */
+@media (max-width: 1200px) {
+  .charts-grid {
+    grid-template-columns: 1fr;
+  }
+  
+  .chart-container.large,
+  .chart-container.mega {
+    grid-column: span 1;
+  }
+  
+  .controls-section {
+    flex-direction: column;
+    align-items: stretch;
+  }
+  
+  .period-selector,
+  .tab-selector {
+    justify-content: center;
+  }
+}
+
+@media (max-width: 768px) {
+  .overview-tab .cashflow-summary,
+  .trends-summary,
+  .forecast-summary {
+    grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  }
+  
+  .charts-grid {
+    grid-template-columns: 1fr;
+    gap: 20px;
+  }
+  
+  .chart-container {
+    height: 300px;
+    padding: 15px;
+  }
+  
+  .chart-container.large,
+  .chart-container.mega {
+    height: 350px;
+  }
+  
+  .insights-grid {
+    grid-template-columns: 1fr;
+  }
+  
+  .period-selector button,
+  .tab-selector button {
+    font-size: 0.85rem;
+    padding: 8px 12px;
+  }
+  
+  .factors-list {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+  
+  .factor-item {
+    width: 100%;
+    justify-content: flex-start;
+  }
+}
+
+@media (max-width: 480px) {
+  .cashflow-container {
+    padding: 15px;
+  }
+  
+  .page-header h2 {
+    font-size: 1.8rem;
+  }
+  
+  .controls-section {
+    gap: 15px;
+  }
+  
+  .period-selector,
+  .tab-selector {
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+  
+  .period-selector button,
+  .tab-selector button {
+    flex: 1;
+    min-width: 80px;
+    font-size: 0.8rem;
+    padding: 8px 10px;
+  }
+}
+
+/* Animation for chart containers */
+.chart-container {
+  animation: fadeInUp 0.6s ease-out;
+}
+
+@keyframes fadeInUp {
+  from {
+    opacity: 0;
+    transform: translateY(30px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* Stagger animation for summary cards */
+.cashflow-summary .summary-card,
+.trends-summary .summary-card,
+.forecast-summary .summary-card {
+  animation: fadeInUp 0.6s ease-out;
+}
+
+.cashflow-summary .summary-card:nth-child(1) { animation-delay: 0.1s; }
+.cashflow-summary .summary-card:nth-child(2) { animation-delay: 0.2s; }
+.cashflow-summary .summary-card:nth-child(3) { animation-delay: 0.3s; }
+.cashflow-summary .summary-card:nth-child(4) { animation-delay: 0.4s; }
+.cashflow-summary .summary-card:nth-child(5) { animation-delay: 0.5s; }
+.cashflow-summary .summary-card:nth-child(6) { animation-delay: 0.6s; }
+
+/* Insight cards stagger animation */
+.insight-card {
+  animation: fadeInUp 0.6s ease-out;
+}
+
+.insight-card:nth-child(1) { animation-delay: 0.1s; }
+.insight-card:nth-child(2) { animation-delay: 0.2s; }
+.insight-card:nth-child(3) { animation-delay: 0.3s; }
+.insight-card:nth-child(4) { animation-delay: 0.4s; }
+.insight-card:nth-child(5) { animation-delay: 0.5s; }
+.insight-card:nth-child(6) { animation-delay: 0.6s; }
