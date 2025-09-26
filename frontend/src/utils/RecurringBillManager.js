@@ -148,11 +148,7 @@ export class RecurringBillManager {
      */
     static getBillsDueBefore(bills, beforeDate) {
         return bills.filter(bill => {
-            // Skip bills that are marked as paid
-            if (bill.status === 'paid' || bill.isPaid === true) {
-                return false;
-            }
-            
+            // Bills are now always in active state (no permanent "paid" status)
             const dueDate = bill.nextDueDate || parseLocalDate(bill.dueDate);
             return dueDate < beforeDate;
         });
@@ -167,11 +163,7 @@ export class RecurringBillManager {
      */
     static getBillsInRange(bills, startDate, endDate) {
         return bills.filter(bill => {
-            // Skip bills that are marked as paid
-            if (bill.status === 'paid' || bill.isPaid === true) {
-                return false;
-            }
-            
+            // Bills are now always in active state (no permanent "paid" status)
             const dueDate = bill.nextDueDate || parseLocalDate(bill.dueDate);
             return dueDate >= startDate && dueDate <= endDate;
         });
@@ -209,13 +201,26 @@ export class RecurringBillManager {
         // Calculate the next due date for the upcoming billing cycle
         const nextDueDate = this.getNextDueDate(tempBill, paidDate);
         
+        // Create payment record for history
+        const paymentRecord = {
+            amount: parseFloat(bill.amount) || 0,
+            paidDate: paidDate,
+            dueDate: currentDueDate,
+            paymentMethod: 'manual',
+            timestamp: Date.now()
+        };
+        
+        // Reset bill to next cycle - NOT keep as paid
         return {
             ...bill,
             lastDueDate: currentDueDate,
             lastPaidDate: paidDate,
             nextDueDate: nextDueDate,
-            isPaid: true,
-            status: 'paid'
+            dueDate: nextDueDate, // Update primary dueDate to next occurrence
+            isPaid: false,        // Reset to false - bill is now pending for next cycle
+            status: 'pending',    // Reset to pending - not paid anymore
+            paymentHistory: [...(bill.paymentHistory || []), paymentRecord],
+            lastPayment: paymentRecord
         };
     }
 

@@ -861,6 +861,27 @@ html body .layout .main-content .bills-container button[class*="delete"] {
   background: #ff073a !important;
 }
 
+.badge.due-today,
+.status-badge.due-today,
+[class*="status"][class*="due-today"] {
+  color: #ffffff !important;  /* WHITE FOR ORANGE BACKGROUND */
+  background: #ff6b00 !important;
+}
+
+.badge.urgent,
+.status-badge.urgent,
+[class*="status"][class*="urgent"] {
+  color: #000000 !important;  /* BLACK FOR YELLOW BACKGROUND */
+  background: #ffdd00 !important;
+}
+
+.badge.this-week,
+.status-badge.this-week,
+[class*="status"][class*="this-week"] {
+  color: #ffffff !important;  /* WHITE FOR BLUE BACKGROUND */
+  background: #00b4ff !important;
+}
+
 /* NUCLEAR OPTION - ELIMINATE ALL WHITE BACKGROUNDS */
 .bill-card *,
 .bill-item *,
@@ -1127,10 +1148,32 @@ html body .layout .main-content .bills-container button[class*="delete"] {
 .bill-item[data-status="overdue"] {
   order: 1;
   animation: pulse-urgent 2s infinite;
+  border-color: #ff073a !important;
+  box-shadow: 0 0 16px rgba(255, 7, 58, 0.3) !important;
+}
+
+.bill-item[data-status="due-today"] {
+  order: 2;
+  border-color: #ff6b00 !important;
+  box-shadow: 0 0 12px rgba(255, 107, 0, 0.3) !important;
+}
+
+.bill-item[data-status="urgent"] {
+  order: 3;
+  border-color: #ffdd00 !important; 
+  box-shadow: 0 0 12px rgba(255, 221, 0, 0.3) !important;
+}
+
+.bill-item[data-status="this-week"] {
+  order: 4;
+  border-color: #00b4ff !important;
+  box-shadow: 0 0 8px rgba(0, 180, 255, 0.2) !important;
 }
 
 .bill-item[data-status="pending"] {
-  order: 2;
+  order: 5;
+  border-color: #00ff88 !important;
+  box-shadow: 0 0 8px rgba(0, 255, 136, 0.2) !important;
 }
 
 /* Smooth transitions for all bill state changes */

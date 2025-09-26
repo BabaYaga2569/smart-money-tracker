@@ -150,11 +150,18 @@ const Bills = () => {
   const determineBillStatus = (bill) => {
     const now = new Date();
     const dueDate = new Date(bill.nextDueDate || bill.dueDate);
+    const daysUntilDue = Math.ceil((dueDate - now) / (1000 * 60 * 60 * 24));
     
-    if (bill.status === 'paid' || bill.isPaid) {
-      return 'paid';
-    } else if (dueDate < now) {
+    // Bills should never stay as "paid" - they reset to next cycle
+    // Status based on urgency relative to due date
+    if (daysUntilDue < 0) {
       return 'overdue';
+    } else if (daysUntilDue === 0) {
+      return 'due-today';
+    } else if (daysUntilDue <= 3) {
+      return 'urgent';
+    } else if (daysUntilDue <= 7) {
+      return 'this-week';
     } else {
       return 'pending';
     }
@@ -170,21 +177,25 @@ const Bills = () => {
     
     const paidThisMonth = processedBills
       .filter(bill => {
-        if (bill.status !== 'paid') return false;
-        const lastPaidDate = new Date(bill.lastPaidDate);
-        return lastPaidDate >= currentMonth && lastPaidDate <= nextMonth;
+        // Check payment history instead of bill status
+        const lastPaidDate = bill.lastPaidDate ? new Date(bill.lastPaidDate) : null;
+        return lastPaidDate && lastPaidDate >= currentMonth && lastPaidDate <= nextMonth;
       })
       .reduce((sum, bill) => sum + (parseFloat(bill.amount) || 0), 0);
     
     const upcomingBills = processedBills.filter(bill => {
       const dueDate = new Date(bill.nextDueDate || bill.dueDate);
-      return bill.status === 'pending' && dueDate <= nextMonth;
+      const status = determineBillStatus(bill);
+      return ['pending', 'this-week', 'urgent'].includes(status) && dueDate <= nextMonth;
     });
     
-    const overdueBills = processedBills.filter(bill => bill.status === 'overdue');
+    const overdueBills = processedBills.filter(bill => determineBillStatus(bill) === 'overdue');
     
     const nextBillDue = processedBills
-      .filter(bill => bill.status === 'pending')
+      .filter(bill => {
+        const status = determineBillStatus(bill);
+        return ['pending', 'this-week', 'urgent', 'due-today'].includes(status);
+      })
       .sort((a, b) => new Date(a.nextDueDate || a.dueDate) - new Date(b.nextDueDate || b.dueDate))[0];
     
     return {
@@ -448,10 +459,34 @@ const Bills = () => {
 
   const getStatusBadgeClass = (status) => {
     switch (status) {
-      case 'paid': return 'status-badge status-paid';
       case 'overdue': return 'status-badge status-overdue';
+      case 'due-today': return 'status-badge status-due-today';
+      case 'urgent': return 'status-badge status-urgent';
+      case 'this-week': return 'status-badge status-this-week';
       case 'pending': return 'status-badge status-pending';
       default: return 'status-badge';
+    }
+  };
+
+  const getStatusDisplayText = (bill) => {
+    const now = new Date();
+    const dueDate = new Date(bill.nextDueDate || bill.dueDate);
+    const daysUntilDue = Math.ceil((dueDate - now) / (1000 * 60 * 60 * 24));
+    const status = determineBillStatus(bill);
+    
+    switch (status) {
+      case 'overdue':
+        return `OVERDUE by ${Math.abs(daysUntilDue)} day${Math.abs(daysUntilDue) !== 1 ? 's' : ''}`;
+      case 'due-today':
+        return 'DUE TODAY';
+      case 'urgent':
+        return `Due in ${daysUntilDue} day${daysUntilDue !== 1 ? 's' : ''}`;
+      case 'this-week':
+        return `Due in ${daysUntilDue} days`;
+      case 'pending':
+        return 'UPCOMING';
+      default:
+        return status.toUpperCase();
     }
   };
 
@@ -622,20 +657,18 @@ const Bills = () => {
                 
                 <div className="bill-status-section">
                   <span className={getStatusBadgeClass(bill.status)}>
-                    {bill.status}
+                    {getStatusDisplayText(bill)}
                   </span>
                 </div>
                 
                 <div className="bill-actions">
-                  {bill.status !== 'paid' && (
-                    <button 
-                      className="action-btn mark-paid"
-                      onClick={() => handleMarkAsPaid(bill)}
-                      disabled={payingBill === bill.name}
-                    >
-                      {payingBill === bill.name ? 'Processing...' : 'Mark Paid'}
-                    </button>
-                  )}
+                  <button 
+                    className="action-btn mark-paid"
+                    onClick={() => handleMarkAsPaid(bill)}
+                    disabled={payingBill === bill.name}
+                  >
+                    {payingBill === bill.name ? 'Processing...' : 'Mark Paid'}
+                  </button>
                   <button 
                     className="action-btn secondary"
                     onClick={() => {
