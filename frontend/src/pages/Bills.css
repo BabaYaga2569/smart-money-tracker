@@ -882,3 +882,262 @@ html body .layout .main-content .bills-container button[class*="delete"] {
 .bill-item[style*="background"] {
   background: #1a1a1a !important;
 }
+
+/* ===== DYNAMIC PAYMENT WORKFLOW ANIMATIONS ===== */
+
+/* Payment success flash animation */
+.payment-success-flash {
+  animation: payment-success-flash 1s ease-out;
+  transform-origin: center;
+  z-index: 1000;
+}
+
+@keyframes payment-success-flash {
+  0% { 
+    background: rgba(0, 255, 136, 0.2);
+    transform: scale(1);
+    border-color: #00ff88 !important;
+    box-shadow: 0 0 10px rgba(0, 255, 136, 0.3);
+  }
+  50% { 
+    background: rgba(0, 255, 136, 0.6);
+    transform: scale(1.03);
+    border-color: #00ff88 !important;
+    box-shadow: 0 0 30px rgba(0, 255, 136, 0.8);
+  }
+  100% { 
+    background: rgba(0, 255, 136, 0.1);
+    transform: scale(1);
+    border-color: #00ff88 !important;
+    box-shadow: 0 0 15px rgba(0, 255, 136, 0.4);
+  }
+}
+
+/* Moving to bottom animation */
+.moving-to-bottom {
+  animation: move-to-bottom 0.5s cubic-bezier(0.4, 0, 0.2, 1);
+  z-index: 999;
+}
+
+@keyframes move-to-bottom {
+  0% { 
+    transform: translateY(0) scale(1);
+    opacity: 1;
+  }
+  30% {
+    transform: translateY(20px) scale(0.98);
+    opacity: 0.8;
+  }
+  70% {
+    transform: translateY(100vh) scale(0.95);
+    opacity: 0.3;
+  }
+  100% { 
+    transform: translateY(100vh) scale(0.9);
+    opacity: 0;
+  }
+}
+
+/* Fade in at new position */
+.fade-in-new-position {
+  animation: fade-in-new-position 0.3s ease-out;
+}
+
+@keyframes fade-in-new-position {
+  0% { 
+    opacity: 0;
+    transform: translateY(-10px) scale(0.95);
+  }
+  100% { 
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+/* Bills list resorting animation */
+.bills-list.resorting {
+  animation: list-resorting 0.3s ease-out;
+}
+
+@keyframes list-resorting {
+  0% { opacity: 1; }
+  50% { opacity: 0.7; }
+  100% { opacity: 1; }
+}
+
+/* Status changing animation */
+.status-badge.status-changing {
+  animation: status-changing 0.5s ease-out;
+}
+
+@keyframes status-changing {
+  0% { 
+    transform: scale(1);
+    opacity: 1;
+  }
+  50% { 
+    transform: scale(1.1);
+    opacity: 0.7;
+  }
+  100% { 
+    transform: scale(1);
+    opacity: 1;
+  }
+}
+
+/* Amount updating animation */
+.bill-amount.amount-updating {
+  animation: amount-updating 0.5s ease-out;
+  color: #00ff88 !important;
+  text-shadow: 0 0 12px rgba(0, 255, 136, 0.8) !important;
+}
+
+@keyframes amount-updating {
+  0% { 
+    transform: scale(1);
+  }
+  50% { 
+    transform: scale(1.05);
+  }
+  100% { 
+    transform: scale(1);
+  }
+}
+
+/* New bill appearing animation */
+.new-bill-appear {
+  animation: new-bill-appear 0.6s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+}
+
+@keyframes new-bill-appear {
+  0% { 
+    opacity: 0;
+    transform: translateY(-30px) scale(0.8);
+  }
+  60% { 
+    opacity: 0.8;
+    transform: translateY(5px) scale(1.02);
+  }
+  100% { 
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+/* Bill removal animation */
+.bill-removing {
+  animation: bill-removing 0.4s ease-in forwards;
+}
+
+@keyframes bill-removing {
+  0% { 
+    opacity: 1;
+    transform: translateX(0) scale(1);
+    max-height: 100px;
+  }
+  50% { 
+    opacity: 0.3;
+    transform: translateX(-50px) scale(0.9);
+  }
+  100% { 
+    opacity: 0;
+    transform: translateX(-100px) scale(0.8);
+    max-height: 0;
+    padding: 0;
+    margin: 0;
+  }
+}
+
+/* Stagger animation for bill list */
+.stagger-in {
+  animation: stagger-in 0.6s ease-out both;
+}
+
+@keyframes stagger-in {
+  0% { 
+    opacity: 0;
+    transform: translateY(20px);
+  }
+  100% { 
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* Loading spinner for bill processing */
+.bill-processing {
+  position: relative;
+  opacity: 0.7;
+}
+
+.bill-processing::after {
+  content: '';
+  position: absolute;
+  top: 50%;
+  right: 20px;
+  width: 20px;
+  height: 20px;
+  border: 2px solid #333;
+  border-top: 2px solid #00ff88;
+  border-radius: 50%;
+  animation: spin 1s linear infinite;
+  transform: translateY(-50%);
+}
+
+@keyframes spin {
+  0% { transform: translateY(-50%) rotate(0deg); }
+  100% { transform: translateY(-50%) rotate(360deg); }
+}
+
+/* Enhanced hover effects for paid bills */
+.bill-item[data-status="paid"]:hover {
+  border-color: #00ff88 !important;
+  box-shadow: 0 4px 20px rgba(0, 255, 136, 0.3) !important;
+  transform: translateY(-3px);
+}
+
+/* Enhanced hover effects for overdue bills */
+.bill-item[data-status="overdue"]:hover {
+  border-color: #ff073a !important;
+  box-shadow: 0 4px 20px rgba(255, 7, 58, 0.4) !important;
+  transform: translateY(-2px);
+}
+
+/* Enhanced hover effects for pending bills */
+.bill-item[data-status="pending"]:hover {
+  border-color: #ffdd00 !important;
+  box-shadow: 0 4px 20px rgba(255, 221, 0, 0.3) !important;
+  transform: translateY(-2px);
+}
+
+/* Paid bills move to bottom with visual distinction */
+.bill-item[data-status="paid"] {
+  order: 999; /* Move to bottom in flexbox */
+  opacity: 0.85;
+  filter: brightness(0.9);
+}
+
+.bill-item[data-status="paid"] .bill-details h4 {
+  text-decoration: line-through;
+  text-decoration-color: #00ff88;
+  text-decoration-thickness: 2px;
+}
+
+/* High priority for urgent bills */
+.bill-item[data-status="overdue"] {
+  order: 1;
+  animation: pulse-urgent 2s infinite;
+}
+
+.bill-item[data-status="pending"] {
+  order: 2;
+}
+
+/* Smooth transitions for all bill state changes */
+.bill-item {
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.bill-item * {
+  transition: color 0.3s ease, background 0.3s ease, transform 0.2s ease;
+}

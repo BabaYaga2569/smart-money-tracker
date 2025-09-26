@@ -3,8 +3,12 @@ import { doc, getDoc, updateDoc, collection, addDoc } from 'firebase/firestore';
 import { db } from '../firebase';
 import { RecurringBillManager } from '../utils/RecurringBillManager';
 import { BillSortingManager } from '../utils/BillSortingManager';
+import { NotificationManager } from '../utils/NotificationManager';
+import { BillAnimationManager } from '../utils/BillAnimationManager';
+import { PlaidIntegrationManager } from '../utils/PlaidIntegrationManager';
 import { formatDateForDisplay, formatDateForInput, getPacificTime } from '../utils/DateUtils';
 import { TRANSACTION_CATEGORIES, CATEGORY_ICONS, getCategoryIcon, migrateLegacyCategory } from '../constants/categories';
+import NotificationSystem from '../components/NotificationSystem';
 import './Bills.css';
 
 const Bills = () => {
@@ -23,7 +27,33 @@ const Bills = () => {
 
   useEffect(() => {
     loadBills();
+    initializePlaidIntegration();
   }, []);
+
+  const initializePlaidIntegration = async () => {
+    // Initialize Plaid integration manager
+    await PlaidIntegrationManager.initialize({
+      enabled: false, // Set to true when Plaid is actually integrated
+      transactionTolerance: 0.05,
+      autoMarkPaid: true
+    });
+
+    // Set up callbacks for bill operations
+    PlaidIntegrationManager.setBillPaymentProcessor(async (billId, paymentData) => {
+      // Find the bill by ID or name
+      const bill = processedBills.find(b => 
+        b.id === billId || b.name === billId
+      );
+      
+      if (bill) {
+        await processBillPaymentInternal(bill, paymentData);
+      }
+    });
+
+    PlaidIntegrationManager.setBillsProvider(async () => {
+      return processedBills.filter(bill => bill.status !== 'paid');
+    });
+  };
 
   const loadBills = async () => {
     try {
@@ -187,38 +217,59 @@ const Bills = () => {
     if (payingBill) return;
     setPayingBill(bill.name);
 
+    // Show loading notification
+    const loadingNotificationId = NotificationManager.showLoading(
+      `Processing payment for ${bill.name}...`
+    );
+
     try {
-      // Create transaction
-      const transaction = {
-        amount: -Math.abs(parseFloat(bill.amount)),
-        description: `${bill.name} Payment`,
-        category: 'Bills & Utilities',
-        account: 'bofa', // Default to main account
-        date: formatDateForInput(getPacificTime()),
-        timestamp: Date.now(),
-        type: 'expense'
-      };
+      // Animate payment processing
+      BillAnimationManager.animateBillPayment(
+        `${bill.name}-${bill.amount}`, 
+        async () => {
+          // This callback runs when animation completes
+          await loadBills(); // Reload bills to show updated state
+          BillAnimationManager.addStaggerAnimation(); // Re-animate the list
+        }
+      );
 
-      // Add transaction to Firebase
-      const transactionsRef = collection(db, 'users', 'steve-colburn', 'transactions');
-      await addDoc(transactionsRef, transaction);
+      await processBillPaymentInternal(bill);
 
-      // Update account balance
-      await updateAccountBalance('bofa', transaction.amount);
+      // Remove loading notification and show success
+      NotificationManager.removeNotification(loadingNotificationId);
+      NotificationManager.showPaymentSuccess(bill);
 
-      // Update bill status
-      await updateBillAsPaid(bill);
-
-      // Reload bills to refresh the data
-      await loadBills();
-
-      showNotification(`${bill.name} marked as paid!`, 'success');
     } catch (error) {
       console.error('Error marking bill as paid:', error);
-      showNotification('Error processing payment', 'error');
+      NotificationManager.removeNotification(loadingNotificationId);
+      NotificationManager.showError('Error processing payment', error);
     } finally {
       setPayingBill(null);
     }
+  };
+
+  const processBillPaymentInternal = async (bill, paymentData = {}) => {
+    // Create transaction
+    const transaction = {
+      amount: -Math.abs(parseFloat(bill.amount)),
+      description: `${bill.name} Payment`,
+      category: 'Bills & Utilities',
+      account: 'bofa', // Default to main account
+      date: formatDateForInput(paymentData.paidDate || getPacificTime()),
+      timestamp: Date.now(),
+      type: 'expense',
+      ...paymentData
+    };
+
+    // Add transaction to Firebase
+    const transactionsRef = collection(db, 'users', 'steve-colburn', 'transactions');
+    await addDoc(transactionsRef, transaction);
+
+    // Update account balance
+    await updateAccountBalance('bofa', transaction.amount);
+
+    // Mark bill as paid with next due date calculation
+    await updateBillAsPaid(bill, paymentData.paidDate);
   };
 
   const updateAccountBalance = async (accountKey, amount) => {
@@ -249,7 +300,7 @@ const Bills = () => {
     }
   };
 
-  const updateBillAsPaid = async (bill) => {
+  const updateBillAsPaid = async (bill, paidDate = null) => {
     try {
       const settingsDocRef = doc(db, 'users', 'steve-colburn', 'settings', 'personal'); 
       const currentDoc = await getDoc(settingsDocRef);
@@ -259,7 +310,8 @@ const Bills = () => {
       
       const updatedBills = bills.map(b => {
         if (b.name === bill.name && b.amount === bill.amount) {
-          return RecurringBillManager.markBillAsPaid(b, getPacificTime());
+          // Use RecurringBillManager to properly calculate next due date and update status
+          return RecurringBillManager.markBillAsPaid(b, paidDate || getPacificTime());
         }
         return b;
       });
@@ -274,9 +326,36 @@ const Bills = () => {
     }
   };
 
+  const testPlaidAutoPayment = async () => {
+    // Find an unpaid bill to simulate auto-payment for
+    const unpaidBills = processedBills.filter(bill => bill.status !== 'paid');
+    
+    if (unpaidBills.length === 0) {
+      NotificationManager.showNotification({
+        type: 'warning',
+        message: 'No unpaid bills available for auto-payment simulation',
+        duration: 3000
+      });
+      return;
+    }
+
+    const testBill = unpaidBills[0];
+    
+    // Simulate a Plaid transaction
+    await PlaidIntegrationManager.simulateTransaction({
+      amount: parseFloat(testBill.amount),
+      merchantName: testBill.name,
+      date: new Date().toISOString().split('T')[0]
+    });
+  };
+
   const showNotification = (message, type) => {
-    // Simple notification - can be enhanced with a proper notification system
-    console.log(`${type.toUpperCase()}: ${message}`);
+    // Use the new NotificationManager instead of console.log
+    NotificationManager.showNotification({
+      type,
+      message,
+      duration: 3000
+    });
   };
 
   const handleSaveBill = async (billData) => {
@@ -389,6 +468,9 @@ const Bills = () => {
 
   return (
     <div className="bills-container">
+      {/* Notification System */}
+      <NotificationSystem />
+      
       {/* Header with Add Bill Button */}
       <div className="page-header">
         <div className="header-content">
@@ -396,15 +478,37 @@ const Bills = () => {
             <h2>🧾 Bills Management</h2>
             <p>Complete bill lifecycle management and automation</p>
           </div>
-          <button 
-            className="add-bill-btn-header"
-            onClick={() => {
-              setEditingBill(null);
-              setShowModal(true);
-            }}
-          >
-            + Add New Bill
-          </button>
+          <div>
+            <button 
+              className="add-bill-btn-header"
+              onClick={() => {
+                setEditingBill(null);
+                setShowModal(true);
+              }}
+            >
+              + Add New Bill
+            </button>
+            
+            {/* Development: Test Plaid Auto-Payment Detection */}
+            {process.env.NODE_ENV === 'development' && (
+              <button 
+                className="test-plaid-btn"
+                onClick={() => testPlaidAutoPayment()}
+                style={{ 
+                  marginLeft: '10px', 
+                  background: '#ff6b00', 
+                  color: '#fff',
+                  border: 'none',
+                  borderRadius: '6px',
+                  padding: '12px 16px',
+                  fontSize: '12px',
+                  cursor: 'pointer'
+                }}
+              >
+                🧪 Test Auto-Payment
+              </button>
+            )}
+          </div>
         </div>
       </div>
 
@@ -486,7 +590,13 @@ const Bills = () => {
         <div className="bills-list">
           {filteredBills.length > 0 ? (
             filteredBills.map((bill, index) => (
-              <div key={index} className={`bill-item ${bill.urgencyInfo?.className || ''}`}>
+              <div 
+                key={`${bill.name}-${bill.amount}-${index}`} 
+                id={`bill-${bill.name}-${bill.amount}`}
+                data-bill-id={`${bill.name}-${bill.amount}`}
+                data-status={bill.status}
+                className={`bill-item ${bill.urgencyInfo?.className || ''} ${payingBill === bill.name ? 'bill-processing' : ''}`}
+              >
                 <div className="bill-main-info">
                   <div className="bill-icon">
                     {getCategoryIcon(bill.category)}
