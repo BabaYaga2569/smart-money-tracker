@@ -3,7 +3,7 @@ import { doc, getDoc, updateDoc, collection, addDoc } from 'firebase/firestore';
 import { db } from '../firebase';
 import { PayCycleCalculator } from '../utils/PayCycleCalculator';
 import { RecurringBillManager } from '../utils/RecurringBillManager';
-import { formatDateForDisplay, formatDateForInput } from '../utils/DateUtils';
+import { formatDateForDisplay, formatDateForInput, getDaysUntilDateInPacific, getPacificTime } from '../utils/DateUtils';
 import './Spendability.css';
 
 const Spendability = () => {
@@ -60,14 +60,10 @@ const Spendability = () => {
       // Check for manual override first
       if (settingsData.nextPaydayOverride) {
         nextPayday = settingsData.nextPaydayOverride;
-        const today = new Date();
-        const paydayDate = new Date(nextPayday);
-        daysUntilPayday = Math.ceil((paydayDate - today) / (1000 * 60 * 60 * 24));
+        daysUntilPayday = getDaysUntilDateInPacific(nextPayday);
       } else if (payCycleData && payCycleData.date) {
         nextPayday = payCycleData.date;
-        const today = new Date();
-        const paydayDate = new Date(nextPayday);
-        daysUntilPayday = Math.ceil((paydayDate - today) / (1000 * 60 * 60 * 24));
+        daysUntilPayday = getDaysUntilDateInPacific(nextPayday);
       }
 
       const bills = settingsData.bills || [];
@@ -182,7 +178,7 @@ const Spendability = () => {
         description: `${bill.name} Payment`,
         category: 'Bills & Utilities',
         account: 'bofa', // Default to main account - could be made configurable
-        date: formatDateForInput(new Date()),
+        date: formatDateForInput(getPacificTime()),
         timestamp: Date.now(),
         type: 'expense'
       };
@@ -256,8 +252,8 @@ const Spendability = () => {
       
       const updatedBills = bills.map(b => {
         if (b.name === bill.name && b.amount === bill.amount) {
-          // Mark as paid and update last payment date
-          updatedBill = RecurringBillManager.markBillAsPaid(b, new Date());
+          // Mark as paid and update last payment date using Pacific Time  
+          updatedBill = RecurringBillManager.markBillAsPaid(b, getPacificTime());
           return updatedBill;
         }
         return b;

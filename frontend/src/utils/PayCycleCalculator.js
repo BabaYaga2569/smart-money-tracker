@@ -1,4 +1,6 @@
 // PayCycleCalculator.js - Dynamic pay cycle calculations
+import { getPacificTime, getDaysUntilDateInPacific } from './DateUtils.js';
+
 export class PayCycleCalculator {
     
     /**
@@ -8,8 +10,6 @@ export class PayCycleCalculator {
      * @returns {Date} Next payday date
      */
     static getNextPayday(lastPayDate, wifePayAmount = 0) {
-        const today = new Date();
-        
         // Calculate your next bi-weekly payday
         const lastPay = new Date(lastPayDate);
         const yourNextPay = new Date(lastPay);
@@ -33,8 +33,6 @@ export class PayCycleCalculator {
      */
     static calculateNextPayday(yoursSchedule, spouseSchedule) {
         try {
-            const today = new Date();
-            
             // Calculate your next bi-weekly payday
             let yourNextPay = null;
             let yourAmount = 0;
@@ -80,8 +78,8 @@ export class PayCycleCalculator {
                 throw new Error("No payday information available");
             }
             
-            // Calculate days until payday
-            const daysUntil = Math.ceil((nextPayday - today) / (1000 * 60 * 60 * 24));
+            // Calculate days until payday using Pacific Time
+            const daysUntil = getDaysUntilDateInPacific(nextPayday);
             
             return {
                 date: nextPayday.toISOString().split('T')[0], // YYYY-MM-DD format
@@ -106,10 +104,9 @@ export class PayCycleCalculator {
      * @returns {Date} Next payday for wife
      */
     static getWifeNextPayday() {
-        const today = new Date();
+        const today = getPacificTime();
         const currentYear = today.getFullYear();
         const currentMonth = today.getMonth();
-        const currentDay = today.getDate();
         
         // Check 15th of current month
         const fifteenth = new Date(currentYear, currentMonth, 15);
