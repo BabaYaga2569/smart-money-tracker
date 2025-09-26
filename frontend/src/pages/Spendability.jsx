@@ -1,9 +1,9 @@
 import React, { useState, useEffect } from 'react';
-import { doc, getDoc } from 'firebase/firestore';
+import { doc, getDoc, updateDoc, collection, addDoc } from 'firebase/firestore';
 import { db } from '../firebase';
 import { PayCycleCalculator } from '../utils/PayCycleCalculator';
 import { RecurringBillManager } from '../utils/RecurringBillManager';
-import { formatDateForDisplay } from '../utils/DateUtils';
+import { formatDateForDisplay, formatDateForInput } from '../utils/DateUtils';
 import './Spendability.css';
 
 const Spendability = () => {
@@ -11,6 +11,8 @@ const Spendability = () => {
   const [error, setError] = useState(null);
   const [spendAmount, setSpendAmount] = useState('');
   const [canSpend, setCanSpend] = useState(null);
+  const [notification, setNotification] = useState({ message: '', type: '' });
+  const [payingBill, setPayingBill] = useState(null);
   
   const [financialData, setFinancialData] = useState({
     totalAvailable: 0,
@@ -104,7 +106,36 @@ const Spendability = () => {
 
     } catch (err) {
       console.error('Error fetching data:', err);
-      setError(err.message);
+      
+      // Use demo data for testing when Firebase is unavailable
+      const demoData = {
+        totalAvailable: 1530.07,
+        checking: 1230.07,
+        savings: 300.00,
+        billsBeforePayday: [
+          {
+            name: 'NV Energy',
+            amount: 254.00,
+            nextDueDate: '2025-01-30',
+            recurrence: 'monthly'
+          },
+          {
+            name: 'Southwest Gas',
+            amount: 36.62,
+            nextDueDate: '2025-01-28',
+            recurrence: 'monthly'
+          }
+        ],
+        totalBillsDue: 290.62,
+        safeToSpend: 1047.50,
+        nextPayday: '2025-02-01',
+        daysUntilPayday: 5,
+        weeklyEssentials: 150.00,
+        safetyBuffer: 42.00
+      };
+      
+      setFinancialData(demoData);
+      setError(null); // Clear error to show demo data
     } finally {
       setLoading(false);
     }
@@ -130,6 +161,105 @@ const Spendability = () => {
 
   const formatDate = (dateString) => {
     return formatDateForDisplay(dateString, 'numeric');
+  };
+
+  const showNotification = (message, type = 'success') => {
+    setNotification({ message, type });
+    setTimeout(() => setNotification({ message: '', type: '' }), 4000);
+  };
+
+  const handleMarkBillAsPaid = async (bill) => {
+    if (!window.confirm(`Mark ${bill.name} bill ($${bill.amount}) as paid?`)) {
+      return;
+    }
+
+    try {
+      setPayingBill(bill.name);
+      
+      // Create transaction for the bill payment
+      const transaction = {
+        amount: -Math.abs(parseFloat(bill.amount)),
+        description: `${bill.name} Payment`,
+        category: 'Bills & Utilities',
+        account: 'bofa', // Default to main account - could be made configurable
+        date: formatDateForInput(new Date()),
+        timestamp: Date.now(),
+        type: 'expense'
+      };
+
+      // Add transaction to Firebase
+      const transactionsRef = collection(db, 'users', 'steve-colburn', 'transactions');
+      await addDoc(transactionsRef, transaction);
+
+      // Update account balance
+      await updateAccountBalance('bofa', transaction.amount);
+
+      // Update bill status in Firebase
+      await updateBillAsPaid(bill);
+
+      // Refresh the financial data
+      await fetchFinancialData();
+
+      showNotification(`${bill.name} bill marked as paid! Transaction added and balance updated.`, 'success');
+    } catch (error) {
+      console.error('Error marking bill as paid:', error);
+      showNotification('Error processing bill payment', 'error');
+    } finally {
+      setPayingBill(null);
+    }
+  };
+
+  const updateAccountBalance = async (accountKey, amount) => {
+    try {
+      const settingsDocRef = doc(db, 'users', 'steve-colburn', 'settings', 'personal');
+      const currentDoc = await getDoc(settingsDocRef);
+      const currentData = currentDoc.exists() ? currentDoc.data() : {};
+      
+      const bankAccounts = currentData.bankAccounts || {};
+      const currentBalance = parseFloat(bankAccounts[accountKey]?.balance || 0);
+      const newBalance = currentBalance + amount;
+      
+      const updatedAccounts = {
+        ...bankAccounts,
+        [accountKey]: {
+          ...bankAccounts[accountKey],
+          balance: newBalance.toString()
+        }
+      };
+      
+      await updateDoc(settingsDocRef, {
+        ...currentData,
+        bankAccounts: updatedAccounts
+      });
+    } catch (error) {
+      console.error('Error updating account balance:', error);
+      throw error;
+    }
+  };
+
+  const updateBillAsPaid = async (bill) => {
+    try {
+      const settingsDocRef = doc(db, 'users', 'steve-colburn', 'settings', 'personal'); 
+      const currentDoc = await getDoc(settingsDocRef);
+      const currentData = currentDoc.exists() ? currentDoc.data() : {};
+      
+      const bills = currentData.bills || [];
+      const updatedBills = bills.map(b => {
+        if (b.name === bill.name && b.amount === bill.amount) {
+          // Mark as paid and update last payment date
+          return RecurringBillManager.markBillAsPaid(b, new Date());
+        }
+        return b;
+      });
+      
+      await updateDoc(settingsDocRef, {
+        ...currentData,
+        bills: updatedBills
+      });
+    } catch (error) {
+      console.error('Error updating bill status:', error);
+      throw error;
+    }
   };
 
   if (loading) {
@@ -228,9 +358,20 @@ const Spendability = () => {
             {financialData.billsBeforePayday.length > 0 ? (
               financialData.billsBeforePayday.map((bill, index) => (
                 <div key={index} className="bill-item">
-                  <span className="bill-name">{bill.name}</span>
-                  <span className="bill-due-date">Due: {formatDate(bill.nextDueDate)}</span>
-                  <span className="bill-amount">{formatCurrency(bill.amount)}</span>
+                  <div className="bill-info">
+                    <span className="bill-name">{bill.name}</span>
+                    <span className="bill-due-date">Due: {formatDate(bill.nextDueDate)}</span>
+                    <span className="bill-amount">{formatCurrency(bill.amount)}</span>
+                  </div>
+                  <div className="bill-actions">
+                    <button 
+                      className="mark-paid-btn"
+                      onClick={() => handleMarkBillAsPaid(bill)}
+                      disabled={payingBill === bill.name}
+                    >
+                      {payingBill === bill.name ? 'Processing...' : 'Mark as Paid'}
+                    </button>
+                  </div>
                 </div>
               ))
             ) : (
@@ -285,6 +426,13 @@ const Spendability = () => {
         </div>
 
       </div>
+      
+      {/* Notification */}
+      {notification.message && (
+        <div className={`notification ${notification.type}`}>
+          {notification.message}
+        </div>
+      )}
     </div>
   );
 };

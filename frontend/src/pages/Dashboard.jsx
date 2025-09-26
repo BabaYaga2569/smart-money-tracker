@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { doc, getDoc } from 'firebase/firestore';
+import { doc, getDoc, collection, query, where, getDocs } from 'firebase/firestore';
 import { db } from '../firebase';
 import './Dashboard.css';
 
@@ -16,7 +16,8 @@ const Dashboard = () => {
     recurringCount: 8,
     daysUntilPayday: 5,
     monthlyIncome: 5500,
-    monthlyExpenses: 4957
+    monthlyExpenses: 4957,
+    transactionCount: 0  // Add transaction count
   });
 
   useEffect(() => {
@@ -51,6 +52,9 @@ const Dashboard = () => {
         }, 0);
         const accountCount = Object.keys(bankAccounts).length;
 
+        // Load current month transaction count
+        const transactionCount = await loadCurrentMonthTransactionCount();
+
         // Update with real Firebase data
         setDashboardData({
           totalBalance: totalBalance || 1530.07,
@@ -60,7 +64,8 @@ const Dashboard = () => {
           recurringCount: 8,
           daysUntilPayday: 5,
           monthlyIncome: 5500,
-          monthlyExpenses: 4957
+          monthlyExpenses: 4957,
+          transactionCount: transactionCount
         });
       } else {
         // Firebase connected but no data - use defaults
@@ -73,6 +78,31 @@ const Dashboard = () => {
       // Keep default fallback data
     } finally {
       setLoading(false);
+    }
+  };
+
+  const loadCurrentMonthTransactionCount = async () => {
+    try {
+      const currentDate = new Date();
+      const startOfMonth = new Date(currentDate.getFullYear(), currentDate.getMonth(), 1);
+      const endOfMonth = new Date(currentDate.getFullYear(), currentDate.getMonth() + 1, 0);
+      
+      // Format dates for Firebase query (YYYY-MM-DD format)
+      const startDateStr = startOfMonth.toISOString().split('T')[0];
+      const endDateStr = endOfMonth.toISOString().split('T')[0];
+      
+      const transactionsRef = collection(db, 'users', 'steve-colburn', 'transactions');
+      const q = query(
+        transactionsRef, 
+        where('date', '>=', startDateStr),
+        where('date', '<=', endDateStr)
+      );
+      
+      const querySnapshot = await getDocs(q);
+      return querySnapshot.size;
+    } catch (error) {
+      console.error('Error loading transaction count:', error);
+      return 0;
     }
   };
 
@@ -97,7 +127,7 @@ const Dashboard = () => {
     {
       title: 'Transactions',
       icon: '📊',
-      value: '124 this month',
+      value: `${dashboardData.transactionCount} this month`,
       subtitle: 'Recent activity',
       path: '/transactions',
       color: 'green'
