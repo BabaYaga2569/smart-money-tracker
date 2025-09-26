@@ -3,6 +3,7 @@ import { doc, getDoc, updateDoc, collection, addDoc } from 'firebase/firestore';
 import { db } from '../firebase';
 import { RecurringBillManager } from '../utils/RecurringBillManager';
 import { formatDateForDisplay, formatDateForInput, getPacificTime } from '../utils/DateUtils';
+import { TRANSACTION_CATEGORIES, CATEGORY_ICONS, getCategoryIcon, migrateLegacyCategory } from '../constants/categories';
 import './Bills.css';
 
 const Bills = () => {
@@ -16,17 +17,8 @@ const Bills = () => {
   const [searchTerm, setSearchTerm] = useState('');
   const [payingBill, setPayingBill] = useState(null);
 
-  // Bill categories with icons
-  const BILL_CATEGORIES = {
-    'Housing': '🏠',
-    'Utilities': '⚡',
-    'Transportation': '🚗',
-    'Credit Cards': '💳',
-    'Insurance': '🏥',
-    'Subscriptions': '📺',
-    'Education': '🎓',
-    'Other': '💰'
-  };
+  // Use shared categories for consistency with Transactions page
+  const BILL_CATEGORIES = CATEGORY_ICONS;
 
   useEffect(() => {
     loadBills();
@@ -46,7 +38,7 @@ const Bills = () => {
         const processed = RecurringBillManager.processBills(billsData).map(bill => ({
           ...bill,
           status: determineBillStatus(bill),
-          category: bill.category || 'Other'
+          category: migrateLegacyCategory(bill.category || 'Bills & Utilities')
         }));
         setProcessedBills(processed);
       }
@@ -396,9 +388,9 @@ const Bills = () => {
             className="filter-select"
           >
             <option value="all">All Categories</option>
-            {Object.keys(BILL_CATEGORIES).map(category => (
+            {TRANSACTION_CATEGORIES.map(category => (
               <option key={category} value={category}>
-                {BILL_CATEGORIES[category]} {category}
+                {getCategoryIcon(category)} {category}
               </option>
             ))}
           </select>
@@ -424,7 +416,7 @@ const Bills = () => {
               <div key={index} className="bill-item">
                 <div className="bill-main-info">
                   <div className="bill-icon">
-                    {BILL_CATEGORIES[bill.category] || '💰'}
+                    {getCategoryIcon(bill.category)}
                   </div>
                   <div className="bill-details">
                     <h4>{bill.name}</h4>
@@ -495,7 +487,7 @@ const Bills = () => {
       {showModal && (
         <BillModal
           bill={editingBill}
-          categories={Object.keys(BILL_CATEGORIES)}
+          categories={TRANSACTION_CATEGORIES}
           onSave={handleSaveBill}
           onCancel={() => {
             setShowModal(false);
@@ -514,7 +506,7 @@ const BillModal = ({ bill, categories, onSave, onCancel }) => {
     amount: bill?.amount || '',
     dueDate: bill?.dueDate || '',
     recurrence: bill?.recurrence || 'monthly',
-    category: bill?.category || 'Other',
+    category: migrateLegacyCategory(bill?.category || 'Bills & Utilities'),
     account: bill?.account || 'bofa',
     notes: bill?.notes || ''
   });
