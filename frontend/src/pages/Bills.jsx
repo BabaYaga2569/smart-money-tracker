@@ -30,6 +30,16 @@ const Bills = () => {
     initializePlaidIntegration();
   }, []);
 
+  // Sync visuals when bills are processed
+  useEffect(() => {
+    if (processedBills.length > 0) {
+      // Use setTimeout to ensure DOM elements are rendered
+      setTimeout(() => {
+        syncBillVisuals();
+      }, 100);
+    }
+  }, [processedBills]);
+
   const initializePlaidIntegration = async () => {
     // Initialize Plaid integration manager
     await PlaidIntegrationManager.initialize({
@@ -76,39 +86,39 @@ const Bills = () => {
     } catch (error) {
       console.error('Error loading bills:', error);
       
-      // Use mock data for demonstration when Firebase is unavailable
+      // Use mock data for demonstration when Firebase is unavailable  
+      // Mock data updated to show UPCOMING bills as mentioned in the problem statement
       const mockBills = [
         {
-          name: 'Electric Bill',
+          name: 'PiercePrime',
           amount: 125.50,
           category: 'Bills & Utilities',
           recurrence: 'monthly',
-          dueDate: '2024-01-15',
-          nextDueDate: '2024-01-15',
+          dueDate: '2025-10-24',
+          nextDueDate: '2025-10-24',
           status: 'pending',
           account: 'bofa',
           autopay: false
         },
         {
-          name: 'Internet Service',
+          name: 'Southwest Gas',
           amount: 89.99,
           category: 'Bills & Utilities', 
           recurrence: 'monthly',
-          dueDate: '2024-01-20',
-          nextDueDate: '2024-01-20',
-          status: 'paid',
+          dueDate: '2025-10-24',
+          nextDueDate: '2025-10-24',
+          status: 'pending',
           account: 'bofa',
-          autopay: true,
-          lastPaidDate: '2024-01-20'
+          autopay: false
         },
         {
           name: 'Credit Card Payment',
           amount: 450.00,
           category: 'Bills & Utilities',
           recurrence: 'monthly', 
-          dueDate: '2024-01-05',
-          nextDueDate: '2024-01-05',
-          status: 'overdue',
+          dueDate: '2025-11-15',
+          nextDueDate: '2025-11-15',
+          status: 'pending',
           account: 'bofa',
           autopay: false
         },
@@ -117,8 +127,8 @@ const Bills = () => {
           amount: 1850.00,
           category: 'Bills & Utilities',
           recurrence: 'monthly',
-          dueDate: '2024-01-01',
-          nextDueDate: '2024-01-01', 
+          dueDate: '2025-12-01',
+          nextDueDate: '2025-12-01', 
           status: 'pending',
           account: 'bofa',
           autopay: false
@@ -128,12 +138,11 @@ const Bills = () => {
           amount: 65.00,
           category: 'Bills & Utilities',
           recurrence: 'monthly',
-          dueDate: '2024-01-12',
-          nextDueDate: '2024-01-12',
-          status: 'paid',
+          dueDate: '2025-11-01',
+          nextDueDate: '2025-11-01',
+          status: 'pending',
           account: 'bofa',
-          autopay: true,
-          lastPaidDate: '2024-01-12'
+          autopay: false
         }
       ];
       
@@ -245,6 +254,11 @@ const Bills = () => {
       );
 
       await processBillPaymentInternal(bill);
+
+      // Sync visuals immediately after payment processing
+      setTimeout(() => {
+        syncBillVisuals();
+      }, 500);
 
       // Remove loading notification and show success
       NotificationManager.removeNotification(loadingNotificationId);
@@ -410,6 +424,12 @@ const Bills = () => {
       
       // Reload bills and close modal
       await loadBills();
+      
+      // Sync visuals after loading
+      setTimeout(() => {
+        syncBillVisuals();
+      }, 200);
+      
       setShowModal(false);
       setEditingBill(null);
     } catch (error) {
@@ -490,6 +510,54 @@ const Bills = () => {
     }
   };
 
+  // Visual sync function to ensure bill styling matches status
+  const syncBillVisuals = () => {
+    processedBills.forEach(bill => {
+      const billElement = document.getElementById(`bill-${bill.name}-${bill.amount}`);
+      if (!billElement) return;
+      
+      // Calculate current status
+      const currentStatus = determineBillStatus(bill);
+      
+      // Update data-status attribute
+      billElement.setAttribute('data-status', currentStatus);
+      
+      // Remove old status classes
+      const statusClasses = ['overdue', 'urgent', 'due-today', 'this-week', 'pending', 'paid'];
+      billElement.classList.remove(...statusClasses);
+      
+      // Add current status class
+      billElement.classList.add(currentStatus);
+      
+      // Update border color based on status
+      const statusColors = {
+        'overdue': '#ff073a',
+        'urgent': '#ffdd00', 
+        'due-today': '#ff6b00',
+        'this-week': '#00b4ff',
+        'pending': '#00ff88',
+        'paid': '#00ff88'
+      };
+      
+      const borderColor = statusColors[currentStatus] || '#00ff88';
+      billElement.style.borderColor = borderColor;
+      
+      // Update box shadow
+      const shadowColors = {
+        'overdue': 'rgba(255, 7, 58, 0.3)',
+        'urgent': 'rgba(255, 221, 0, 0.3)', 
+        'due-today': 'rgba(255, 107, 0, 0.3)',
+        'this-week': 'rgba(0, 180, 255, 0.2)',
+        'pending': 'rgba(0, 255, 136, 0.2)',
+        'paid': 'rgba(0, 255, 136, 0.2)'
+      };
+      
+      const shadowColor = shadowColors[currentStatus] || 'rgba(0, 255, 136, 0.2)';
+      const shadowSize = currentStatus === 'overdue' ? '16px' : currentStatus === 'urgent' || currentStatus === 'due-today' ? '12px' : '8px';
+      billElement.style.boxShadow = `0 0 ${shadowSize} ${shadowColor}`;
+    });
+  };
+
   if (loading) {
     return (
       <div className="bills-container">
@@ -525,7 +593,7 @@ const Bills = () => {
             </button>
             
             {/* Development: Test Plaid Auto-Payment Detection */}
-            {process.env.NODE_ENV === 'development' && (
+            {typeof window !== 'undefined' && window.location.hostname === 'localhost' && (
               <button 
                 className="test-plaid-btn"
                 onClick={() => testPlaidAutoPayment()}
@@ -630,7 +698,7 @@ const Bills = () => {
                 id={`bill-${bill.name}-${bill.amount}`}
                 data-bill-id={`${bill.name}-${bill.amount}`}
                 data-status={bill.status}
-                className={`bill-item ${bill.urgencyInfo?.className || ''} ${payingBill === bill.name ? 'bill-processing' : ''}`}
+                className={`bill-item ${bill.urgencyInfo?.className || ''} ${bill.status} ${payingBill === bill.name ? 'bill-processing' : ''}`}
               >
                 <div className="bill-main-info">
                   <div className="bill-icon">
