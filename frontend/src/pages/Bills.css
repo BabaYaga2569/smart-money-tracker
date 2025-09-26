@@ -153,8 +153,8 @@
   display: grid;
   grid-template-columns: auto 1fr auto auto auto;
   align-items: center;
-  background: #1a1a1a;
-  border: 1px solid #333;
+  background: #1f2937;
+  border: 1px solid #374151;
   border-radius: 8px;
   padding: 20px;
   transition: border-color 0.3s ease;
@@ -178,9 +178,12 @@
 }
 
 .bill-details h4 {
-  color: #fff;
+  color: var(--text-primary, #f9fafb) !important;
   margin: 0 0 5px 0;
   font-size: 16px;
+  font-weight: 600;
+  text-shadow: none;
+  background: transparent;
 }
 
 .bill-meta {
@@ -190,15 +193,17 @@
 }
 
 .bill-category {
-  color: #00ff88;
-  background: rgba(0, 255, 136, 0.1);
+  color: var(--text-primary, #f9fafb) !important;
+  background: rgba(0, 255, 136, 0.2);
   padding: 2px 6px;
   border-radius: 3px;
+  font-weight: 500;
 }
 
 .bill-frequency {
-  color: #ccc;
+  color: var(--text-secondary, #d1d5db) !important;
   text-transform: capitalize;
+  font-size: 14px;
 }
 
 .bill-amount-section {
