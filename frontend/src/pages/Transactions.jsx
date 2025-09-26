@@ -11,6 +11,7 @@ const Transactions = () => {
   const [transactions, setTransactions] = useState([]);
   const [filteredTransactions, setFilteredTransactions] = useState([]);
   const [showAddForm, setShowAddForm] = useState(false);
+  const [editingTransaction, setEditingTransaction] = useState(null);
   const [notification, setNotification] = useState({ message: '', type: '' });
   
   // Analytics state
@@ -40,6 +41,14 @@ const Transactions = () => {
     dateTo: '',
     type: ''
   });
+
+  const [showTemplates, setShowTemplates] = useState(false);
+  const [templates, setTemplates] = useState([
+    { name: 'Coffee', amount: '4.50', category: 'Food & Dining', type: 'expense' },
+    { name: 'Gas Station', amount: '35.00', category: 'Transportation', type: 'expense' },
+    { name: 'Grocery Store', amount: '75.00', category: 'Food & Dining', type: 'expense' },
+    { name: 'Monthly Salary', amount: '2500.00', category: 'Income', type: 'income' }
+  ]);
 
   // Smart categories with auto-categorization keywords
   const categories = {
@@ -240,6 +249,28 @@ const Transactions = () => {
     }
   };
 
+  const updateTransaction = async (transactionId, updatedFields) => {
+    try {
+      setSaving(true);
+      
+      // Update Firebase
+      await updateDoc(doc(db, 'users', 'steve-colburn', 'transactions', transactionId), updatedFields);
+      
+      // Update local state
+      setTransactions(prev => prev.map(t => 
+        t.id === transactionId ? { ...t, ...updatedFields } : t
+      ));
+      
+      setEditingTransaction(null);
+      showNotification('Transaction updated successfully!', 'success');
+    } catch (error) {
+      console.error('Error updating transaction:', error);
+      showNotification('Error updating transaction', 'error');
+    } finally {
+      setSaving(false);
+    }
+  };
+
   const deleteTransaction = async (transactionId, transaction) => {
     if (!window.confirm('Are you sure you want to delete this transaction?')) {
       return;
@@ -264,6 +295,42 @@ const Transactions = () => {
     } finally {
       setSaving(false);
     }
+  };
+
+  const applyTemplate = (template) => {
+    setNewTransaction({
+      ...newTransaction,
+      amount: template.amount,
+      description: template.name,
+      category: template.category,
+      type: template.type
+    });
+    setShowTemplates(false);
+  };
+
+  const exportTransactions = () => {
+    const csvData = transactions.map(t => ({
+      Date: t.date,
+      Description: t.description,
+      Category: t.category,
+      Account: accounts[t.account]?.name || t.account,
+      Amount: t.amount,
+      Type: t.type
+    }));
+    
+    const csvContent = "data:text/csv;charset=utf-8," 
+      + "Date,Description,Category,Account,Amount,Type\n"
+      + csvData.map(row => Object.values(row).map(val => `"${val}"`).join(",")).join("\n");
+    
+    const encodedUri = encodeURI(csvContent);
+    const link = document.createElement("a");
+    link.setAttribute("href", encodedUri);
+    link.setAttribute("download", `transactions_${new Date().toISOString().split('T')[0]}.csv`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    
+    showNotification('Transactions exported successfully!', 'success');
   };
 
   const applyFilters = () => {
@@ -402,13 +469,52 @@ const Transactions = () => {
 
       {/* Quick Add Transaction */}
       <div className="quick-add-section">
-        <button 
-          className="btn-primary add-transaction-btn"
-          onClick={() => setShowAddForm(!showAddForm)}
-          disabled={saving}
-        >
-          {showAddForm ? '✕ Cancel' : '+ Add Transaction'}
-        </button>
+        <div className="add-transaction-actions">
+          <button 
+            className="btn-primary add-transaction-btn"
+            onClick={() => setShowAddForm(!showAddForm)}
+            disabled={saving}
+          >
+            {showAddForm ? '✕ Cancel' : '+ Add Transaction'}
+          </button>
+          
+          <button 
+            className="btn-secondary"
+            onClick={() => setShowTemplates(!showTemplates)}
+            disabled={saving}
+          >
+            📋 Templates
+          </button>
+          
+          {transactions.length > 0 && (
+            <button 
+              className="btn-secondary"
+              onClick={exportTransactions}
+              disabled={saving}
+            >
+              📥 Export CSV
+            </button>
+          )}
+        </div>
+        
+        {showTemplates && (
+          <div className="templates-section">
+            <h4>Quick Templates</h4>
+            <div className="templates-grid">
+              {templates.map((template, index) => (
+                <div key={index} className="template-item" onClick={() => applyTemplate(template)}>
+                  <div className="template-name">{template.name}</div>
+                  <div className="template-details">
+                    <span className={`template-amount ${template.type}`}>
+                      {template.type === 'expense' ? '-' : '+'}${template.amount}
+                    </span>
+                    <span className="template-category">{template.category}</span>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
         
         {showAddForm && (
           <div className="add-transaction-form">
@@ -534,6 +640,39 @@ const Transactions = () => {
             <option value="expense">Expense</option>
           </select>
         </div>
+        <div className="date-filters">
+          <div className="date-filter-group">
+            <label>From:</label>
+            <input
+              type="date"
+              value={filters.dateFrom}
+              onChange={(e) => setFilters({ ...filters, dateFrom: e.target.value })}
+            />
+          </div>
+          <div className="date-filter-group">
+            <label>To:</label>
+            <input
+              type="date"
+              value={filters.dateTo}
+              onChange={(e) => setFilters({ ...filters, dateTo: e.target.value })}
+            />
+          </div>
+          {(filters.dateFrom || filters.dateTo || filters.search || filters.category || filters.account || filters.type) && (
+            <button 
+              className="clear-filters-btn"
+              onClick={() => setFilters({
+                search: '',
+                category: '',
+                account: '',
+                dateFrom: '',
+                dateTo: '',
+                type: ''
+              })}
+            >
+              Clear Filters
+            </button>
+          )}
+        </div>
       </div>
 
       {/* Transactions List */}
@@ -562,7 +701,33 @@ const Transactions = () => {
             {filteredTransactions.map((transaction) => (
               <div key={transaction.id} className="transaction-item">
                 <div className="transaction-info">
-                  <div className="transaction-description">{transaction.description}</div>
+                  {editingTransaction === transaction.id ? (
+                    <div className="transaction-edit-form">
+                      <input
+                        type="text"
+                        defaultValue={transaction.description}
+                        onKeyPress={(e) => {
+                          if (e.key === 'Enter') {
+                            updateTransaction(transaction.id, { description: e.target.value });
+                          }
+                          if (e.key === 'Escape') {
+                            setEditingTransaction(null);
+                          }
+                        }}
+                        onBlur={(e) => updateTransaction(transaction.id, { description: e.target.value })}
+                        autoFocus
+                        className="edit-description"
+                      />
+                    </div>
+                  ) : (
+                    <div 
+                      className="transaction-description"
+                      onClick={() => setEditingTransaction(transaction.id)}
+                      title="Click to edit"
+                    >
+                      {transaction.description}
+                    </div>
+                  )}
                   <div className="transaction-meta">
                     <span className="transaction-date">
                       {formatDateForDisplay(transaction.date)}
@@ -580,6 +745,14 @@ const Transactions = () => {
                     <div className="transaction-category">{transaction.category}</div>
                   )}
                   <div className="transaction-actions">
+                    <button 
+                      className="edit-btn"
+                      onClick={() => setEditingTransaction(editingTransaction === transaction.id ? null : transaction.id)}
+                      disabled={saving}
+                      title="Edit transaction"
+                    >
+                      ✏️
+                    </button>
                     <button 
                       className="delete-btn"
                       onClick={() => deleteTransaction(transaction.id, transaction)}
