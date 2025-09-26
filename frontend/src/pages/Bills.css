@@ -248,22 +248,29 @@
   letter-spacing: 0.5px;
 }
 
+/* BRIGHT STATUS INDICATOR TEXT - ELECTRIC COLORS */
 .status-paid {
   background: #00ff88;
-  color: #000;
-  text-shadow: 0 0 6px rgba(0, 255, 136, 0.4) !important;
+  color: #ffffff !important;  /* PURE WHITE FOR CONTRAST */
+  text-shadow: 0 0 8px rgba(0, 255, 136, 0.6) !important;
+  font-weight: 800 !important;
+  font-size: 14px !important;
 }
 
 .status-pending {
-  background: #ffdd00;
-  color: #000;
-  text-shadow: 0 0 6px rgba(255, 221, 0, 0.4) !important;
+  background: #ffff00;  /* BRIGHT ELECTRIC YELLOW */
+  color: #000000 !important;  /* BLACK FOR CONTRAST ON YELLOW */
+  text-shadow: 0 0 8px rgba(255, 255, 0, 0.6) !important;
+  font-weight: 800 !important;
+  font-size: 14px !important;
 }
 
 .status-overdue {
   background: #ff073a;
-  color: #fff;
-  text-shadow: 0 0 6px rgba(255, 7, 58, 0.4) !important;
+  color: #ffffff !important;  /* PURE WHITE FOR CONTRAST */
+  text-shadow: 0 0 8px rgba(255, 7, 58, 0.6) !important;
+  font-weight: 800 !important;
+  font-size: 14px !important;
 }
 
 .bill-actions {
@@ -271,9 +278,10 @@
   gap: 8px;
 }
 
+/* BRIGHT ACTION BUTTON TEXT - ELECTRIC AND GLOWING */
 .action-btn {
   background: #333;
-  color: #fff;
+  color: #ffffff !important;  /* PURE WHITE TEXT */
   border: 1px solid #555;
   border-radius: 4px;
   padding: 8px 12px;
@@ -281,44 +289,68 @@
   cursor: pointer;
   transition: all 0.3s ease;
   white-space: nowrap;
+  font-weight: 600 !important;
+  text-shadow: 0 0 4px rgba(0, 0, 0, 0.5) !important;
 }
 
 .action-btn:hover {
   background: #444;
+  text-shadow: 0 0 8px rgba(255, 255, 255, 0.6) !important;
+  transform: translateY(-1px);
 }
 
+/* BRIGHT GREEN MARK PAID BUTTON */
 .action-btn.mark-paid {
-  background: #00ff88;
-  color: #000;
-  border-color: #00ff88;
+  background: #00ff88 !important;  /* NEON GREEN BACKGROUND */
+  color: #ffffff !important;  /* PURE WHITE TEXT */
+  border: none !important;
+  font-weight: 700 !important;
+  text-shadow: 0 0 6px rgba(255, 255, 255, 0.5) !important;
 }
 
 .action-btn.mark-paid:hover {
-  background: #00cc6a;
+  background: #00cc6a !important;
+  box-shadow: 0 0 20px rgba(0, 255, 136, 0.5) !important;
+  text-shadow: 0 0 10px rgba(255, 255, 255, 0.8) !important;
+  transform: translateY(-1px);
 }
 
 .action-btn.mark-paid:disabled {
-  background: #666;
-  color: #ccc;
+  background: #666 !important;
+  color: #ffffff !important;  /* KEEP WHITE TEXT EVEN WHEN DISABLED */
   cursor: not-allowed;
+  text-shadow: 0 0 4px rgba(255, 255, 255, 0.3) !important;
 }
 
+/* BRIGHT WHITE EDIT BUTTON */
 .action-btn.secondary {
-  background: #2a2a2a;
-  border-color: #666;
+  background: #4b5563 !important;  /* DARK GRAY BACKGROUND */
+  border: 1px solid #6b7280 !important;
+  color: #ffffff !important;  /* PURE WHITE TEXT */
+  font-weight: 600 !important;
+  text-shadow: 0 0 4px rgba(255, 255, 255, 0.4) !important;
 }
 
 .action-btn.secondary:hover {
-  background: #333;
+  background: #6b7280 !important;
+  text-shadow: 0 0 8px rgba(255, 255, 255, 0.6) !important;
+  transform: translateY(-1px);
 }
 
+/* BRIGHT WHITE DELETE BUTTON */
 .action-btn.danger {
-  background: #ff4444;
-  border-color: #ff4444;
+  background: #ff073a !important;  /* ELECTRIC RED BACKGROUND */
+  border: none !important;
+  color: #ffffff !important;  /* PURE WHITE TEXT */
+  font-weight: 700 !important;
+  text-shadow: 0 0 6px rgba(255, 255, 255, 0.5) !important;
 }
 
 .action-btn.danger:hover {
-  background: #cc3333;
+  background: #cc0530 !important;
+  box-shadow: 0 0 20px rgba(255, 7, 58, 0.5) !important;
+  text-shadow: 0 0 10px rgba(255, 255, 255, 0.8) !important;
+  transform: translateY(-1px);
 }
 
 /* No Bills State */
@@ -639,6 +671,129 @@ html body .layout .main-content .bills-container [class*="bill"] .bill-amount {
   font-weight: 800 !important;
   font-size: 20px !important;
   text-shadow: 0 0 8px rgba(255, 255, 255, 0.3) !important;
+}
+
+/* NUCLEAR TEXT VISIBILITY FOR STATUS INDICATORS */
+html body .app-container .bills-page .bill-status.pending,
+html body .app-container .bills-page .status-pending,
+html body .layout .main-content .bills-container .bill-status.pending,
+html body .layout .main-content .bills-container .status-pending,
+html body .layout .main-content .bills-container [class*="pending"] {
+  color: #000000 !important;  /* BLACK ON YELLOW */
+  background: #ffff00 !important;  /* BRIGHT ELECTRIC YELLOW */
+  text-shadow: 0 0 8px rgba(255, 255, 0, 0.6) !important;
+  font-weight: 800 !important;
+  font-size: 14px !important;
+}
+
+html body .app-container .bills-page .bill-status.paid,
+html body .app-container .bills-page .status-paid,
+html body .layout .main-content .bills-container .bill-status.paid,
+html body .layout .main-content .bills-container .status-paid,
+html body .layout .main-content .bills-container [class*="paid"] {
+  color: #ffffff !important;  /* WHITE ON GREEN */
+  background: #00ff88 !important;  /* NEON GREEN */
+  text-shadow: 0 0 8px rgba(0, 255, 136, 0.6) !important;
+  font-weight: 800 !important;
+  font-size: 14px !important;
+}
+
+html body .app-container .bills-page .bill-status.overdue,
+html body .app-container .bills-page .status-overdue,
+html body .layout .main-content .bills-container .bill-status.overdue,
+html body .layout .main-content .bills-container .status-overdue,
+html body .layout .main-content .bills-container [class*="overdue"] {
+  color: #ffffff !important;  /* WHITE ON RED */
+  background: #ff073a !important;  /* ELECTRIC RED */
+  text-shadow: 0 0 8px rgba(255, 7, 58, 0.6) !important;
+  font-weight: 800 !important;
+  font-size: 14px !important;
+}
+
+/* NUCLEAR BUTTON TEXT VISIBILITY */
+html body .app-container .bills-page button,
+html body .app-container .bills-page .btn,
+html body .app-container .bills-page [class*="btn"],
+html body .layout .main-content .bills-container button,
+html body .layout .main-content .bills-container .btn,
+html body .layout .main-content .bills-container [class*="btn"],
+html body .smart-money-tracker .bills-management button {
+  color: #ffffff !important;
+  font-weight: 700 !important;
+  text-shadow: 0 0 6px rgba(0, 0, 0, 0.5) !important;
+}
+
+/* NUCLEAR MARK PAID BUTTON */
+html body .app-container .bills-page .mark-paid-btn,
+html body .app-container .bills-page .btn-mark-paid,
+html body .app-container .bills-page button[class*="mark-paid"],
+html body .layout .main-content .bills-container .mark-paid-btn,
+html body .layout .main-content .bills-container .btn-mark-paid,
+html body .layout .main-content .bills-container button[class*="mark-paid"] {
+  color: #ffffff !important;  /* PURE WHITE */
+  background: #00ff88 !important;  /* NEON GREEN BACKGROUND */
+  text-shadow: 0 0 6px rgba(255, 255, 255, 0.5) !important;
+  font-weight: 700 !important;
+  border: none !important;
+}
+
+/* NUCLEAR EDIT BUTTON */
+html body .app-container .bills-page .edit-btn,
+html body .app-container .bills-page .btn-edit,
+html body .app-container .bills-page button[class*="edit"],
+html body .layout .main-content .bills-container .edit-btn,
+html body .layout .main-content .bills-container .btn-edit,
+html body .layout .main-content .bills-container button[class*="edit"] {
+  color: #ffffff !important;  /* PURE WHITE */
+  background: #4b5563 !important;  /* DARK GRAY BACKGROUND */  
+  text-shadow: 0 0 4px rgba(255, 255, 255, 0.4) !important;
+  font-weight: 600 !important;
+  border: 1px solid #6b7280 !important;
+}
+
+/* NUCLEAR DELETE BUTTON */
+html body .app-container .bills-page .delete-btn,
+html body .app-container .bills-page .btn-delete,
+html body .app-container .bills-page button[class*="delete"],
+html body .layout .main-content .bills-container .delete-btn,
+html body .layout .main-content .bills-container .btn-delete,
+html body .layout .main-content .bills-container button[class*="delete"] {
+  color: #ffffff !important;  /* PURE WHITE */
+  background: #ff073a !important;  /* ELECTRIC RED BACKGROUND */
+  text-shadow: 0 0 6px rgba(255, 255, 255, 0.5) !important;
+  font-weight: 700 !important;
+  border: none !important;
+}
+
+/* Status badges force bright visibility */
+.badge,
+.status-badge,
+[class*="status"] {
+  color: #ffffff !important;
+  font-weight: 700 !important;
+  text-shadow: 0 0 6px rgba(0, 0, 0, 0.7) !important;
+}
+
+/* Force specific status colors with nuclear visibility */
+.badge.pending,
+.status-badge.pending,
+[class*="status"][class*="pending"] {
+  color: #000000 !important;  /* BLACK FOR YELLOW BACKGROUND */
+  background: #ffff00 !important;
+}
+
+.badge.paid,
+.status-badge.paid,
+[class*="status"][class*="paid"] {
+  color: #ffffff !important;  /* WHITE FOR GREEN BACKGROUND */
+  background: #00ff88 !important;
+}
+
+.badge.overdue,
+.status-badge.overdue,
+[class*="status"][class*="overdue"] {
+  color: #ffffff !important;  /* WHITE FOR RED BACKGROUND */
+  background: #ff073a !important;
 }
 
 /* NUCLEAR OPTION - ELIMINATE ALL WHITE BACKGROUNDS */

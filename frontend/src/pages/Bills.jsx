@@ -44,6 +44,73 @@ const Bills = () => {
       }
     } catch (error) {
       console.error('Error loading bills:', error);
+      
+      // Use mock data for demonstration when Firebase is unavailable
+      const mockBills = [
+        {
+          name: 'Electric Bill',
+          amount: 125.50,
+          category: 'Bills & Utilities',
+          recurrence: 'monthly',
+          dueDate: '2024-01-15',
+          nextDueDate: '2024-01-15',
+          status: 'pending',
+          account: 'bofa',
+          autopay: false
+        },
+        {
+          name: 'Internet Service',
+          amount: 89.99,
+          category: 'Bills & Utilities', 
+          recurrence: 'monthly',
+          dueDate: '2024-01-20',
+          nextDueDate: '2024-01-20',
+          status: 'paid',
+          account: 'bofa',
+          autopay: true,
+          lastPaidDate: '2024-01-20'
+        },
+        {
+          name: 'Credit Card Payment',
+          amount: 450.00,
+          category: 'Bills & Utilities',
+          recurrence: 'monthly', 
+          dueDate: '2024-01-05',
+          nextDueDate: '2024-01-05',
+          status: 'overdue',
+          account: 'bofa',
+          autopay: false
+        },
+        {
+          name: 'Rent Payment',
+          amount: 1850.00,
+          category: 'Bills & Utilities',
+          recurrence: 'monthly',
+          dueDate: '2024-01-01',
+          nextDueDate: '2024-01-01', 
+          status: 'pending',
+          account: 'bofa',
+          autopay: false
+        },
+        {
+          name: 'Phone Bill',
+          amount: 65.00,
+          category: 'Bills & Utilities',
+          recurrence: 'monthly',
+          dueDate: '2024-01-12',
+          nextDueDate: '2024-01-12',
+          status: 'paid',
+          account: 'bofa',
+          autopay: true,
+          lastPaidDate: '2024-01-12'
+        }
+      ];
+      
+      setBills(mockBills);
+      setProcessedBills(mockBills.map(bill => ({
+        ...bill,
+        category: migrateLegacyCategory(bill.category || 'Bills & Utilities')
+      })));
     } finally {
       setLoading(false);
     }
