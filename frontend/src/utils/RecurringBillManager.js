@@ -1,5 +1,6 @@
 // RecurringBillManager.js - Automatic bill date calculations
 import { parseLocalDate } from './DateUtils.js';
+import { getPacificTime } from './DateUtils.js';
 
 export class RecurringBillManager {
     
@@ -147,6 +148,11 @@ export class RecurringBillManager {
      */
     static getBillsDueBefore(bills, beforeDate) {
         return bills.filter(bill => {
+            // Skip bills that are marked as paid
+            if (bill.status === 'paid' || bill.isPaid === true) {
+                return false;
+            }
+            
             const dueDate = bill.nextDueDate || parseLocalDate(bill.dueDate);
             return dueDate < beforeDate;
         });
@@ -161,6 +167,11 @@ export class RecurringBillManager {
      */
     static getBillsInRange(bills, startDate, endDate) {
         return bills.filter(bill => {
+            // Skip bills that are marked as paid
+            if (bill.status === 'paid' || bill.isPaid === true) {
+                return false;
+            }
+            
             const dueDate = bill.nextDueDate || parseLocalDate(bill.dueDate);
             return dueDate >= startDate && dueDate <= endDate;
         });
@@ -184,8 +195,9 @@ export class RecurringBillManager {
      * @param {Date} paymentDate - Date the bill was paid
      * @returns {Object} Updated bill object
      */
-    static markBillAsPaid(bill, paymentDate = new Date()) {
+    static markBillAsPaid(bill, paymentDate = null) {
         const currentDueDate = bill.nextDueDate || bill.dueDate;
+        const paidDate = paymentDate || getPacificTime();
         
         // Create a temporary bill object with the current due date as last due date
         const tempBill = {
@@ -195,12 +207,12 @@ export class RecurringBillManager {
         };
         
         // Calculate the next due date for the upcoming billing cycle
-        const nextDueDate = this.getNextDueDate(tempBill, paymentDate);
+        const nextDueDate = this.getNextDueDate(tempBill, paidDate);
         
         return {
             ...bill,
             lastDueDate: currentDueDate,
-            lastPaidDate: paymentDate,
+            lastPaidDate: paidDate,
             nextDueDate: nextDueDate,
             isPaid: true,
             status: 'paid'

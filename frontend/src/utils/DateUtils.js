@@ -128,3 +128,34 @@ export const formatDateForDisplay = (date, format = 'short') => {
 export const formatDateForInput = (date) => {
   return formatDateForDisplay(date, 'iso');
 };
+
+/**
+ * Get current time in Pacific Standard Time
+ * @returns {Date} Current date/time in Pacific Time
+ */
+export const getPacificTime = () => {
+  const now = new Date();
+  // Convert UTC to Pacific Time
+  const pacificTime = new Date(now.toLocaleString("en-US", {
+    timeZone: "America/Los_Angeles"
+  }));
+  return pacificTime;
+};
+
+/**
+ * Calculate days until a target date using Pacific Time
+ * @param {string|Date} targetDate - Target date (YYYY-MM-DD format or Date object)
+ * @returns {number} Number of days until the target date
+ */
+export const getDaysUntilDateInPacific = (targetDate) => {
+  const now = getPacificTime();
+  const target = new Date(targetDate);
+  
+  // Reset time to start of day for accurate day counting
+  const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  const startOfTarget = new Date(target.getFullYear(), target.getMonth(), target.getDate());
+  
+  const diffTime = startOfTarget - startOfToday;
+  const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+  return diffDays;
+};
