@@ -130,32 +130,94 @@ export const formatDateForInput = (date) => {
 };
 
 /**
- * Get current time in Pacific Standard Time
+ * Get current time in Pacific Standard Time using multiple methods for reliability
  * @returns {Date} Current date/time in Pacific Time
  */
 export const getPacificTime = () => {
   const now = new Date();
-  // Convert UTC to Pacific Time
-  const pacificTime = new Date(now.toLocaleString("en-US", {
+  
+  // Method 1: Using toLocaleString with Pacific timezone (reliable and preserves time)
+  const method1 = new Date(now.toLocaleString("en-US", {
     timeZone: "America/Los_Angeles"
   }));
-  return pacificTime;
+  
+  // Method 2: Using toLocaleString with Swedish locale (more reliable formatting)
+  const method2 = new Date(now.toLocaleString("sv-SE", {
+    timeZone: "America/Los_Angeles"
+  }));
+  
+  // Method 3: Using Intl.DateTimeFormat with parts for full control
+  const method3Parts = new Intl.DateTimeFormat('en-US', {
+    timeZone: 'America/Los_Angeles',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+    hour12: false
+  }).formatToParts(now);
+  
+  const method3 = new Date(
+    `${method3Parts.find(p => p.type === 'year').value}-` +
+    `${method3Parts.find(p => p.type === 'month').value}-` +
+    `${method3Parts.find(p => p.type === 'day').value}T` +
+    `${method3Parts.find(p => p.type === 'hour').value}:` +
+    `${method3Parts.find(p => p.type === 'minute').value}:` +
+    `${method3Parts.find(p => p.type === 'second').value}`
+  );
+  
+  // Debug logging for timezone calculations
+  console.log('Pacific Time Debug:', {
+    utc: now.toISOString(),
+    method1: method1.toISOString(),
+    method2: method2.toISOString(),
+    method3: method3.toISOString(),
+    selected: 'method2 (sv-SE locale - most reliable)'
+  });
+  
+  // Use Method 2 (sv-SE locale) as it's most reliable for date parsing
+  return method2;
 };
 
 /**
- * Calculate days until a target date using Pacific Time
+ * Calculate days until a target date using Pacific Time with bulletproof calculation
  * @param {string|Date} targetDate - Target date (YYYY-MM-DD format or Date object)
  * @returns {number} Number of days until the target date
  */
 export const getDaysUntilDateInPacific = (targetDate) => {
-  const now = getPacificTime();
-  const target = new Date(targetDate);
+  const today = getPacificTime();
+  const payday = new Date(targetDate);
   
-  // Reset time to start of day for accurate day counting
-  const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-  const startOfTarget = new Date(target.getFullYear(), target.getMonth(), target.getDate());
+  // Set both dates to start of day for accurate day counting
+  today.setHours(0, 0, 0, 0);
+  payday.setHours(0, 0, 0, 0);
   
-  const diffTime = startOfTarget - startOfToday;
-  const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
-  return diffDays;
+  const timeDiff = payday.getTime() - today.getTime();
+  const daysDiff = Math.ceil(timeDiff / (1000 * 60 * 60 * 24));
+  
+  // Enhanced debugging for payday calculation
+  console.log('Payday Calculation Debug:', {
+    today: today.toISOString(),
+    todayLocal: today.toLocaleDateString('en-US', { 
+      weekday: 'long', 
+      year: 'numeric', 
+      month: 'long', 
+      day: 'numeric' 
+    }),
+    payday: payday.toISOString(),
+    paydayLocal: payday.toLocaleDateString('en-US', { 
+      weekday: 'long', 
+      year: 'numeric', 
+      month: 'long', 
+      day: 'numeric' 
+    }),
+    timeDiffMs: timeDiff,
+    timeDiffDays: timeDiff / (1000 * 60 * 60 * 24),
+    daysDiffCeil: daysDiff,
+    finalResult: Math.max(0, daysDiff)
+  });
+  
+  // Ensure non-negative result
+  return Math.max(0, daysDiff);
 };

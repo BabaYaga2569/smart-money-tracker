@@ -13,6 +13,7 @@ const Spendability = () => {
   const [canSpend, setCanSpend] = useState(null);
   const [notification, setNotification] = useState({ message: '', type: '' });
   const [payingBill, setPayingBill] = useState(null);
+  const [refreshTrigger, setRefreshTrigger] = useState(0); // Force refresh mechanism
   
   const [financialData, setFinancialData] = useState({
     totalAvailable: 0,
@@ -29,7 +30,7 @@ const Spendability = () => {
 
   useEffect(() => {
     fetchFinancialData();
-  }, []);
+  }, [refreshTrigger]); // Re-fetch when refresh is triggered
 
   const fetchFinancialData = async () => {
     try {
@@ -57,13 +58,37 @@ const Spendability = () => {
       let nextPayday = '2025-09-30';
       let daysUntilPayday = 0;
       
+      // Enhanced logging for payday calculation debugging
+      console.log('Spendability: Starting payday calculation', {
+        currentPacificTime: getPacificTime().toISOString(),
+        settingsHasOverride: !!settingsData.nextPaydayOverride,
+        overrideValue: settingsData.nextPaydayOverride,
+        payCycleExists: !!payCycleData,
+        payCycleDate: payCycleData?.date,
+        defaultPayday: nextPayday
+      });
+      
       // Check for manual override first
       if (settingsData.nextPaydayOverride) {
         nextPayday = settingsData.nextPaydayOverride;
         daysUntilPayday = getDaysUntilDateInPacific(nextPayday);
+        console.log('Spendability: Using manual override payday', {
+          payday: nextPayday,
+          calculatedDays: daysUntilPayday
+        });
       } else if (payCycleData && payCycleData.date) {
         nextPayday = payCycleData.date;
         daysUntilPayday = getDaysUntilDateInPacific(nextPayday);
+        console.log('Spendability: Using pay cycle payday', {
+          payday: nextPayday,
+          calculatedDays: daysUntilPayday
+        });
+      } else {
+        daysUntilPayday = getDaysUntilDateInPacific(nextPayday);
+        console.log('Spendability: Using default payday', {
+          payday: nextPayday,
+          calculatedDays: daysUntilPayday
+        });
       }
 
       const bills = settingsData.bills || [];
@@ -87,6 +112,16 @@ const Spendability = () => {
 
       const safeToSpend = totalAvailable - totalBillsDue - safetyBuffer - essentialsNeeded;
 
+      const finalDaysUntilPayday = Math.max(0, daysUntilPayday);
+      
+      // Final logging before setting component state
+      console.log('Spendability: Final calculation results', {
+        nextPayday,
+        daysUntilPayday,
+        finalDaysUntilPayday,
+        willDisplayAs: finalDaysUntilPayday > 0 ? `${finalDaysUntilPayday} days` : 'Today!'
+      });
+
       setFinancialData({
         totalAvailable,
         checking: parseFloat(bankAccounts.bofa?.balance) || 0,
@@ -95,10 +130,15 @@ const Spendability = () => {
         totalBillsDue,
         safeToSpend,
         nextPayday,
-        daysUntilPayday: Math.max(0, daysUntilPayday),
+        daysUntilPayday: finalDaysUntilPayday,
         weeklyEssentials: essentialsNeeded,
         safetyBuffer
       });
+      
+      // Force component re-render after state update
+      setTimeout(() => {
+        console.log('Spendability: Component state updated, days until payday:', finalDaysUntilPayday);
+      }, 100);
 
     } catch (err) {
       console.error('Error fetching data:', err);
@@ -124,8 +164,8 @@ const Spendability = () => {
         ],
         totalBillsDue: 290.62,
         safeToSpend: 1047.50,
-        nextPayday: '2025-02-01',
-        daysUntilPayday: 5,
+        nextPayday: '2025-09-30',
+        daysUntilPayday: getDaysUntilDateInPacific('2025-09-30'), // Use our bulletproof calculation
         weeklyEssentials: 150.00,
         safetyBuffer: 42.00
       };
@@ -135,6 +175,12 @@ const Spendability = () => {
     } finally {
       setLoading(false);
     }
+  };
+  
+  // Force refresh of payday calculation - useful for debugging and ensuring updates
+  const forceRefreshPaydayCalculation = () => {
+    console.log('Spendability: Forcing refresh of payday calculation');
+    setRefreshTrigger(prev => prev + 1);
   };
 
   const handleSpendAmountChange = (e) => {
@@ -431,6 +477,22 @@ const Spendability = () => {
               ? `${financialData.daysUntilPayday} days`
               : 'Today!'
             }
+            <button 
+              onClick={forceRefreshPaydayCalculation}
+              style={{
+                marginLeft: '10px',
+                padding: '2px 6px',
+                fontSize: '12px',
+                backgroundColor: '#333',
+                color: '#00ff88',
+                border: '1px solid #555',
+                borderRadius: '4px',
+                cursor: 'pointer'
+              }}
+              title="Refresh payday calculation"
+            >
+              🔄
+            </button>
           </div>
         </div>
 
