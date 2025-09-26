@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { doc, getDoc, setDoc } from 'firebase/firestore';
 import { db } from '../firebase';
 import { PayCycleCalculator } from '../utils/PayCycleCalculator';
-import { parseLocalDate, formatDateForInput, getDaysUntilDateInPacific } from '../utils/DateUtils';
+import { getDaysUntilDateInPacific } from '../utils/DateUtils';
 import './Settings.css';
 
 const Settings = () => {
@@ -146,58 +146,6 @@ const Settings = () => {
 
   const removeBill = (index) => {
     setBills(prevBills => prevBills.filter((_, i) => i !== index));
-  };
-
-  const handleCSVUpload = (event) => {
-    const file = event.target.files[0];
-    if (!file) return;
-
-    const reader = new FileReader();
-    reader.onload = (e) => {
-      try {
-        const text = e.target.result;
-        const lines = text.split('\n').filter(line => line.trim());
-        
-        if (lines.length < 2) {
-          setMessage('CSV file must have header and data rows');
-          return;
-        }
-
-        const headers = lines[0].split(',').map(h => h.trim().toLowerCase());
-        const data = lines.slice(1).map(line => {
-          const values = line.split(',').map(v => v.trim());
-          const row = {};
-          headers.forEach((header, index) => {
-            row[header] = values[index] || '';
-          });
-          return row;
-        });
-
-        const nameColumn = headers.find(h => h.includes('name') || h.includes('bill'));
-        const amountColumn = headers.find(h => h.includes('amount') || h.includes('cost'));
-        const dateColumn = headers.find(h => h.includes('date') || h.includes('due'));
-
-        if (!nameColumn || !amountColumn) {
-          setMessage('CSV must have name and amount columns');
-          return;
-        }
-
-        const processedBills = data.map(row => ({
-          name: row[nameColumn] || '',
-          amount: parseFloat(row[amountColumn]) || 0,
-          dueDate: dateColumn ? formatDateForInput(parseLocalDate(row[dateColumn])) : '',
-          recurrence: 'monthly'
-        })).filter(bill => bill.name && bill.amount > 0);
-
-        setBills(prevBills => [...prevBills, ...processedBills]);
-        setMessage(`Imported ${processedBills.length} bills from CSV`);
-      } catch (error) {
-        console.error('CSV parsing error:', error);
-        setMessage('Error parsing CSV file');
-      }
-    };
-
-    reader.readAsText(file);
   };
 
   if (loading) {
@@ -411,26 +359,23 @@ const Settings = () => {
           </div>
         </div>
 
-        {/* Tile 6: Recurring Bills - Made Larger with Working Add Button */}
+        {/* Tile 6: Recurring Bills - Focus on Basic Bill Management */}
         <div className="settings-tile bills-tile">
           <h3>📄 Recurring Bills</h3>
           <div className="tile-content">
             
-            {/* CSV Upload Section */}
-            <div className="csv-upload-section">
-              <h4>Import from CSV</h4>
-              <input
-                type="file"
-                accept=".csv"
-                onChange={handleCSVUpload}
-                className="csv-input"
-              />
-              <small>CSV format: Bill Name, Amount, Due Date</small>
+            {/* Info about advanced import */}
+            <div className="import-info-section">
+              <p className="info-message">
+                💡 For advanced CSV import and duplicate detection, use the 
+                <strong> Recurring page</strong> which offers intelligent 
+                categorization and conflict resolution.
+              </p>
             </div>
 
             {/* Add Bill Section with Working Button */}
             <div className="add-bill-section">
-              <h4>Add Bill</h4>
+              <h4>Quick Add Bill</h4>
               <button 
                 type="button"
                 onClick={addBill} 

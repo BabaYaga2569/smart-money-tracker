@@ -156,6 +156,38 @@
   border-color: #00ff88;
 }
 
+.action-buttons {
+  display: flex;
+  gap: 15px;
+  flex-wrap: wrap;
+}
+
+.import-button {
+  background: #007acc;
+  color: #fff;
+  border: none;
+  border-radius: 8px;
+  padding: 12px 20px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  white-space: nowrap;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.import-button:hover {
+  background: #0066b3;
+  transform: translateY(-1px);
+}
+
+.import-button:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+  transform: none;
+}
+
 .add-button {
   background: #00ff88;
   color: #000;
@@ -623,6 +655,16 @@
   .search-input,
   .filter-select {
     min-width: unset;
+  }
+  
+  .action-buttons {
+    width: 100%;
+  }
+  
+  .import-button,
+  .add-button {
+    flex: 1;
+    justify-content: center;
   }
   
   .recurring-item {

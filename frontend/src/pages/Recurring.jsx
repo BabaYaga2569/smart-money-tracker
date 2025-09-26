@@ -4,6 +4,7 @@ import { db } from '../firebase';
 import { RecurringManager } from '../utils/RecurringManager';
 import { formatDateForInput } from '../utils/DateUtils';
 import { TRANSACTION_CATEGORIES, getCategoryIcon } from '../constants/categories';
+import CSVImportModal from '../components/CSVImportModal';
 import './Recurring.css';
 
 const Recurring = () => {
@@ -16,6 +17,7 @@ const Recurring = () => {
   const [editingItem, setEditingItem] = useState(null);
   const [showHistoryModal, setShowHistoryModal] = useState(false);
   const [selectedItem, setSelectedItem] = useState(null);
+  const [showCSVImport, setShowCSVImport] = useState(false);
   
   // Filters and search
   const [filterType, setFilterType] = useState('all');
@@ -399,6 +401,75 @@ const Recurring = () => {
     }
   };
 
+  const handleCSVImport = async (importedItems, conflicts) => {
+    try {
+      setSaving(true);
+      
+      const settingsDocRef = doc(db, 'users', 'steve-colburn', 'settings', 'personal');
+      const currentDoc = await getDoc(settingsDocRef);
+      const currentData = currentDoc.exists() ? currentDoc.data() : {};
+      
+      const existingItems = currentData.recurringItems || [];
+      
+      // Process conflicts - merge items where resolution is 'merge'
+      const mergeUpdates = [];
+      conflicts.forEach(conflict => {
+        if (conflict.resolution === 'merge') {
+          const existingIndex = existingItems.findIndex(item => item.id === conflict.existing.id);
+          if (existingIndex !== -1) {
+            // Update existing item with new data, keeping original creation date
+            const mergedItem = {
+              ...existingItems[existingIndex],
+              ...conflict.incoming,
+              id: conflict.existing.id, // Keep existing ID
+              createdAt: existingItems[existingIndex].createdAt, // Keep original creation date
+              updatedAt: new Date().toISOString(),
+              dataSource: 'csv_import_merged',
+              mergedFrom: conflict.incoming.id
+            };
+            mergeUpdates.push({ index: existingIndex, item: mergedItem });
+          }
+        }
+      });
+      
+      // Apply merge updates
+      let updatedItems = [...existingItems];
+      mergeUpdates.forEach(update => {
+        updatedItems[update.index] = update.item;
+      });
+      
+      // Add new items (excluding those that were merged or skipped)
+      const itemsToAdd = importedItems.filter(item => {
+        const conflict = conflicts.find(c => c.incoming.id === item.id);
+        return !conflict || (conflict.resolution !== 'merge' && conflict.resolution !== 'skip');
+      });
+      
+      updatedItems = [...updatedItems, ...itemsToAdd];
+      
+      await updateDoc(settingsDocRef, {
+        ...currentData,
+        recurringItems: updatedItems
+      });
+      
+      setRecurringItems(updatedItems);
+      setShowCSVImport(false);
+      
+      const importCount = itemsToAdd.length;
+      const mergeCount = mergeUpdates.length;
+      let message = `Successfully imported ${importCount} recurring items`;
+      if (mergeCount > 0) {
+        message += ` and merged ${mergeCount} existing items`;
+      }
+      
+      showNotification(message, 'success');
+    } catch (error) {
+      console.error('Error importing CSV data:', error);
+      showNotification('Error importing CSV data', 'error');
+    } finally {
+      setSaving(false);
+    }
+  };
+
   const handleShowHistory = (item) => {
     // Find the item from processedItems which includes history data
     const itemWithHistory = processedItems.find(i => i.id === item.id) || item;
@@ -525,13 +596,22 @@ const Recurring = () => {
           </select>
         </div>
         
-        <button 
-          className="add-button"
-          onClick={handleAddItem}
-          disabled={saving}
-        >
-          ➕ Add Recurring Item
-        </button>
+        <div className="action-buttons">
+          <button 
+            className="import-button"
+            onClick={() => setShowCSVImport(true)}
+            disabled={saving}
+          >
+            📊 Import from CSV
+          </button>
+          <button 
+            className="add-button"
+            onClick={handleAddItem}
+            disabled={saving}
+          >
+            ➕ Add Recurring Item
+          </button>
+        </div>
       </div>
 
       {/* Recurring Items Table */}
@@ -780,6 +860,15 @@ const Recurring = () => {
             </div>
           </div>
         </div>
+      )}
+
+      {/* CSV Import Modal */}
+      {showCSVImport && (
+        <CSVImportModal
+          existingItems={recurringItems}
+          onImport={handleCSVImport}
+          onCancel={() => setShowCSVImport(false)}
+        />
       )}
     </div>
   );

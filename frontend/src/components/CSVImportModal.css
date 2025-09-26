@@ -1,0 +1,549 @@
+/* CSV Import Modal Styles */
+.csv-import-modal {
+  width: 90vw;
+  max-width: 900px;
+  max-height: 85vh;
+  overflow-y: auto;
+}
+
+.step-indicator {
+  display: flex;
+  gap: 15px;
+  align-items: center;
+  margin-bottom: 10px;
+}
+
+.step {
+  width: 30px;
+  height: 30px;
+  border-radius: 50%;
+  background: #333;
+  color: #ccc;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: bold;
+  border: 2px solid #333;
+  position: relative;
+}
+
+.step.active {
+  background: #00ff88;
+  color: #000;
+  border-color: #00ff88;
+}
+
+.step.completed {
+  background: #28a745;
+  color: #fff;
+  border-color: #28a745;
+}
+
+.step.completed::after {
+  content: '✓';
+  font-size: 0.8rem;
+}
+
+/* Upload Step */
+.csv-upload-step {
+  text-align: center;
+  padding: 20px;
+}
+
+.upload-area {
+  border: 2px dashed #555;
+  border-radius: 12px;
+  padding: 40px 20px;
+  margin: 20px 0;
+  background: #2a2a2a;
+  transition: all 0.3s ease;
+}
+
+.upload-area:hover {
+  border-color: #00ff88;
+  background: #333;
+}
+
+.file-input {
+  display: none;
+}
+
+.file-input-label {
+  cursor: pointer;
+  display: block;
+}
+
+.upload-icon {
+  font-size: 3rem;
+  margin-bottom: 15px;
+}
+
+.upload-text {
+  font-size: 1.1rem;
+  margin-bottom: 10px;
+}
+
+.upload-text strong {
+  color: #00ff88;
+}
+
+.upload-hint {
+  color: #888;
+  font-size: 0.9rem;
+}
+
+.format-info {
+  text-align: left;
+  background: #333;
+  border-radius: 8px;
+  padding: 20px;
+  margin-top: 20px;
+}
+
+.format-info h4 {
+  color: #00ff88;
+  margin: 0 0 15px 0;
+}
+
+.format-info ul {
+  margin: 0;
+  padding-left: 20px;
+}
+
+.format-info li {
+  margin-bottom: 8px;
+  color: #ccc;
+}
+
+.format-info strong {
+  color: #fff;
+}
+
+/* Preview Step */
+.csv-preview-step {
+  padding: 20px;
+}
+
+.import-errors {
+  background: #4a2c2c;
+  border: 1px solid #ff6b6b;
+  border-radius: 8px;
+  padding: 15px;
+  margin-bottom: 20px;
+}
+
+.import-errors h4 {
+  color: #ff6b6b;
+  margin: 0 0 10px 0;
+}
+
+.error-list {
+  max-height: 120px;
+  overflow-y: auto;
+}
+
+.error-item {
+  color: #ffcccb;
+  font-size: 0.9rem;
+  margin-bottom: 5px;
+}
+
+.error-more {
+  color: #ff6b6b;
+  font-style: italic;
+  margin-top: 10px;
+}
+
+.preview-items {
+  max-height: 400px;
+  overflow-y: auto;
+  border: 1px solid #555;
+  border-radius: 8px;
+  background: #2a2a2a;
+}
+
+.preview-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 15px;
+  border-bottom: 1px solid #333;
+  background: #1a1a1a;
+  margin-bottom: 1px;
+}
+
+.preview-item:last-child {
+  border-bottom: none;
+  margin-bottom: 0;
+}
+
+.item-info {
+  display: flex;
+  align-items: center;
+  gap: 15px;
+  flex: 1;
+}
+
+.item-icon {
+  font-size: 1.5rem;
+  width: 30px;
+  text-align: center;
+}
+
+.item-details h4 {
+  margin: 0 0 5px 0;
+  color: #fff;
+}
+
+.item-amount {
+  color: #00ff88;
+  font-weight: 500;
+}
+
+.item-controls {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+}
+
+.type-select,
+.category-select {
+  background: #333;
+  border: 1px solid #555;
+  color: #fff;
+  padding: 5px 10px;
+  border-radius: 4px;
+  font-size: 0.9rem;
+}
+
+.type-select {
+  width: 100px;
+}
+
+.category-select {
+  width: 150px;
+}
+
+.remove-btn {
+  background: #ff4757;
+  border: none;
+  color: #fff;
+  width: 25px;
+  height: 25px;
+  border-radius: 50%;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.8rem;
+}
+
+.remove-btn:hover {
+  background: #ff3742;
+}
+
+.preview-actions {
+  display: flex;
+  justify-content: space-between;
+  margin-top: 20px;
+  padding-top: 20px;
+  border-top: 1px solid #333;
+}
+
+.back-btn,
+.continue-btn,
+.import-btn,
+.done-btn {
+  padding: 10px 20px;
+  border: none;
+  border-radius: 6px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background-color 0.3s;
+}
+
+.back-btn {
+  background: #555;
+  color: #fff;
+}
+
+.back-btn:hover {
+  background: #666;
+}
+
+.continue-btn,
+.import-btn,
+.done-btn {
+  background: #00ff88;
+  color: #000;
+}
+
+.continue-btn:hover,
+.import-btn:hover,
+.done-btn:hover {
+  background: #00e075;
+}
+
+.continue-btn:disabled,
+.import-btn:disabled {
+  background: #555;
+  color: #888;
+  cursor: not-allowed;
+}
+
+/* Conflicts Step */
+.csv-conflicts-step {
+  padding: 20px;
+}
+
+.conflicts-list {
+  max-height: 500px;
+  overflow-y: auto;
+  margin-bottom: 20px;
+}
+
+.conflict-item {
+  background: #2a2a2a;
+  border: 1px solid #555;
+  border-radius: 8px;
+  padding: 20px;
+  margin-bottom: 15px;
+}
+
+.conflict-header {
+  display: flex;
+  justify-content: space-between;
+  margin-bottom: 15px;
+}
+
+.similarity-score {
+  background: #ff9500;
+  color: #000;
+  padding: 4px 8px;
+  border-radius: 4px;
+  font-weight: bold;
+  font-size: 0.9rem;
+}
+
+.confidence {
+  color: #00ff88;
+  font-weight: 500;
+}
+
+.conflict-comparison {
+  display: grid;
+  grid-template-columns: 1fr auto 1fr;
+  gap: 20px;
+  align-items: center;
+  margin-bottom: 15px;
+}
+
+.existing-item,
+.incoming-item {
+  background: #1a1a1a;
+  border-radius: 6px;
+  padding: 15px;
+}
+
+.existing-item h4,
+.incoming-item h4 {
+  margin: 0 0 10px 0;
+  color: #fff;
+}
+
+.item-details {
+  display: flex;
+  gap: 15px;
+  flex-wrap: wrap;
+}
+
+.item-details span {
+  background: #333;
+  padding: 4px 8px;
+  border-radius: 4px;
+  font-size: 0.9rem;
+  color: #ccc;
+}
+
+.vs-indicator {
+  background: #ff6b6b;
+  color: #fff;
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: bold;
+  justify-self: center;
+}
+
+.conflict-reasons {
+  color: #ccc;
+  font-size: 0.9rem;
+  margin-bottom: 20px;
+}
+
+.conflict-reasons strong {
+  color: #fff;
+}
+
+.resolution-options {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.resolution-option {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 10px;
+  background: #333;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: background-color 0.3s;
+}
+
+.resolution-option:hover {
+  background: #404040;
+}
+
+.resolution-option input[type="radio"] {
+  margin-top: 2px;
+}
+
+.option-label {
+  font-weight: 500;
+  color: #fff;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.recommended {
+  color: #00ff88;
+  font-size: 0.8rem;
+}
+
+.option-description {
+  color: #ccc;
+  font-size: 0.9rem;
+  margin-left: auto;
+  text-align: right;
+  max-width: 200px;
+}
+
+.conflicts-actions {
+  display: flex;
+  justify-content: space-between;
+  padding-top: 20px;
+  border-top: 1px solid #333;
+}
+
+/* Complete Step */
+.csv-complete-step {
+  text-align: center;
+  padding: 40px 20px;
+}
+
+.success-icon {
+  font-size: 4rem;
+  margin-bottom: 20px;
+}
+
+.csv-complete-step h3 {
+  color: #00ff88;
+  margin-bottom: 15px;
+}
+
+.csv-complete-step p {
+  color: #ccc;
+  margin-bottom: 30px;
+}
+
+.import-summary {
+  background: #2a2a2a;
+  border-radius: 8px;
+  padding: 24px;
+  margin-bottom: 30px;
+  text-align: left;
+}
+
+.summary-item {
+  display: flex;
+  justify-content: space-between;
+  padding: 8px 0;
+  border-bottom: 1px solid #333;
+}
+
+.summary-item:last-child {
+  border-bottom: none;
+}
+
+.summary-item .label {
+  color: #ccc;
+}
+
+.summary-item .value {
+  color: #00ff88;
+  font-weight: bold;
+}
+
+/* Loading and Error States */
+.loading {
+  text-align: center;
+  color: #00ff88;
+  padding: 20px;
+  font-style: italic;
+}
+
+.error-message {
+  background: #4a2c2c;
+  border: 1px solid #ff6b6b;
+  color: #ffcccb;
+  padding: 15px;
+  border-radius: 8px;
+  margin: 15px 0;
+  text-align: center;
+}
+
+/* Responsive */
+@media (max-width: 768px) {
+  .csv-import-modal {
+    width: 95vw;
+    max-height: 90vh;
+  }
+  
+  .conflict-comparison {
+    grid-template-columns: 1fr;
+    gap: 15px;
+  }
+  
+  .vs-indicator {
+    justify-self: center;
+  }
+  
+  .item-controls {
+    flex-direction: column;
+    gap: 8px;
+  }
+  
+  .type-select,
+  .category-select {
+    width: 100%;
+  }
+  
+  .preview-actions,
+  .conflicts-actions {
+    flex-direction: column;
+    gap: 10px;
+  }
+  
+  .back-btn,
+  .continue-btn,
+  .import-btn,
+  .done-btn {
+    width: 100%;
+  }
+}
