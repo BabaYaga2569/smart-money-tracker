@@ -1,6 +1,12 @@
 @import './SharedPages.css';
 
 /* Account-specific styles */
+.add-account-btn {
+  margin-top: 10px;
+  font-size: 1rem;
+  padding: 10px 20px;
+}
+
 .accounts-grid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
@@ -28,6 +34,16 @@
   margin-bottom: 15px;
 }
 
+.account-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.account-icon {
+  font-size: 1.2rem;
+}
+
 .account-header h3 {
   color: #00ff88;
   margin: 0;
@@ -39,6 +55,7 @@
   padding: 4px 8px;
   border-radius: 4px;
   font-size: 0.8rem;
+  text-transform: capitalize;
 }
 
 .account-balance {
@@ -48,8 +65,248 @@
   margin: 15px 0;
 }
 
+.edit-balance {
+  display: flex;
+  align-items: center;
+}
+
+.balance-input {
+  background: #333;
+  border: 2px solid #00ff88;
+  border-radius: 6px;
+  color: #fff;
+  font-size: 1.5rem;
+  font-weight: bold;
+  padding: 8px 12px;
+  width: 100%;
+  max-width: 200px;
+}
+
+.balance-input:focus {
+  outline: none;
+  border-color: #00cc6a;
+}
+
 .account-actions {
   display: flex;
   gap: 10px;
   margin-top: 15px;
+  flex-wrap: wrap;
+}
+
+.action-btn {
+  padding: 8px 12px;
+  border-radius: 6px;
+  border: none;
+  background: #333;
+  color: #00ff88;
+  cursor: pointer;
+  transition: all 0.3s ease;
+  font-size: 0.9rem;
+  flex: 1;
+  min-width: 120px;
+}
+
+.action-btn:hover {
+  background: #00ff88;
+  color: #000;
+}
+
+.action-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.action-btn.delete-btn {
+  background: #cc2936;
+  color: #fff;
+}
+
+.action-btn.delete-btn:hover {
+  background: #a31e2a;
+}
+
+.no-accounts {
+  grid-column: 1 / -1;
+  text-align: center;
+  background: #1a1a1a;
+  border: 2px dashed #333;
+  border-radius: 12px;
+  padding: 40px 20px;
+}
+
+.no-accounts h3 {
+  color: #00ff88;
+  margin: 0 0 10px 0;
+}
+
+.no-accounts p {
+  color: #ccc;
+  margin: 0 0 20px 0;
+}
+
+/* Modal Styles */
+.modal-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.8);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+  padding: 20px;
+}
+
+.modal {
+  background: #1a1a1a;
+  border: 2px solid #333;
+  border-radius: 12px;
+  width: 100%;
+  max-width: 500px;
+  max-height: 90vh;
+  overflow-y: auto;
+}
+
+.modal-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 20px;
+  border-bottom: 1px solid #333;
+}
+
+.modal-header h3 {
+  color: #00ff88;
+  margin: 0;
+}
+
+.close-btn {
+  background: none;
+  border: none;
+  color: #ccc;
+  font-size: 1.5rem;
+  cursor: pointer;
+  padding: 0;
+  width: 30px;
+  height: 30px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.close-btn:hover {
+  color: #fff;
+}
+
+.modal-body {
+  padding: 20px;
+}
+
+.form-group {
+  margin-bottom: 20px;
+}
+
+.form-group label {
+  display: block;
+  color: #00ff88;
+  margin-bottom: 8px;
+  font-weight: 500;
+}
+
+.form-group input,
+.form-group select {
+  width: 100%;
+  padding: 12px;
+  background: #333;
+  border: 2px solid #555;
+  border-radius: 6px;
+  color: #fff;
+  font-size: 1rem;
+}
+
+.form-group input:focus,
+.form-group select:focus {
+  outline: none;
+  border-color: #00ff88;
+}
+
+.modal-footer {
+  display: flex;
+  gap: 10px;
+  padding: 20px;
+  border-top: 1px solid #333;
+  justify-content: flex-end;
+}
+
+.warning {
+  color: #ffaa00;
+  font-style: italic;
+}
+
+/* Notification Styles */
+.notification {
+  position: fixed;
+  top: 20px;
+  right: 20px;
+  padding: 15px 20px;
+  border-radius: 8px;
+  font-weight: 500;
+  z-index: 1001;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+  animation: slideIn 0.3s ease-out;
+}
+
+.notification.success {
+  background: #00ff88;
+  color: #000;
+}
+
+.notification.error {
+  background: #cc2936;
+  color: #fff;
+}
+
+@keyframes slideIn {
+  from {
+    transform: translateX(100%);
+    opacity: 0;
+  }
+  to {
+    transform: translateX(0);
+    opacity: 1;
+  }
+}
+
+/* Responsive Design */
+@media (max-width: 768px) {
+  .accounts-grid {
+    grid-template-columns: 1fr;
+  }
+  
+  .account-actions {
+    flex-direction: column;
+  }
+  
+  .action-btn {
+    min-width: auto;
+  }
+  
+  .modal {
+    margin: 10px;
+    max-width: none;
+    width: calc(100% - 20px);
+  }
+  
+  .modal-footer {
+    flex-direction: column;
+  }
+  
+  .notification {
+    right: 10px;
+    left: 10px;
+    top: 10px;
+  }
 }
