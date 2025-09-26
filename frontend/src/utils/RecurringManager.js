@@ -270,44 +270,325 @@ export class RecurringManager {
     }
 
     /**
-     * Detect potential duplicate or overlapping subscriptions
+     * Detect potential duplicate or overlapping subscriptions with advanced matching
      * @param {Array} items - All recurring items
-     * @returns {Array} Potential duplicates
+     * @param {Array} newItems - New items to check against existing ones
+     * @returns {Array} Potential duplicates with confidence scores
      */
-    static detectDuplicates(items) {
+    static detectDuplicates(items, newItems = []) {
         const duplicates = [];
-        const subscriptionItems = items.filter(item => 
-            item.type === 'expense' && 
-            (item.category === 'Subscriptions' || item.category === 'Entertainment')
-        );
-
-        // Simple name-based duplicate detection
-        for (let i = 0; i < subscriptionItems.length; i++) {
-            for (let j = i + 1; j < subscriptionItems.length; j++) {
-                const item1 = subscriptionItems[i];
-                const item2 = subscriptionItems[j];
+        const itemsToCheck = newItems.length > 0 ? newItems : items;
+        
+        itemsToCheck.forEach((newItem) => {
+            const existingItems = newItems.length > 0 ? items : items.slice(0, items.indexOf(newItem));
+            
+            existingItems.forEach((existingItem) => {
+                if (newItem.id === existingItem.id) return; // Skip same item
                 
-                if (this.isSimilarName(item1.name, item2.name)) {
+                const similarity = this.calculateSimilarity(newItem, existingItem);
+                
+                if (similarity.score >= 70) { // 70% similarity threshold
                     duplicates.push({
-                        items: [item1, item2],
-                        type: 'similar_name',
-                        message: `Potential duplicate: "${item1.name}" and "${item2.name}"`
+                        existing: existingItem,
+                        incoming: newItem,
+                        similarity: similarity.score,
+                        confidence: similarity.confidence,
+                        reasons: similarity.reasons,
+                        type: similarity.primaryMatch,
+                        message: `${similarity.score}% match: "${existingItem.name}" ↔ "${newItem.name}"`,
+                        recommendations: this.generateRecommendations(existingItem, newItem, similarity)
                     });
                 }
-            }
-        }
+            });
+        });
 
         return duplicates;
     }
 
     /**
-     * Check if two names are similar (basic implementation)
+     * Calculate similarity score between two recurring items
+     * @param {Object} item1 - First item
+     * @param {Object} item2 - Second item
+     * @returns {Object} Similarity analysis
+     */
+    static calculateSimilarity(item1, item2) {
+        const analysis = {
+            score: 0,
+            confidence: 0,
+            reasons: [],
+            primaryMatch: 'unknown'
+        };
+
+        // Name similarity (40% weight)
+        const nameScore = this.calculateNameSimilarity(item1.name, item2.name);
+        if (nameScore > 0) {
+            analysis.score += nameScore * 0.4;
+            analysis.reasons.push(`Name similarity: ${nameScore}%`);
+            if (nameScore >= 80) analysis.primaryMatch = 'name_match';
+        }
+
+        // Amount similarity (30% weight)
+        const amountScore = this.calculateAmountSimilarity(item1.amount, item2.amount);
+        if (amountScore > 0) {
+            analysis.score += amountScore * 0.3;
+            analysis.reasons.push(`Amount similarity: ${amountScore}%`);
+            if (amountScore >= 90 && analysis.primaryMatch === 'unknown') {
+                analysis.primaryMatch = 'amount_match';
+            }
+        }
+
+        // Frequency match (15% weight)
+        if (item1.frequency === item2.frequency) {
+            analysis.score += 15;
+            analysis.reasons.push('Same frequency');
+            if (analysis.primaryMatch === 'unknown') analysis.primaryMatch = 'frequency_match';
+        }
+
+        // Category match (10% weight)
+        if (item1.category === item2.category) {
+            analysis.score += 10;
+            analysis.reasons.push('Same category');
+        }
+
+        // Date pattern similarity (5% weight)
+        const dateScore = this.calculateDateSimilarity(item1.nextOccurrence, item2.nextOccurrence);
+        if (dateScore > 0) {
+            analysis.score += dateScore * 0.05;
+            analysis.reasons.push(`Date pattern: ${dateScore}%`);
+        }
+
+        // Calculate confidence based on multiple factors matching
+        analysis.confidence = Math.min(100, analysis.score + (analysis.reasons.length * 5));
+        
+        return analysis;
+    }
+
+    /**
+     * Calculate name similarity using multiple algorithms
+     * @param {string} name1 - First name
+     * @param {string} name2 - Second name
+     * @returns {number} Similarity score (0-100)
+     */
+    static calculateNameSimilarity(name1, name2) {
+        const clean1 = this.cleanName(name1);
+        const clean2 = this.cleanName(name2);
+        
+        // Exact match
+        if (clean1 === clean2) return 100;
+        
+        // One contains the other
+        if (clean1.includes(clean2) || clean2.includes(clean1)) {
+            return Math.max(80, 100 * Math.min(clean1.length, clean2.length) / Math.max(clean1.length, clean2.length));
+        }
+        
+        // Merchant name variations (Netflix, NETFLIX INC, Netflix.com)
+        const merchantScore = this.calculateMerchantSimilarity(clean1, clean2);
+        if (merchantScore > 0) return merchantScore;
+        
+        // Levenshtein distance
+        const levenshteinScore = this.calculateLevenshteinSimilarity(clean1, clean2);
+        
+        return Math.max(0, levenshteinScore);
+    }
+
+    /**
+     * Clean name for comparison
+     * @param {string} name - Raw name
+     * @returns {string} Cleaned name
+     */
+    static cleanName(name) {
+        return name.toLowerCase()
+            .replace(/[^a-z0-9\s]/g, '') // Remove special characters
+            .replace(/\s+/g, ' ') // Normalize spaces
+            .trim();
+    }
+
+    /**
+     * Calculate merchant name similarity (handles common variations)
+     * @param {string} name1 - First name
+     * @param {string} name2 - Second name
+     * @returns {number} Similarity score
+     */
+    static calculateMerchantSimilarity(name1, name2) {
+        const merchants = {
+            'netflix': ['netflix', 'netflix inc', 'netflix com', 'nflx'],
+            'spotify': ['spotify', 'spotify usa', 'spotify premium'],
+            'amazon': ['amazon', 'amazon prime', 'amzn', 'amazon web services'],
+            'apple': ['apple', 'apple music', 'itunes', 'app store'],
+            'google': ['google', 'youtube', 'youtube premium', 'google play'],
+            'microsoft': ['microsoft', 'office 365', 'xbox', 'msft'],
+            'disney': ['disney', 'disney plus', 'disneyplus'],
+            'hulu': ['hulu', 'hulu llc'],
+            'uber': ['uber', 'uber technologies'],
+            'lyft': ['lyft', 'lyft inc']
+        };
+        
+        for (const [, variations] of Object.entries(merchants)) {
+            const match1 = variations.some(v => name1.includes(v));
+            const match2 = variations.some(v => name2.includes(v));
+            
+            if (match1 && match2) return 95;
+        }
+        
+        return 0;
+    }
+
+    /**
+     * Calculate Levenshtein distance similarity
+     * @param {string} str1 - First string
+     * @param {string} str2 - Second string
+     * @returns {number} Similarity score
+     */
+    static calculateLevenshteinSimilarity(str1, str2) {
+        const distance = this.levenshteinDistance(str1, str2);
+        const maxLength = Math.max(str1.length, str2.length);
+        
+        if (maxLength === 0) return 100;
+        
+        const similarity = ((maxLength - distance) / maxLength) * 100;
+        return Math.max(0, similarity);
+    }
+
+    /**
+     * Calculate Levenshtein distance
+     * @param {string} str1 - First string
+     * @param {string} str2 - Second string
+     * @returns {number} Edit distance
+     */
+    static levenshteinDistance(str1, str2) {
+        const matrix = [];
+        
+        for (let i = 0; i <= str2.length; i++) {
+            matrix[i] = [i];
+        }
+        
+        for (let j = 0; j <= str1.length; j++) {
+            matrix[0][j] = j;
+        }
+        
+        for (let i = 1; i <= str2.length; i++) {
+            for (let j = 1; j <= str1.length; j++) {
+                if (str2.charAt(i - 1) === str1.charAt(j - 1)) {
+                    matrix[i][j] = matrix[i - 1][j - 1];
+                } else {
+                    matrix[i][j] = Math.min(
+                        matrix[i - 1][j - 1] + 1,
+                        matrix[i][j - 1] + 1,
+                        matrix[i - 1][j] + 1
+                    );
+                }
+            }
+        }
+        
+        return matrix[str2.length][str1.length];
+    }
+
+    /**
+     * Calculate amount similarity
+     * @param {number} amount1 - First amount
+     * @param {number} amount2 - Second amount
+     * @returns {number} Similarity score
+     */
+    static calculateAmountSimilarity(amount1, amount2) {
+        const diff = Math.abs(amount1 - amount2);
+        const avg = (amount1 + amount2) / 2;
+        
+        if (diff === 0) return 100;
+        if (avg === 0) return 0;
+        
+        const percentageDiff = (diff / avg) * 100;
+        
+        // Allow small differences (price changes)
+        if (percentageDiff <= 5) return 95;  // Within 5%
+        if (percentageDiff <= 10) return 85; // Within 10%
+        if (percentageDiff <= 20) return 70; // Within 20%
+        
+        return Math.max(0, 100 - percentageDiff);
+    }
+
+    /**
+     * Calculate date similarity based on day of month
+     * @param {string} date1 - First date
+     * @param {string} date2 - Second date
+     * @returns {number} Similarity score
+     */
+    static calculateDateSimilarity(date1, date2) {
+        try {
+            const d1 = new Date(date1);
+            const d2 = new Date(date2);
+            
+            // Same day of month = high similarity
+            if (d1.getDate() === d2.getDate()) return 100;
+            
+            // Close days (within 3 days)
+            const dayDiff = Math.abs(d1.getDate() - d2.getDate());
+            if (dayDiff <= 3) return 80;
+            if (dayDiff <= 7) return 60;
+            
+            return 0;
+        } catch {
+            return 0;
+        }
+    }
+
+    /**
+     * Generate recommendations for handling duplicates
+     * @param {Object} existing - Existing item
+     * @param {Object} incoming - New item
+     * @param {Object} similarity - Similarity analysis
+     * @returns {Array} Recommendations
+     */
+    static generateRecommendations(existing, incoming, similarity) {
+        const recommendations = [];
+        
+        if (similarity.score >= 90) {
+            recommendations.push({
+                action: 'merge',
+                label: 'Merge items (Recommended)',
+                description: 'Update existing item with new information',
+                confidence: 'high'
+            });
+            recommendations.push({
+                action: 'skip',
+                label: 'Skip import',
+                description: 'Keep existing item unchanged',
+                confidence: 'medium'
+            });
+        } else if (similarity.score >= 75) {
+            recommendations.push({
+                action: 'merge',
+                label: 'Merge items',
+                description: 'Combine information from both items',
+                confidence: 'medium'
+            });
+            recommendations.push({
+                action: 'keep_both',
+                label: 'Keep both separately (Recommended)',
+                description: 'Import as separate items',
+                confidence: 'high'
+            });
+        } else {
+            recommendations.push({
+                action: 'keep_both',
+                label: 'Keep both separately (Recommended)',
+                description: 'These appear to be different items',
+                confidence: 'high'
+            });
+            recommendations.push({
+                action: 'skip',
+                label: 'Skip import',
+                description: 'Do not import this item',
+                confidence: 'low'
+            });
+        }
+        
+        return recommendations;
+    }
+
+    /**
+     * Check if two names are similar (legacy method for compatibility)
      */
     static isSimilarName(name1, name2) {
-        const clean1 = name1.toLowerCase().replace(/[^a-z0-9]/g, '');
-        const clean2 = name2.toLowerCase().replace(/[^a-z0-9]/g, '');
-        
-        // Check if one is contained in the other
-        return clean1.includes(clean2) || clean2.includes(clean1);
+        return this.calculateNameSimilarity(name1, name2) >= 80;
     }
 }
