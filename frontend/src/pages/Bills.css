@@ -153,10 +153,10 @@
   display: grid;
   grid-template-columns: auto 1fr auto auto auto;
   align-items: center;
-  background: #1f2937;
-  border: 1px solid #374151;
+  background: #1a1a1a !important;
+  border: 2px solid #333333 !important;
   border-radius: 8px;
-  padding: 20px;
+  padding: 20px !important;
   transition: border-color 0.3s ease;
   gap: 20px;
 }
@@ -178,12 +178,13 @@
 }
 
 .bill-details h4 {
-  color: var(--text-primary, #f9fafb) !important;
+  color: var(--electric-yellow, #ffff00) !important;
   margin: 0 0 5px 0;
-  font-size: 16px;
-  font-weight: 600;
-  text-shadow: none;
-  background: transparent;
+  font-size: 20px !important;
+  font-weight: 800 !important;
+  text-shadow: 0 0 8px rgba(255, 255, 0, 0.6) !important;
+  background: transparent !important;
+  text-decoration: none !important;
 }
 
 .bill-meta {
@@ -193,11 +194,13 @@
 }
 
 .bill-category {
-  color: var(--text-primary, #f9fafb) !important;
+  color: var(--electric-green, #00ff88) !important;
   background: rgba(0, 255, 136, 0.2);
   padding: 2px 6px;
   border-radius: 3px;
-  font-weight: 500;
+  font-weight: 700 !important;
+  font-size: 16px !important;
+  text-shadow: 0 0 6px rgba(0, 255, 136, 0.4) !important;
 }
 
 .bill-frequency {
@@ -575,4 +578,41 @@
     width: 100%;
     justify-content: center;
   }
+}
+
+/* NUCLEAR BILLS PAGE FIXES - MAXIMUM SPECIFICITY OVERRIDES */
+/* Override any competing styles with maximum specificity to force bright yellow bill names */
+html body .app-container .bills-page .bill-item .bill-name,
+html body .app-container .bills-page .bill-card .bill-name,
+html body .app-container .bills-page .bill-details h4,
+html body .layout .main-content .bills-container .bill-item .bill-details h4,
+html body .layout .main-content .bills-container .bill-card .bill-name,
+html body .layout .main-content .bills-container [class*="bill"] .bill-name {
+  color: var(--electric-yellow, #ffff00) !important;
+  font-weight: 800 !important;
+  font-size: 20px !important;
+  text-shadow: 0 0 8px rgba(255, 255, 0, 0.6) !important;
+  background: transparent !important;
+  text-decoration: none !important;
+}
+
+html body .app-container .bills-page .bill-item .bill-category,
+html body .app-container .bills-page .bill-card .bill-category,
+html body .layout .main-content .bills-container .bill-item .bill-category,
+html body .layout .main-content .bills-container .bill-card .bill-category,
+html body .layout .main-content .bills-container [class*="bill"] .bill-category {
+  color: var(--electric-green, #00ff88) !important;
+  font-weight: 700 !important;
+  font-size: 16px !important;
+  text-shadow: 0 0 6px rgba(0, 255, 136, 0.4) !important;
+}
+
+/* Ensure bill containers are properly styled */
+html body .app-container .bills-page .bill-item,
+html body .app-container .bills-page .bill-card,
+html body .layout .main-content .bills-container .bill-item,
+html body .layout .main-content .bills-container .bill-card {
+  background: #1a1a1a !important;
+  border: 2px solid #333333 !important;
+  padding: 20px !important;
 }
