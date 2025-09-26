@@ -130,94 +130,142 @@ export const formatDateForInput = (date) => {
 };
 
 /**
- * Get current time in Pacific Standard Time using multiple methods for reliability
+ * Get current time in Pacific Time using manual UTC offset calculation
+ * NUCLEAR FIX: Completely manual calculation to avoid all timezone conversion issues
  * @returns {Date} Current date/time in Pacific Time
  */
 export const getPacificTime = () => {
   const now = new Date();
   
-  // Method 1: Using toLocaleString with Pacific timezone (reliable and preserves time)
-  const method1 = new Date(now.toLocaleString("en-US", {
-    timeZone: "America/Los_Angeles"
-  }));
+  // MANUAL PACIFIC TIME CALCULATION
+  // Pacific Standard Time is UTC - 8 hours
+  // Pacific Daylight Time is UTC - 7 hours
+  // For this nuclear fix, we'll use PST (UTC - 8) as specified in requirements
+  const pacificOffset = 8 * 60 * 60 * 1000; // 8 hours in milliseconds
+  const pacificTime = new Date(now.getTime() - pacificOffset);
   
-  // Method 2: Using toLocaleString with Swedish locale (more reliable formatting)
-  const method2 = new Date(now.toLocaleString("sv-SE", {
-    timeZone: "America/Los_Angeles"
-  }));
-  
-  // Method 3: Using Intl.DateTimeFormat with parts for full control
-  const method3Parts = new Intl.DateTimeFormat('en-US', {
-    timeZone: 'America/Los_Angeles',
-    year: 'numeric',
-    month: '2-digit',
-    day: '2-digit',
-    hour: '2-digit',
-    minute: '2-digit',
-    second: '2-digit',
-    hour12: false
-  }).formatToParts(now);
-  
-  const method3 = new Date(
-    `${method3Parts.find(p => p.type === 'year').value}-` +
-    `${method3Parts.find(p => p.type === 'month').value}-` +
-    `${method3Parts.find(p => p.type === 'day').value}T` +
-    `${method3Parts.find(p => p.type === 'hour').value}:` +
-    `${method3Parts.find(p => p.type === 'minute').value}:` +
-    `${method3Parts.find(p => p.type === 'second').value}`
-  );
-  
-  // Debug logging for timezone calculations
-  console.log('Pacific Time Debug:', {
-    utc: now.toISOString(),
-    method1: method1.toISOString(),
-    method2: method2.toISOString(),
-    method3: method3.toISOString(),
-    selected: 'method2 (sv-SE locale - most reliable)'
+  // Debug logging for manual calculation
+  console.log('MANUAL PACIFIC TIME CALCULATION:', {
+    utcNow: now.toISOString(),
+    utcTimestamp: now.getTime(),
+    pacificOffset: pacificOffset,
+    pacificTimestamp: pacificTime.getTime(),
+    pacificTime: pacificTime.toISOString(),
+    pacificLocalString: pacificTime.toString(),
+    calculationMethod: 'Manual UTC - 8 hours'
   });
   
-  // Use Method 2 (sv-SE locale) as it's most reliable for date parsing
-  return method2;
+  return pacificTime;
 };
 
 /**
- * Calculate days until a target date using Pacific Time with bulletproof calculation
+ * Calculate days until a target date using manual Pacific Time calculation
+ * NUCLEAR FIX: Bulletproof manual calculation as specified in requirements
  * @param {string|Date} targetDate - Target date (YYYY-MM-DD format or Date object)
  * @returns {number} Number of days until the target date
  */
 export const getDaysUntilDateInPacific = (targetDate) => {
-  const today = getPacificTime();
-  const payday = new Date(targetDate);
+  // MANUAL PACIFIC TIME CALCULATION - NUCLEAR OPTION
   
-  // Set both dates to start of day for accurate day counting
-  today.setHours(0, 0, 0, 0);
+  // Get current UTC time
+  const now = new Date();
+  
+  // Manually subtract 8 hours for Pacific Standard Time
+  const pacificOffset = 8 * 60 * 60 * 1000; // 8 hours in milliseconds
+  const pacificTime = new Date(now.getTime() - pacificOffset);
+  
+  // Get just the date part (ignore time of day) 
+  const today = new Date(
+    pacificTime.getFullYear(), 
+    pacificTime.getMonth(), 
+    pacificTime.getDate()
+  );
+  
+  // Parse payday date - handle both string and Date inputs
+  let payday;
+  if (typeof targetDate === 'string') {
+    // Handle YYYY-MM-DD format
+    if (targetDate.includes('-')) {
+      const parts = targetDate.split('-');
+      payday = new Date(parseInt(parts[0]), parseInt(parts[1]) - 1, parseInt(parts[2]));
+    } else {
+      payday = new Date(targetDate);
+    }
+  } else {
+    payday = new Date(targetDate);
+  }
+  
+  // Set payday to start of day for accurate comparison
   payday.setHours(0, 0, 0, 0);
   
-  const timeDiff = payday.getTime() - today.getTime();
-  const daysDiff = Math.ceil(timeDiff / (1000 * 60 * 60 * 24));
+  // Calculate difference in milliseconds
+  const timeDifference = payday.getTime() - today.getTime();
   
-  // Enhanced debugging for payday calculation
-  console.log('Payday Calculation Debug:', {
-    today: today.toISOString(),
-    todayLocal: today.toLocaleDateString('en-US', { 
-      weekday: 'long', 
-      year: 'numeric', 
-      month: 'long', 
-      day: 'numeric' 
-    }),
-    payday: payday.toISOString(),
-    paydayLocal: payday.toLocaleDateString('en-US', { 
-      weekday: 'long', 
-      year: 'numeric', 
-      month: 'long', 
-      day: 'numeric' 
-    }),
-    timeDiffMs: timeDiff,
-    timeDiffDays: timeDiff / (1000 * 60 * 60 * 24),
-    daysDiffCeil: daysDiff,
-    finalResult: Math.max(0, daysDiff)
+  // Convert to days and round up
+  const daysDifference = Math.ceil(timeDifference / (1000 * 60 * 60 * 24));
+  
+  // NUCLEAR DEBUG LOGGING - exactly as specified in requirements
+  console.log('MANUAL PAYDAY CALCULATION:', {
+    utcNow: now,
+    pacificTime: pacificTime,
+    today: today,
+    payday: payday,
+    timeDifference: timeDifference,
+    daysDifference: daysDifference,
+    calculationDetails: {
+      utcNowISO: now.toISOString(),
+      pacificTimeISO: pacificTime.toISOString(),
+      todayISO: today.toISOString(),
+      paydayISO: payday.toISOString(),
+      todayDateString: today.toDateString(),
+      paydayDateString: payday.toDateString(),
+      timeDiffDays: timeDifference / (1000 * 60 * 60 * 24),
+      finalResult: Math.max(0, daysDifference)
+    }
   });
   
-  // Ensure non-negative result
-  return Math.max(0, daysDiff);
+  // Return the result, ensuring non-negative
+  return Math.max(0, daysDifference);
+};
+
+/**
+ * NUCLEAR OPTION: Manual Pacific Time payday calculation function
+ * Exactly as specified in the requirements
+ * @returns {number} Number of days until September 30, 2025
+ */
+export const getManualPacificDaysUntilPayday = () => {
+  // Get current UTC time
+  const now = new Date();
+  
+  // Manually subtract 8 hours for Pacific Standard Time
+  const pacificOffset = 8 * 60 * 60 * 1000; // 8 hours in milliseconds
+  const pacificTime = new Date(now.getTime() - pacificOffset);
+  
+  // Get just the date part (ignore time of day)
+  const today = new Date(
+    pacificTime.getFullYear(), 
+    pacificTime.getMonth(), 
+    pacificTime.getDate()
+  );
+  
+  // Hard-code payday date: September 30, 2025
+  const payday = new Date(2025, 8, 30); // Month is 0-indexed, so 8 = September
+  
+  // Calculate difference in milliseconds
+  const timeDifference = payday.getTime() - today.getTime();
+  
+  // Convert to days and round up
+  const daysDifference = Math.ceil(timeDifference / (1000 * 60 * 60 * 24));
+  
+  // Debug logging
+  console.log('MANUAL PAYDAY CALCULATION:', {
+    utcNow: now,
+    pacificTime: pacificTime,
+    today: today,
+    payday: payday,
+    timeDifference: timeDifference,
+    daysDifference: daysDifference
+  });
+  
+  return Math.max(0, daysDifference);
 };
