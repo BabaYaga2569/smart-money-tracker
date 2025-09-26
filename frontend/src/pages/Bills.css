@@ -162,7 +162,15 @@
 }
 
 .bill-item:hover {
-  border-color: #00ff88;
+  border-color: #00ff88 !important;
+  box-shadow: 0 4px 16px rgba(0, 255, 136, 0.1) !important;
+  transform: translateY(-2px);
+  transition: all 0.2s ease;
+}
+
+/* Glow effect on hover for bill names */
+.bill-item:hover .bill-details h4 {
+  text-shadow: 0 0 12px rgba(0, 255, 136, 0.6) !important;
 }
 
 .bill-main-info {
@@ -178,11 +186,11 @@
 }
 
 .bill-details h4 {
-  color: var(--electric-yellow, #ffff00) !important;
+  color: var(--neon-green, #00ff88) !important;
   margin: 0 0 5px 0;
   font-size: 20px !important;
   font-weight: 800 !important;
-  text-shadow: 0 0 8px rgba(255, 255, 0, 0.6) !important;
+  text-shadow: 0 0 8px rgba(0, 255, 136, 0.6) !important;
   background: transparent !important;
   text-decoration: none !important;
 }
@@ -194,13 +202,13 @@
 }
 
 .bill-category {
-  color: var(--electric-green, #00ff88) !important;
-  background: rgba(0, 255, 136, 0.2);
+  color: var(--electric-blue, #00b4ff) !important;
+  background: rgba(0, 180, 255, 0.2);
   padding: 2px 6px;
   border-radius: 3px;
   font-weight: 700 !important;
   font-size: 16px !important;
-  text-shadow: 0 0 6px rgba(0, 255, 136, 0.4) !important;
+  text-shadow: 0 0 6px rgba(0, 180, 255, 0.4) !important;
 }
 
 .bill-frequency {
@@ -214,10 +222,11 @@
 }
 
 .bill-amount {
-  color: #fff;
+  color: #ffffff !important;
   font-size: 18px;
-  font-weight: bold;
+  font-weight: 800 !important;
   margin-bottom: 5px;
+  text-shadow: 0 0 8px rgba(255, 255, 255, 0.3) !important;
 }
 
 .bill-due-date {
@@ -242,16 +251,19 @@
 .status-paid {
   background: #00ff88;
   color: #000;
+  text-shadow: 0 0 6px rgba(0, 255, 136, 0.4) !important;
 }
 
 .status-pending {
-  background: #ffa500;
+  background: #ffdd00;
   color: #000;
+  text-shadow: 0 0 6px rgba(255, 221, 0, 0.4) !important;
 }
 
 .status-overdue {
-  background: #ff4444;
+  background: #ff073a;
   color: #fff;
+  text-shadow: 0 0 6px rgba(255, 7, 58, 0.4) !important;
 }
 
 .bill-actions {
@@ -581,17 +593,17 @@
 }
 
 /* NUCLEAR BILLS PAGE FIXES - MAXIMUM SPECIFICITY OVERRIDES */
-/* Override any competing styles with maximum specificity to force bright yellow bill names */
+/* Override any competing styles with maximum specificity to force neon green bill names */
 html body .app-container .bills-page .bill-item .bill-name,
 html body .app-container .bills-page .bill-card .bill-name,
 html body .app-container .bills-page .bill-details h4,
 html body .layout .main-content .bills-container .bill-item .bill-details h4,
 html body .layout .main-content .bills-container .bill-card .bill-name,
 html body .layout .main-content .bills-container [class*="bill"] .bill-name {
-  color: var(--electric-yellow, #ffff00) !important;
+  color: var(--neon-green, #00ff88) !important;
   font-weight: 800 !important;
   font-size: 20px !important;
-  text-shadow: 0 0 8px rgba(255, 255, 0, 0.6) !important;
+  text-shadow: 0 0 8px rgba(0, 255, 136, 0.6) !important;
   background: transparent !important;
   text-decoration: none !important;
 }
@@ -601,10 +613,10 @@ html body .app-container .bills-page .bill-card .bill-category,
 html body .layout .main-content .bills-container .bill-item .bill-category,
 html body .layout .main-content .bills-container .bill-card .bill-category,
 html body .layout .main-content .bills-container [class*="bill"] .bill-category {
-  color: var(--electric-green, #00ff88) !important;
+  color: var(--electric-blue, #00b4ff) !important;
   font-weight: 700 !important;
   font-size: 16px !important;
-  text-shadow: 0 0 6px rgba(0, 255, 136, 0.4) !important;
+  text-shadow: 0 0 6px rgba(0, 180, 255, 0.4) !important;
 }
 
 /* Ensure bill containers are properly styled */
@@ -615,4 +627,38 @@ html body .layout .main-content .bills-container .bill-card {
   background: #1a1a1a !important;
   border: 2px solid #333333 !important;
   padding: 20px !important;
+}
+
+/* Electric bill amounts with white text and glow */
+html body .app-container .bills-page .bill-item .bill-amount,
+html body .app-container .bills-page .bill-card .bill-amount,
+html body .layout .main-content .bills-container .bill-item .bill-amount,
+html body .layout .main-content .bills-container .bill-card .bill-amount,
+html body .layout .main-content .bills-container [class*="bill"] .bill-amount {
+  color: #ffffff !important;
+  font-weight: 800 !important;
+  font-size: 20px !important;
+  text-shadow: 0 0 8px rgba(255, 255, 255, 0.3) !important;
+}
+
+/* NUCLEAR OPTION - ELIMINATE ALL WHITE BACKGROUNDS */
+.bill-card *,
+.bill-item *,
+.bill-details *,
+.bill-main-info *,
+.bill-amount-section *,
+.bill-status-section * {
+  background: transparent !important;
+  background-color: transparent !important;
+}
+
+/* Force dark backgrounds everywhere in bills */
+[class*="bill"] {
+  background: #1a1a1a !important;
+}
+
+/* Override any inline styles */
+.bill-card[style*="background"],
+.bill-item[style*="background"] {
+  background: #1a1a1a !important;
 }
