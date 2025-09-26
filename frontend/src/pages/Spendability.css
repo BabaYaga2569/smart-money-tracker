@@ -206,27 +206,31 @@
 }
 
 .mark-paid-btn {
-  background: #00ff88;
-  color: #000;
+  background: #00ff88 !important;
+  color: #ffffff !important;  /* PURE WHITE TEXT FOR VISIBILITY */
   border: none;
   border-radius: 6px;
   padding: 6px 12px;
   font-size: 0.8rem;
-  font-weight: 500;
+  font-weight: 700 !important;  /* BOLD FOR VISIBILITY */
   cursor: pointer;
   transition: all 0.3s ease;
+  text-shadow: 0 0 6px rgba(255, 255, 255, 0.5) !important;
 }
 
 .mark-paid-btn:hover:not(:disabled) {
-  background: #00cc6a;
+  background: #00cc6a !important;
   transform: translateY(-1px);
+  box-shadow: 0 0 20px rgba(0, 255, 136, 0.5) !important;
+  text-shadow: 0 0 10px rgba(255, 255, 255, 0.8) !important;
 }
 
 .mark-paid-btn:disabled {
-  background: #666;
-  color: #999;
+  background: #666 !important;
+  color: #ffffff !important;  /* KEEP WHITE TEXT EVEN WHEN DISABLED */
   cursor: not-allowed;
   transform: none;
+  text-shadow: 0 0 4px rgba(255, 255, 255, 0.3) !important;
 }
 
 .bill-name {
