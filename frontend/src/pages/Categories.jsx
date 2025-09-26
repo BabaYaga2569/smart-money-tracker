@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { doc, getDoc, collection, getDocs } from 'firebase/firestore';
+import { doc, collection, getDocs, addDoc, updateDoc } from 'firebase/firestore';
 import { db } from '../firebase';
 import { TRANSACTION_CATEGORIES, getCategoryIcon } from '../constants/categories';
 import {
@@ -40,6 +40,16 @@ const Categories = () => {
   const [activeView, setActiveView] = useState('overview'); // overview, analytics, management, budgets
   const [showAddBudgetForm, setShowAddBudgetForm] = useState(false);
   
+  // Modal states
+  const [showAddCategoryModal, setShowAddCategoryModal] = useState(false);
+  const [showEditCategoryModal, setShowEditCategoryModal] = useState(false);
+  const [showRulesModal, setShowRulesModal] = useState(false);
+  const [showHistoryModal, setShowHistoryModal] = useState(false);
+  const [selectedCategory, setSelectedCategory] = useState(null);
+  
+  // Custom categories state
+  const [customCategories, setCustomCategories] = useState([]);
+  
   // Analytics state
   const [categoryAnalytics, setCategoryAnalytics] = useState({});
   const [spendingTrends, setSpendingTrends] = useState({});
@@ -60,13 +70,33 @@ const Categories = () => {
     }
   });
 
+  // Category form states
+  const [newCategory, setNewCategory] = useState({
+    name: '',
+    emoji: '📦',
+    color: '#10b981',
+    monthlyBudget: '',
+    description: '',
+    parentCategory: ''
+  });
+
+  const [categoryRules, setCategoryRules] = useState([]);
+  const [newRule, setNewRule] = useState({
+    type: 'merchant',
+    condition: 'contains',
+    value: '',
+    confidence: 95,
+    active: true
+  });
+
   useEffect(() => {
     const loadData = async () => {
       try {
         setLoading(true);
         await Promise.all([
           loadTransactions(),
-          loadBudgets()
+          loadBudgets(),
+          loadCustomCategories()
         ]);
       } catch (error) {
         console.error('Error loading initial data:', error);
@@ -274,6 +304,27 @@ const Categories = () => {
     }
   };
 
+  const loadCustomCategories = async () => {
+    try {
+      const categoriesRef = collection(db, 'users', 'steve-colburn', 'categories');
+      const querySnapshot = await getDocs(categoriesRef);
+      const categoriesData = [];
+      
+      querySnapshot.forEach((doc) => {
+        categoriesData.push({ id: doc.id, ...doc.data() });
+      });
+      
+      setCustomCategories(categoriesData);
+    } catch (error) {
+      console.error('Error loading custom categories:', error);
+      setCustomCategories([]);
+    }
+  };
+
+  const getAllCategories = () => {
+    return [...TRANSACTION_CATEGORIES, ...customCategories.map(cat => cat.name)];
+  };
+
   const generateDemoTransactions = () => {
     const currentDate = new Date();
     const demoTransactions = [];
@@ -381,13 +432,175 @@ const Categories = () => {
     }
   };
 
+  // Modal handler functions
+  const handleAddCategory = () => {
+    setNewCategory({
+      name: '',
+      emoji: '📦',
+      color: '#10b981',
+      monthlyBudget: '',
+      description: '',
+      parentCategory: ''
+    });
+    setShowAddCategoryModal(true);
+  };
+
+  const handleEditCategory = (category) => {
+    const categoryData = customCategories.find(cat => cat.name === category) || {
+      name: category,
+      emoji: getCategoryIcon(category),
+      color: '#10b981',
+      monthlyBudget: '',
+      description: '',
+      parentCategory: ''
+    };
+    setNewCategory(categoryData);
+    setSelectedCategory(category);
+    setShowEditCategoryModal(true);
+  };
+
+  const handleRulesManagement = (category) => {
+    setSelectedCategory(category);
+    loadCategoryRules(category);
+    setShowRulesModal(true);
+  };
+
+  const handleTransactionHistory = (category) => {
+    setSelectedCategory(category);
+    setShowHistoryModal(true);
+  };
+
+  const saveCategory = async () => {
+    if (!newCategory.name.trim()) {
+      showNotification('Please enter a category name', 'error');
+      return;
+    }
+
+    // Check for duplicate names
+    const allCategories = getAllCategories();
+    if (allCategories.includes(newCategory.name.trim()) && newCategory.name !== selectedCategory) {
+      showNotification('Category name already exists', 'error');
+      return;
+    }
+
+    try {
+      setSaving(true);
+      
+      const categoryData = {
+        name: newCategory.name.trim(),
+        emoji: newCategory.emoji,
+        color: newCategory.color,
+        monthlyBudget: parseFloat(newCategory.monthlyBudget) || 0,
+        description: newCategory.description.trim(),
+        parentCategory: newCategory.parentCategory,
+        createdAt: Date.now(),
+        updatedAt: Date.now()
+      };
+
+      if (showEditCategoryModal && selectedCategory) {
+        // Update existing category
+        const existingCategory = customCategories.find(cat => cat.name === selectedCategory);
+        if (existingCategory) {
+          const categoryRef = doc(db, 'users', 'steve-colburn', 'categories', existingCategory.id);
+          await updateDoc(categoryRef, categoryData);
+          showNotification('Category updated successfully', 'success');
+        }
+      } else {
+        // Add new category
+        const categoriesRef = collection(db, 'users', 'steve-colburn', 'categories');
+        await addDoc(categoriesRef, categoryData);
+        showNotification('Category added successfully', 'success');
+      }
+
+      // Reload categories
+      await loadCustomCategories();
+      
+      // Reset form and close modal
+      setNewCategory({
+        name: '',
+        emoji: '📦',
+        color: '#10b981',
+        monthlyBudget: '',
+        description: '',
+        parentCategory: ''
+      });
+      setShowAddCategoryModal(false);
+      setShowEditCategoryModal(false);
+      setSelectedCategory(null);
+    } catch (error) {
+      console.error('Error saving category:', error);
+      showNotification('Error saving category', 'error');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const loadCategoryRules = async (category) => {
+    try {
+      const rulesRef = collection(db, 'users', 'steve-colburn', 'categoryRules');
+      const querySnapshot = await getDocs(rulesRef);
+      const rulesData = [];
+      
+      querySnapshot.forEach((doc) => {
+        const rule = { id: doc.id, ...doc.data() };
+        if (rule.category === category) {
+          rulesData.push(rule);
+        }
+      });
+      
+      setCategoryRules(rulesData);
+    } catch (error) {
+      console.error('Error loading category rules:', error);
+      setCategoryRules([]);
+    }
+  };
+
+  const saveRule = async () => {
+    if (!newRule.value.trim()) {
+      showNotification('Please enter a rule value', 'error');
+      return;
+    }
+
+    try {
+      setSaving(true);
+      
+      const ruleData = {
+        ...newRule,
+        category: selectedCategory,
+        value: newRule.value.trim(),
+        createdAt: Date.now(),
+        updatedAt: Date.now()
+      };
+
+      const rulesRef = collection(db, 'users', 'steve-colburn', 'categoryRules');
+      await addDoc(rulesRef, ruleData);
+      
+      showNotification('Rule added successfully', 'success');
+      
+      // Reload rules and reset form
+      await loadCategoryRules(selectedCategory);
+      setNewRule({
+        type: 'merchant',
+        condition: 'contains',
+        value: '',
+        confidence: 95,
+        active: true
+      });
+    } catch (error) {
+      console.error('Error saving rule:', error);
+      showNotification('Error saving rule', 'error');
+    } finally {
+      setSaving(false);
+    }
+  };
+
   const renderOverviewTab = () => (
     <div className="categories-overview">
       {/* Summary Cards */}
       <div className="categories-summary">
         <div className="summary-card">
           <h3>📊 Total Categories</h3>
-          <div className="total-amount">{TRANSACTION_CATEGORIES.length}</div>
+          <div className="total-amount">{getAllCategories().length}</div>
           <small>Active categories</small>
         </div>
         <div className="summary-card">
@@ -713,7 +926,7 @@ const Categories = () => {
         <h3>🏷️ Category Management</h3>
         <button 
           className="btn btn-primary"
-          onClick={() => showNotification('Add Category feature coming soon!', 'success')}
+          onClick={handleAddCategory}
         >
           + Add Category
         </button>
@@ -721,7 +934,7 @@ const Categories = () => {
 
       {/* Categories List */}
       <div className="categories-management-list">
-        {TRANSACTION_CATEGORIES.map(category => {
+        {getAllCategories().map(category => {
           const spent = categoryAnalytics[category] || 0;
           const transactionCount = spendingTrends[category]?.transactionCount || 0;
           
@@ -737,9 +950,24 @@ const Categories = () => {
                 </div>
               </div>
               <div className="category-actions">
-                <button className="btn btn-small">Edit</button>
-                <button className="btn btn-small">Rules</button>
-                <button className="btn btn-small">History</button>
+                <button 
+                  className="btn btn-small"
+                  onClick={() => handleEditCategory(category)}
+                >
+                  Edit
+                </button>
+                <button 
+                  className="btn btn-small"
+                  onClick={() => handleRulesManagement(category)}
+                >
+                  Rules
+                </button>
+                <button 
+                  className="btn btn-small"
+                  onClick={() => handleTransactionHistory(category)}
+                >
+                  History
+                </button>
               </div>
             </div>
           );
@@ -809,6 +1037,364 @@ const Categories = () => {
         {activeView === 'budgets' && renderBudgetsTab()}
         {activeView === 'management' && renderManagementTab()}
       </div>
+
+      {/* Add/Edit Category Modal */}
+      {(showAddCategoryModal || showEditCategoryModal) && (
+        <div className="modal-overlay" onClick={() => {
+          setShowAddCategoryModal(false);
+          setShowEditCategoryModal(false);
+          setSelectedCategory(null);
+        }}>
+          <div className="modal" onClick={(e) => e.stopPropagation()}>
+            <div className="modal-header">
+              <h3>{showEditCategoryModal ? 'Edit Category' : 'Add New Category'}</h3>
+              <button 
+                className="close-btn" 
+                onClick={() => {
+                  setShowAddCategoryModal(false);
+                  setShowEditCategoryModal(false);
+                  setSelectedCategory(null);
+                }}
+              >
+                ×
+              </button>
+            </div>
+            
+            <div className="modal-body">
+              <div className="form-group">
+                <label>Category Name *</label>
+                <input
+                  type="text"
+                  value={newCategory.name}
+                  onChange={(e) => setNewCategory({...newCategory, name: e.target.value})}
+                  placeholder="Enter category name"
+                />
+              </div>
+              
+              <div className="form-row">
+                <div className="form-group">
+                  <label>Icon/Emoji</label>
+                  <input
+                    type="text"
+                    value={newCategory.emoji}
+                    onChange={(e) => setNewCategory({...newCategory, emoji: e.target.value})}
+                    placeholder="📦"
+                    maxLength={2}
+                  />
+                </div>
+                
+                <div className="form-group">
+                  <label>Color</label>
+                  <input
+                    type="color"
+                    value={newCategory.color}
+                    onChange={(e) => setNewCategory({...newCategory, color: e.target.value})}
+                  />
+                </div>
+              </div>
+              
+              <div className="form-group">
+                <label>Monthly Budget (Optional)</label>
+                <input
+                  type="number"
+                  value={newCategory.monthlyBudget}
+                  onChange={(e) => setNewCategory({...newCategory, monthlyBudget: e.target.value})}
+                  placeholder="0.00"
+                  min="0"
+                  step="0.01"
+                />
+              </div>
+              
+              <div className="form-group">
+                <label>Description (Optional)</label>
+                <textarea
+                  value={newCategory.description}
+                  onChange={(e) => setNewCategory({...newCategory, description: e.target.value})}
+                  placeholder="Describe this category..."
+                  rows="3"
+                />
+              </div>
+              
+              <div className="form-group">
+                <label>Parent Category (Optional)</label>
+                <select
+                  value={newCategory.parentCategory}
+                  onChange={(e) => setNewCategory({...newCategory, parentCategory: e.target.value})}
+                >
+                  <option value="">None (Top-level category)</option>
+                  {TRANSACTION_CATEGORIES.map(category => (
+                    <option key={category} value={category}>{category}</option>
+                  ))}
+                </select>
+              </div>
+            </div>
+            
+            <div className="modal-footer">
+              <button 
+                className="btn btn-secondary" 
+                onClick={() => {
+                  setShowAddCategoryModal(false);
+                  setShowEditCategoryModal(false);
+                  setSelectedCategory(null);
+                }}
+              >
+                Cancel
+              </button>
+              <button 
+                className="btn btn-primary" 
+                onClick={saveCategory}
+                disabled={saving}
+              >
+                {saving ? 'Saving...' : (showEditCategoryModal ? 'Update Category' : 'Add Category')}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Rules Management Modal */}
+      {showRulesModal && (
+        <div className="modal-overlay" onClick={() => {
+          setShowRulesModal(false);
+          setSelectedCategory(null);
+        }}>
+          <div className="modal" onClick={(e) => e.stopPropagation()}>
+            <div className="modal-header">
+              <h3>Category Rules - {selectedCategory}</h3>
+              <button 
+                className="close-btn" 
+                onClick={() => {
+                  setShowRulesModal(false);
+                  setSelectedCategory(null);
+                }}
+              >
+                ×
+              </button>
+            </div>
+            
+            <div className="modal-body">
+              <div className="rules-section">
+                <h4>Add New Rule</h4>
+                <div className="form-row">
+                  <div className="form-group">
+                    <label>Rule Type</label>
+                    <select
+                      value={newRule.type}
+                      onChange={(e) => setNewRule({...newRule, type: e.target.value})}
+                    >
+                      <option value="merchant">Merchant</option>
+                      <option value="keyword">Keyword</option>
+                      <option value="amount">Amount</option>
+                    </select>
+                  </div>
+                  
+                  <div className="form-group">
+                    <label>Condition</label>
+                    <select
+                      value={newRule.condition}
+                      onChange={(e) => setNewRule({...newRule, condition: e.target.value})}
+                    >
+                      <option value="contains">Contains</option>
+                      <option value="equals">Equals</option>
+                      <option value="startsWith">Starts with</option>
+                      <option value="endsWith">Ends with</option>
+                      {newRule.type === 'amount' && (
+                        <>
+                          <option value="greater">Greater than</option>
+                          <option value="less">Less than</option>
+                        </>
+                      )}
+                    </select>
+                  </div>
+                </div>
+                
+                <div className="form-group">
+                  <label>Value</label>
+                  <input
+                    type={newRule.type === 'amount' ? 'number' : 'text'}
+                    value={newRule.value}
+                    onChange={(e) => setNewRule({...newRule, value: e.target.value})}
+                    placeholder={newRule.type === 'merchant' ? 'Target' : newRule.type === 'keyword' ? 'Netflix' : '500'}
+                  />
+                </div>
+                
+                <div className="form-row">
+                  <div className="form-group">
+                    <label>Confidence %</label>
+                    <input
+                      type="range"
+                      min="50"
+                      max="100"
+                      value={newRule.confidence}
+                      onChange={(e) => setNewRule({...newRule, confidence: parseInt(e.target.value)})}
+                    />
+                    <span>{newRule.confidence}%</span>
+                  </div>
+                  
+                  <div className="form-group">
+                    <label>
+                      <input
+                        type="checkbox"
+                        checked={newRule.active}
+                        onChange={(e) => setNewRule({...newRule, active: e.target.checked})}
+                      />
+                      Active
+                    </label>
+                  </div>
+                </div>
+                
+                <button 
+                  className="btn btn-primary" 
+                  onClick={saveRule}
+                  disabled={saving}
+                >
+                  {saving ? 'Adding...' : 'Add Rule'}
+                </button>
+              </div>
+
+              {/* Existing Rules */}
+              <div className="existing-rules">
+                <h4>Existing Rules ({categoryRules.length})</h4>
+                {categoryRules.length === 0 ? (
+                  <p className="no-rules">No rules defined for this category yet.</p>
+                ) : (
+                  <div className="rules-list">
+                    {categoryRules.map((rule, index) => (
+                      <div key={rule.id || index} className="rule-item">
+                        <div className="rule-info">
+                          <span className="rule-type">{rule.type}</span>
+                          <span className="rule-condition">{rule.condition}</span>
+                          <span className="rule-value">"{rule.value}"</span>
+                          <span className="rule-confidence">{rule.confidence}%</span>
+                          <span className={`rule-status ${rule.active ? 'active' : 'inactive'}`}>
+                            {rule.active ? 'Active' : 'Inactive'}
+                          </span>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </div>
+            
+            <div className="modal-footer">
+              <button 
+                className="btn btn-secondary" 
+                onClick={() => {
+                  setShowRulesModal(false);
+                  setSelectedCategory(null);
+                }}
+              >
+                Close
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Transaction History Modal */}
+      {showHistoryModal && (
+        <div className="modal-overlay" onClick={() => {
+          setShowHistoryModal(false);
+          setSelectedCategory(null);
+        }}>
+          <div className="modal" onClick={(e) => e.stopPropagation()}>
+            <div className="modal-header">
+              <h3>Transaction History - {selectedCategory}</h3>
+              <button 
+                className="close-btn" 
+                onClick={() => {
+                  setShowHistoryModal(false);
+                  setSelectedCategory(null);
+                }}
+              >
+                ×
+              </button>
+            </div>
+            
+            <div className="modal-body">
+              <div className="history-filters">
+                <div className="form-row">
+                  <div className="form-group">
+                    <label>Date Range</label>
+                    <select>
+                      <option value="last30days">Last 30 days</option>
+                      <option value="last90days">Last 90 days</option>
+                      <option value="thisYear">This year</option>
+                      <option value="allTime">All time</option>
+                    </select>
+                  </div>
+                  
+                  <div className="form-group">
+                    <label>Amount Range</label>
+                    <div style={{ display: 'flex', gap: '10px' }}>
+                      <input type="number" placeholder="Min" />
+                      <input type="number" placeholder="Max" />
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <div className="transaction-history">
+                <div className="history-summary">
+                  <div className="summary-item">
+                    <span>Total Transactions:</span>
+                    <span>{spendingTrends[selectedCategory]?.transactionCount || 0}</span>
+                  </div>
+                  <div className="summary-item">
+                    <span>Total Amount:</span>
+                    <span>{formatCurrency(categoryAnalytics[selectedCategory] || 0)}</span>
+                  </div>
+                  <div className="summary-item">
+                    <span>Average:</span>
+                    <span>{formatCurrency(spendingTrends[selectedCategory]?.avgTransactionSize || 0)}</span>
+                  </div>
+                </div>
+
+                <div className="transactions-list">
+                  {transactions
+                    .filter(t => t.category === selectedCategory && t.amount < 0)
+                    .sort((a, b) => new Date(b.date) - new Date(a.date))
+                    .slice(0, 20)
+                    .map((transaction, index) => (
+                      <div key={transaction.id || index} className="transaction-item">
+                        <div className="transaction-date">
+                          {new Date(transaction.date).toLocaleDateString()}
+                        </div>
+                        <div className="transaction-description">
+                          {transaction.description}
+                        </div>
+                        <div className="transaction-amount">
+                          {formatCurrency(Math.abs(transaction.amount))}
+                        </div>
+                        <div className="transaction-account">
+                          {transaction.account}
+                        </div>
+                      </div>
+                    ))}
+                </div>
+
+                {transactions.filter(t => t.category === selectedCategory && t.amount < 0).length === 0 && (
+                  <p className="no-transactions">No transactions found for this category.</p>
+                )}
+              </div>
+            </div>
+            
+            <div className="modal-footer">
+              <button className="btn btn-secondary">Export CSV</button>
+              <button 
+                className="btn btn-secondary" 
+                onClick={() => {
+                  setShowHistoryModal(false);
+                  setSelectedCategory(null);
+                }}
+              >
+                Close
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

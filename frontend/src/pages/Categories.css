@@ -658,6 +658,292 @@
   color: #fff;
 }
 
+/* Modal Styles */
+.modal-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.8);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+  padding: 20px;
+}
+
+.modal {
+  background: #1a1a1a;
+  border: 2px solid #333;
+  border-radius: 12px;
+  width: 100%;
+  max-width: 600px;
+  max-height: 90vh;
+  overflow-y: auto;
+}
+
+.modal-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 20px;
+  border-bottom: 1px solid #333;
+}
+
+.modal-header h3 {
+  color: #00ff88;
+  margin: 0;
+}
+
+.close-btn {
+  background: none;
+  border: none;
+  color: #ccc;
+  font-size: 1.5rem;
+  cursor: pointer;
+  padding: 0;
+  width: 30px;
+  height: 30px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.close-btn:hover {
+  color: #fff;
+}
+
+.modal-body {
+  padding: 20px;
+}
+
+.modal-footer {
+  display: flex;
+  justify-content: flex-end;
+  gap: 12px;
+  padding: 20px;
+  border-top: 1px solid #333;
+}
+
+/* Form styles for modals */
+.modal .form-group {
+  margin-bottom: 20px;
+}
+
+.modal .form-group label {
+  display: block;
+  color: #00ff88;
+  margin-bottom: 8px;
+  font-weight: 500;
+}
+
+.modal .form-group input,
+.modal .form-group select,
+.modal .form-group textarea {
+  width: 100%;
+  padding: 12px;
+  background: #333;
+  border: 2px solid #555;
+  border-radius: 6px;
+  color: #fff;
+  font-size: 1rem;
+}
+
+.modal .form-group input:focus,
+.modal .form-group select:focus,
+.modal .form-group textarea:focus {
+  outline: none;
+  border-color: #00ff88;
+}
+
+.modal .form-row {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 20px;
+}
+
+/* Rules Modal Specific Styles */
+.rules-section {
+  background: #333;
+  border-radius: 8px;
+  padding: 20px;
+  margin-bottom: 20px;
+}
+
+.rules-section h4 {
+  color: #00ff88;
+  margin: 0 0 15px 0;
+}
+
+.existing-rules {
+  background: #333;
+  border-radius: 8px;
+  padding: 20px;
+}
+
+.existing-rules h4 {
+  color: #00ff88;
+  margin: 0 0 15px 0;
+}
+
+.no-rules {
+  color: #888;
+  text-align: center;
+  padding: 20px;
+  font-style: italic;
+}
+
+.rules-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.rule-item {
+  background: #1a1a1a;
+  border: 1px solid #555;
+  border-radius: 6px;
+  padding: 15px;
+}
+
+.rule-info {
+  display: flex;
+  gap: 15px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.rule-type {
+  background: #00ff88;
+  color: #000;
+  padding: 4px 8px;
+  border-radius: 4px;
+  font-size: 0.8rem;
+  font-weight: bold;
+}
+
+.rule-condition {
+  color: #ccc;
+  font-size: 0.9rem;
+}
+
+.rule-value {
+  color: #fff;
+  font-weight: 500;
+}
+
+.rule-confidence {
+  color: #ffaa00;
+  font-size: 0.9rem;
+}
+
+.rule-status.active {
+  color: #00ff88;
+  font-weight: 500;
+}
+
+.rule-status.inactive {
+  color: #888;
+}
+
+/* History Modal Specific Styles */
+.history-filters {
+  background: #333;
+  border-radius: 8px;
+  padding: 20px;
+  margin-bottom: 20px;
+}
+
+.history-summary {
+  display: flex;
+  justify-content: space-between;
+  background: #333;
+  border-radius: 8px;
+  padding: 15px;
+  margin-bottom: 20px;
+  flex-wrap: wrap;
+  gap: 15px;
+}
+
+.summary-item {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  text-align: center;
+}
+
+.summary-item span:first-child {
+  color: #888;
+  font-size: 0.9rem;
+}
+
+.summary-item span:last-child {
+  color: #00ff88;
+  font-weight: bold;
+  font-size: 1.1rem;
+}
+
+.transactions-list {
+  max-height: 400px;
+  overflow-y: auto;
+  border: 1px solid #333;
+  border-radius: 8px;
+}
+
+.transaction-item {
+  display: grid;
+  grid-template-columns: 100px 1fr 100px 80px;
+  gap: 15px;
+  padding: 12px 15px;
+  border-bottom: 1px solid #333;
+  align-items: center;
+}
+
+.transaction-item:last-child {
+  border-bottom: none;
+}
+
+.transaction-date {
+  color: #888;
+  font-size: 0.9rem;
+}
+
+.transaction-description {
+  color: #fff;
+  font-weight: 500;
+}
+
+.transaction-amount {
+  color: #ff6b6b;
+  font-weight: bold;
+  text-align: right;
+}
+
+.transaction-account {
+  color: #888;
+  font-size: 0.8rem;
+  text-align: center;
+}
+
+.no-transactions {
+  color: #888;
+  text-align: center;
+  padding: 40px;
+  font-style: italic;
+}
+
+/* Range input styling */
+input[type="range"] {
+  width: 100%;
+  margin: 10px 0;
+}
+
+/* Checkbox styling */
+input[type="checkbox"] {
+  margin-right: 8px;
+}
+
 @keyframes slideIn {
   from { transform: translateX(100%); opacity: 0; }
   to { transform: translateX(0); opacity: 1; }
