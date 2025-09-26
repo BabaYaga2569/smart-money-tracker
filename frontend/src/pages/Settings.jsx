@@ -43,7 +43,11 @@ const Settings = () => {
 
   const [preferences, setPreferences] = useState({
     safetyBuffer: 200,
-    weeklyEssentials: 150
+    weeklyEssentials: 150,
+    billSortOrder: 'dueDate',
+    urgentDays: 7,
+    warningDays: 14,
+    dueDateAlerts: true
   });
 
   const [nextPaydayOverride, setNextPaydayOverride] = useState('');
@@ -327,6 +331,62 @@ const Settings = () => {
               />
               <small>Groceries, gas, basic needs per week</small>
             </div>
+            
+            {/* Bill Sorting Preferences */}
+            <div className="preferences-section">
+              <h4>📊 Bill Sorting & Alerts</h4>
+              <div className="form-group">
+                <label>Default Bill Sort Order</label>
+                <select
+                  value={preferences.billSortOrder}
+                  onChange={(e) => setPreferences({...preferences, billSortOrder: e.target.value})}
+                >
+                  <option value="dueDate">🔥 By Due Date (Recommended)</option>
+                  <option value="alphabetical">🔤 Alphabetical</option>
+                  <option value="amount">💰 By Amount</option>
+                </select>
+                <small>How bills are sorted in the Recurring page</small>
+              </div>
+              
+              <div className="form-group">
+                <label>
+                  <input
+                    type="checkbox"
+                    checked={preferences.dueDateAlerts}
+                    onChange={(e) => setPreferences({...preferences, dueDateAlerts: e.target.checked})}
+                  />
+                  Enable Due Date Alerts
+                </label>
+                <small>Show urgency indicators for upcoming bills</small>
+              </div>
+              
+              <div className="form-row">
+                <div className="form-group">
+                  <label>Urgent Alert (Days)</label>
+                  <input
+                    type="number"
+                    value={preferences.urgentDays}
+                    onChange={(e) => setPreferences({...preferences, urgentDays: parseInt(e.target.value)})}
+                    min="1"
+                    max="30"
+                  />
+                  <small>Show 🟠 urgent when due in X days</small>
+                </div>
+                
+                <div className="form-group">
+                  <label>Warning Alert (Days)</label>
+                  <input
+                    type="number"
+                    value={preferences.warningDays}
+                    onChange={(e) => setPreferences({...preferences, warningDays: parseInt(e.target.value)})}
+                    min="1"
+                    max="60"
+                  />
+                  <small>Show 🟡 warning when due in X days</small>
+                </div>
+              </div>
+            </div>
+            
             <button 
               onClick={saveSettings} 
               disabled={saving}
