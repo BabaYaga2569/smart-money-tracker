@@ -150,7 +150,25 @@ export class RecurringBillManager {
         return bills.filter(bill => {
             // Bills are now always in active state (no permanent "paid" status)
             const dueDate = bill.nextDueDate || parseLocalDate(bill.dueDate);
-            return dueDate < beforeDate;
+            
+            // Check if bill is due before the given date
+            if (dueDate >= beforeDate) {
+                return false;
+            }
+            
+            // Check if this bill was recently paid (within last 7 days)
+            // If so, exclude it from bills due before payday
+            if (bill.lastPaidDate) {
+                const lastPaidDate = new Date(bill.lastPaidDate);
+                const daysSincePaid = (Date.now() - lastPaidDate.getTime()) / (1000 * 60 * 60 * 24);
+                
+                // If paid within last 7 days and the next due date hasn't passed the current billing cycle
+                if (daysSincePaid <= 7) {
+                    return false;
+                }
+            }
+            
+            return true;
         });
     }
 

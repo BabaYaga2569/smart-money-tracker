@@ -315,6 +315,7 @@ const Transactions = () => {
       type: template.type
     });
     setShowTemplates(false);
+    setShowAddForm(true); // Show the transaction form
   };
 
   const exportTransactions = () => {
