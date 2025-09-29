@@ -155,7 +155,6 @@ export class RecurringBillManager {
                 
                 if (daysSincePaid <= 30) {
                     // Bill was paid recently - it should not appear in "due before payday" list
-                    console.log(`Filtering out paid bill: ${bill.name}, paid ${daysSincePaid.toFixed(1)} days ago`);
                     return false;
                 }
             }
@@ -165,11 +164,9 @@ export class RecurringBillManager {
             
             // If bill is due on or after the beforeDate (payday), don't include it
             if (dueDate >= beforeDate) {
-                console.log(`Filtering out future bill: ${bill.name}, due ${dueDate.toDateString()}, payday ${beforeDate.toDateString()}`);
                 return false;
             }
             
-            console.log(`Including bill: ${bill.name}, due ${dueDate.toDateString()}`);
             return true;
         });
     }
