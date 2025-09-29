@@ -242,12 +242,11 @@ const Spendability = () => {
       return false;
     }
     
-    const currentBillDueDate = new Date(bill.nextDueDate || bill.dueDate);
-    const lastPaymentDueDate = new Date(bill.lastPayment.dueDate);
+    // Simple check: If bill was paid within the last 30 days, consider it already paid
+    const lastPaidDate = new Date(bill.lastPaidDate);
+    const daysSincePaid = (Date.now() - lastPaidDate.getTime()) / (1000 * 60 * 60 * 24);
     
-    // If the last payment was for a due date that matches or is after the current due date,
-    // then this bill has already been paid for the current cycle
-    return lastPaymentDueDate.getTime() >= currentBillDueDate.getTime();
+    return daysSincePaid <= 30;
   };
 
   const handleMarkBillAsPaid = async (bill) => {
@@ -285,8 +284,12 @@ const Spendability = () => {
       // Update bill status in Firebase and get updated bill data
       const updatedBill = await updateBillAsPaid(bill);
 
-      // Refresh the financial data
+      // Refresh the financial data to reflect changes
       await fetchFinancialData();
+      
+      // IMMEDIATE UI UPDATE: Force a re-render by updating refresh trigger
+      // This ensures bills disappear from the list immediately
+      setRefreshTrigger(prev => prev + 1);
 
       // Show enhanced notification with next due date
       const nextDueDateStr = updatedBill && updatedBill.nextDueDate 

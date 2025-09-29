@@ -148,34 +148,28 @@ export class RecurringBillManager {
      */
     static getBillsDueBefore(bills, beforeDate) {
         return bills.filter(bill => {
-            // Bills are now always in active state (no permanent "paid" status)
+            // First check: If bill was recently paid (within 30 days), exclude it completely
+            if (bill.lastPaidDate && bill.lastPayment) {
+                const lastPaidDate = new Date(bill.lastPaidDate);
+                const daysSincePaid = (Date.now() - lastPaidDate.getTime()) / (1000 * 60 * 60 * 24);
+                
+                if (daysSincePaid <= 30) {
+                    // Bill was paid recently - it should not appear in "due before payday" list
+                    console.log(`Filtering out paid bill: ${bill.name}, paid ${daysSincePaid.toFixed(1)} days ago`);
+                    return false;
+                }
+            }
+            
+            // Second check: Standard due date filtering
             const dueDate = bill.nextDueDate || parseLocalDate(bill.dueDate);
             
-            // Check if bill is due before the given date
+            // If bill is due on or after the beforeDate (payday), don't include it
             if (dueDate >= beforeDate) {
+                console.log(`Filtering out future bill: ${bill.name}, due ${dueDate.toDateString()}, payday ${beforeDate.toDateString()}`);
                 return false;
             }
             
-            // Enhanced payment check: If bill was recently paid for the current billing cycle,
-            // exclude it from bills due before payday
-            if (bill.lastPaidDate && bill.lastPayment) {
-                const lastPaidDate = new Date(bill.lastPaidDate);
-                const lastPaymentDueDate = new Date(bill.lastPayment.dueDate);
-                const currentBillDueDate = new Date(dueDate);
-                
-                // If the last payment was for a due date that matches or is after the current due date,
-                // then this bill has already been paid for the current cycle
-                if (lastPaymentDueDate.getTime() >= currentBillDueDate.getTime()) {
-                    return false;
-                }
-                
-                // Fallback: If paid within last 7 days, also exclude
-                const daysSincePaid = (Date.now() - lastPaidDate.getTime()) / (1000 * 60 * 60 * 24);
-                if (daysSincePaid <= 7) {
-                    return false;
-                }
-            }
-            
+            console.log(`Including bill: ${bill.name}, due ${dueDate.toDateString()}`);
             return true;
         });
     }
