@@ -148,7 +148,11 @@ export class RecurringBillManager {
      */
     static getBillsDueBefore(bills, beforeDate) {
         return bills.filter(bill => {
-            // Bills are now always in active state (no permanent "paid" status)
+            // Skip bills that are marked as paid
+            if (bill.isPaid || bill.status === 'paid') {
+                return false;
+            }
+            
             const dueDate = bill.nextDueDate || parseLocalDate(bill.dueDate);
             
             // Check if bill is due before the given date
@@ -189,7 +193,11 @@ export class RecurringBillManager {
      */
     static getBillsInRange(bills, startDate, endDate) {
         return bills.filter(bill => {
-            // Bills are now always in active state (no permanent "paid" status)
+            // Skip bills that are marked as paid
+            if (bill.isPaid || bill.status === 'paid') {
+                return false;
+            }
+            
             const dueDate = bill.nextDueDate || parseLocalDate(bill.dueDate);
             return dueDate >= startDate && dueDate <= endDate;
         });
@@ -236,15 +244,15 @@ export class RecurringBillManager {
             timestamp: Date.now()
         };
         
-        // Reset bill to next cycle - NOT keep as paid
+        // Mark as PAID for current cycle - bill stays paid until next due date
         return {
             ...bill,
             lastDueDate: currentDueDate,
             lastPaidDate: paidDate,
             nextDueDate: nextDueDate,
             dueDate: nextDueDate, // Update primary dueDate to next occurrence
-            isPaid: false,        // Reset to false - bill is now pending for next cycle
-            status: 'pending',    // Reset to pending - not paid anymore
+            isPaid: true,         // KEEP AS TRUE - bill is paid for current cycle
+            status: 'paid',       // KEEP AS PAID until next cycle
             paymentHistory: [...(bill.paymentHistory || []), paymentRecord],
             lastPayment: paymentRecord
         };
