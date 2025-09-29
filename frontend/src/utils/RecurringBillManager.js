@@ -156,13 +156,21 @@ export class RecurringBillManager {
                 return false;
             }
             
-            // Check if this bill was recently paid (within last 7 days)
-            // If so, exclude it from bills due before payday
-            if (bill.lastPaidDate) {
+            // Enhanced payment check: If bill was recently paid for the current billing cycle,
+            // exclude it from bills due before payday
+            if (bill.lastPaidDate && bill.lastPayment) {
                 const lastPaidDate = new Date(bill.lastPaidDate);
-                const daysSincePaid = (Date.now() - lastPaidDate.getTime()) / (1000 * 60 * 60 * 24);
+                const lastPaymentDueDate = new Date(bill.lastPayment.dueDate);
+                const currentBillDueDate = new Date(dueDate);
                 
-                // If paid within last 7 days and the next due date hasn't passed the current billing cycle
+                // If the last payment was for a due date that matches or is after the current due date,
+                // then this bill has already been paid for the current cycle
+                if (lastPaymentDueDate.getTime() >= currentBillDueDate.getTime()) {
+                    return false;
+                }
+                
+                // Fallback: If paid within last 7 days, also exclude
+                const daysSincePaid = (Date.now() - lastPaidDate.getTime()) / (1000 * 60 * 60 * 24);
                 if (daysSincePaid <= 7) {
                     return false;
                 }
