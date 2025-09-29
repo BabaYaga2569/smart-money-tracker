@@ -157,11 +157,28 @@ const Bills = () => {
   };
 
   const determineBillStatus = (bill) => {
+    // Check if bill has been paid for the current cycle
+    if (bill.isPaid || bill.status === 'paid') {
+      return 'paid';
+    }
+    
+    // Enhanced payment check: If bill was recently paid for the current billing cycle,
+    // mark as paid to exclude from overdue/due lists
+    if (bill.lastPaidDate && bill.lastPayment) {
+      const currentBillDueDate = new Date(bill.nextDueDate || bill.dueDate);
+      const lastPaymentDueDate = new Date(bill.lastPayment.dueDate);
+      
+      // If the last payment was for a due date that matches or is after the current due date,
+      // then this bill has already been paid for the current cycle
+      if (lastPaymentDueDate.getTime() >= currentBillDueDate.getTime()) {
+        return 'paid';
+      }
+    }
+    
     const now = new Date();
     const dueDate = new Date(bill.nextDueDate || bill.dueDate);
     const daysUntilDue = Math.ceil((dueDate - now) / (1000 * 60 * 60 * 24));
     
-    // Bills should never stay as "paid" - they reset to next cycle
     // Status based on urgency relative to due date
     if (daysUntilDue < 0) {
       return 'overdue';
@@ -484,6 +501,7 @@ const Bills = () => {
       case 'urgent': return 'status-badge status-urgent';
       case 'this-week': return 'status-badge status-this-week';
       case 'pending': return 'status-badge status-pending';
+      case 'paid': return 'status-badge status-paid';
       default: return 'status-badge';
     }
   };
@@ -505,6 +523,8 @@ const Bills = () => {
         return `Due in ${daysUntilDue} days`;
       case 'pending':
         return 'UPCOMING';
+      case 'paid':
+        return 'PAID';
       default:
         return status.toUpperCase();
     }
