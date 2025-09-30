@@ -3,6 +3,7 @@ import { doc, getDoc, setDoc } from 'firebase/firestore';
 import { db } from '../firebase';
 import { PayCycleCalculator } from '../utils/PayCycleCalculator';
 import { getDaysUntilDateInPacific } from '../utils/DateUtils';
+import { Link } from 'react-router-dom';
 import './Settings.css';
 
 const Settings = () => {
@@ -427,10 +428,20 @@ const Settings = () => {
             {/* Info about advanced import */}
             <div className="import-info-section">
               <p className="info-message">
-                💡 For advanced CSV import and duplicate detection, use the 
-                <strong> Recurring page</strong> which offers intelligent 
-                categorization and conflict resolution.
+                💡 For advanced CSV import with duplicate detection and error handling, 
+                visit the <Link to="/recurring" style={{ color: '#00ff88', textDecoration: 'none', fontWeight: 'bold' }}>
+                  Recurring page
+                </Link> which offers intelligent categorization and conflict resolution.
               </p>
+              <p style={{ marginTop: '10px', fontSize: '14px', color: '#ccc' }}>
+                The Recurring page provides:
+              </p>
+              <ul style={{ fontSize: '13px', color: '#ccc', marginTop: '5px', paddingLeft: '20px' }}>
+                <li>Full CSV import preview with error validation</li>
+                <li>Automatic duplicate detection and merging</li>
+                <li>Plaid account matching by institution name</li>
+                <li>Bulk actions and conflict resolution</li>
+              </ul>
             </div>
 
             {/* Add Bill Section with Working Button */}
