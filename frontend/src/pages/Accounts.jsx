@@ -1,23 +1,50 @@
 import React, { useState, useEffect } from 'react';
-import { doc, getDoc, updateDoc } from 'firebase/firestore';
+import { doc, getDoc, updateDoc, collection, query, orderBy, limit, getDocs } from 'firebase/firestore';
 import { db } from '../firebase';
 import PlaidLink from '../components/PlaidLink';
+import { calculateProjectedBalance, calculateTotalProjectedBalance, getBalanceDifference, formatBalanceDifference } from '../utils/BalanceCalculator';
 import './Accounts.css';
 
 const Accounts = () => {
   const [loading, setLoading] = useState(true);
   const [accounts, setAccounts] = useState({});
   const [totalBalance, setTotalBalance] = useState(0);
+  const [totalProjectedBalance, setTotalProjectedBalance] = useState(0);
   const [saving, setSaving] = useState(false);
   const [editingAccount, setEditingAccount] = useState(null);
   const [showDeleteModal, setShowDeleteModal] = useState(null);
   const [notification, setNotification] = useState({ message: '', type: '' });
   const [plaidAccounts, setPlaidAccounts] = useState([]);
   const [hasPlaidAccounts, setHasPlaidAccounts] = useState(false);
+  const [transactions, setTransactions] = useState([]);
+  const [showBalanceType, setShowBalanceType] = useState('both'); // 'live', 'projected', or 'both'
+  const [showHelp, setShowHelp] = useState(false);
 
   useEffect(() => {
-    loadAccounts();
+    loadAccountsAndTransactions();
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const loadAccountsAndTransactions = async () => {
+    await Promise.all([loadAccounts(), loadTransactions()]);
+  };
+
+  const loadTransactions = async () => {
+    try {
+      const transactionsRef = collection(db, 'users', 'steve-colburn', 'transactions');
+      const q = query(transactionsRef, orderBy('timestamp', 'desc'), limit(100));
+      const querySnapshot = await getDocs(q);
+      
+      const transactionsList = [];
+      querySnapshot.forEach((doc) => {
+        transactionsList.push({ id: doc.id, ...doc.data() });
+      });
+      
+      setTransactions(transactionsList);
+    } catch (error) {
+      console.error('Error loading transactions:', error);
+      setTransactions([]);
+    }
+  };
 
   const loadAccounts = async () => {
     try {
@@ -40,6 +67,10 @@ const Accounts = () => {
             return sum + (parseFloat(account.balance) || 0);
           }, 0);
           setTotalBalance(plaidTotal);
+          
+          // Calculate projected balance
+          const projectedTotal = calculateTotalProjectedBalance(plaidAccountsList, transactions);
+          setTotalProjectedBalance(projectedTotal);
         } else {
           const manualTotal = Object.values(bankAccounts).reduce((sum, account) => {
             if (!account.isPlaid) {
@@ -48,6 +79,10 @@ const Accounts = () => {
             return sum;
           }, 0);
           setTotalBalance(manualTotal);
+          
+          // Calculate projected balance for manual accounts
+          const projectedTotal = calculateTotalProjectedBalance(bankAccounts, transactions);
+          setTotalProjectedBalance(projectedTotal);
         }
       }
     } catch (error) {
@@ -67,6 +102,7 @@ const Accounts = () => {
         return sum + (parseFloat(account.balance) || 0);
       }, 0);
       setTotalBalance(total);
+      setTotalProjectedBalance(total); // Same as live when no transactions
     } finally {
       setLoading(false);
     }
@@ -256,6 +292,13 @@ const Accounts = () => {
         <h2>💳 Bank Accounts</h2>
         <p>View and manage your bank accounts</p>
         <div className="header-actions">
+          <button 
+            className="help-btn"
+            onClick={() => setShowHelp(!showHelp)}
+            title="Learn about balance types"
+          >
+            ❓ Help
+          </button>
           {!hasPlaidAccounts ? (
             <PlaidLink
               onSuccess={handlePlaidSuccess}
@@ -276,99 +319,234 @@ const Accounts = () => {
         </div>
       </div>
 
+      {/* Help Section */}
+      {showHelp && (
+        <div className="help-section">
+          <h3>💡 Understanding Balance Types</h3>
+          <div className="help-content">
+            <div className="help-item">
+              <h4>🔗 Live Balance</h4>
+              <p>
+                Your <strong>Live Balance</strong> is the current balance from your bank, synced through Plaid. 
+                This is read-only and reflects what your bank reports in real-time.
+              </p>
+            </div>
+            <div className="help-item">
+              <h4>📊 Projected Balance</h4>
+              <p>
+                Your <strong>Projected Balance</strong> includes your Live Balance plus any manual transactions 
+                you've tracked in the app. This helps you plan ahead by accounting for:
+              </p>
+              <ul>
+                <li>✅ Pending expenses you've logged</li>
+                <li>✅ Expected income not yet deposited</li>
+                <li>✅ Planned purchases and payments</li>
+              </ul>
+            </div>
+            <div className="help-item">
+              <h4>🔍 Why the difference?</h4>
+              <p>
+                Plaid provides read-only access to your bank data for security. Manual transactions you track 
+                in the app adjust your Projected Balance to give you a better picture of your actual available funds.
+              </p>
+            </div>
+          </div>
+        </div>
+      )}
+
       <div className="accounts-summary">
         <div className="summary-card">
-          <h3>Total Balance</h3>
-          <div className="total-amount">{formatCurrency(totalBalance)}</div>
+          <div className="summary-header">
+            <h3>Total Balances</h3>
+            <div className="balance-toggle">
+              <button
+                className={showBalanceType === 'live' ? 'active' : ''}
+                onClick={() => setShowBalanceType('live')}
+              >
+                Live Only
+              </button>
+              <button
+                className={showBalanceType === 'both' ? 'active' : ''}
+                onClick={() => setShowBalanceType('both')}
+              >
+                Both
+              </button>
+              <button
+                className={showBalanceType === 'projected' ? 'active' : ''}
+                onClick={() => setShowBalanceType('projected')}
+              >
+                Projected Only
+              </button>
+            </div>
+          </div>
+          <div className="balance-display">
+            {(showBalanceType === 'live' || showBalanceType === 'both') && (
+              <div className="balance-item">
+                <span className="balance-label">🔗 Live Balance</span>
+                <div className="balance-value">{formatCurrency(totalBalance)}</div>
+              </div>
+            )}
+            {(showBalanceType === 'projected' || showBalanceType === 'both') && (
+              <div className="balance-item">
+                <span className="balance-label">📊 Projected Balance</span>
+                <div className="balance-value projected">{formatCurrency(totalProjectedBalance)}</div>
+              </div>
+            )}
+            {showBalanceType === 'both' && totalProjectedBalance !== totalBalance && (
+              <div className="balance-difference">
+                <span className="difference-label">Difference:</span>
+                <span className={`difference-value ${totalProjectedBalance > totalBalance ? 'positive' : 'negative'}`}>
+                  {formatBalanceDifference(getBalanceDifference(totalProjectedBalance, totalBalance))}
+                </span>
+              </div>
+            )}
+          </div>
           <small>Across {hasPlaidAccounts ? plaidAccounts.length : Object.keys(accounts).filter(k => !accounts[k].isPlaid).length} accounts</small>
         </div>
       </div>
 
       <div className="accounts-grid">
         {/* Plaid-linked accounts */}
-        {plaidAccounts.map((account) => (
-          <div key={account.account_id} className="account-card plaid-account">
-            <div className="account-header">
-              <div className="account-title">
-                <span className="account-icon">{getAccountTypeIcon(account.type)}</span>
-                <h3>{account.official_name}</h3>
-                <span className="plaid-badge">🔗 Live</span>
+        {plaidAccounts.map((account) => {
+          const liveBalance = parseFloat(account.balance) || 0;
+          const projectedBalance = calculateProjectedBalance(account.account_id, liveBalance, transactions);
+          const hasDifference = projectedBalance !== liveBalance;
+          
+          return (
+            <div key={account.account_id} className="account-card plaid-account">
+              <div className="account-header">
+                <div className="account-title">
+                  <span className="account-icon">{getAccountTypeIcon(account.type)}</span>
+                  <h3>{account.official_name}</h3>
+                </div>
+                <span className="account-type">{account.type} {account.mask ? `••${account.mask}` : ''}</span>
               </div>
-              <span className="account-type">{account.type} {account.mask ? `••${account.mask}` : ''}</span>
+              
+              <div className="account-balances">
+                {(showBalanceType === 'live' || showBalanceType === 'both') && (
+                  <div className="balance-row">
+                    <span className="balance-label" title="Current balance from your bank">
+                      🔗 Live Balance
+                    </span>
+                    <span className="balance-amount">{formatCurrency(liveBalance)}</span>
+                  </div>
+                )}
+                {(showBalanceType === 'projected' || showBalanceType === 'both') && (
+                  <div className="balance-row projected">
+                    <span className="balance-label" title="Live balance adjusted for manual transactions">
+                      📊 Projected Balance
+                    </span>
+                    <span className="balance-amount">{formatCurrency(projectedBalance)}</span>
+                  </div>
+                )}
+                {showBalanceType === 'both' && hasDifference && (
+                  <div className="balance-row difference">
+                    <small className="difference-text">
+                      {formatBalanceDifference(getBalanceDifference(projectedBalance, liveBalance))}
+                    </small>
+                  </div>
+                )}
+              </div>
+              
+              <div className="account-actions">
+                <button 
+                  className="action-btn"
+                  disabled
+                  title="Balance is synced automatically"
+                >
+                  🔄 Auto-synced
+                </button>
+              </div>
             </div>
-            
-            <div className="account-balance">
-              {formatCurrency(parseFloat(account.balance) || 0)}
-            </div>
-            
-            <div className="account-actions">
-              <button 
-                className="action-btn"
-                disabled
-                title="Balance is synced automatically"
-              >
-                🔄 Auto-synced
-              </button>
-            </div>
-          </div>
-        ))}
+          );
+        })}
 
         {/* Manual accounts (hidden if Plaid accounts exist for fully automated flow) */}
         {!hasPlaidAccounts && Object.entries(accounts)
           .filter(([, account]) => !account.isPlaid)
-          .map(([key, account]) => (
-          <div key={key} className="account-card">
-            <div className="account-header">
-              <div className="account-title">
-                <span className="account-icon">{getAccountTypeIcon(account.type)}</span>
-                <h3>{account.name}</h3>
-              </div>
-              <span className="account-type">{account.type}</span>
-            </div>
+          .map(([key, account]) => {
+            const liveBalance = parseFloat(account.balance) || 0;
+            const projectedBalance = calculateProjectedBalance(key, liveBalance, transactions);
+            const hasDifference = projectedBalance !== liveBalance;
             
-            <div className="account-balance">
-              {editingAccount === key ? (
-                <div className="edit-balance">
-                  <input
-                    type="number"
-                    step="0.01"
-                    defaultValue={account.balance}
-                    onKeyPress={(e) => {
-                      if (e.key === 'Enter') {
-                        updateAccountBalance(key, e.target.value);
-                      }
-                      if (e.key === 'Escape') {
-                        setEditingAccount(null);
-                      }
-                    }}
-                    onBlur={(e) => updateAccountBalance(key, e.target.value)}
-                    autoFocus
-                    className="balance-input"
-                  />
+            return (
+              <div key={key} className="account-card">
+                <div className="account-header">
+                  <div className="account-title">
+                    <span className="account-icon">{getAccountTypeIcon(account.type)}</span>
+                    <h3>{account.name}</h3>
+                  </div>
+                  <span className="account-type">{account.type}</span>
                 </div>
-              ) : (
-                formatCurrency(parseFloat(account.balance) || 0)
-              )}
-            </div>
-            
-            <div className="account-actions">
-              <button 
-                className="action-btn"
-                onClick={() => setEditingAccount(key)}
-                disabled={saving || editingAccount === key}
-              >
-                ✏️ Edit Balance
-              </button>
-              <button 
-                className="action-btn delete-btn"
-                onClick={() => setShowDeleteModal(key)}
-                disabled={saving}
-              >
-                🗑️ Delete
-              </button>
-            </div>
-          </div>
-        ))}
+                
+                <div className="account-balances">
+                  {editingAccount === key ? (
+                    <div className="edit-balance">
+                      <input
+                        type="number"
+                        step="0.01"
+                        defaultValue={account.balance}
+                        onKeyPress={(e) => {
+                          if (e.key === 'Enter') {
+                            updateAccountBalance(key, e.target.value);
+                          }
+                          if (e.key === 'Escape') {
+                            setEditingAccount(null);
+                          }
+                        }}
+                        onBlur={(e) => updateAccountBalance(key, e.target.value)}
+                        autoFocus
+                        className="balance-input"
+                      />
+                    </div>
+                  ) : (
+                    <>
+                      {(showBalanceType === 'live' || showBalanceType === 'both') && (
+                        <div className="balance-row">
+                          <span className="balance-label" title="Your manually tracked balance">
+                            🔗 Live Balance
+                          </span>
+                          <span className="balance-amount">{formatCurrency(liveBalance)}</span>
+                        </div>
+                      )}
+                      {(showBalanceType === 'projected' || showBalanceType === 'both') && (
+                        <div className="balance-row projected">
+                          <span className="balance-label" title="Live balance adjusted for manual transactions">
+                            📊 Projected Balance
+                          </span>
+                          <span className="balance-amount">{formatCurrency(projectedBalance)}</span>
+                        </div>
+                      )}
+                      {showBalanceType === 'both' && hasDifference && (
+                        <div className="balance-row difference">
+                          <small className="difference-text">
+                            {formatBalanceDifference(getBalanceDifference(projectedBalance, liveBalance))}
+                          </small>
+                        </div>
+                      )}
+                    </>
+                  )}
+                </div>
+                
+                <div className="account-actions">
+                  <button 
+                    className="action-btn"
+                    onClick={() => setEditingAccount(key)}
+                    disabled={saving || editingAccount === key}
+                  >
+                    ✏️ Edit Balance
+                  </button>
+                  <button 
+                    className="action-btn delete-btn"
+                    onClick={() => setShowDeleteModal(key)}
+                    disabled={saving}
+                  >
+                    🗑️ Delete
+                  </button>
+                </div>
+              </div>
+            );
+          })}
         
         {Object.keys(accounts).filter(k => !accounts[k].isPlaid).length === 0 && plaidAccounts.length === 0 && !loading && (
           <div className="no-accounts">
