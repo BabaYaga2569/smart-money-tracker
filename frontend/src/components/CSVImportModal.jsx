@@ -23,24 +23,41 @@ const CSVImportModal = ({ existingItems, onImport, onCancel }) => {
     }
 
     setError('');
+    setLoading(true);
     
     try {
-      setLoading(true);
       const data = await CSVImporter.parseCSVFile(selectedFile);
-      setImportData(data);
       
-      if (data.errors.length > 0) {
-        setError(`${data.errors.length} rows had errors. They will be skipped.`);
+      if (!data || !data.items) {
+        throw new Error('Invalid CSV format or no valid data found');
       }
       
-      // Check for duplicates
-      const duplicateCheck = RecurringManager.detectDuplicates(existingItems, data.items);
-      setDuplicates(duplicateCheck);
+      if (data.items.length === 0) {
+        setError('No valid items found in CSV. Please check the file format.');
+        setLoading(false);
+        return;
+      }
+      
+      setImportData(data);
+      
+      if (data.errors && data.errors.length > 0) {
+        setError(`${data.errors.length} rows had errors and will be skipped.`);
+      }
+      
+      // Check for duplicates with error handling
+      try {
+        const duplicateCheck = RecurringManager.detectDuplicates(existingItems || [], data.items);
+        setDuplicates(duplicateCheck || []);
+      } catch (dupError) {
+        console.error('Error checking duplicates:', dupError);
+        setDuplicates([]);
+      }
       
       setPreviewItems(data.items);
       setStep('preview');
     } catch (err) {
-      setError(err.message);
+      console.error('Error parsing CSV:', err);
+      setError(err.message || 'Failed to parse CSV file. Please check the file format and try again.');
     } finally {
       setLoading(false);
     }
@@ -80,36 +97,50 @@ const CSVImportModal = ({ existingItems, onImport, onCancel }) => {
 
   const handleFinalImport = async () => {
     setLoading(true);
+    setError('');
     
     try {
+      if (!previewItems || previewItems.length === 0) {
+        throw new Error('No items to import');
+      }
+      
       let finalItems = [...previewItems];
       
       // Apply conflict resolutions
-      conflicts.forEach(conflict => {
-        switch (conflict.resolution) {
-          case 'skip':
-            finalItems = finalItems.filter(item => item.id !== conflict.incoming.id);
-            break;
-          case 'merge': {
-            // Update existing item with new data
-            const existingIndex = existingItems.findIndex(item => item.id === conflict.existing.id);
-            if (existingIndex !== -1) {
-              // Remove incoming item from finalItems
+      if (conflicts && conflicts.length > 0) {
+        conflicts.forEach(conflict => {
+          switch (conflict.resolution) {
+            case 'skip':
               finalItems = finalItems.filter(item => item.id !== conflict.incoming.id);
+              break;
+            case 'merge': {
+              // Update existing item with new data
+              const existingIndex = existingItems.findIndex(item => item.id === conflict.existing.id);
+              if (existingIndex !== -1) {
+                // Remove incoming item from finalItems
+                finalItems = finalItems.filter(item => item.id !== conflict.incoming.id);
+              }
+              break;
             }
-            break;
+            case 'keep_both':
+            default:
+              // Keep both - no action needed
+              break;
           }
-          case 'keep_both':
-          default:
-            // Keep both - no action needed
-            break;
-        }
-      });
+        });
+      }
 
-      await onImport(finalItems, conflicts);
+      if (finalItems.length === 0) {
+        setError('All items were filtered out. Nothing to import.');
+        setLoading(false);
+        return;
+      }
+
+      await onImport(finalItems, conflicts || []);
       setStep('complete');
     } catch (err) {
-      setError(err.message);
+      console.error('Error importing items:', err);
+      setError(err.message || 'Failed to import items. Please try again.');
     } finally {
       setLoading(false);
     }

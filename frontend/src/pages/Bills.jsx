@@ -15,6 +15,7 @@ const Bills = () => {
   const [loading, setLoading] = useState(true);
   const [bills, setBills] = useState([]); // eslint-disable-line no-unused-vars
   const [processedBills, setProcessedBills] = useState([]);
+  const [accounts, setAccounts] = useState({});
   const [showModal, setShowModal] = useState(false);
   const [editingBill, setEditingBill] = useState(null);
   const [filterCategory, setFilterCategory] = useState('all');
@@ -26,9 +27,12 @@ const Bills = () => {
   const BILL_CATEGORIES = CATEGORY_ICONS;
 
   useEffect(() => {
-    loadBills();
-    initializePlaidIntegration();
-  }, []);
+    const loadData = async () => {
+      await Promise.all([loadBills(), loadAccounts()]);
+      await initializePlaidIntegration();
+    };
+    loadData();
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Sync visuals when bills are processed
   useEffect(() => {
@@ -153,6 +157,94 @@ const Bills = () => {
       })));
     } finally {
       setLoading(false);
+    }
+  };
+
+  const loadAccounts = async () => {
+    try {
+      const token = localStorage.getItem('token');
+      
+      // Try to load from Plaid API first
+      if (token) {
+        try {
+          const response = await fetch('https://smart-money-tracker-09ks.onrender.com/api/accounts', {
+            headers: {
+              'Authorization': `Bearer ${token}`,
+              'Content-Type': 'application/json'
+            }
+          });
+          
+          if (response.ok) {
+            const data = await response.json();
+            const accountsList = data.accounts || data;
+            
+            if (Array.isArray(accountsList) && accountsList.length > 0) {
+              const accountsMap = {};
+              accountsList.forEach(account => {
+                const accountId = account.account_id || account.id || account._id;
+                let balance = 0;
+                if (account.balances) {
+                  balance = account.balances.current || account.balances.available || 0;
+                } else if (account.current_balance !== undefined) {
+                  balance = account.current_balance;
+                } else if (account.balance !== undefined) {
+                  balance = account.balance;
+                }
+                
+                accountsMap[accountId] = {
+                  name: account.name || account.official_name || 'Unknown Account',
+                  type: account.subtype || account.type || 'checking',
+                  balance: balance.toString(),
+                  mask: account.mask || '',
+                  institution: account.institution_name || ''
+                };
+              });
+              setAccounts(accountsMap);
+              return;
+            }
+          }
+        } catch (apiError) {
+          console.log('Plaid API not available, trying Firebase...', apiError.message || '');
+        }
+      }
+      
+      // Fallback to Firebase
+      const settingsDocRef = doc(db, 'users', 'steve-colburn', 'settings', 'personal');
+      const settingsDocSnap = await getDoc(settingsDocRef);
+      
+      if (settingsDocSnap.exists()) {
+        const data = settingsDocSnap.data();
+        const plaidAccountsList = data.plaidAccounts || [];
+        const bankAccounts = data.bankAccounts || {};
+        
+        // Prioritize Plaid accounts if they exist
+        if (plaidAccountsList.length > 0) {
+          const accountsMap = {};
+          plaidAccountsList.forEach(account => {
+            const accountId = account.account_id;
+            accountsMap[accountId] = {
+              name: account.official_name || account.name,
+              type: account.type,
+              balance: account.balance,
+              mask: account.mask || '',
+              institution: ''
+            };
+          });
+          setAccounts(accountsMap);
+        } else {
+          // Fall back to manual accounts
+          setAccounts(bankAccounts);
+        }
+      }
+    } catch (error) {
+      console.error('Error loading accounts:', error);
+      // Set default demo accounts as fallback
+      setAccounts({
+        bofa: { name: 'Bank of America', type: 'Checking', balance: '0' },
+        chase: { name: 'Chase', type: 'Checking', balance: '0' },
+        wells: { name: 'Wells Fargo', type: 'Savings', balance: '0' },
+        capital_one: { name: 'Capital One', type: 'Credit', balance: '0' }
+      });
     }
   };
 
@@ -429,6 +521,40 @@ const Bills = () => {
         
         showNotification('Bill updated successfully!', 'success');
       } else {
+        // Check for potential duplicates before adding
+        const isDuplicate = bills.some(bill => {
+          // Exact duplicate: same name, amount, and due date
+          const exactMatch = bill.name.toLowerCase() === billData.name.toLowerCase() && 
+                             parseFloat(bill.amount) === parseFloat(billData.amount) &&
+                             bill.dueDate === billData.dueDate;
+          
+          return exactMatch;
+        });
+        
+        if (isDuplicate) {
+          showNotification('A bill with the same name, amount, and due date already exists!', 'error');
+          return;
+        }
+        
+        // Check for similar bills (same name and amount but different due date)
+        const similarBill = bills.find(bill => 
+          bill.name.toLowerCase() === billData.name.toLowerCase() && 
+          parseFloat(bill.amount) === parseFloat(billData.amount) &&
+          bill.dueDate !== billData.dueDate
+        );
+        
+        if (similarBill) {
+          const proceed = window.confirm(
+            `A bill named "${similarBill.name}" with amount $${similarBill.amount} already exists with due date ${similarBill.dueDate}.\n\n` +
+            `You're adding one with due date ${billData.dueDate}. This might be legitimate (e.g., twice-monthly rent).\n\n` +
+            `Do you want to proceed?`
+          );
+          
+          if (!proceed) {
+            return;
+          }
+        }
+        
         // Add new bill
         const newBill = {
           ...billData,
@@ -803,6 +929,7 @@ const Bills = () => {
         <BillModal
           bill={editingBill}
           categories={TRANSACTION_CATEGORIES}
+          accounts={accounts}
           onSave={handleSaveBill}
           onCancel={() => {
             setShowModal(false);
@@ -815,25 +942,26 @@ const Bills = () => {
 };
 
 // Bill Modal Component
-const BillModal = ({ bill, categories, onSave, onCancel }) => {
+const BillModal = ({ bill, categories, accounts, onSave, onCancel }) => {
   const [formData, setFormData] = useState({
     name: bill?.name || '',
     amount: bill?.amount || '',
     dueDate: bill?.dueDate || '',
     recurrence: bill?.recurrence || 'monthly',
     category: migrateLegacyCategory(bill?.category || 'Bills & Utilities'),
-    account: bill?.account || 'bofa',
+    account: bill?.account || Object.keys(accounts)[0] || 'bofa',
     notes: bill?.notes || ''
   });
 
   const [errors, setErrors] = useState({});
 
-  const accounts = [
-    { key: 'bofa', name: 'Bank of America' },
-    { key: 'chase', name: 'Chase' },
-    { key: 'wells', name: 'Wells Fargo' },
-    { key: 'capital_one', name: 'Capital One' }
-  ];
+  // Convert accounts object to array format for dropdown
+  const accountsList = Object.entries(accounts).map(([key, account]) => ({
+    key: key,
+    name: account.name,
+    type: account.type,
+    mask: account.mask
+  }));
 
   const frequencies = [
     { value: 'monthly', label: 'Monthly' },
@@ -966,9 +1094,9 @@ const BillModal = ({ bill, categories, onSave, onCancel }) => {
                 value={formData.account}
                 onChange={(e) => handleInputChange('account', e.target.value)}
               >
-                {accounts.map(account => (
+                {accountsList.map(account => (
                   <option key={account.key} value={account.key}>
-                    {account.name}
+                    {account.name} {account.mask ? `(****${account.mask})` : ''} - {account.type}
                   </option>
                 ))}
               </select>
