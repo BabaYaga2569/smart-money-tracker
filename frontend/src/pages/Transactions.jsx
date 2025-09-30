@@ -80,7 +80,82 @@ const Transactions = () => {
     }
   };
 
+  // Updated loadAccounts function to fetch from Plaid API
   const loadAccounts = async () => {
+    try {
+      const token = localStorage.getItem('token');
+      const response = await fetch('https://smart-money-tracker-09ks.onrender.com/api/plaid/accounts', {
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        }
+      });
+      
+      if (response.ok) {
+        const data = await response.json();
+        console.log('Fetched Plaid accounts:', data);
+        
+        // Convert Plaid accounts to the format the component expects
+        const accountsMap = {};
+        
+        // Handle different possible response structures
+        const accountsList = data.accounts || data;
+        
+        if (Array.isArray(accountsList)) {
+          accountsList.forEach(account => {
+            // Use account_id or id as the key
+            const accountId = account.account_id || account.id || account._id;
+            
+            // Extract balance - handle different possible structures
+            let balance = 0;
+            if (account.balances) {
+              balance = account.balances.current || account.balances.available || 0;
+            } else if (account.current_balance !== undefined) {
+              balance = account.current_balance;
+            } else if (account.balance !== undefined) {
+              balance = account.balance;
+            }
+            
+            accountsMap[accountId] = {
+              name: account.name || account.official_name || 'Unknown Account',
+              type: account.subtype || account.type || 'checking',
+              balance: balance.toString(),
+              mask: account.mask || '',
+              institution: account.institution_name || ''
+            };
+          });
+        }
+        
+        // If we got Plaid accounts, use them; otherwise fall back to demo
+        if (Object.keys(accountsMap).length > 0) {
+          setAccounts(accountsMap);
+        } else {
+          // Try Firebase as backup
+          const settingsDocRef = doc(db, 'users', 'steve-colburn', 'settings', 'personal');
+          const settingsDocSnap = await getDoc(settingsDocRef);
+          
+          if (settingsDocSnap.exists()) {
+            const data = settingsDocSnap.data();
+            setAccounts(data.bankAccounts || {});
+          } else {
+            // Final fallback to demo accounts
+            setDefaultDemoAccounts();
+          }
+        }
+      } else {
+        console.error('Failed to fetch Plaid accounts, status:', response.status);
+        // Try Firebase as backup
+        await loadFirebaseAccounts();
+      }
+    } catch (error) {
+      console.error('Error loading Plaid accounts:', error);
+      // Try Firebase as backup
+      await loadFirebaseAccounts();
+    }
+  };
+
+  // Fallback function to load from Firebase
+  const loadFirebaseAccounts = async () => {
     try {
       const settingsDocRef = doc(db, 'users', 'steve-colburn', 'settings', 'personal');
       const settingsDocSnap = await getDoc(settingsDocRef);
@@ -89,17 +164,22 @@ const Transactions = () => {
         const data = settingsDocSnap.data();
         setAccounts(data.bankAccounts || {});
       } else {
-        // Fallback demo accounts
-        const demoAccounts = {
-          bofa: { name: "Bank of America", type: "checking", balance: "1361.97" },
-          capone: { name: "Capital One", type: "checking", balance: "24.74" },
-          usaa: { name: "USAA", type: "checking", balance: "143.36" }
-        };
-        setAccounts(demoAccounts);
+        setDefaultDemoAccounts();
       }
     } catch (error) {
-      console.error('Error loading accounts:', error);
+      console.error('Error loading Firebase accounts:', error);
+      setDefaultDemoAccounts();
     }
+  };
+
+  // Set default demo accounts
+  const setDefaultDemoAccounts = () => {
+    const demoAccounts = {
+      bofa: { name: "Bank of America", type: "checking", balance: "1361.97" },
+      capone: { name: "Capital One", type: "checking", balance: "24.74" },
+      usaa: { name: "USAA", type: "checking", balance: "143.36" }
+    };
+    setAccounts(demoAccounts);
   };
 
   const loadTransactions = async () => {
@@ -123,7 +203,7 @@ const Transactions = () => {
           amount: -45.67,
           description: 'Grocery Shopping at Walmart',
           category: 'Food & Dining',
-          account: 'bofa',
+          account: Object.keys(accounts)[0] || 'bofa',
           date: formatDateForInput(new Date()),
           timestamp: Date.now(),
           type: 'expense'
@@ -133,7 +213,7 @@ const Transactions = () => {
           amount: 2500.00,
           description: 'Salary Deposit',
           category: 'Income',
-          account: 'bofa',
+          account: Object.keys(accounts)[0] || 'bofa',
           date: formatDateForInput(new Date(Date.now() - 86400000)),
           timestamp: Date.now() - 86400000,
           type: 'income'
@@ -240,19 +320,13 @@ const Transactions = () => {
         }
       };
       
-      // Update Firebase
-      const settingsDocRef = doc(db, 'users', 'steve-colburn', 'settings', 'personal');
-      const currentDoc = await getDoc(settingsDocRef);
-      const currentData = currentDoc.exists() ? currentDoc.data() : {};
-      
-      await updateDoc(settingsDocRef, {
-        ...currentData,
-        bankAccounts: updatedAccounts,
-        lastUpdated: new Date().toISOString()
-      });
-      
-      // Update local state
+      // Update local state immediately
       setAccounts(updatedAccounts);
+      
+      // Note: With Plaid accounts, the balance will be updated on next sync
+      // This local update is temporary until next Plaid sync
+      console.log('Account balance updated locally. Will sync with Plaid on next refresh.');
+      
     } catch (error) {
       console.error('Error updating account balance:', error);
     }
@@ -557,7 +631,11 @@ const Transactions = () => {
                 >
                   <option value="">Select Account</option>
                   {Object.entries(accounts).map(([key, account]) => (
-                    <option key={key} value={key}>{account.name}</option>
+                    <option key={key} value={key}>
+                      {account.name}
+                      {account.mask ? ` (...${account.mask})` : ''}
+                      {account.balance ? ` - $${parseFloat(account.balance).toFixed(2)}` : ''}
+                    </option>
                   ))}
                 </select>
               </div>
