@@ -1,7 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { doc, getDoc, collection, query, where, getDocs } from 'firebase/firestore';
+import { doc, getDoc, collection, query, where, orderBy, limit, getDocs } from 'firebase/firestore';
 import { db } from '../firebase';
+import { calculateTotalProjectedBalance } from '../utils/BalanceCalculator';
 import './Dashboard.css';
 
 const Dashboard = () => {
@@ -9,7 +10,8 @@ const Dashboard = () => {
   const [loading, setLoading] = useState(true);
   const [firebaseConnected, setFirebaseConnected] = useState(false);
   const [dashboardData, setDashboardData] = useState({
-    totalBalance: 1530.07,  // Default fallback data
+    totalBalance: 1530.07,  // Default fallback data (Live balance)
+    totalProjectedBalance: 1530.07,  // Add projected balance
     accountCount: 4,
     safeToSpend: 1247.50,
     billsDueSoon: 2,
@@ -52,6 +54,7 @@ const Dashboard = () => {
         
         let totalBalance = 0;
         let accountCount = 0;
+        let accountsData = null;
         
         if (plaidAccountsList.length > 0) {
           // Use only Plaid accounts when they exist
@@ -59,13 +62,19 @@ const Dashboard = () => {
             return sum + (parseFloat(account.balance) || 0);
           }, 0);
           accountCount = plaidAccountsList.length;
+          accountsData = plaidAccountsList;
         } else {
           // Fall back to manual accounts
           totalBalance = Object.values(bankAccounts).reduce((sum, account) => {
             return sum + (parseFloat(account.balance) || 0);
           }, 0);
           accountCount = Object.keys(bankAccounts).length;
+          accountsData = bankAccounts;
         }
+
+        // Load transactions for projected balance calculation
+        const transactions = await loadTransactions();
+        const totalProjectedBalance = calculateTotalProjectedBalance(accountsData, transactions);
 
         // Load current month transaction count
         const transactionCount = await loadCurrentMonthTransactionCount();
@@ -73,6 +82,7 @@ const Dashboard = () => {
         // Update with real Firebase data
         setDashboardData({
           totalBalance: totalBalance || 1530.07,
+          totalProjectedBalance: totalProjectedBalance || totalBalance || 1530.07,
           accountCount: accountCount || 4,
           safeToSpend: data.safeToSpend || 1247.50,
           billsDueSoon: 2,
@@ -93,6 +103,24 @@ const Dashboard = () => {
       // Keep default fallback data
     } finally {
       setLoading(false);
+    }
+  };
+
+  const loadTransactions = async () => {
+    try {
+      const transactionsRef = collection(db, 'users', 'steve-colburn', 'transactions');
+      const q = query(transactionsRef, orderBy('timestamp', 'desc'), limit(100));
+      const querySnapshot = await getDocs(q);
+      
+      const transactionsList = [];
+      querySnapshot.forEach((doc) => {
+        transactionsList.push({ id: doc.id, ...doc.data() });
+      });
+      
+      return transactionsList;
+    } catch (error) {
+      console.error('Error loading transactions:', error);
+      return [];
     }
   };
 
@@ -135,9 +163,12 @@ const Dashboard = () => {
       title: 'Accounts',
       icon: '💳',
       value: `${dashboardData.accountCount} accounts`,
-      subtitle: `Total: ${formatCurrency(dashboardData.totalBalance)}`,
+      subtitle: dashboardData.totalBalance !== dashboardData.totalProjectedBalance
+        ? `Live: ${formatCurrency(dashboardData.totalBalance)} | Projected: ${formatCurrency(dashboardData.totalProjectedBalance)}`
+        : `Total: ${formatCurrency(dashboardData.totalBalance)}`,
       path: '/accounts',
-      color: 'blue'
+      color: 'blue',
+      tooltip: 'Live balance from bank, Projected includes manual transactions'
     },
     {
       title: 'Transactions',
@@ -223,6 +254,7 @@ const Dashboard = () => {
             key={index} 
             className={`dashboard-tile ${tile.color} ${loading ? 'loading' : ''}`}
             onClick={() => navigate(tile.path)}
+            title={tile.tooltip || ''}
           >
             <div className="tile-header">
               <div className="tile-icon">{tile.icon}</div>
