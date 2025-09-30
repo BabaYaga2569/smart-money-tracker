@@ -20,6 +20,7 @@ import {
   getPriorityColor,
   getGoalTemplate
 } from '../constants/goals';
+import { TRANSACTION_CATEGORIES } from '../constants/categories';
 import './Goals.css';
 
 const Goals = () => {
@@ -45,6 +46,9 @@ const Goals = () => {
     currentAmount: '',
     targetDate: '',
     monthlyContribution: '',
+    autoContribute: false,
+    autoContributionDay: '1',
+    linkedCategory: '',
     priority: 'medium',
     account: '',
     notes: '',
@@ -255,6 +259,9 @@ const Goals = () => {
       currentAmount: '',
       targetDate: '',
       monthlyContribution: '',
+      autoContribute: false,
+      autoContributionDay: '1',
+      linkedCategory: '',
       priority: 'medium',
       account: '',
       notes: '',
@@ -272,6 +279,9 @@ const Goals = () => {
       currentAmount: goal.currentAmount?.toString() || '',
       targetDate: goal.targetDate || '',
       monthlyContribution: goal.monthlyContribution?.toString() || '',
+      autoContribute: goal.autoContribute || false,
+      autoContributionDay: goal.autoContributionDay?.toString() || '1',
+      linkedCategory: goal.linkedCategory || '',
       priority: goal.priority || 'medium',
       account: goal.account || '',
       notes: goal.notes || '',
@@ -740,6 +750,47 @@ const Goals = () => {
                     ))}
                   </select>
                 </div>
+              </div>
+              
+              <div className="form-row">
+                <div className="form-group">
+                  <label>Link to Category (optional)</label>
+                  <select
+                    value={newGoal.linkedCategory}
+                    onChange={(e) => setNewGoal({...newGoal, linkedCategory: e.target.value})}
+                  >
+                    <option value="">No category link</option>
+                    {TRANSACTION_CATEGORIES.map(category => (
+                      <option key={category} value={category}>{category}</option>
+                    ))}
+                  </select>
+                  <small className="form-help">Track this goal based on transactions in a specific category</small>
+                </div>
+              </div>
+              
+              <div className="form-group checkbox-group">
+                <label>
+                  <input
+                    type="checkbox"
+                    checked={newGoal.autoContribute}
+                    onChange={(e) => setNewGoal({...newGoal, autoContribute: e.target.checked})}
+                  />
+                  <span>Enable automatic monthly contributions</span>
+                </label>
+                {newGoal.autoContribute && (
+                  <div className="form-group sub-field">
+                    <label>Contribution Day of Month</label>
+                    <input
+                      type="number"
+                      value={newGoal.autoContributionDay}
+                      onChange={(e) => setNewGoal({...newGoal, autoContributionDay: e.target.value})}
+                      min="1"
+                      max="28"
+                      placeholder="1"
+                    />
+                    <small className="form-help">Day of the month to automatically contribute (1-28)</small>
+                  </div>
+                )}
               </div>
               
               <div className="form-group">

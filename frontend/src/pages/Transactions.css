@@ -382,6 +382,24 @@
   border-radius: 4px;
 }
 
+.transaction-source {
+  background: #444;
+  padding: 2px 6px;
+  border-radius: 4px;
+  font-size: 0.8rem;
+  cursor: help;
+}
+
+.transaction-source.plaid {
+  background: #4a90e2;
+  color: #fff;
+}
+
+.transaction-source.manual {
+  background: #666;
+  color: #fff;
+}
+
 .transaction-details {
   display: flex;
   flex-direction: column;

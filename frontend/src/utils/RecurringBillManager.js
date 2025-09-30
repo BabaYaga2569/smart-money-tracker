@@ -200,9 +200,10 @@ export class RecurringBillManager {
      * Mark a bill as paid and update its next due date for the upcoming cycle
      * @param {Object} bill - Bill object
      * @param {Date} paymentDate - Date the bill was paid
+     * @param {Object} paymentOptions - Additional payment options (source, transactionId, etc.)
      * @returns {Object} Updated bill object
      */
-    static markBillAsPaid(bill, paymentDate = null) {
+    static markBillAsPaid(bill, paymentDate = null, paymentOptions = {}) {
         const currentDueDate = bill.nextDueDate || bill.dueDate;
         const paidDate = paymentDate || getPacificTime();
         
@@ -221,7 +222,10 @@ export class RecurringBillManager {
             amount: parseFloat(bill.amount) || 0,
             paidDate: paidDate,
             dueDate: currentDueDate,
-            paymentMethod: 'manual',
+            paymentMethod: paymentOptions.method || 'manual',
+            source: paymentOptions.source || 'manual', // 'manual' or 'plaid'
+            transactionId: paymentOptions.transactionId || null,
+            accountId: paymentOptions.accountId || null,
             timestamp: Date.now()
         };
         
@@ -261,6 +265,45 @@ export class RecurringBillManager {
         }
         
         return false;
+    }
+
+    /**
+     * Check if a bill can be paid (not already paid by another transaction)
+     * @param {Object} bill - Bill object
+     * @returns {Object} { canPay: boolean, reason: string }
+     */
+    static canPayBill(bill) {
+        // Check if already paid for current cycle
+        if (this.isBillPaidForCurrentCycle(bill)) {
+            const lastPayment = bill.lastPayment;
+            const source = lastPayment?.source || 'manual';
+            const method = lastPayment?.paymentMethod || 'unknown';
+            
+            return {
+                canPay: false,
+                reason: `Already paid for this billing cycle via ${source} (${method})`,
+                lastPayment: lastPayment
+            };
+        }
+        
+        return { canPay: true, reason: null };
+    }
+
+    /**
+     * Check if a transaction has already been used to pay a bill
+     * @param {string} transactionId - Transaction ID to check
+     * @param {Array} bills - Array of bills to check against
+     * @returns {Object|null} The bill that was paid by this transaction, or null
+     */
+    static findBillPaidByTransaction(transactionId, bills) {
+        if (!transactionId) return null;
+        
+        return bills.find(bill => {
+            const paymentHistory = bill.paymentHistory || [];
+            return paymentHistory.some(payment => 
+                payment.transactionId === transactionId
+            );
+        });
     }
 
     /**
