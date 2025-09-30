@@ -46,11 +46,26 @@ const Dashboard = () => {
         const data = settingsDocSnap.data();
         
         // Calculate your real data here
+        // Prioritize Plaid accounts if they exist (fully automated flow)
+        const plaidAccountsList = data.plaidAccounts || [];
         const bankAccounts = data.bankAccounts || {};
-        const totalBalance = Object.values(bankAccounts).reduce((sum, account) => {
-          return sum + (parseFloat(account.balance) || 0);
-        }, 0);
-        const accountCount = Object.keys(bankAccounts).length;
+        
+        let totalBalance = 0;
+        let accountCount = 0;
+        
+        if (plaidAccountsList.length > 0) {
+          // Use only Plaid accounts when they exist
+          totalBalance = plaidAccountsList.reduce((sum, account) => {
+            return sum + (parseFloat(account.balance) || 0);
+          }, 0);
+          accountCount = plaidAccountsList.length;
+        } else {
+          // Fall back to manual accounts
+          totalBalance = Object.values(bankAccounts).reduce((sum, account) => {
+            return sum + (parseFloat(account.balance) || 0);
+          }, 0);
+          accountCount = Object.keys(bankAccounts).length;
+        }
 
         // Load current month transaction count
         const transactionCount = await loadCurrentMonthTransactionCount();

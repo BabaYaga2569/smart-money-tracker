@@ -126,21 +126,12 @@ const Transactions = () => {
           });
         }
         
-        // If we got Plaid accounts, use them; otherwise fall back to demo
+        // If we got Plaid accounts, use them; otherwise fall back to Firebase
         if (Object.keys(accountsMap).length > 0) {
           setAccounts(accountsMap);
         } else {
           // Try Firebase as backup
-          const settingsDocRef = doc(db, 'users', 'steve-colburn', 'settings', 'personal');
-          const settingsDocSnap = await getDoc(settingsDocRef);
-          
-          if (settingsDocSnap.exists()) {
-            const data = settingsDocSnap.data();
-            setAccounts(data.bankAccounts || {});
-          } else {
-            // Final fallback to demo accounts
-            setDefaultDemoAccounts();
-          }
+          await loadFirebaseAccounts();
         }
       } else {
         console.error('Failed to fetch Plaid accounts, status:', response.status);
@@ -162,7 +153,28 @@ const Transactions = () => {
       
       if (settingsDocSnap.exists()) {
         const data = settingsDocSnap.data();
-        setAccounts(data.bankAccounts || {});
+        const plaidAccountsList = data.plaidAccounts || [];
+        const bankAccounts = data.bankAccounts || {};
+        
+        // Prioritize Plaid accounts if they exist (fully automated flow)
+        if (plaidAccountsList.length > 0) {
+          // Convert Plaid accounts to the format the component expects
+          const accountsMap = {};
+          plaidAccountsList.forEach(account => {
+            const accountId = account.account_id;
+            accountsMap[accountId] = {
+              name: account.official_name || account.name,
+              type: account.type,
+              balance: account.balance,
+              mask: account.mask || '',
+              institution: ''
+            };
+          });
+          setAccounts(accountsMap);
+        } else {
+          // Fall back to manual accounts
+          setAccounts(bankAccounts);
+        }
       } else {
         setDefaultDemoAccounts();
       }
