@@ -13,7 +13,7 @@ import './Bills.css';
 
 const Bills = () => {
   const [loading, setLoading] = useState(true);
-  const [bills, setBills] = useState([]);
+  const [bills, setBills] = useState([]); // eslint-disable-line no-unused-vars
   const [processedBills, setProcessedBills] = useState([]);
   const [showModal, setShowModal] = useState(false);
   const [editingBill, setEditingBill] = useState(null);
@@ -157,22 +157,9 @@ const Bills = () => {
   };
 
   const determineBillStatus = (bill) => {
-    // Check if bill has been paid for the current cycle
-    if (bill.isPaid || bill.status === 'paid') {
+    // Use the centralized logic from RecurringBillManager
+    if (RecurringBillManager.isBillPaidForCurrentCycle(bill)) {
       return 'paid';
-    }
-    
-    // Enhanced payment check: If bill was recently paid for the current billing cycle,
-    // mark as paid to exclude from overdue/due lists
-    if (bill.lastPaidDate && bill.lastPayment) {
-      const currentBillDueDate = new Date(bill.nextDueDate || bill.dueDate);
-      const lastPaymentDueDate = new Date(bill.lastPayment.dueDate);
-      
-      // If the last payment was for a due date that matches or is after the current due date,
-      // then this bill has already been paid for the current cycle
-      if (lastPaymentDueDate.getTime() >= currentBillDueDate.getTime()) {
-        return 'paid';
-      }
     }
     
     const now = new Date();
@@ -252,6 +239,13 @@ const Bills = () => {
 
   const handleMarkAsPaid = async (bill) => {
     if (payingBill) return;
+    
+    // Check if bill has already been paid for current cycle
+    if (RecurringBillManager.isBillPaidForCurrentCycle(bill)) {
+      NotificationManager.showWarning(`${bill.name} has already been paid for this billing cycle.`);
+      return;
+    }
+    
     setPayingBill(bill.name);
 
     // Show loading notification
@@ -753,9 +747,10 @@ const Bills = () => {
                   <button 
                     className="action-btn mark-paid"
                     onClick={() => handleMarkAsPaid(bill)}
-                    disabled={payingBill === bill.name}
+                    disabled={payingBill === bill.name || RecurringBillManager.isBillPaidForCurrentCycle(bill)}
                   >
-                    {payingBill === bill.name ? 'Processing...' : 'Mark Paid'}
+                    {payingBill === bill.name ? 'Processing...' : 
+                     RecurringBillManager.isBillPaidForCurrentCycle(bill) ? 'Already Paid' : 'Mark Paid'}
                   </button>
                   <button 
                     className="action-btn secondary"

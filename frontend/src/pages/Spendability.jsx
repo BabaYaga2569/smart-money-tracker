@@ -236,23 +236,9 @@ const Spendability = () => {
     setTimeout(() => setNotification({ message: '', type: '' }), 4000);
   };
 
-  // Helper function to check if a bill has already been paid for its current due date
-  const isBillAlreadyPaid = (bill) => {
-    if (!bill.lastPaidDate || !bill.lastPayment) {
-      return false;
-    }
-    
-    const currentBillDueDate = new Date(bill.nextDueDate || bill.dueDate);
-    const lastPaymentDueDate = new Date(bill.lastPayment.dueDate);
-    
-    // If the last payment was for a due date that matches or is after the current due date,
-    // then this bill has already been paid for the current cycle
-    return lastPaymentDueDate.getTime() >= currentBillDueDate.getTime();
-  };
-
   const handleMarkBillAsPaid = async (bill) => {
     // Check if bill has already been paid for current cycle
-    if (isBillAlreadyPaid(bill)) {
+    if (RecurringBillManager.isBillPaidForCurrentCycle(bill)) {
       showNotification(`${bill.name} has already been paid for this billing cycle.`, 'warning');
       return;
     }
@@ -468,11 +454,11 @@ const Spendability = () => {
                     <button 
                       className="mark-paid-btn"
                       onClick={() => handleMarkBillAsPaid(bill)}
-                      disabled={payingBill === bill.name || isBillAlreadyPaid(bill)}
+                      disabled={payingBill === bill.name || RecurringBillManager.isBillPaidForCurrentCycle(bill)}
                     >
                       {payingBill === bill.name 
                         ? 'Processing...' 
-                        : isBillAlreadyPaid(bill) 
+                        : RecurringBillManager.isBillPaidForCurrentCycle(bill) 
                         ? 'Already Paid' 
                         : 'Mark as Paid'
                       }
