@@ -33,20 +33,22 @@ const Accounts = () => {
         setPlaidAccounts(plaidAccountsList);
         setHasPlaidAccounts(plaidAccountsList.length > 0);
         
-        // Calculate total from both manual and Plaid accounts
-        const manualTotal = Object.values(bankAccounts).reduce((sum, account) => {
-          // Only include non-Plaid accounts in manual total
-          if (!account.isPlaid) {
+        // If Plaid accounts exist, only use their balances (fully automated flow)
+        // Otherwise, use manual account balances
+        if (plaidAccountsList.length > 0) {
+          const plaidTotal = plaidAccountsList.reduce((sum, account) => {
             return sum + (parseFloat(account.balance) || 0);
-          }
-          return sum;
-        }, 0);
-        
-        const plaidTotal = plaidAccountsList.reduce((sum, account) => {
-          return sum + (parseFloat(account.balance) || 0);
-        }, 0);
-        
-        setTotalBalance(manualTotal + plaidTotal);
+          }, 0);
+          setTotalBalance(plaidTotal);
+        } else {
+          const manualTotal = Object.values(bankAccounts).reduce((sum, account) => {
+            if (!account.isPlaid) {
+              return sum + (parseFloat(account.balance) || 0);
+            }
+            return sum;
+          }, 0);
+          setTotalBalance(manualTotal);
+        }
       }
     } catch (error) {
       console.error('Error loading accounts:', error);
@@ -186,18 +188,13 @@ const Accounts = () => {
         });
 
         // Update state
-        setPlaidAccounts([...plaidAccounts, ...formattedPlaidAccounts]);
+        const updatedPlaidAccounts = [...plaidAccounts, ...formattedPlaidAccounts];
+        setPlaidAccounts(updatedPlaidAccounts);
         setHasPlaidAccounts(true);
 
-        // Recalculate total balance
-        const plaidTotal = formattedPlaidAccounts.reduce((sum, acc) => sum + parseFloat(acc.balance), 0);
-        const manualTotal = Object.values(accounts).reduce((sum, acc) => {
-          if (!acc.isPlaid) {
-            return sum + parseFloat(acc.balance || 0);
-          }
-          return sum;
-        }, 0);
-        setTotalBalance(plaidTotal + manualTotal);
+        // Recalculate total balance (only Plaid accounts when they exist)
+        const plaidTotal = updatedPlaidAccounts.reduce((sum, acc) => sum + parseFloat(acc.balance), 0);
+        setTotalBalance(plaidTotal);
 
         showNotification(`Successfully connected ${formattedPlaidAccounts.length} account(s)!`, 'success');
       } else {
@@ -283,7 +280,7 @@ const Accounts = () => {
         <div className="summary-card">
           <h3>Total Balance</h3>
           <div className="total-amount">{formatCurrency(totalBalance)}</div>
-          <small>Across {Object.keys(accounts).filter(k => !accounts[k].isPlaid).length + plaidAccounts.length} accounts</small>
+          <small>Across {hasPlaidAccounts ? plaidAccounts.length : Object.keys(accounts).filter(k => !accounts[k].isPlaid).length} accounts</small>
         </div>
       </div>
 
@@ -316,8 +313,8 @@ const Accounts = () => {
           </div>
         ))}
 
-        {/* Manual accounts (filtered to hide if they're Plaid) */}
-        {Object.entries(accounts)
+        {/* Manual accounts (hidden if Plaid accounts exist for fully automated flow) */}
+        {!hasPlaidAccounts && Object.entries(accounts)
           .filter(([, account]) => !account.isPlaid)
           .map(([key, account]) => (
           <div key={key} className="account-card">
