@@ -16,6 +16,7 @@ const CSVImportModal = ({ existingItems, accounts = {}, customMapping: initialCu
   const [customMapping, setCustomMapping] = useState(initialCustomMapping);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+  const [hasBlockingErrors, setHasBlockingErrors] = useState(false);
 
   const handleFileSelect = async (event) => {
     const selectedFile = event.target.files[0];
@@ -44,8 +45,12 @@ const CSVImportModal = ({ existingItems, accounts = {}, customMapping: initialCu
       
       setImportData(data);
       
+      // Block continuation if there are errors
       if (data.errors && data.errors.length > 0) {
-        setError(`${data.errors.length} rows had errors and will be skipped.`);
+        setHasBlockingErrors(true);
+        setError(`Found ${data.errors.length} errors. Please fix or remove bad rows before continuing.`);
+      } else {
+        setHasBlockingErrors(false);
       }
       
       // Check for duplicates with error handling
@@ -82,6 +87,36 @@ const CSVImportModal = ({ existingItems, accounts = {}, customMapping: initialCu
   const handleRemoveItem = (index) => {
     const updated = previewItems.filter((_, i) => i !== index);
     setPreviewItems(updated);
+    
+    // Clear errors if all items are removed
+    if (updated.length === 0) {
+      setHasBlockingErrors(false);
+      setError('');
+    }
+  };
+
+  const handleClearErrors = () => {
+    // Remove error rows from import data
+    if (importData && importData.errors && importData.errors.length > 0) {
+      // Errors are already excluded from previewItems, just clear the error state
+      setImportData({ ...importData, errors: [] });
+      setHasBlockingErrors(false);
+      setError('');
+    }
+  };
+
+  const handleSkipAll = () => {
+    setPreviewItems([]);
+    setError('All items skipped. Please upload a new file.');
+  };
+
+  const handleApproveAll = () => {
+    // Just proceed - all items are already in preview
+    if (hasBlockingErrors) {
+      setError('Cannot approve all - there are errors that must be fixed first.');
+      return;
+    }
+    handleProceedToConflicts();
   };
 
   const handleProceedToConflicts = () => {
@@ -125,7 +160,11 @@ const CSVImportModal = ({ existingItems, accounts = {}, customMapping: initialCu
 
   const proceedAfterMapping = () => {
     if (duplicates.length > 0) {
-      setConflicts(duplicates.map(dup => ({ ...dup, resolution: 'keep_both' })));
+      // Default to 'merge' for high similarity, 'keep_both' otherwise
+      setConflicts(duplicates.map(dup => ({ 
+        ...dup, 
+        resolution: dup.similarity >= 90 ? 'merge' : 'keep_both' 
+      })));
       setStep('conflicts');
     } else {
       handleFinalImport();
@@ -135,6 +174,11 @@ const CSVImportModal = ({ existingItems, accounts = {}, customMapping: initialCu
   const handleConflictResolution = (index, resolution) => {
     const updated = [...conflicts];
     updated[index] = { ...updated[index], resolution };
+    setConflicts(updated);
+  };
+
+  const handleBulkConflictResolution = (resolution) => {
+    const updated = conflicts.map(conflict => ({ ...conflict, resolution }));
     setConflicts(updated);
   };
 
@@ -239,7 +283,16 @@ const CSVImportModal = ({ existingItems, accounts = {}, customMapping: initialCu
       
       {importData?.errors && importData.errors.length > 0 && (
         <div className="import-errors">
-          <h4>Import Errors ({importData.errors.length}):</h4>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
+            <h4>⚠️ Import Errors ({importData.errors.length}):</h4>
+            <button 
+              onClick={handleClearErrors}
+              className="clear-errors-btn"
+              style={{ padding: '5px 15px', backgroundColor: '#ff9800', color: '#000', border: 'none', borderRadius: '4px', cursor: 'pointer' }}
+            >
+              Clear Errors
+            </button>
+          </div>
           <div className="error-list">
             {importData.errors.slice(0, 5).map((error, index) => (
               <div key={index} className="error-item">
@@ -250,42 +303,89 @@ const CSVImportModal = ({ existingItems, accounts = {}, customMapping: initialCu
               <div className="error-more">... and {importData.errors.length - 5} more errors</div>
             )}
           </div>
+          <p style={{ marginTop: '10px', color: '#ff9800' }}>
+            ⚠️ You must fix or clear these errors before continuing.
+          </p>
+        </div>
+      )}
+      
+      {/* Bulk Actions */}
+      {previewItems.length > 0 && (
+        <div className="preview-bulk-actions" style={{ display: 'flex', gap: '10px', marginBottom: '15px', padding: '10px', backgroundColor: '#2a2a2a', borderRadius: '8px' }}>
+          <button 
+            onClick={handleApproveAll}
+            className="bulk-action-btn"
+            disabled={hasBlockingErrors}
+            style={{ flex: 1, padding: '8px', backgroundColor: hasBlockingErrors ? '#555' : '#00ff88', color: '#000', border: 'none', borderRadius: '4px', cursor: hasBlockingErrors ? 'not-allowed' : 'pointer' }}
+          >
+            ✓ Approve All
+          </button>
+          <button 
+            onClick={handleSkipAll}
+            className="bulk-action-btn"
+            style={{ flex: 1, padding: '8px', backgroundColor: '#ff9800', color: '#000', border: 'none', borderRadius: '4px', cursor: 'pointer' }}
+          >
+            ✕ Skip All
+          </button>
         </div>
       )}
       
       <div className="preview-items">
-        {previewItems.map((item, index) => (
-          <div key={index} className="preview-item">
-            <div className="item-info">
-              <div className="item-icon">{getCategoryIcon(item.category)}</div>
-              <div className="item-details">
-                <h4>{item.name}</h4>
-                <div className="item-amount">{formatCurrency(item.amount)} - {item.frequency}</div>
+        {previewItems.map((item, index) => {
+          // Check if this item is a duplicate
+          const duplicate = duplicates.find(d => d.incoming.id === item.id);
+          const itemStatus = duplicate ? 
+            (duplicate.similarity >= 90 ? 'Will Merge' : 'Potential Duplicate') : 
+            'New';
+          const statusColor = duplicate ? 
+            (duplicate.similarity >= 90 ? '#ff9800' : '#ffeb3b') : 
+            '#00ff88';
+          
+          return (
+            <div key={index} className="preview-item">
+              <div className="item-info">
+                <div className="item-icon">{getCategoryIcon(item.category)}</div>
+                <div className="item-details">
+                  <h4>
+                    {item.name}
+                    <span style={{ 
+                      marginLeft: '10px', 
+                      padding: '2px 8px', 
+                      backgroundColor: statusColor, 
+                      color: '#000', 
+                      borderRadius: '4px', 
+                      fontSize: '11px',
+                      fontWeight: 'bold'
+                    }}>
+                      {itemStatus}
+                    </span>
+                  </h4>
+                  <div className="item-amount">{formatCurrency(item.amount)} - {item.frequency}</div>
+                </div>
               </div>
-            </div>
-            
-            <div className="item-controls">
-              <select
-                value={item.type}
-                onChange={(e) => handleTypeChange(index, e.target.value)}
-                className="type-select"
-              >
-                <option value="expense">Expense</option>
-                <option value="income">Income</option>
-              </select>
               
-              <select
-                value={item.category}
-                onChange={(e) => handleCategoryChange(index, e.target.value)}
-                className="category-select"
-              >
-                {TRANSACTION_CATEGORIES.map(cat => (
-                  <option key={cat} value={cat}>{cat}</option>
-                ))}
-              </select>
-              
-              <button
-                onClick={() => handleRemoveItem(index)}
+              <div className="item-controls">
+                <select
+                  value={item.type}
+                  onChange={(e) => handleTypeChange(index, e.target.value)}
+                  className="type-select"
+                >
+                  <option value="expense">Expense</option>
+                  <option value="income">Income</option>
+                </select>
+                
+                <select
+                  value={item.category}
+                  onChange={(e) => handleCategoryChange(index, e.target.value)}
+                  className="category-select"
+                >
+                  {TRANSACTION_CATEGORIES.map(cat => (
+                    <option key={cat} value={cat}>{cat}</option>
+                  ))}
+                </select>
+                
+                <button
+                  onClick={() => handleRemoveItem(index)}
                 className="remove-btn"
                 title="Remove item"
               >
@@ -293,7 +393,8 @@ const CSVImportModal = ({ existingItems, accounts = {}, customMapping: initialCu
               </button>
             </div>
           </div>
-        ))}
+        );
+        })}
       </div>
       
       <div className="preview-actions">
@@ -303,7 +404,7 @@ const CSVImportModal = ({ existingItems, accounts = {}, customMapping: initialCu
         <button 
           onClick={handleProceedToConflicts}
           className="continue-btn"
-          disabled={previewItems.length === 0}
+          disabled={previewItems.length === 0 || hasBlockingErrors}
         >
           Continue →
         </button>
@@ -315,6 +416,32 @@ const CSVImportModal = ({ existingItems, accounts = {}, customMapping: initialCu
     <div className="csv-conflicts-step">
       <h3>Resolve Duplicates ({conflicts.length} conflicts)</h3>
       <p>We found potential duplicates. Please choose how to handle each one:</p>
+      
+      {/* Bulk Resolution Actions */}
+      <div className="bulk-resolution-actions" style={{ display: 'flex', gap: '10px', marginBottom: '15px', padding: '10px', backgroundColor: '#2a2a2a', borderRadius: '8px' }}>
+        <span style={{ color: '#ccc', marginRight: '10px', alignSelf: 'center' }}>Bulk Actions:</span>
+        <button 
+          onClick={() => handleBulkConflictResolution('merge')}
+          className="bulk-resolution-btn"
+          style={{ padding: '8px 15px', backgroundColor: '#00ff88', color: '#000', border: 'none', borderRadius: '4px', cursor: 'pointer' }}
+        >
+          🔀 Merge All
+        </button>
+        <button 
+          onClick={() => handleBulkConflictResolution('skip')}
+          className="bulk-resolution-btn"
+          style={{ padding: '8px 15px', backgroundColor: '#ff9800', color: '#000', border: 'none', borderRadius: '4px', cursor: 'pointer' }}
+        >
+          ⏭️ Skip All
+        </button>
+        <button 
+          onClick={() => handleBulkConflictResolution('keep_both')}
+          className="bulk-resolution-btn"
+          style={{ padding: '8px 15px', backgroundColor: '#2196F3', color: '#fff', border: 'none', borderRadius: '4px', cursor: 'pointer' }}
+        >
+          ➕ Keep All Separate
+        </button>
+      </div>
       
       <div className="conflicts-list">
         {conflicts.map((conflict, index) => (
