@@ -84,7 +84,7 @@ const Transactions = () => {
   const loadAccounts = async () => {
     try {
       const token = localStorage.getItem('token');
-      const response = await fetch('https://smart-money-tracker-09ks.onrender.com/api/plaid/accounts', {
+      const response = await fetch('https://smart-money-tracker-09ks.onrender.com/api/accounts', {
         headers: {
           'Authorization': `Bearer ${token}`,
           'Content-Type': 'application/json'
