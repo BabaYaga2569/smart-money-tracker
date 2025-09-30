@@ -16,6 +16,7 @@ const Recurring = () => {
   const [recurringItems, setRecurringItems] = useState([]);
   const [processedItems, setProcessedItems] = useState([]);
   const [accounts, setAccounts] = useState({});
+  const [customMapping, setCustomMapping] = useState({});
   const [showModal, setShowModal] = useState(false);
   const [editingItem, setEditingItem] = useState(null);
   const [showHistoryModal, setShowHistoryModal] = useState(false);
@@ -90,6 +91,7 @@ const Recurring = () => {
       if (settingsDocSnap.exists()) {
         const data = settingsDocSnap.data();
         setRecurringItems(data.recurringItems || []);
+        setCustomMapping(data.institutionMapping || {});
       }
     } catch (error) {
       console.error('Error loading recurring items:', error);
@@ -554,7 +556,7 @@ const Recurring = () => {
     }
   };
 
-  const handleCSVImport = async (importedItems, conflicts) => {
+  const handleCSVImport = async (importedItems, conflicts, updatedCustomMapping) => {
     try {
       setSaving(true);
       
@@ -599,10 +601,19 @@ const Recurring = () => {
       
       updatedItems = [...updatedItems, ...itemsToAdd];
       
-      await updateDoc(settingsDocRef, {
+      // Update Firebase with items and custom mapping
+      const updateData = {
         ...currentData,
         recurringItems: updatedItems
-      });
+      };
+      
+      // Save custom mapping if provided
+      if (updatedCustomMapping && Object.keys(updatedCustomMapping).length > 0) {
+        updateData.institutionMapping = updatedCustomMapping;
+        setCustomMapping(updatedCustomMapping);
+      }
+      
+      await updateDoc(settingsDocRef, updateData);
       
       setRecurringItems(updatedItems);
       setShowCSVImport(false);
@@ -1146,6 +1157,8 @@ const Recurring = () => {
       {showCSVImport && (
         <CSVImportModal
           existingItems={recurringItems}
+          accounts={accounts}
+          customMapping={customMapping}
           onImport={handleCSVImport}
           onCancel={() => setShowCSVImport(false)}
         />
