@@ -99,12 +99,79 @@ const Recurring = () => {
 
   const loadAccounts = async () => {
     try {
+      const token = localStorage.getItem('token');
+      
+      // Try to load from Plaid API first
+      if (token) {
+        try {
+          const response = await fetch('https://smart-money-tracker-09ks.onrender.com/api/accounts', {
+            headers: {
+              'Authorization': `Bearer ${token}`,
+              'Content-Type': 'application/json'
+            }
+          });
+          
+          if (response.ok) {
+            const data = await response.json();
+            const accountsList = data.accounts || data;
+            
+            if (Array.isArray(accountsList) && accountsList.length > 0) {
+              const accountsMap = {};
+              accountsList.forEach(account => {
+                const accountId = account.account_id || account.id || account._id;
+                let balance = 0;
+                if (account.balances) {
+                  balance = account.balances.current || account.balances.available || 0;
+                } else if (account.current_balance !== undefined) {
+                  balance = account.current_balance;
+                } else if (account.balance !== undefined) {
+                  balance = account.balance;
+                }
+                
+                accountsMap[accountId] = {
+                  name: account.name || account.official_name || 'Unknown Account',
+                  type: account.subtype || account.type || 'checking',
+                  balance: balance.toString(),
+                  mask: account.mask || '',
+                  institution: account.institution_name || ''
+                };
+              });
+              setAccounts(accountsMap);
+              return;
+            }
+          }
+        } catch (apiError) {
+          console.log('Plaid API not available, trying Firebase...', apiError.message || '');
+        }
+      }
+      
+      // Fallback to Firebase
       const settingsDocRef = doc(db, 'users', 'steve-colburn', 'settings', 'personal');
       const settingsDocSnap = await getDoc(settingsDocRef);
       
       if (settingsDocSnap.exists()) {
         const data = settingsDocSnap.data();
-        setAccounts(data.bankAccounts || {});
+        const plaidAccountsList = data.plaidAccounts || [];
+        const bankAccounts = data.bankAccounts || {};
+        
+        // Prioritize Plaid accounts if they exist
+        if (plaidAccountsList.length > 0) {
+          const accountsMap = {};
+          plaidAccountsList.forEach(account => {
+            const accountId = account.account_id;
+            accountsMap[accountId] = {
+              name: account.official_name || account.name,
+              type: account.type,
+              balance: account.balance,
+              mask: account.mask || '',
+              institution: ''
+            };
+          });
+          setAccounts(accountsMap);
+        } else {
+          // Fall back to manual accounts
+          setAccounts(bankAccounts);
+        }
       }
     } catch (error) {
       console.error('Error loading accounts:', error);
@@ -367,6 +434,45 @@ const Recurring = () => {
           item.id === editingItem.id ? itemData : item
         );
       } else {
+        // Check for potential duplicates before adding
+        const isDuplicate = existingItems.some(item => {
+          // Exact duplicate: same name, amount, and next occurrence
+          const exactMatch = item.name.toLowerCase() === itemData.name.toLowerCase() && 
+                             parseFloat(item.amount) === parseFloat(itemData.amount) &&
+                             item.nextOccurrence === itemData.nextOccurrence &&
+                             item.frequency === itemData.frequency;
+          
+          return exactMatch;
+        });
+        
+        if (isDuplicate) {
+          showNotification('A recurring item with the same name, amount, frequency, and date already exists!', 'error');
+          setSaving(false);
+          return;
+        }
+        
+        // Check for similar items (same name and amount but different date/frequency)
+        const similarItem = existingItems.find(item => 
+          item.name.toLowerCase() === itemData.name.toLowerCase() && 
+          parseFloat(item.amount) === parseFloat(itemData.amount) &&
+          (item.nextOccurrence !== itemData.nextOccurrence || item.frequency !== itemData.frequency)
+        );
+        
+        if (similarItem) {
+          const proceed = window.confirm(
+            `A recurring item named "${similarItem.name}" with amount $${similarItem.amount} already exists.\n\n` +
+            `Existing: ${similarItem.frequency} on ${similarItem.nextOccurrence}\n` +
+            `New: ${itemData.frequency} on ${itemData.nextOccurrence}\n\n` +
+            `This might be legitimate if you have multiple similar recurring items.\n\n` +
+            `Do you want to proceed?`
+          );
+          
+          if (!proceed) {
+            setSaving(false);
+            return;
+          }
+        }
+        
         updatedItems = [...existingItems, itemData];
       }
       
@@ -963,7 +1069,9 @@ const Recurring = () => {
                   >
                     <option value="">Select Account</option>
                     {Object.entries(accounts).map(([key, account]) => (
-                      <option key={key} value={key}>{account.name}</option>
+                      <option key={key} value={key}>
+                        {account.name} {account.mask ? `(****${account.mask})` : ''} - {account.type}
+                      </option>
                     ))}
                   </select>
                 </div>
