@@ -155,9 +155,9 @@ export class CSVImporter {
             'account', 'bank', 'card', 'source'
         ]);
         
-        // Institution/Bank Name mapping
+        // Institution/Bank Name mapping (more specific patterns first)
         mapping.institution = this.findColumn(headers, [
-            'institution', 'bank', 'bank name', 'institution name', 'financial institution'
+            'institution name', 'bank name', 'financial institution', 'institution', 'bank'
         ]);
 
         return mapping;
@@ -170,10 +170,20 @@ export class CSVImporter {
      * @returns {string|null} Best matching header
      */
     static findColumn(headers, candidates) {
+        // First pass: try exact matches
         for (const candidate of candidates) {
+            const exactMatch = headers.find(h => h === candidate);
+            if (exactMatch) return exactMatch;
+        }
+        
+        // Second pass: try substring matches, but prefer longer candidates first
+        // This ensures "institution name" is checked before "name" or "institution"
+        const sortedCandidates = [...candidates].sort((a, b) => b.length - a.length);
+        for (const candidate of sortedCandidates) {
             const match = headers.find(h => h.includes(candidate));
             if (match) return match;
         }
+        
         return null;
     }
 
