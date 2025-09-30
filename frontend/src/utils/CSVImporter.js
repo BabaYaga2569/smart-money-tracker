@@ -134,9 +134,10 @@ export class CSVImporter {
             'amount', 'cost', 'price', 'payment', 'total', 'value'
         ]);
         
-        // Date mapping
+        // Date mapping (including "Day of Month Due" support)
         mapping.date = this.findColumn(headers, [
-            'date', 'due', 'next', 'start', 'occurrence', 'payment_date'
+            'date', 'due', 'next', 'start', 'occurrence', 'payment_date', 
+            'day of month', 'day of month due', 'due day', 'payment day'
         ]);
         
         // Frequency mapping
@@ -196,12 +197,33 @@ export class CSVImporter {
             throw new Error('Valid amount is required');
         }
 
-        // Parse date
+        // Parse date or day of month
         let nextOccurrence = formatDateForInput(new Date());
         if (mapping.date && row[mapping.date]) {
-            const parsedDate = parseLocalDate(row[mapping.date]);
-            if (parsedDate) {
-                nextOccurrence = formatDateForInput(parsedDate);
+            const dateValue = row[mapping.date].trim();
+            
+            // Check if it's just a day number (e.g., "15" for 15th of month)
+            if (/^\d{1,2}$/.test(dateValue)) {
+                const dayOfMonth = parseInt(dateValue, 10);
+                if (dayOfMonth >= 1 && dayOfMonth <= 31) {
+                    // Create a date with the specified day in the current or next month
+                    const today = new Date();
+                    const currentDay = today.getDate();
+                    let targetDate = new Date(today.getFullYear(), today.getMonth(), dayOfMonth);
+                    
+                    // If the day has already passed this month, use next month
+                    if (dayOfMonth < currentDay) {
+                        targetDate = new Date(today.getFullYear(), today.getMonth() + 1, dayOfMonth);
+                    }
+                    
+                    nextOccurrence = formatDateForInput(targetDate);
+                }
+            } else {
+                // Try to parse as full date
+                const parsedDate = parseLocalDate(dateValue);
+                if (parsedDate) {
+                    nextOccurrence = formatDateForInput(parsedDate);
+                }
             }
         }
 
