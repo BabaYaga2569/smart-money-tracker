@@ -151,7 +151,7 @@ const Accounts = () => {
       showNotification('Connecting your bank account...', 'success');
 
       // Exchange public token for access token and get accounts
-      const response = await fetch('http://localhost:5000/api/plaid/exchange_token', {
+      const response = await fetch(`${import.meta.env.VITE_API_URL}/api/plaid/exchange_token`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
