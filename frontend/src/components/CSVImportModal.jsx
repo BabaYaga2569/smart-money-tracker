@@ -1,15 +1,19 @@
 import React, { useState } from 'react';
 import { CSVImporter } from '../utils/CSVImporter';
 import { RecurringManager } from '../utils/RecurringManager';
+import { AccountMatcher } from '../utils/AccountMatcher';
 import { TRANSACTION_CATEGORIES, getCategoryIcon } from '../constants/categories';
+import AccountMappingStep from './AccountMappingStep';
 import './CSVImportModal.css';
 
-const CSVImportModal = ({ existingItems, onImport, onCancel }) => {
-  const [step, setStep] = useState('upload'); // upload, preview, conflicts, complete
+const CSVImportModal = ({ existingItems, accounts = {}, customMapping: initialCustomMapping = {}, onImport, onCancel }) => {
+  const [step, setStep] = useState('upload'); // upload, preview, accountMapping, conflicts, complete
   const [importData, setImportData] = useState(null);
   const [duplicates, setDuplicates] = useState([]);
   const [conflicts, setConflicts] = useState([]);
   const [previewItems, setPreviewItems] = useState([]);
+  const [unmatchedItems, setUnmatchedItems] = useState([]);
+  const [customMapping, setCustomMapping] = useState(initialCustomMapping);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
 
@@ -81,6 +85,45 @@ const CSVImportModal = ({ existingItems, onImport, onCancel }) => {
   };
 
   const handleProceedToConflicts = () => {
+    // First, check for account matching
+    if (Object.keys(accounts).length > 0) {
+      const matchResult = AccountMatcher.batchMatch(previewItems, accounts, customMapping);
+      
+      // Update items with matched accounts
+      const updatedItems = [
+        ...matchResult.matched,
+        ...matchResult.unmatched
+      ];
+      setPreviewItems(updatedItems);
+      
+      // If there are unmatched items, go to account mapping step
+      if (matchResult.unmatched.length > 0) {
+        setUnmatchedItems(matchResult.unmatched);
+        setStep('accountMapping');
+        return;
+      }
+    }
+    
+    // Otherwise, proceed to conflicts or import
+    proceedAfterMapping(previewItems);
+  };
+
+  const handleMappingComplete = (mappedItems, updatedCustomMapping) => {
+    // Update custom mapping if changed
+    setCustomMapping(updatedCustomMapping);
+    
+    // Update preview items with mapped accounts
+    const itemMap = new Map(mappedItems.map(item => [item.id, item]));
+    const updatedItems = previewItems.map(item => 
+      itemMap.has(item.id) ? itemMap.get(item.id) : item
+    );
+    setPreviewItems(updatedItems);
+    
+    // Proceed to conflicts or import
+    proceedAfterMapping();
+  };
+
+  const proceedAfterMapping = () => {
     if (duplicates.length > 0) {
       setConflicts(duplicates.map(dup => ({ ...dup, resolution: 'keep_both' })));
       setStep('conflicts');
@@ -136,7 +179,7 @@ const CSVImportModal = ({ existingItems, onImport, onCancel }) => {
         return;
       }
 
-      await onImport(finalItems, conflicts || []);
+      await onImport(finalItems, conflicts || [], customMapping);
       setStep('complete');
     } catch (err) {
       console.error('Error importing items:', err);
@@ -181,6 +224,7 @@ const CSVImportModal = ({ existingItems, onImport, onCancel }) => {
           <li><strong>Date:</strong> Due date or next occurrence (optional)</li>
           <li><strong>Frequency:</strong> Payment schedule (optional, defaults to monthly)</li>
           <li><strong>Category:</strong> Transaction category (optional, auto-suggested)</li>
+          <li><strong>Institution Name:</strong> Bank name (optional, for auto-matching to Plaid accounts)</li>
         </ul>
       </div>
       
@@ -261,7 +305,7 @@ const CSVImportModal = ({ existingItems, onImport, onCancel }) => {
           className="continue-btn"
           disabled={previewItems.length === 0}
         >
-          Continue → ({duplicates.length > 0 ? `${duplicates.length} conflicts to resolve` : 'Import items'})
+          Continue →
         </button>
       </div>
     </div>
@@ -329,8 +373,15 @@ const CSVImportModal = ({ existingItems, onImport, onCancel }) => {
       </div>
       
       <div className="conflicts-actions">
-        <button onClick={() => setStep('preview')} className="back-btn">
-          ← Back to Preview
+        <button onClick={() => {
+          // Go back to account mapping if there are unmatched items, otherwise preview
+          if (unmatchedItems.length > 0) {
+            setStep('accountMapping');
+          } else {
+            setStep('preview');
+          }
+        }} className="back-btn">
+          ← Back
         </button>
         <button 
           onClick={handleFinalImport}
@@ -376,9 +427,10 @@ const CSVImportModal = ({ existingItems, onImport, onCancel }) => {
         <div className="modal-header">
           <div className="step-indicator">
             <div className={`step ${step === 'upload' ? 'active' : step !== 'upload' ? 'completed' : ''}`}>1</div>
-            <div className={`step ${step === 'preview' ? 'active' : step === 'conflicts' || step === 'complete' ? 'completed' : ''}`}>2</div>
-            <div className={`step ${step === 'conflicts' ? 'active' : step === 'complete' ? 'completed' : ''}`}>3</div>
-            <div className={`step ${step === 'complete' ? 'active' : ''}`}>4</div>
+            <div className={`step ${step === 'preview' ? 'active' : (step === 'accountMapping' || step === 'conflicts' || step === 'complete') ? 'completed' : ''}`}>2</div>
+            <div className={`step ${step === 'accountMapping' ? 'active' : (step === 'conflicts' || step === 'complete') ? 'completed' : ''}`}>3</div>
+            <div className={`step ${step === 'conflicts' ? 'active' : step === 'complete' ? 'completed' : ''}`}>4</div>
+            <div className={`step ${step === 'complete' ? 'active' : ''}`}>5</div>
           </div>
           <button className="close-btn" onClick={onCancel}>×</button>
         </div>
@@ -386,6 +438,15 @@ const CSVImportModal = ({ existingItems, onImport, onCancel }) => {
         <div className="modal-body">
           {step === 'upload' && renderUploadStep()}
           {step === 'preview' && renderPreviewStep()}
+          {step === 'accountMapping' && (
+            <AccountMappingStep
+              unmatchedItems={unmatchedItems}
+              accounts={accounts}
+              customMapping={customMapping}
+              onMappingComplete={handleMappingComplete}
+              onBack={() => setStep('preview')}
+            />
+          )}
           {step === 'conflicts' && renderConflictsStep()}
           {step === 'complete' && renderCompleteStep()}
         </div>

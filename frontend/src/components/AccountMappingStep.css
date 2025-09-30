@@ -1,0 +1,273 @@
+.account-mapping-step {
+  padding: 20px;
+}
+
+.account-mapping-step h3 {
+  margin-bottom: 10px;
+  color: #333;
+}
+
+.step-description {
+  color: #666;
+  margin-bottom: 20px;
+  line-height: 1.5;
+}
+
+.bulk-assignment-section {
+  background: #f8f9fa;
+  padding: 15px;
+  border-radius: 8px;
+  margin-bottom: 20px;
+  border-left: 4px solid #4CAF50;
+}
+
+.bulk-assignment-section h4 {
+  margin-top: 0;
+  margin-bottom: 8px;
+  color: #333;
+}
+
+.bulk-assignment-section p {
+  margin-bottom: 10px;
+  color: #666;
+  font-size: 0.9em;
+}
+
+.bulk-controls {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+}
+
+.bulk-account-select {
+  flex: 1;
+  padding: 8px 12px;
+  border: 1px solid #ddd;
+  border-radius: 6px;
+  font-size: 14px;
+  background: white;
+}
+
+.bulk-assign-btn {
+  padding: 8px 20px;
+  background: #4CAF50;
+  color: white;
+  border: none;
+  border-radius: 6px;
+  cursor: pointer;
+  font-weight: 500;
+  transition: background 0.2s;
+}
+
+.bulk-assign-btn:hover:not(:disabled) {
+  background: #45a049;
+}
+
+.bulk-assign-btn:disabled {
+  background: #ccc;
+  cursor: not-allowed;
+}
+
+.unmatched-items-list {
+  margin-bottom: 20px;
+}
+
+.unmatched-items-list h4 {
+  margin-bottom: 15px;
+  color: #333;
+}
+
+.unmatched-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 15px;
+  border: 1px solid #ddd;
+  border-radius: 8px;
+  margin-bottom: 10px;
+  background: white;
+  transition: box-shadow 0.2s;
+}
+
+.unmatched-item:hover {
+  box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+}
+
+.item-info {
+  flex: 1;
+}
+
+.item-info h5 {
+  margin: 0 0 8px 0;
+  color: #333;
+  font-size: 16px;
+}
+
+.item-details {
+  display: flex;
+  gap: 15px;
+  font-size: 14px;
+  color: #666;
+}
+
+.item-details .amount {
+  font-weight: 600;
+  color: #e74c3c;
+}
+
+.item-details .frequency {
+  color: #3498db;
+}
+
+.item-details .institution {
+  color: #9b59b6;
+}
+
+.item-mapping {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  min-width: 300px;
+}
+
+.account-select {
+  flex: 1;
+  padding: 8px 12px;
+  border: 1px solid #ddd;
+  border-radius: 6px;
+  font-size: 14px;
+  background: white;
+}
+
+.save-mapping-btn {
+  padding: 8px 12px;
+  background: #3498db;
+  color: white;
+  border: none;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: background 0.2s;
+  font-size: 16px;
+}
+
+.save-mapping-btn:hover {
+  background: #2980b9;
+}
+
+.custom-mapping-section {
+  background: #f8f9fa;
+  padding: 15px;
+  border-radius: 8px;
+  margin-bottom: 20px;
+}
+
+.toggle-mapping-btn {
+  background: none;
+  border: none;
+  padding: 8px 0;
+  cursor: pointer;
+  color: #333;
+  font-weight: 600;
+  font-size: 14px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  transition: color 0.2s;
+}
+
+.toggle-mapping-btn:hover {
+  color: #2196F3;
+}
+
+.mapping-table {
+  margin-top: 15px;
+  background: white;
+  border-radius: 6px;
+  padding: 15px;
+}
+
+.mapping-description {
+  color: #666;
+  font-size: 0.9em;
+  margin-bottom: 15px;
+}
+
+.no-mappings {
+  text-align: center;
+  color: #999;
+  padding: 20px;
+  font-style: italic;
+}
+
+.mappings-table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.mappings-table th {
+  text-align: left;
+  padding: 10px;
+  background: #f8f9fa;
+  border-bottom: 2px solid #ddd;
+  font-weight: 600;
+  color: #333;
+}
+
+.mappings-table td {
+  padding: 10px;
+  border-bottom: 1px solid #eee;
+}
+
+.mappings-table tr:last-child td {
+  border-bottom: none;
+}
+
+.remove-mapping-btn {
+  background: #e74c3c;
+  color: white;
+  border: none;
+  border-radius: 4px;
+  padding: 4px 8px;
+  cursor: pointer;
+  transition: background 0.2s;
+}
+
+.remove-mapping-btn:hover {
+  background: #c0392b;
+}
+
+.mapping-actions {
+  display: flex;
+  justify-content: space-between;
+  padding-top: 20px;
+  border-top: 1px solid #ddd;
+}
+
+.back-btn {
+  padding: 10px 20px;
+  background: #f8f9fa;
+  border: 1px solid #ddd;
+  border-radius: 6px;
+  cursor: pointer;
+  font-weight: 500;
+  transition: background 0.2s;
+}
+
+.back-btn:hover {
+  background: #e9ecef;
+}
+
+.continue-btn {
+  padding: 10px 20px;
+  background: #2196F3;
+  color: white;
+  border: none;
+  border-radius: 6px;
+  cursor: pointer;
+  font-weight: 500;
+  transition: background 0.2s;
+}
+
+.continue-btn:hover {
+  background: #0b7dda;
+}

@@ -153,6 +153,11 @@ export class CSVImporter {
         mapping.account = this.findColumn(headers, [
             'account', 'bank', 'card', 'source'
         ]);
+        
+        // Institution/Bank Name mapping
+        mapping.institution = this.findColumn(headers, [
+            'institution', 'bank', 'bank name', 'institution name', 'financial institution'
+        ]);
 
         return mapping;
     }
@@ -224,6 +229,7 @@ export class CSVImporter {
             frequency: frequency,
             nextOccurrence: nextOccurrence,
             linkedAccount: row[mapping.account] || '',
+            institutionName: row[mapping.institution] ? row[mapping.institution].trim() : '',
             autoPay: false,
             description: `Imported from CSV`,
             status: 'active',
