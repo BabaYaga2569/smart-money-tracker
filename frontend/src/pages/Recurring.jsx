@@ -59,10 +59,8 @@ const Recurring = () => {
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
-    if (recurringItems.length > 0) {
-      const processed = RecurringManager.processRecurringItems(recurringItems);
-      setProcessedItems(processed);
-    }
+    const processed = RecurringManager.processRecurringItems(recurringItems);
+    setProcessedItems(processed);
   }, [recurringItems]);
 
   useEffect(() => {
