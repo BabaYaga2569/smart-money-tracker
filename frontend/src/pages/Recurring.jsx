@@ -49,16 +49,18 @@ const Recurring = () => {
 
   // Notification state
   const [notification, setNotification] = useState({ message: '', type: '' });
+  
+  // Bulk delete state
+  const [deletedItems, setDeletedItems] = useState([]);
+  const [showBulkDeleteModal, setShowBulkDeleteModal] = useState(false);
 
   useEffect(() => {
     loadRecurringData();
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
-    if (recurringItems.length > 0) {
-      const processed = RecurringManager.processRecurringItems(recurringItems);
-      setProcessedItems(processed);
-    }
+    const processed = RecurringManager.processRecurringItems(recurringItems);
+    setProcessedItems(processed);
   }, [recurringItems]);
 
   useEffect(() => {
@@ -524,6 +526,65 @@ const Recurring = () => {
     }
   };
 
+  const handleBulkDelete = async () => {
+    setShowBulkDeleteModal(false);
+    
+    try {
+      setSaving(true);
+      
+      const settingsDocRef = doc(db, 'users', 'steve-colburn', 'settings', 'personal');
+      const currentDoc = await getDoc(settingsDocRef);
+      const currentData = currentDoc.exists() ? currentDoc.data() : {};
+      
+      // Store current items for undo
+      const itemsToDelete = currentData.recurringItems || [];
+      setDeletedItems(itemsToDelete);
+      
+      // Clear all items
+      await updateDoc(settingsDocRef, {
+        ...currentData,
+        recurringItems: []
+      });
+      
+      setRecurringItems([]);
+      showNotification(
+        `Deleted ${itemsToDelete.length} items. Click Undo to restore.`, 
+        'success'
+      );
+    } catch (error) {
+      console.error('Error bulk deleting items:', error);
+      showNotification('Error deleting items', 'error');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleUndoBulkDelete = async () => {
+    if (deletedItems.length === 0) return;
+    
+    try {
+      setSaving(true);
+      
+      const settingsDocRef = doc(db, 'users', 'steve-colburn', 'settings', 'personal');
+      const currentDoc = await getDoc(settingsDocRef);
+      const currentData = currentDoc.exists() ? currentDoc.data() : {};
+      
+      await updateDoc(settingsDocRef, {
+        ...currentData,
+        recurringItems: deletedItems
+      });
+      
+      setRecurringItems(deletedItems);
+      setDeletedItems([]);
+      showNotification('Items restored successfully!', 'success');
+    } catch (error) {
+      console.error('Error undoing bulk delete:', error);
+      showNotification('Error restoring items', 'error');
+    } finally {
+      setSaving(false);
+    }
+  };
+
   const handleTogglePause = async (item) => {
     const newStatus = item.status === 'paused' ? 'active' : 'paused';
     
@@ -864,6 +925,26 @@ const Recurring = () => {
         </div>
         
         <div className="action-buttons">
+          {deletedItems.length > 0 && (
+            <button 
+              className="undo-button"
+              onClick={handleUndoBulkDelete}
+              disabled={saving}
+              title="Restore deleted items"
+            >
+              ↩️ Undo Delete
+            </button>
+          )}
+          {recurringItems.length > 0 && (
+            <button 
+              className="delete-all-button"
+              onClick={() => setShowBulkDeleteModal(true)}
+              disabled={saving}
+              title="Delete all recurring items"
+            >
+              🗑️ Delete All
+            </button>
+          )}
           {migrationAnalysis?.hasUnmigratedBills && (
             <button 
               className="migration-button"
@@ -1172,6 +1253,48 @@ const Recurring = () => {
           onImport={handleMigrationImport}
           onCancel={() => setShowSettingsMigration(false)}
         />
+      )}
+
+      {/* Bulk Delete Confirmation Modal */}
+      {showBulkDeleteModal && (
+        <div className="modal-overlay" onClick={() => setShowBulkDeleteModal(false)}>
+          <div className="modal" onClick={(e) => e.stopPropagation()}>
+            <div className="modal-header">
+              <h3>⚠️ Delete All Recurring Items?</h3>
+              <button className="close-btn" onClick={() => setShowBulkDeleteModal(false)}>×</button>
+            </div>
+            
+            <div className="modal-body">
+              <p style={{ marginBottom: '20px', fontSize: '16px' }}>
+                Are you sure you want to delete <strong>all {recurringItems.length} recurring items</strong>?
+              </p>
+              <p style={{ marginBottom: '20px', color: '#ff9800' }}>
+                ⚠️ This will permanently delete all your recurring incomes, expenses, and subscriptions.
+              </p>
+              <p style={{ marginBottom: '20px', color: '#00ff88' }}>
+                ✓ Don't worry! You can undo this action using the "Undo Delete" button that will appear after deletion.
+              </p>
+              
+              <div className="modal-actions" style={{ display: 'flex', gap: '10px', justifyContent: 'flex-end' }}>
+                <button 
+                  onClick={() => setShowBulkDeleteModal(false)}
+                  className="cancel-btn"
+                  style={{ padding: '10px 20px' }}
+                >
+                  Cancel
+                </button>
+                <button 
+                  onClick={handleBulkDelete}
+                  className="delete-btn"
+                  disabled={saving}
+                  style={{ padding: '10px 20px', backgroundColor: '#f44336' }}
+                >
+                  {saving ? 'Deleting...' : 'Delete All'}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );

@@ -211,6 +211,63 @@
   transform: none;
 }
 
+.delete-all-button {
+  background: #f44336;
+  color: #fff;
+  border: none;
+  border-radius: 8px;
+  padding: 12px 20px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  white-space: nowrap;
+}
+
+.delete-all-button:hover {
+  background: #d32f2f;
+  transform: translateY(-1px);
+}
+
+.delete-all-button:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+  transform: none;
+}
+
+.undo-button {
+  background: #ff9800;
+  color: #000;
+  border: none;
+  border-radius: 8px;
+  padding: 12px 20px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  white-space: nowrap;
+  animation: pulse 2s infinite;
+}
+
+.undo-button:hover {
+  background: #f57c00;
+  transform: translateY(-1px);
+}
+
+.undo-button:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+  transform: none;
+  animation: none;
+}
+
+@keyframes pulse {
+  0%, 100% {
+    box-shadow: 0 0 0 0 rgba(255, 152, 0, 0.7);
+  }
+  50% {
+    box-shadow: 0 0 0 10px rgba(255, 152, 0, 0);
+  }
+}
+
 /* Recurring Items Table */
 .recurring-table-container {
   background: #1a1a1a;
