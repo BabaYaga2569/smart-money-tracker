@@ -148,39 +148,17 @@ export class RecurringBillManager {
      */
     static getBillsDueBefore(bills, beforeDate) {
         return bills.filter(bill => {
-            // Skip bills that are marked as paid
-            if (bill.isPaid || bill.status === 'paid') {
+            // Skip bills that are paid for the current cycle
+            if (this.isBillPaidForCurrentCycle(bill)) {
                 return false;
             }
             
-            const dueDate = bill.nextDueDate || parseLocalDate(bill.dueDate);
+            // Get the due date and ensure it's parsed as a Date object
+            const dueDateValue = bill.nextDueDate || bill.dueDate;
+            const dueDate = typeof dueDateValue === 'string' ? parseLocalDate(dueDateValue) : dueDateValue;
             
             // Check if bill is due before the given date
-            if (dueDate >= beforeDate) {
-                return false;
-            }
-            
-            // Enhanced payment check: If bill was recently paid for the current billing cycle,
-            // exclude it from bills due before payday
-            if (bill.lastPaidDate && bill.lastPayment) {
-                const lastPaidDate = new Date(bill.lastPaidDate);
-                const lastPaymentDueDate = new Date(bill.lastPayment.dueDate);
-                const currentBillDueDate = new Date(dueDate);
-                
-                // If the last payment was for a due date that matches or is after the current due date,
-                // then this bill has already been paid for the current cycle
-                if (lastPaymentDueDate.getTime() >= currentBillDueDate.getTime()) {
-                    return false;
-                }
-                
-                // Fallback: If paid within last 7 days, also exclude
-                const daysSincePaid = (Date.now() - lastPaidDate.getTime()) / (1000 * 60 * 60 * 24);
-                if (daysSincePaid <= 7) {
-                    return false;
-                }
-            }
-            
-            return true;
+            return dueDate < beforeDate;
         });
     }
 
@@ -193,12 +171,15 @@ export class RecurringBillManager {
      */
     static getBillsInRange(bills, startDate, endDate) {
         return bills.filter(bill => {
-            // Skip bills that are marked as paid
-            if (bill.isPaid || bill.status === 'paid') {
+            // Skip bills that are paid for the current cycle
+            if (this.isBillPaidForCurrentCycle(bill)) {
                 return false;
             }
             
-            const dueDate = bill.nextDueDate || parseLocalDate(bill.dueDate);
+            // Get the due date and ensure it's parsed as a Date object
+            const dueDateValue = bill.nextDueDate || bill.dueDate;
+            const dueDate = typeof dueDateValue === 'string' ? parseLocalDate(dueDateValue) : dueDateValue;
+            
             return dueDate >= startDate && dueDate <= endDate;
         });
     }
@@ -256,6 +237,30 @@ export class RecurringBillManager {
             paymentHistory: [...(bill.paymentHistory || []), paymentRecord],
             lastPayment: paymentRecord
         };
+    }
+
+    /**
+     * Check if a bill has already been paid for its current billing cycle
+     * @param {Object} bill - Bill object
+     * @returns {boolean} True if bill is paid for current cycle
+     */
+    static isBillPaidForCurrentCycle(bill) {
+        // Direct status check first
+        if (bill.isPaid || bill.status === 'paid') {
+            return true;
+        }
+        
+        // Check payment history for current cycle
+        if (bill.lastPaidDate && bill.lastPayment) {
+            const currentBillDueDate = new Date(bill.nextDueDate || bill.dueDate);
+            const lastPaymentDueDate = new Date(bill.lastPayment.dueDate);
+            
+            // If the last payment was for a due date that matches or is after the current due date,
+            // then this bill has already been paid for the current cycle
+            return lastPaymentDueDate.getTime() >= currentBillDueDate.getTime();
+        }
+        
+        return false;
     }
 
     /**
