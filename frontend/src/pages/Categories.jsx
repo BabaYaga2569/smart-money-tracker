@@ -841,6 +841,28 @@ const Categories = () => {
                 placeholder="0.00"
               />
             </div>
+            <div className="form-group">
+              <label>Period *</label>
+              <select
+                value={newBudget.period}
+                onChange={(e) => setNewBudget({ ...newBudget, period: e.target.value })}
+              >
+                <option value="weekly">Weekly</option>
+                <option value="monthly">Monthly</option>
+              </select>
+            </div>
+          </div>
+          <div className="form-row">
+            <div className="form-group checkbox-group">
+              <label>
+                <input
+                  type="checkbox"
+                  checked={newBudget.rollover}
+                  onChange={(e) => setNewBudget({ ...newBudget, rollover: e.target.checked })}
+                />
+                <span>Roll over unused budget to next period</span>
+              </label>
+            </div>
           </div>
           <div className="form-actions">
             <button 
@@ -864,9 +886,40 @@ const Categories = () => {
       <div className="budgets-list">
         {Object.entries(budgets).map(([category, budget]) => {
           const spent = categoryAnalytics[category] || 0;
-          const remaining = budget.amount - spent;
-          const percentage = budget.amount > 0 ? (spent / budget.amount) * 100 : 0;
-          const daysLeft = new Date(new Date().getFullYear(), new Date().getMonth() + 1, 0).getDate() - new Date().getDate();
+          
+          // Calculate period-specific values
+          const isWeekly = budget.period === 'weekly';
+          const today = new Date();
+          let periodSpent = spent;
+          let periodBudget = budget.amount;
+          let daysLeft = 0;
+          
+          if (isWeekly) {
+            // For weekly budgets, calculate current week's spending
+            const startOfWeek = new Date(today);
+            startOfWeek.setDate(today.getDate() - today.getDay()); // Start of week (Sunday)
+            startOfWeek.setHours(0, 0, 0, 0);
+            
+            const endOfWeek = new Date(startOfWeek);
+            endOfWeek.setDate(startOfWeek.getDate() + 6); // End of week (Saturday)
+            endOfWeek.setHours(23, 59, 59, 999);
+            
+            // Filter transactions for current week
+            const weekTransactions = transactions.filter(t => {
+              const tDate = new Date(t.date);
+              return tDate >= startOfWeek && tDate <= endOfWeek && 
+                     t.category === category && t.amount < 0;
+            });
+            periodSpent = weekTransactions.reduce((sum, t) => sum + Math.abs(t.amount), 0);
+            
+            daysLeft = Math.ceil((endOfWeek - today) / (1000 * 60 * 60 * 24));
+          } else {
+            // Monthly budget
+            daysLeft = new Date(today.getFullYear(), today.getMonth() + 1, 0).getDate() - today.getDate();
+          }
+          
+          const remaining = periodBudget - periodSpent;
+          const percentage = periodBudget > 0 ? (periodSpent / periodBudget) * 100 : 0;
           const dailyAverage = daysLeft > 0 ? remaining / daysLeft : 0;
 
           return (
@@ -874,7 +927,8 @@ const Categories = () => {
               <div className="budget-header">
                 <span className="category-icon">{getCategoryIcon(category)}</span>
                 <span className="category-name">{category}</span>
-                <span className="budget-amount">{formatCurrency(budget.amount)}</span>
+                <span className="budget-period">{isWeekly ? '📅 Weekly' : '📆 Monthly'}</span>
+                <span className="budget-amount">{formatCurrency(periodBudget)}</span>
               </div>
               
               <div className="budget-progress">
@@ -885,7 +939,7 @@ const Categories = () => {
                   ></div>
                 </div>
                 <div className="progress-text">
-                  {formatCurrency(spent)} / {formatCurrency(budget.amount)} ({percentage.toFixed(0)}%)
+                  {formatCurrency(periodSpent)} / {formatCurrency(periodBudget)} ({percentage.toFixed(0)}%)
                 </div>
               </div>
               
@@ -910,7 +964,19 @@ const Categories = () => {
               
               {percentage > 100 && (
                 <div className="budget-alert">
-                  🚨 Over budget by {formatCurrency(spent - budget.amount)}
+                  🚨 Over budget by {formatCurrency(periodSpent - periodBudget)}
+                </div>
+              )}
+              
+              {percentage >= 75 && percentage < 90 && (
+                <div className="budget-alert warning">
+                  💡 You've used {percentage.toFixed(0)}% of your budget
+                </div>
+              )}
+              
+              {percentage >= 90 && percentage < 100 && (
+                <div className="budget-alert caution">
+                  ⚠️ Approaching budget limit ({percentage.toFixed(0)}%)
                 </div>
               )}
             </div>

@@ -846,6 +846,11 @@ const Transactions = () => {
                     <span className="transaction-account">
                       {accounts[transaction.account]?.name || transaction.account}
                     </span>
+                    {transaction.source && (
+                      <span className={`transaction-source ${transaction.source}`} title={`Source: ${transaction.source === 'plaid' ? 'Auto-detected (Plaid)' : 'Manual entry'}`}>
+                        {transaction.source === 'plaid' ? '🔄' : '✋'}
+                      </span>
+                    )}
                   </div>
                 </div>
                 <div className="transaction-details">

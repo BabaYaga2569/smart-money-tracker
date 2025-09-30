@@ -552,6 +552,25 @@
   font-weight: 500;
 }
 
+.budget-alert.warning {
+  background: rgba(255, 170, 68, 0.1);
+  border-color: #ffaa44;
+  color: #ffaa44;
+}
+
+.budget-alert.caution {
+  background: rgba(255, 193, 7, 0.1);
+  border-color: #ffc107;
+  color: #ffc107;
+}
+
+.budget-period {
+  font-size: 0.85rem;
+  color: #aaa;
+  margin-left: auto;
+  margin-right: 10px;
+}
+
 /* Management Tab Styles */
 .categories-management {
   display: flex;

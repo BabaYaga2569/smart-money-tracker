@@ -240,9 +240,10 @@ const Bills = () => {
   const handleMarkAsPaid = async (bill) => {
     if (payingBill) return;
     
-    // Check if bill has already been paid for current cycle
-    if (RecurringBillManager.isBillPaidForCurrentCycle(bill)) {
-      NotificationManager.showWarning(`${bill.name} has already been paid for this billing cycle.`);
+    // Check if bill can be paid (duplicate protection)
+    const paymentCheck = RecurringBillManager.canPayBill(bill);
+    if (!paymentCheck.canPay) {
+      NotificationManager.showWarning(paymentCheck.reason);
       return;
     }
     
@@ -294,6 +295,7 @@ const Bills = () => {
       date: formatDateForInput(paymentData.paidDate || getPacificTime()),
       timestamp: Date.now(),
       type: 'expense',
+      source: paymentData.source || 'manual', // Track source (plaid or manual)
       ...paymentData
     };
 
@@ -304,8 +306,13 @@ const Bills = () => {
     // Update account balance
     await updateAccountBalance('bofa', transaction.amount);
 
-    // Mark bill as paid with next due date calculation
-    await updateBillAsPaid(bill, paymentData.paidDate);
+    // Mark bill as paid with payment options
+    await updateBillAsPaid(bill, paymentData.paidDate, {
+      method: paymentData.method || 'manual',
+      source: paymentData.source || 'manual',
+      transactionId: paymentData.transactionId,
+      accountId: paymentData.accountId
+    });
   };
 
   const updateAccountBalance = async (accountKey, amount) => {
@@ -336,7 +343,7 @@ const Bills = () => {
     }
   };
 
-  const updateBillAsPaid = async (bill, paidDate = null) => {
+  const updateBillAsPaid = async (bill, paidDate = null, paymentOptions = {}) => {
     try {
       const settingsDocRef = doc(db, 'users', 'steve-colburn', 'settings', 'personal'); 
       const currentDoc = await getDoc(settingsDocRef);
@@ -347,7 +354,11 @@ const Bills = () => {
       const updatedBills = bills.map(b => {
         if (b.name === bill.name && b.amount === bill.amount) {
           // Use RecurringBillManager to properly calculate next due date and update status
-          return RecurringBillManager.markBillAsPaid(b, paidDate || getPacificTime());
+          return RecurringBillManager.markBillAsPaid(
+            b, 
+            paidDate || getPacificTime(),
+            paymentOptions
+          );
         }
         return b;
       });

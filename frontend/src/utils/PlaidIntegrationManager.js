@@ -51,6 +51,14 @@ export class PlaidIntegrationManager {
             return;
         }
 
+        // Check if this transaction has already been used to pay a bill
+        const allBills = await this.getCurrentBills();
+        const existingMatch = this.checkTransactionAlreadyUsed(transaction_id, allBills);
+        if (existingMatch) {
+            console.log(`Transaction ${transaction_id} already used to pay ${existingMatch.name}`);
+            return;
+        }
+
         console.log('Processing potential bill payment transaction:', transaction_id);
 
         // Find matching bills using smart matching algorithm
@@ -63,8 +71,12 @@ export class PlaidIntegrationManager {
 
         // Process matches
         for (const bill of matchingBills) {
-            if (!bill.isPaid && bill.status !== 'paid') {
+            const paymentCheck = this.canPayBill(bill);
+            if (paymentCheck.canPay) {
                 await this.autoMarkBillAsPaid(bill, transaction);
+                break; // Only match one bill per transaction
+            } else {
+                console.log(`Cannot pay ${bill.name}: ${paymentCheck.reason}`);
             }
         }
     }
@@ -272,5 +284,44 @@ export class PlaidIntegrationManager {
             autoMarkPaid: this.autoMarkPaid,
             queuedTransactions: this.transactionQueue.length
         };
+    }
+
+    /**
+     * Check if a bill can be paid (duplicate prevention)
+     * @param {Object} bill - Bill to check
+     * @returns {Object} { canPay: boolean, reason: string }
+     */
+    static canPayBill(bill) {
+        // Import logic from RecurringBillManager if available
+        if (typeof window !== 'undefined' && window.RecurringBillManager) {
+            return window.RecurringBillManager.canPayBill(bill);
+        }
+        
+        // Fallback: basic check
+        if (bill.isPaid || bill.status === 'paid') {
+            return {
+                canPay: false,
+                reason: 'Bill is already marked as paid for this cycle'
+            };
+        }
+        
+        return { canPay: true, reason: null };
+    }
+
+    /**
+     * Check if a transaction has already been used to pay a bill
+     * @param {string} transactionId - Transaction ID
+     * @param {Array} bills - Array of bills
+     * @returns {Object|null} Bill paid by this transaction, or null
+     */
+    static checkTransactionAlreadyUsed(transactionId, bills) {
+        if (!transactionId) return null;
+        
+        return bills.find(bill => {
+            const paymentHistory = bill.paymentHistory || [];
+            return paymentHistory.some(payment => 
+                payment.transactionId === transactionId
+            );
+        });
     }
 }
