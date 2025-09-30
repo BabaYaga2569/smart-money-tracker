@@ -8,7 +8,7 @@ const PlaidLink = ({ onSuccess, onExit, userId, buttonText = "Connect Bank" }) =
   useEffect(() => {
     const createLinkToken = async () => {
       try {
-        const response = await fetch('http://localhost:5000/api/plaid/create_link_token', {
+        const response = await fetch(`${import.meta.env.VITE_API_URL}/api/plaid/create_link_token`, {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
