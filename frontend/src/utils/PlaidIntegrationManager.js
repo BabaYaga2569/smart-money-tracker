@@ -195,11 +195,31 @@ export class PlaidIntegrationManager {
                         if (word1.includes(word2) || word2.includes(word1)) {
                             return true;
                         }
+                        
+                        // Check for common prefix (helps match 'mepno' and 'mepco')
+                        const minLength = Math.min(word1.length, word2.length);
+                        if (minLength >= 4) {
+                            // Match if first 3 characters are the same and 4th character is close
+                            const prefix1 = word1.substring(0, 3);
+                            const prefix2 = word2.substring(0, 3);
+                            if (prefix1 === prefix2) {
+                                // If prefix matches, check overall similarity
+                                const wordDistance = this.levenshteinDistance(word1, word2);
+                                const maxWordLength = Math.max(word1.length, word2.length);
+                                const wordSimilarity = 1 - (wordDistance / maxWordLength);
+                                // Lower threshold to 60% for words with matching prefix
+                                if (wordSimilarity >= 0.6) {
+                                    return true;
+                                }
+                            }
+                        }
+                        
                         // Check for close word similarity
                         const wordDistance = this.levenshteinDistance(word1, word2);
                         const maxWordLength = Math.max(word1.length, word2.length);
                         const wordSimilarity = 1 - (wordDistance / maxWordLength);
-                        if (wordSimilarity >= 0.75) { // 75% similarity for individual words
+                        // Lower individual word threshold to 70% for better partial matching
+                        if (wordSimilarity >= 0.70) {
                             return true;
                         }
                     }
@@ -212,8 +232,8 @@ export class PlaidIntegrationManager {
         const maxLength = Math.max(s1.length, s2.length);
         const similarity = 1 - (distance / maxLength);
 
-        // Lower the overall threshold to 0.65 for better matching
-        return similarity >= Math.min(threshold, 0.65);
+        // Lower the overall threshold to 0.6 for better matching
+        return similarity >= Math.min(threshold, 0.6);
     }
 
     /**
@@ -386,12 +406,14 @@ export class PlaidIntegrationManager {
                 })
             });
 
-            if (!response.ok) {
-                const errorText = await response.text();
-                throw new Error(`Failed to fetch transactions: ${response.statusText} - ${errorText}`);
+            const data = await response.json();
+
+            if (!response.ok || !data.success) {
+                // Enhanced error handling with more specific messages
+                const errorMessage = data.error || `Failed to fetch transactions: ${response.statusText}`;
+                throw new Error(errorMessage);
             }
 
-            const data = await response.json();
             const transactions = data.transactions || [];
 
             console.log(`Fetched ${transactions.length} transactions from Plaid`);
@@ -453,9 +475,19 @@ export class PlaidIntegrationManager {
 
         } catch (error) {
             console.error('Error fetching and matching transactions:', error);
+            
+            // Provide more user-friendly error messages
+            let errorMessage = error.message;
+            
+            if (error.message.includes('Failed to fetch')) {
+                errorMessage = 'Unable to connect to the server. Please check your internet connection.';
+            } else if (error.message.includes('NetworkError') || error.message.includes('network')) {
+                errorMessage = 'Network error. Please check your connection and try again.';
+            }
+            
             return {
                 success: false,
-                error: error.message,
+                error: errorMessage,
                 matches: [],
                 totalTransactions: 0,
                 processedCount: 0

@@ -116,12 +116,17 @@ app.post("/api/plaid/get_transactions", async (req, res) => {
     const { access_token, start_date, end_date } = req.body;
 
     if (!access_token) {
-      return res.status(400).json({ error: "access_token is required" });
+      return res.status(400).json({ 
+        success: false,
+        error: "Access token is required. Please connect your bank account first." 
+      });
     }
 
     // Default to last 30 days if no dates provided
     const endDate = end_date || new Date().toISOString().split('T')[0];
     const startDate = start_date || new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
+
+    console.log(`Fetching transactions from ${startDate} to ${endDate}`);
 
     const transactionsResponse = await plaidClient.transactionsGet({
       access_token,
@@ -133,6 +138,8 @@ app.post("/api/plaid/get_transactions", async (req, res) => {
       }
     });
 
+    console.log(`Successfully fetched ${transactionsResponse.data.transactions.length} transactions`);
+
     res.json({
       success: true,
       transactions: transactionsResponse.data.transactions,
@@ -141,7 +148,38 @@ app.post("/api/plaid/get_transactions", async (req, res) => {
     });
   } catch (error) {
     console.error("Error getting transactions:", error);
-    res.status(500).json({ error: error.message });
+    
+    // Provide more detailed error information
+    let errorMessage = "Failed to fetch transactions from your bank";
+    let statusCode = 500;
+    
+    if (error.response) {
+      // Plaid API error
+      const plaidError = error.response.data;
+      statusCode = error.response.status;
+      
+      if (plaidError.error_code === 'ITEM_LOGIN_REQUIRED') {
+        errorMessage = "Your bank connection has expired. Please reconnect your account.";
+        statusCode = 401;
+      } else if (plaidError.error_code === 'INVALID_ACCESS_TOKEN') {
+        errorMessage = "Invalid access token. Please reconnect your bank account.";
+        statusCode = 401;
+      } else if (plaidError.error_code === 'PRODUCT_NOT_READY') {
+        errorMessage = "Transaction data is not yet available. Please try again in a few moments.";
+        statusCode = 503;
+      } else if (plaidError.error_message) {
+        errorMessage = `Bank error: ${plaidError.error_message}`;
+      }
+    } else if (error.message) {
+      errorMessage = error.message;
+    }
+    
+    res.status(statusCode).json({ 
+      success: false,
+      error: errorMessage,
+      error_code: error.response?.data?.error_code,
+      error_type: error.response?.data?.error_type
+    });
   }
 });
 
