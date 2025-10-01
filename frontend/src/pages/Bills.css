@@ -12,19 +12,22 @@
 }
 
 .add-bill-btn-header {
-  background: #00ff88;
-  color: #000;
+  background: #28a745;
+  color: #fff;
   border: none;
   border-radius: 6px;
   padding: 12px 24px;
   font-weight: bold;
   cursor: pointer;
-  transition: background 0.3s ease;
+  transition: all 0.3s ease;
   font-size: 14px;
+  box-shadow: 0 2px 4px rgba(40, 167, 69, 0.3);
 }
 
 .add-bill-btn-header:hover {
-  background: #00cc6a;
+  background: #218838;
+  transform: translateY(-1px);
+  box-shadow: 0 4px 8px rgba(40, 167, 69, 0.4);
 }
 
 /* Overview Dashboard */
