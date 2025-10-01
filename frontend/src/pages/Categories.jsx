@@ -276,7 +276,9 @@ const Categories = () => {
       const budgetsData = {};
       
       querySnapshot.forEach((doc) => {
-        budgetsData[doc.id] = { id: doc.id, ...doc.data() };
+        const data = doc.data();
+        // Key by category name for easier access, but keep the document ID
+        budgetsData[data.category] = { id: doc.id, ...data };
       });
       
       // If no budgets from Firebase, add demo budgets
@@ -417,10 +419,14 @@ const Categories = () => {
         updatedAt: Date.now()
       };
 
-      // Update local state
+      // Save to Firebase
+      const budgetsRef = collection(db, 'users', 'steve-colburn', 'budgets');
+      const docRef = await addDoc(budgetsRef, budgetData);
+      
+      // Update local state with the document ID
       setBudgets(prev => ({
         ...prev,
-        [newBudget.category]: budgetData
+        [newBudget.category]: { ...budgetData, id: docRef.id }
       }));
 
       setNewBudget({ category: '', amount: '', period: 'monthly', rollover: false, alerts: { fifty: true, seventyFive: true, ninety: true, hundred: true } });
@@ -440,6 +446,13 @@ const Categories = () => {
       return;
     }
 
+    // Get the existing budget to retrieve the document ID
+    const existingBudget = budgets[editingBudget];
+    if (!existingBudget || !existingBudget.id) {
+      showNotification('Cannot edit demo budget. Please create a new budget instead.', 'error');
+      return;
+    }
+
     try {
       setSaving(true);
       
@@ -453,10 +466,14 @@ const Categories = () => {
         updatedAt: Date.now()
       };
 
-      // Update local state
+      // Update in Firebase
+      const budgetDocRef = doc(db, 'users', 'steve-colburn', 'budgets', existingBudget.id);
+      await updateDoc(budgetDocRef, budgetData);
+
+      // Update local state with the document ID preserved
       setBudgets(prev => ({
         ...prev,
-        [newBudget.category]: budgetData
+        [newBudget.category]: { ...budgetData, id: existingBudget.id }
       }));
 
       setNewBudget({ category: '', amount: '', period: 'monthly', rollover: false, alerts: { fifty: true, seventyFive: true, ninety: true, hundred: true } });
@@ -466,6 +483,7 @@ const Categories = () => {
     } catch (error) {
       console.error('Error updating budget:', error);
       showNotification('Error updating budget', 'error');
+      // Keep the form open on error so user can retry
     } finally {
       setSaving(false);
     }
