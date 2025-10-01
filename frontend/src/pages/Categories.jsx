@@ -449,7 +449,7 @@ const Categories = () => {
     // Get the existing budget to retrieve the document ID
     const existingBudget = budgets[editingBudget];
     if (!existingBudget || !existingBudget.id) {
-      showNotification('Budget not found in database', 'error');
+      showNotification('Cannot edit demo budget. Please create a new budget instead.', 'error');
       return;
     }
 
