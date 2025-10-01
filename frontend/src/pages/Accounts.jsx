@@ -361,7 +361,7 @@ const Accounts = () => {
       </div>
 
       {/* Plaid Connection Status Banner - Compact Version */}
-      {!plaidStatus.isConnected && !plaidStatus.hasError && (
+      {plaidAccounts.length === 0 && !plaidStatus.hasError && (
         <div style={{
           background: 'linear-gradient(135deg, #f59e0b 0%, #d97706 100%)',
           color: '#fff',
@@ -380,14 +380,12 @@ const Accounts = () => {
               <strong>No Bank Connected</strong> - Connect your bank to automatically sync balances and transactions
             </span>
           </div>
-          {plaidAccounts.length === 0 && (
-            <PlaidLink
-              onSuccess={handlePlaidSuccess}
-              onExit={handlePlaidExit}
-              userId="steve-colburn"
-              buttonText="🔗 Connect Now"
-            />
-          )}
+          <PlaidLink
+            onSuccess={handlePlaidSuccess}
+            onExit={handlePlaidExit}
+            userId="steve-colburn"
+            buttonText="🔗 Connect Now"
+          />
         </div>
       )}
 
@@ -429,7 +427,7 @@ const Accounts = () => {
         </div>
       )}
 
-      {plaidStatus.isConnected && (
+      {plaidAccounts.length > 0 && !plaidStatus.hasError && (
         <div style={{
           background: 'linear-gradient(135deg, #11998e 0%, #38ef7d 100%)',
           color: '#fff',
