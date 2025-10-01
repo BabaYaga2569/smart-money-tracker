@@ -8,6 +8,7 @@ import './Transactions.css';
 const Transactions = () => {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [syncingPlaid, setSyncingPlaid] = useState(false);
   const [accounts, setAccounts] = useState({});
   const [transactions, setTransactions] = useState([]);
   const [filteredTransactions, setFilteredTransactions] = useState([]);
@@ -232,6 +233,97 @@ const Transactions = () => {
         }
       ];
       setTransactions(sampleTransactions);
+    }
+  };
+
+  const syncPlaidTransactions = async () => {
+    try {
+      setSyncingPlaid(true);
+      
+      // Get Plaid access token from localStorage
+      const accessToken = localStorage.getItem('plaid_access_token');
+      
+      if (!accessToken) {
+        showNotification('Plaid not connected. Please connect your bank account first.', 'warning');
+        return;
+      }
+
+      // Determine backend URL
+      const backendUrl = window.location.hostname === 'localhost' 
+        ? 'http://localhost:5000' 
+        : 'https://smart-money-tracker-09ks.onrender.com';
+
+      // Fetch last 30 days of transactions
+      const endDate = new Date().toISOString().split('T')[0];
+      const startDate = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
+
+      const response = await fetch(`${backendUrl}/api/plaid/get_transactions`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          access_token: accessToken,
+          start_date: startDate,
+          end_date: endDate
+        })
+      });
+
+      if (!response.ok) {
+        throw new Error(`Failed to fetch transactions: ${response.statusText}`);
+      }
+
+      const data = await response.json();
+      const plaidTransactions = data.transactions || [];
+
+      if (plaidTransactions.length === 0) {
+        showNotification('No new transactions found in the last 30 days.', 'info');
+        return;
+      }
+
+      // Add Plaid transactions to Firebase (avoid duplicates)
+      let addedCount = 0;
+      const transactionsRef = collection(db, 'users', 'steve-colburn', 'transactions');
+      
+      for (const plaidTx of plaidTransactions) {
+        // Check if transaction already exists by transaction_id
+        const existingTx = transactions.find(tx => tx.plaidTransactionId === plaidTx.transaction_id);
+        if (existingTx) {
+          continue; // Skip duplicates
+        }
+
+        // Convert Plaid transaction to our format
+        const transaction = {
+          amount: plaidTx.amount,
+          description: plaidTx.merchant_name || plaidTx.name,
+          category: autoCategorizTransaction(plaidTx.merchant_name || plaidTx.name),
+          account: plaidTx.account_id,
+          date: plaidTx.date,
+          timestamp: new Date(plaidTx.date).getTime(),
+          type: plaidTx.amount > 0 ? 'expense' : 'income',
+          source: 'plaid',
+          plaidTransactionId: plaidTx.transaction_id
+        };
+
+        await addDoc(transactionsRef, transaction);
+        addedCount++;
+      }
+
+      // Reload transactions
+      await loadTransactions();
+      
+      showNotification(
+        `Successfully synced ${addedCount} new transaction${addedCount !== 1 ? 's' : ''} from Plaid.`,
+        'success'
+      );
+    } catch (error) {
+      console.error('Error syncing Plaid transactions:', error);
+      showNotification(
+        `Error syncing transactions: ${error.message}`,
+        'error'
+      );
+    } finally {
+      setSyncingPlaid(false);
     }
   };
 
@@ -569,15 +661,28 @@ const Transactions = () => {
           <button 
             className="btn-primary add-transaction-btn"
             onClick={() => setShowAddForm(!showAddForm)}
-            disabled={saving}
+            disabled={saving || syncingPlaid}
           >
             {showAddForm ? '✕ Cancel' : '+ Add Transaction'}
           </button>
           
           <button 
             className="btn-secondary"
+            onClick={syncPlaidTransactions}
+            disabled={saving || syncingPlaid}
+            style={{
+              background: syncingPlaid ? '#999' : '#007bff',
+              color: '#fff',
+              border: 'none'
+            }}
+          >
+            {syncingPlaid ? '🔄 Syncing...' : '🔄 Sync Plaid Transactions'}
+          </button>
+          
+          <button 
+            className="btn-secondary"
             onClick={() => setShowTemplates(!showTemplates)}
-            disabled={saving}
+            disabled={saving || syncingPlaid}
           >
             📋 Templates
           </button>
@@ -586,7 +691,7 @@ const Transactions = () => {
             <button 
               className="btn-secondary"
               onClick={exportTransactions}
-              disabled={saving}
+              disabled={saving || syncingPlaid}
             >
               📥 Export CSV
             </button>

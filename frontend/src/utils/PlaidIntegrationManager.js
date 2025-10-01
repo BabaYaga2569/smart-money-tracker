@@ -105,7 +105,7 @@ export class PlaidIntegrationManager {
             const nameMatch = this.fuzzyMatch(
                 bill.name || '',
                 merchantName || '',
-                0.7 // 70% similarity threshold
+                0.65 // 65% similarity threshold for better matching
             );
 
             // Date proximity matching (within 5 days of due date)
@@ -182,12 +182,38 @@ export class PlaidIntegrationManager {
         // Check if one string contains the other
         if (s1.includes(s2) || s2.includes(s1)) return true;
 
-        // Calculate Levenshtein distance
+        // Tokenize into words for partial word matching
+        const words1 = s1.split(/\s+/);
+        const words2 = s2.split(/\s+/);
+
+        // Check if any significant word (3+ chars) from one appears in the other
+        for (const word1 of words1) {
+            if (word1.length >= 3) {
+                for (const word2 of words2) {
+                    if (word2.length >= 3) {
+                        // Check for word-level substring match
+                        if (word1.includes(word2) || word2.includes(word1)) {
+                            return true;
+                        }
+                        // Check for close word similarity
+                        const wordDistance = this.levenshteinDistance(word1, word2);
+                        const maxWordLength = Math.max(word1.length, word2.length);
+                        const wordSimilarity = 1 - (wordDistance / maxWordLength);
+                        if (wordSimilarity >= 0.75) { // 75% similarity for individual words
+                            return true;
+                        }
+                    }
+                }
+            }
+        }
+
+        // Calculate overall Levenshtein distance as fallback
         const distance = this.levenshteinDistance(s1, s2);
         const maxLength = Math.max(s1.length, s2.length);
         const similarity = 1 - (distance / maxLength);
 
-        return similarity >= threshold;
+        // Lower the overall threshold to 0.65 for better matching
+        return similarity >= Math.min(threshold, 0.65);
     }
 
     /**
@@ -342,8 +368,13 @@ export class PlaidIntegrationManager {
 
             console.log('Fetching transactions from Plaid...');
 
+            // Determine backend URL - try production first, fallback to local
+            const backendUrl = window.location.hostname === 'localhost' 
+                ? 'http://localhost:5000' 
+                : 'https://smart-money-tracker-09ks.onrender.com';
+
             // Fetch transactions from backend API
-            const response = await fetch('http://localhost:5000/api/plaid/get_transactions', {
+            const response = await fetch(`${backendUrl}/api/plaid/get_transactions`, {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
@@ -356,7 +387,8 @@ export class PlaidIntegrationManager {
             });
 
             if (!response.ok) {
-                throw new Error(`Failed to fetch transactions: ${response.statusText}`);
+                const errorText = await response.text();
+                throw new Error(`Failed to fetch transactions: ${response.statusText} - ${errorText}`);
             }
 
             const data = await response.json();

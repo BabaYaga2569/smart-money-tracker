@@ -421,10 +421,19 @@ const Bills = () => {
 
   const handleUnmarkAsPaid = async (bill) => {
     try {
+      // Show loading notification
+      const loadingNotificationId = NotificationManager.showLoading(
+        `Unmarking ${bill.name} as paid...`
+      );
+
       const settingsDocRef = doc(db, 'users', 'steve-colburn', 'settings', 'personal');
       const currentDoc = await getDoc(settingsDocRef);
-      const currentData = currentDoc.exists() ? currentDoc.data() : {};
       
+      if (!currentDoc.exists()) {
+        throw new Error('Settings document not found');
+      }
+      
+      const currentData = currentDoc.data();
       const bills = currentData.bills || [];
       
       const updatedBills = bills.map(b => {
@@ -450,13 +459,19 @@ const Bills = () => {
         bills: updatedBills
       });
       
+      // Close loading notification
+      NotificationManager.close(loadingNotificationId);
+      
       // Reload bills to show updated state
       await loadBills();
       
       NotificationManager.showSuccess(`${bill.name} unmarked as paid`);
     } catch (error) {
       console.error('Error unmarking bill as paid:', error);
-      NotificationManager.showError('Error unmarking bill', error);
+      NotificationManager.showError(
+        'Error unmarking bill',
+        error.message || 'An unexpected error occurred. Please try again.'
+      );
     }
   };
 
@@ -835,14 +850,16 @@ const Bills = () => {
               disabled={refreshingTransactions}
               style={{ 
                 marginLeft: '10px', 
-                background: refreshingTransactions ? '#999' : '#00d4ff', 
+                background: refreshingTransactions ? '#999' : '#007bff', 
                 color: '#fff',
                 border: 'none',
                 borderRadius: '6px',
                 padding: '12px 16px',
-                fontSize: '12px',
+                fontSize: '14px',
+                fontWeight: '600',
                 cursor: refreshingTransactions ? 'not-allowed' : 'pointer',
-                opacity: refreshingTransactions ? 0.6 : 1
+                opacity: refreshingTransactions ? 0.6 : 1,
+                boxShadow: refreshingTransactions ? 'none' : '0 2px 4px rgba(0,123,255,0.3)'
               }}
             >
               {refreshingTransactions ? '🔄 Matching...' : '🔄 Match Transactions'}
