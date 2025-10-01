@@ -15,6 +15,8 @@ const Transactions = () => {
   const [showAddForm, setShowAddForm] = useState(false);
   const [editingTransaction, setEditingTransaction] = useState(null);
   const [notification, setNotification] = useState({ message: '', type: '' });
+  const [plaidConnected, setPlaidConnected] = useState(false);
+  const [hasPlaidAccounts, setHasPlaidAccounts] = useState(false);
   
   // Analytics state
   const [analytics, setAnalytics] = useState({
@@ -59,7 +61,13 @@ const Transactions = () => {
 
   useEffect(() => {
     loadInitialData();
+    checkPlaidConnection();
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const checkPlaidConnection = () => {
+    const token = localStorage.getItem('plaid_access_token');
+    setPlaidConnected(!!token);
+  };
 
   useEffect(() => {
     applyFilters();
@@ -164,6 +172,8 @@ const Transactions = () => {
         const data = settingsDocSnap.data();
         const plaidAccountsList = data.plaidAccounts || [];
         const bankAccounts = data.bankAccounts || {};
+        
+        setHasPlaidAccounts(plaidAccountsList.length > 0);
         
         // Prioritize Plaid accounts if they exist (fully automated flow)
         if (plaidAccountsList.length > 0) {
@@ -630,6 +640,67 @@ const Transactions = () => {
         <p>Complete transaction management and financial analytics</p>
       </div>
 
+      {/* Plaid Connection Status Banner */}
+      {!plaidConnected && (
+        <div style={{
+          background: 'linear-gradient(135deg, #f59e0b 0%, #d97706 100%)',
+          color: '#fff',
+          padding: '16px 24px',
+          borderRadius: '8px',
+          marginBottom: '20px',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          boxShadow: '0 4px 6px rgba(0,0,0,0.1)'
+        }}>
+          <div>
+            <div style={{ fontSize: '16px', fontWeight: '600', marginBottom: '4px' }}>
+              ⚠️ Plaid Not Connected
+            </div>
+            <div style={{ fontSize: '14px', opacity: 0.9 }}>
+              Connect Plaid to automatically sync transactions from your bank accounts.
+            </div>
+          </div>
+          <button
+            onClick={() => window.location.href = '/accounts'}
+            style={{
+              background: '#fff',
+              color: '#d97706',
+              border: 'none',
+              borderRadius: '6px',
+              padding: '10px 20px',
+              fontSize: '14px',
+              fontWeight: '600',
+              cursor: 'pointer',
+              transition: 'transform 0.2s',
+              whiteSpace: 'nowrap',
+              marginLeft: '20px'
+            }}
+            onMouseEnter={(e) => e.target.style.transform = 'scale(1.05)'}
+            onMouseLeave={(e) => e.target.style.transform = 'scale(1)'}
+          >
+            Connect Bank →
+          </button>
+        </div>
+      )}
+
+      {hasPlaidAccounts && plaidConnected && (
+        <div style={{
+          background: 'linear-gradient(135deg, #11998e 0%, #38ef7d 100%)',
+          color: '#fff',
+          padding: '12px 24px',
+          borderRadius: '8px',
+          marginBottom: '20px',
+          display: 'flex',
+          alignItems: 'center',
+          boxShadow: '0 4px 6px rgba(0,0,0,0.1)'
+        }}>
+          <div style={{ fontSize: '16px', fontWeight: '600' }}>
+            ✅ Plaid Connected - Auto-sync enabled
+          </div>
+        </div>
+      )}
+
       {/* Notification */}
       {notification.message && (
         <div className={`notification ${notification.type}`}>
@@ -677,14 +748,17 @@ const Transactions = () => {
           <button 
             className="btn-secondary"
             onClick={syncPlaidTransactions}
-            disabled={saving || syncingPlaid}
+            disabled={saving || syncingPlaid || !plaidConnected}
+            title={!plaidConnected ? 'Please connect Plaid to use this feature' : 'Sync transactions from your bank accounts'}
             style={{
-              background: syncingPlaid ? '#999' : '#007bff',
+              background: syncingPlaid ? '#999' : (!plaidConnected ? '#6b7280' : '#007bff'),
               color: '#fff',
-              border: 'none'
+              border: 'none',
+              cursor: (!plaidConnected || syncingPlaid || saving) ? 'not-allowed' : 'pointer',
+              opacity: (!plaidConnected || syncingPlaid) ? 0.6 : 1
             }}
           >
-            {syncingPlaid ? '🔄 Syncing...' : '🔄 Sync Plaid Transactions'}
+            {syncingPlaid ? '🔄 Syncing...' : (!plaidConnected ? '🔒 Sync Plaid (Not Connected)' : '🔄 Sync Plaid Transactions')}
           </button>
           
           <button 

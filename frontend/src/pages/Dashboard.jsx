@@ -250,9 +250,23 @@ const Dashboard = () => {
         <h2>💰 Smart Money Tracker</h2>
         <p>Your complete financial overview</p>
         <div className="backend-status" style={{ display: 'flex', alignItems: 'center', gap: '20px' }}>
-          <div>
+          <div style={{ 
+            display: 'flex', 
+            alignItems: 'center', 
+            gap: '8px',
+            padding: '6px 12px',
+            borderRadius: '6px',
+            background: firebaseConnected ? 'rgba(16, 185, 129, 0.1)' : 'rgba(251, 191, 36, 0.1)',
+            border: `1px solid ${firebaseConnected ? 'rgba(16, 185, 129, 0.3)' : 'rgba(251, 191, 36, 0.3)'}`
+          }}>
             <span className={`status-indicator ${firebaseConnected ? 'online' : 'offline'}`}></span>
-            Status: {loading ? 'Loading...' : firebaseConnected ? 'Connected' : 'Using cached data'}
+            <span style={{ 
+              fontSize: '13px', 
+              fontWeight: '500',
+              color: firebaseConnected ? '#059669' : '#d97706'
+            }}>
+              Firebase: {loading ? 'Loading...' : firebaseConnected ? 'Connected' : 'Offline'}
+            </span>
           </div>
           <div style={{ 
             display: 'flex', 
@@ -275,7 +289,7 @@ const Dashboard = () => {
             </span>
             {!plaidConnected && (
               <button
-                onClick={() => navigate('/settings')}
+                onClick={() => navigate('/accounts')}
                 style={{
                   background: '#d97706',
                   color: '#fff',
