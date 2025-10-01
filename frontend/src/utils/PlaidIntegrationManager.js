@@ -40,9 +40,7 @@ export class PlaidIntegrationManager {
             amount,
             merchant_name,
             date,
-            account_id,
-            transaction_id,
-            category
+            transaction_id
         } = transaction;
 
         // Only process outgoing payments (negative amounts in Plaid)

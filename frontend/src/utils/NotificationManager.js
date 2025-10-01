@@ -95,9 +95,8 @@ export class NotificationManager {
     /**
      * Show payment success notification
      * @param {Object} bill - Bill object
-     * @param {Object} paymentData - Payment data
      */
-    static showPaymentSuccess(bill, paymentData = {}) {
+    static showPaymentSuccess(bill) {
         return this.showNotification({
             type: 'success',
             title: 'Payment Automatically Processed',

@@ -19,7 +19,7 @@ const NotificationSystem = () => {
     NotificationManager.removeNotification(id);
   };
 
-  const handleActionClick = (action, notificationId) => {
+  const handleActionClick = (action) => {
     try {
       action.action();
     } catch (error) {
@@ -64,7 +64,7 @@ const NotificationSystem = () => {
                   <button
                     key={index}
                     className="notification-action-btn"
-                    onClick={() => handleActionClick(action, notification.id)}
+                    onClick={() => handleActionClick(action)}
                   >
                     {action.label}
                   </button>
