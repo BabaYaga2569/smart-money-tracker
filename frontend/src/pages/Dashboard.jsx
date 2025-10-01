@@ -15,6 +15,7 @@ const Dashboard = () => {
     hasError: false,
     errorMessage: null
   });
+  const [hasPlaidAccounts, setHasPlaidAccounts] = useState(false);
   const [dashboardData, setDashboardData] = useState({
     totalBalance: 1530.07,  // Default fallback data (Live balance)
     totalProjectedBalance: 1530.07,  // Add projected balance
@@ -85,6 +86,7 @@ const Dashboard = () => {
         
         // Update PlaidConnectionManager with account info
         PlaidConnectionManager.setPlaidAccounts(plaidAccountsList);
+        setHasPlaidAccounts(plaidAccountsList.length > 0);
         
         let totalBalance = 0;
         let accountCount = 0;
@@ -301,22 +303,22 @@ const Dashboard = () => {
             gap: '8px',
             padding: '6px 12px',
             borderRadius: '6px',
-            background: plaidStatus.isConnected ? 'rgba(16, 185, 129, 0.1)' : (plaidStatus.hasError ? 'rgba(239, 68, 68, 0.1)' : 'rgba(251, 191, 36, 0.1)'),
-            border: `1px solid ${plaidStatus.isConnected ? 'rgba(16, 185, 129, 0.3)' : (plaidStatus.hasError ? 'rgba(239, 68, 68, 0.3)' : 'rgba(251, 191, 36, 0.3)')}`
+            background: (plaidStatus.isConnected || hasPlaidAccounts) ? 'rgba(16, 185, 129, 0.1)' : (plaidStatus.hasError ? 'rgba(239, 68, 68, 0.1)' : 'rgba(251, 191, 36, 0.1)'),
+            border: `1px solid ${(plaidStatus.isConnected || hasPlaidAccounts) ? 'rgba(16, 185, 129, 0.3)' : (plaidStatus.hasError ? 'rgba(239, 68, 68, 0.3)' : 'rgba(251, 191, 36, 0.3)')}`
           }}>
             <span style={{ fontSize: '12px' }}>
-              {plaidStatus.isConnected ? '✅' : (plaidStatus.hasError ? '❌' : '⚠️')}
+              {(plaidStatus.isConnected || hasPlaidAccounts) ? '✅' : (plaidStatus.hasError ? '❌' : '⚠️')}
             </span>
             <span style={{ 
               fontSize: '13px', 
               fontWeight: '500',
-              color: plaidStatus.isConnected ? '#059669' : (plaidStatus.hasError ? '#dc2626' : '#d97706')
+              color: (plaidStatus.isConnected || hasPlaidAccounts) ? '#059669' : (plaidStatus.hasError ? '#dc2626' : '#d97706')
             }}
             title={plaidStatus.hasError ? PlaidConnectionManager.getErrorMessage() : ''}
             >
-              Plaid: {plaidStatus.isConnected ? 'Connected' : (plaidStatus.hasError ? 'Error' : 'Not Connected')}
+              Plaid: {plaidStatus.isConnected || hasPlaidAccounts ? 'Connected' : (plaidStatus.hasError ? 'Error' : 'Not Connected')}
             </span>
-            {!plaidStatus.isConnected && !loading && (
+            {!plaidStatus.isConnected && !hasPlaidAccounts && !loading && (
               <button
                 onClick={() => navigate('/accounts')}
                 style={{

@@ -669,7 +669,7 @@ const Transactions = () => {
       </div>
 
       {/* Plaid Connection Status Banner - Compact Version */}
-      {!plaidStatus.isConnected && !plaidStatus.hasError && (
+      {!plaidStatus.isConnected && !hasPlaidAccounts && !plaidStatus.hasError && (
         <div style={{
           background: 'linear-gradient(135deg, #f59e0b 0%, #d97706 100%)',
           color: '#fff',
@@ -745,7 +745,7 @@ const Transactions = () => {
         </div>
       )}
 
-      {hasPlaidAccounts && plaidStatus.isConnected && (
+      {(hasPlaidAccounts || plaidStatus.isConnected) && !plaidStatus.hasError && (
         <div style={{
           background: 'linear-gradient(135deg, #11998e 0%, #38ef7d 100%)',
           color: '#fff',
@@ -809,23 +809,23 @@ const Transactions = () => {
           <button 
             className="btn-secondary"
             onClick={syncPlaidTransactions}
-            disabled={saving || syncingPlaid || !plaidStatus.isConnected}
+            disabled={saving || syncingPlaid || (!plaidStatus.isConnected && !hasPlaidAccounts)}
             title={
               plaidStatus.hasError 
                 ? 'Plaid connection error - see banner above' 
-                : !plaidStatus.isConnected 
+                : (!plaidStatus.isConnected && !hasPlaidAccounts)
                   ? 'Please connect Plaid to use this feature' 
                   : 'Sync transactions from your bank accounts'
             }
             style={{
-              background: syncingPlaid ? '#999' : (!plaidStatus.isConnected ? '#6b7280' : '#007bff'),
+              background: syncingPlaid ? '#999' : ((!plaidStatus.isConnected && !hasPlaidAccounts) ? '#6b7280' : '#007bff'),
               color: '#fff',
               border: 'none',
-              cursor: (!plaidStatus.isConnected || syncingPlaid || saving) ? 'not-allowed' : 'pointer',
-              opacity: (!plaidStatus.isConnected || syncingPlaid) ? 0.6 : 1
+              cursor: ((!plaidStatus.isConnected && !hasPlaidAccounts) || syncingPlaid || saving) ? 'not-allowed' : 'pointer',
+              opacity: ((!plaidStatus.isConnected && !hasPlaidAccounts) || syncingPlaid) ? 0.6 : 1
             }}
           >
-            {syncingPlaid ? '🔄 Syncing...' : (!plaidStatus.isConnected ? '🔒 Sync Plaid (Not Connected)' : '🔄 Sync Plaid Transactions')}
+            {syncingPlaid ? '🔄 Syncing...' : ((!plaidStatus.isConnected && !hasPlaidAccounts) ? '🔒 Sync Plaid (Not Connected)' : '🔄 Sync Plaid Transactions')}
           </button>
           
           <button 
