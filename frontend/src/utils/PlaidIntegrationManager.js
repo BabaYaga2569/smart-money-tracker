@@ -181,56 +181,81 @@ export class PlaidIntegrationManager {
         if (s1.includes(s2) || s2.includes(s1)) return true;
 
         // Tokenize into words for partial word matching
-        const words1 = s1.split(/\s+/);
-        const words2 = s2.split(/\s+/);
+        const words1 = s1.split(/\s+/).filter(w => w.length > 0);
+        const words2 = s2.split(/\s+/).filter(w => w.length > 0);
 
-        // Check if any significant word (3+ chars) from one appears in the other
+        // Enhanced partial matching: check if any significant word (3+ chars) 
+        // from one string has a match in the other
+        let significantMatches = 0;
+        let totalSignificantWords = 0;
+
         for (const word1 of words1) {
             if (word1.length >= 3) {
+                totalSignificantWords++;
+                let foundMatch = false;
+                
                 for (const word2 of words2) {
                     if (word2.length >= 3) {
-                        // Check for word-level substring match
+                        // Direct word-level substring match (e.g., "geico" in "geico")
                         if (word1.includes(word2) || word2.includes(word1)) {
-                            return true;
+                            foundMatch = true;
+                            break;
                         }
                         
-                        // Check for common prefix (helps match 'mepno' and 'mepco')
+                        // Check for exact word match after normalization
+                        if (word1 === word2) {
+                            foundMatch = true;
+                            break;
+                        }
+                        
+                        // Check for common prefix (helps match 'geico' variations)
                         const minLength = Math.min(word1.length, word2.length);
                         if (minLength >= 4) {
-                            // Match if first 3 characters are the same and 4th character is close
-                            const prefix1 = word1.substring(0, 3);
-                            const prefix2 = word2.substring(0, 3);
+                            const prefix1 = word1.substring(0, 4);
+                            const prefix2 = word2.substring(0, 4);
                             if (prefix1 === prefix2) {
-                                // If prefix matches, check overall similarity
+                                // If first 4 chars match, check overall similarity
                                 const wordDistance = this.levenshteinDistance(word1, word2);
                                 const maxWordLength = Math.max(word1.length, word2.length);
                                 const wordSimilarity = 1 - (wordDistance / maxWordLength);
-                                // Lower threshold to 60% for words with matching prefix
+                                // Accept match with 60% similarity for matching prefix
                                 if (wordSimilarity >= 0.6) {
-                                    return true;
+                                    foundMatch = true;
+                                    break;
                                 }
                             }
                         }
                         
-                        // Check for close word similarity
+                        // Check for close word similarity (helps with typos)
                         const wordDistance = this.levenshteinDistance(word1, word2);
                         const maxWordLength = Math.max(word1.length, word2.length);
                         const wordSimilarity = 1 - (wordDistance / maxWordLength);
-                        // Lower individual word threshold to 70% for better partial matching
+                        // Accept 70% word similarity
                         if (wordSimilarity >= 0.70) {
-                            return true;
+                            foundMatch = true;
+                            break;
                         }
                     }
+                }
+                
+                if (foundMatch) {
+                    significantMatches++;
                 }
             }
         }
 
-        // Calculate overall Levenshtein distance as fallback
+        // If at least one significant word matches, consider it a match
+        // This handles cases like "Geico SXS" matching "Geico Insurance"
+        if (totalSignificantWords > 0 && significantMatches > 0) {
+            return true;
+        }
+
+        // Fallback: Calculate overall Levenshtein distance
         const distance = this.levenshteinDistance(s1, s2);
         const maxLength = Math.max(s1.length, s2.length);
         const similarity = 1 - (distance / maxLength);
 
-        // Lower the overall threshold to 0.6 for better matching
+        // Use the minimum of the provided threshold and 0.6 for lenient matching
         return similarity >= Math.min(threshold, 0.6);
     }
 
