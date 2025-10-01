@@ -110,6 +110,41 @@ app.post("/api/plaid/get_balances", async (req, res) => {
   }
 });
 
+// Get transactions for bill matching
+app.post("/api/plaid/get_transactions", async (req, res) => {
+  try {
+    const { access_token, start_date, end_date } = req.body;
+
+    if (!access_token) {
+      return res.status(400).json({ error: "access_token is required" });
+    }
+
+    // Default to last 30 days if no dates provided
+    const endDate = end_date || new Date().toISOString().split('T')[0];
+    const startDate = start_date || new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
+
+    const transactionsResponse = await plaidClient.transactionsGet({
+      access_token,
+      start_date: startDate,
+      end_date: endDate,
+      options: {
+        count: 100,
+        offset: 0,
+      }
+    });
+
+    res.json({
+      success: true,
+      transactions: transactionsResponse.data.transactions,
+      accounts: transactionsResponse.data.accounts,
+      total_transactions: transactionsResponse.data.total_transactions
+    });
+  } catch (error) {
+    console.error("Error getting transactions:", error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
 // Health check
 app.get("/healthz", (req, res) => res.send("ok"));
 
