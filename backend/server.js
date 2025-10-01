@@ -110,6 +110,41 @@ app.post("/api/plaid/get_balances", async (req, res) => {
   }
 });
 
+// Get accounts - provides account list for frontend (gracefully handles missing access_token)
+app.get("/api/accounts", async (req, res) => {
+  try {
+    const authHeader = req.headers.authorization;
+    const access_token = authHeader ? authHeader.replace('Bearer ', '') : null;
+
+    if (!access_token) {
+      return res.status(200).json({ 
+        success: false,
+        accounts: [],
+        message: "No access token provided. Please connect your bank account." 
+      });
+    }
+
+    const balanceResponse = await plaidClient.accountsBalanceGet({
+      access_token,
+    });
+
+    res.json({
+      success: true,
+      accounts: balanceResponse.data.accounts,
+    });
+  } catch (error) {
+    console.error("Error getting accounts:", error);
+    
+    // Return graceful error instead of 500
+    res.status(200).json({ 
+      success: false,
+      accounts: [],
+      error: "Unable to fetch accounts. Please reconnect your bank account.",
+      error_details: error.message
+    });
+  }
+});
+
 // Get transactions for bill matching
 app.post("/api/plaid/get_transactions", async (req, res) => {
   try {

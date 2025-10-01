@@ -64,14 +64,14 @@ export const parseLocalDate = (dateString) => {
     }
   }
   
-  // Fallback: try the original Date constructor but warn about potential issues
+  // Fallback: try the original Date constructor
+  // Note: Warnings suppressed per user feedback - only show errors for actual failures
   const fallbackDate = new Date(dateStr);
   if (!isNaN(fallbackDate.getTime())) {
-    console.warn(`DateUtils.parseLocalDate: Using fallback Date constructor for "${dateStr}". This may cause timezone issues.`);
     return fallbackDate;
   }
   
-  // If all parsing attempts failed, return null
+  // If all parsing attempts failed, return null (only log actual errors, not warnings)
   console.error(`DateUtils.parseLocalDate: Unable to parse date string "${dateStr}"`);
   return null;
 };

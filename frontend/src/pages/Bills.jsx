@@ -225,34 +225,44 @@ const Bills = () => {
           
           if (response.ok) {
             const data = await response.json();
-            const accountsList = data.accounts || data;
             
-            if (Array.isArray(accountsList) && accountsList.length > 0) {
-              const accountsMap = {};
-              accountsList.forEach(account => {
-                const accountId = account.account_id || account.id || account._id;
-                let balance = 0;
-                if (account.balances) {
-                  balance = account.balances.current || account.balances.available || 0;
-                } else if (account.current_balance !== undefined) {
-                  balance = account.current_balance;
-                } else if (account.balance !== undefined) {
-                  balance = account.balance;
-                }
-                
-                accountsMap[accountId] = {
-                  name: account.name || account.official_name || 'Unknown Account',
-                  type: account.subtype || account.type || 'checking',
-                  balance: balance.toString(),
-                  mask: account.mask || '',
-                  institution: account.institution_name || ''
-                };
-              });
-              setAccounts(accountsMap);
-              return;
+            // Check if API returned success flag
+            if (data.success === false) {
+              console.log('Plaid API returned no accounts:', data.message || 'No accounts available');
+              // Fall through to Firebase fallback
+            } else {
+              const accountsList = data.accounts || data;
+              
+              if (Array.isArray(accountsList) && accountsList.length > 0) {
+                const accountsMap = {};
+                accountsList.forEach(account => {
+                  const accountId = account.account_id || account.id || account._id;
+                  let balance = 0;
+                  if (account.balances) {
+                    balance = account.balances.current || account.balances.available || 0;
+                  } else if (account.current_balance !== undefined) {
+                    balance = account.current_balance;
+                  } else if (account.balance !== undefined) {
+                    balance = account.balance;
+                  }
+                  
+                  accountsMap[accountId] = {
+                    name: account.name || account.official_name || 'Unknown Account',
+                    type: account.subtype || account.type || 'checking',
+                    balance: balance.toString(),
+                    mask: account.mask || '',
+                    institution: account.institution_name || ''
+                  };
+                });
+                setAccounts(accountsMap);
+                return;
+              }
             }
+          } else if (response.status === 404) {
+            console.log('Accounts endpoint not available, using Firebase fallback');
           }
         } catch (apiError) {
+          // Network errors are expected when API is not available
           console.log('Plaid API not available, trying Firebase...', apiError.message || '');
         }
       }
@@ -841,6 +851,68 @@ const Bills = () => {
     <div className="bills-container">
       {/* Notification System */}
       <NotificationSystem />
+      
+      {/* Plaid Connection Status Banner */}
+      {!isPlaidConnected && (
+        <div style={{
+          background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
+          color: '#fff',
+          padding: '16px 24px',
+          borderRadius: '8px',
+          marginBottom: '20px',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          boxShadow: '0 4px 6px rgba(0,0,0,0.1)'
+        }}>
+          <div style={{ flex: 1 }}>
+            <div style={{ fontSize: '18px', fontWeight: '600', marginBottom: '4px' }}>
+              🔗 Connect Your Bank Account
+            </div>
+            <div style={{ fontSize: '14px', opacity: 0.9 }}>
+              Automate bill tracking by connecting Plaid. Match transactions automatically and never miss a payment.
+            </div>
+          </div>
+          <button 
+            onClick={() => window.location.href = '/settings'}
+            style={{
+              background: '#fff',
+              color: '#667eea',
+              border: 'none',
+              borderRadius: '6px',
+              padding: '12px 24px',
+              fontSize: '14px',
+              fontWeight: '600',
+              cursor: 'pointer',
+              boxShadow: '0 2px 4px rgba(0,0,0,0.1)',
+              transition: 'transform 0.2s',
+              whiteSpace: 'nowrap',
+              marginLeft: '20px'
+            }}
+            onMouseEnter={(e) => e.target.style.transform = 'scale(1.05)'}
+            onMouseLeave={(e) => e.target.style.transform = 'scale(1)'}
+          >
+            Go to Settings →
+          </button>
+        </div>
+      )}
+      
+      {isPlaidConnected && (
+        <div style={{
+          background: 'linear-gradient(135deg, #11998e 0%, #38ef7d 100%)',
+          color: '#fff',
+          padding: '12px 24px',
+          borderRadius: '8px',
+          marginBottom: '20px',
+          display: 'flex',
+          alignItems: 'center',
+          boxShadow: '0 4px 6px rgba(0,0,0,0.1)'
+        }}>
+          <div style={{ fontSize: '16px', fontWeight: '600' }}>
+            ✅ Plaid Connected - Automated bill matching enabled
+          </div>
+        </div>
+      )}
       
       {/* Header with Add Bill Button */}
       <div className="page-header">
