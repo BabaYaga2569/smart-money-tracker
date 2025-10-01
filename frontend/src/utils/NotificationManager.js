@@ -95,9 +95,8 @@ export class NotificationManager {
     /**
      * Show payment success notification
      * @param {Object} bill - Bill object
-     * @param {Object} paymentData - Payment data
      */
-    static showPaymentSuccess(bill, paymentData = {}) {
+    static showPaymentSuccess(bill) {
         return this.showNotification({
             type: 'success',
             title: 'Payment Automatically Processed',
@@ -143,21 +142,67 @@ export class NotificationManager {
     /**
      * Show error notification
      * @param {string} message - Error message
-     * @param {Error} error - Error object
+     * @param {Error|string} error - Error object or error string
      */
     static showError(message, error = null) {
         console.error('Error:', message, error);
+        
+        // Extract error message if it's an Error object or string
+        const errorDetails = typeof error === 'string' ? error : (error?.message || error);
+        const fullMessage = errorDetails ? `${message}: ${errorDetails}` : message;
+        
         return this.showNotification({
             type: 'error', 
             title: 'Error',
-            message,
-            duration: 8000,
+            message: fullMessage,
+            duration: 10000, // Increase to 10 seconds for errors
             actions: error ? [
                 {
                     label: 'View Details',
                     action: () => console.log('Error details:', error)
                 }
             ] : []
+        });
+    }
+
+    /**
+     * Show success notification
+     * @param {string} message - Success message
+     * @param {number} duration - How long to show notification (ms)
+     */
+    static showSuccess(message, duration = 5000) {
+        return this.showNotification({
+            type: 'success',
+            title: 'Success',
+            message,
+            duration
+        });
+    }
+
+    /**
+     * Show warning notification
+     * @param {string} title - Warning title
+     * @param {string} message - Warning message
+     */
+    static showWarning(title, message = null) {
+        return this.showNotification({
+            type: 'warning',
+            title: title,
+            message: message || title,
+            duration: 7000
+        });
+    }
+
+    /**
+     * Show info notification
+     * @param {string} message - Info message
+     */
+    static showInfo(message) {
+        return this.showNotification({
+            type: 'info',
+            title: 'Information',
+            message,
+            duration: 5000
         });
     }
 

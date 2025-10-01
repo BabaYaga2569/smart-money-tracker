@@ -135,14 +135,14 @@ export class BillSortingManager {
 
         // Add urgency information to each bill
         const billsWithUrgency = bills.map(bill => {
-            const daysUntilDue = this.calculateDaysUntilDue(bill.nextOccurrence || bill.dueDate);
+            const daysUntilDue = this.calculateDaysUntilDue(bill.nextOccurrence || bill.nextDueDate || bill.dueDate);
             const urgencyInfo = this.getUrgencyInfo(daysUntilDue);
             
             return {
                 ...bill,
                 daysUntilDue,
                 urgencyInfo,
-                formattedDueDate: this.formatDueDate(bill.nextOccurrence || bill.dueDate, daysUntilDue)
+                formattedDueDate: this.formatDueDate(bill.nextOccurrence || bill.nextDueDate || bill.dueDate, daysUntilDue)
             };
         });
 
