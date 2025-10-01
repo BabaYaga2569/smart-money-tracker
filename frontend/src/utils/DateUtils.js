@@ -134,7 +134,6 @@ export const formatDateForInput = (date) => {
 
 /**
  * Get current time in Pacific Time using manual UTC offset calculation
- * NUCLEAR FIX: Completely manual calculation to avoid all timezone conversion issues
  * @returns {Date} Current date/time in Pacific Time
  */
 export const getPacificTime = () => {
@@ -143,33 +142,19 @@ export const getPacificTime = () => {
   // MANUAL PACIFIC TIME CALCULATION
   // Pacific Standard Time is UTC - 8 hours
   // Pacific Daylight Time is UTC - 7 hours
-  // For this nuclear fix, we'll use PST (UTC - 8) as specified in requirements
+  // For consistency, we use PST (UTC - 8)
   const pacificOffset = 8 * 60 * 60 * 1000; // 8 hours in milliseconds
   const pacificTime = new Date(now.getTime() - pacificOffset);
-  
-  // Debug logging for manual calculation
-  console.log('MANUAL PACIFIC TIME CALCULATION:', {
-    utcNow: now.toISOString(),
-    utcTimestamp: now.getTime(),
-    pacificOffset: pacificOffset,
-    pacificTimestamp: pacificTime.getTime(),
-    pacificTime: pacificTime.toISOString(),
-    pacificLocalString: pacificTime.toString(),
-    calculationMethod: 'Manual UTC - 8 hours'
-  });
   
   return pacificTime;
 };
 
 /**
  * Calculate days until a target date using manual Pacific Time calculation
- * NUCLEAR FIX: Bulletproof manual calculation as specified in requirements
  * @param {string|Date} targetDate - Target date (YYYY-MM-DD format or Date object)
  * @returns {number} Number of days until the target date
  */
 export const getDaysUntilDateInPacific = (targetDate) => {
-  // MANUAL PACIFIC TIME CALCULATION - NUCLEAR OPTION
-  
   // Get current UTC time
   const now = new Date();
   
@@ -207,33 +192,12 @@ export const getDaysUntilDateInPacific = (targetDate) => {
   // Convert to days and round up
   const daysDifference = Math.ceil(timeDifference / (1000 * 60 * 60 * 24));
   
-  // NUCLEAR DEBUG LOGGING - exactly as specified in requirements
-  console.log('MANUAL PAYDAY CALCULATION:', {
-    utcNow: now,
-    pacificTime: pacificTime,
-    today: today,
-    payday: payday,
-    timeDifference: timeDifference,
-    daysDifference: daysDifference,
-    calculationDetails: {
-      utcNowISO: now.toISOString(),
-      pacificTimeISO: pacificTime.toISOString(),
-      todayISO: today.toISOString(),
-      paydayISO: payday.toISOString(),
-      todayDateString: today.toDateString(),
-      paydayDateString: payday.toDateString(),
-      timeDiffDays: timeDifference / (1000 * 60 * 60 * 24),
-      finalResult: Math.max(0, daysDifference)
-    }
-  });
-  
   // Return the result, ensuring non-negative
   return Math.max(0, daysDifference);
 };
 
 /**
- * NUCLEAR OPTION: Manual Pacific Time payday calculation function
- * Exactly as specified in the requirements
+ * Manual Pacific Time payday calculation function
  * @returns {number} Number of days until September 30, 2025
  */
 export const getManualPacificDaysUntilPayday = () => {
@@ -259,16 +223,6 @@ export const getManualPacificDaysUntilPayday = () => {
   
   // Convert to days and round up
   const daysDifference = Math.ceil(timeDifference / (1000 * 60 * 60 * 24));
-  
-  // Debug logging
-  console.log('MANUAL PAYDAY CALCULATION:', {
-    utcNow: now,
-    pacificTime: pacificTime,
-    today: today,
-    payday: payday,
-    timeDifference: timeDifference,
-    daysDifference: daysDifference
-  });
   
   return Math.max(0, daysDifference);
 };

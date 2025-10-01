@@ -319,6 +319,47 @@ const Accounts = () => {
         </div>
       </div>
 
+      {/* Plaid Connection Status Banner */}
+      {!hasPlaidAccounts && (
+        <div style={{
+          background: 'linear-gradient(135deg, #f59e0b 0%, #d97706 100%)',
+          color: '#fff',
+          padding: '16px 24px',
+          borderRadius: '8px',
+          marginBottom: '20px',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          boxShadow: '0 4px 6px rgba(0,0,0,0.1)'
+        }}>
+          <div>
+            <div style={{ fontSize: '16px', fontWeight: '600', marginBottom: '4px' }}>
+              ⚠️ No Bank Accounts Connected
+            </div>
+            <div style={{ fontSize: '14px', opacity: 0.9 }}>
+              Connect your bank account with Plaid to automatically sync balances and transactions.
+            </div>
+          </div>
+        </div>
+      )}
+
+      {hasPlaidAccounts && (
+        <div style={{
+          background: 'linear-gradient(135deg, #11998e 0%, #38ef7d 100%)',
+          color: '#fff',
+          padding: '12px 24px',
+          borderRadius: '8px',
+          marginBottom: '20px',
+          display: 'flex',
+          alignItems: 'center',
+          boxShadow: '0 4px 6px rgba(0,0,0,0.1)'
+        }}>
+          <div style={{ fontSize: '16px', fontWeight: '600' }}>
+            ✅ Bank Connected - Live balance syncing enabled
+          </div>
+        </div>
+      )}
+
       {/* Help Section */}
       {showHelp && (
         <div className="help-section">

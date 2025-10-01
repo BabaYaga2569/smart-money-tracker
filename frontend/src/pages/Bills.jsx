@@ -228,8 +228,7 @@ const Bills = () => {
             
             // Check if API returned success flag
             if (data.success === false) {
-              console.log('Plaid API returned no accounts:', data.message || 'No accounts available');
-              // Fall through to Firebase fallback
+              // Expected - Plaid not configured, fall through to Firebase
             } else {
               const accountsList = data.accounts || data;
               
@@ -258,12 +257,9 @@ const Bills = () => {
                 return;
               }
             }
-          } else if (response.status === 404) {
-            console.log('Accounts endpoint not available, using Firebase fallback');
           }
         } catch (apiError) {
-          // Network errors are expected when API is not available
-          console.log('Plaid API not available, trying Firebase...', apiError.message || '');
+          // Expected when API is not available - silently fallback
         }
       }
       
@@ -296,7 +292,10 @@ const Bills = () => {
         }
       }
     } catch (error) {
-      console.error('Error loading accounts:', error);
+      // Only log actual errors, not expected fallback scenarios
+      if (error.name !== 'TypeError') {
+        console.warn('Error loading accounts, using defaults:', error.message);
+      }
       // Set default demo accounts as fallback
       setAccounts({
         bofa: { name: 'Bank of America', type: 'Checking', balance: '0' },
