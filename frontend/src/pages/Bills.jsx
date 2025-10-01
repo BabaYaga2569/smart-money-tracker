@@ -30,6 +30,7 @@ const Bills = () => {
     hasError: false,
     errorMessage: null
   });
+  const [hasPlaidAccounts, setHasPlaidAccounts] = useState(false);
   const [showErrorModal, setShowErrorModal] = useState(false);
 
   // Use shared categories for consistency with Transactions page
@@ -307,6 +308,9 @@ const Bills = () => {
         const data = settingsDocSnap.data();
         const plaidAccountsList = data.plaidAccounts || [];
         const bankAccounts = data.bankAccounts || {};
+        
+        // Track if we have Plaid accounts
+        setHasPlaidAccounts(plaidAccountsList.length > 0);
         
         // Prioritize Plaid accounts if they exist
         if (plaidAccountsList.length > 0) {
@@ -888,7 +892,7 @@ const Bills = () => {
       <NotificationSystem />
       
       {/* Plaid Connection Status Banner - Compact Version */}
-      {!plaidStatus.isConnected && !plaidStatus.hasError && (
+      {!plaidStatus.isConnected && !hasPlaidAccounts && !plaidStatus.hasError && (
         <div style={{
           background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
           color: '#fff',
@@ -964,7 +968,7 @@ const Bills = () => {
         </div>
       )}
       
-      {plaidStatus.isConnected && (
+      {(plaidStatus.isConnected || hasPlaidAccounts) && !plaidStatus.hasError && (
         <div style={{
           background: 'linear-gradient(135deg, #11998e 0%, #38ef7d 100%)',
           color: '#fff',
@@ -1003,11 +1007,11 @@ const Bills = () => {
             <button 
               className="refresh-transactions-btn"
               onClick={refreshPlaidTransactions}
-              disabled={refreshingTransactions || !plaidStatus.isConnected}
+              disabled={refreshingTransactions || (!plaidStatus.isConnected && !hasPlaidAccounts)}
               title={
                 plaidStatus.hasError 
                   ? 'Plaid connection error - click banner above to see details' 
-                  : !plaidStatus.isConnected 
+                  : (!plaidStatus.isConnected && !hasPlaidAccounts)
                     ? 'Please connect Plaid from Accounts page to use this feature' 
                     : 'Match bills with recent Plaid transactions'
               }
@@ -1015,7 +1019,7 @@ const Bills = () => {
                 marginLeft: '10px', 
                 background: plaidStatus.hasError 
                   ? '#dc2626' 
-                  : (refreshingTransactions || !plaidStatus.isConnected) 
+                  : (refreshingTransactions || (!plaidStatus.isConnected && !hasPlaidAccounts))
                     ? '#999' 
                     : '#007bff', 
                 color: '#fff',
@@ -1024,16 +1028,16 @@ const Bills = () => {
                 padding: '12px 16px',
                 fontSize: '14px',
                 fontWeight: '600',
-                cursor: (refreshingTransactions || !plaidStatus.isConnected) ? 'not-allowed' : 'pointer',
-                opacity: (refreshingTransactions || !plaidStatus.isConnected) ? 0.6 : 1,
-                boxShadow: (refreshingTransactions || !plaidStatus.isConnected) ? 'none' : '0 2px 4px rgba(0,123,255,0.3)'
+                cursor: (refreshingTransactions || (!plaidStatus.isConnected && !hasPlaidAccounts)) ? 'not-allowed' : 'pointer',
+                opacity: (refreshingTransactions || (!plaidStatus.isConnected && !hasPlaidAccounts)) ? 0.6 : 1,
+                boxShadow: (refreshingTransactions || (!plaidStatus.isConnected && !hasPlaidAccounts)) ? 'none' : '0 2px 4px rgba(0,123,255,0.3)'
               }}
             >
               {refreshingTransactions 
                 ? '🔄 Matching...' 
                 : plaidStatus.hasError 
                   ? '❌ Plaid Error' 
-                  : !plaidStatus.isConnected 
+                  : (!plaidStatus.isConnected && !hasPlaidAccounts)
                     ? '🔒 Connect Plaid' 
                     : '🔄 Match Transactions'}
             </button>
