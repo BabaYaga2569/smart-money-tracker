@@ -15,12 +15,15 @@ This document provides a visual overview of all the UI changes made to enhance t
 
 ### After:
 ```
-[↩️ Undo Delete] [🗑️ Delete All] [📦 Import from Settings (3)] [📊 Import from CSV] [➕ Add Recurring Item]
+[↩️ Undo Delete] [🗑️ Delete All] [📊 Import from CSV] [➕ Add Recurring Item]
 ```
 
 **New Buttons:**
 - **↩️ Undo Delete** (Orange, pulsing animation) - Only appears after bulk delete
 - **🗑️ Delete All** (Red) - Only appears when items exist
+
+**Removed Buttons:**
+- **📦 Import from Settings** - Removed as CSV import workflow has been fully migrated to Recurring Bills page
 
 ---
 

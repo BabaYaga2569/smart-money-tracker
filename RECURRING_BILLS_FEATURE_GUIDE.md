@@ -124,9 +124,8 @@ Counter updates **immediately** after:
 Right side of recurring controls:
 1. **Undo Delete** (orange, pulsing) - Only after bulk delete
 2. **Delete All** (red) - Only when items exist
-3. **Import from Settings** (blue) - Only when unmigrated bills exist
-4. **Import from CSV** (blue)
-5. **Add Recurring Item** (green)
+3. **Import from CSV** (blue)
+4. **Add Recurring Item** (green)
 
 ### Preview Bulk Actions
 Top of preview screen:
