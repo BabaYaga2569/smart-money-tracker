@@ -5,8 +5,6 @@ import { RecurringManager } from '../utils/RecurringManager';
 import { formatDateForInput } from '../utils/DateUtils';
 import { TRANSACTION_CATEGORIES, getCategoryIcon } from '../constants/categories';
 import CSVImportModal from '../components/CSVImportModal';
-import SettingsMigrationModal from '../components/SettingsMigrationModal';
-import { BillMigrationManager } from '../utils/BillMigrationManager';
 import { BillSortingManager } from '../utils/BillSortingManager';
 import './Recurring.css';
 
@@ -22,9 +20,6 @@ const Recurring = () => {
   const [showHistoryModal, setShowHistoryModal] = useState(false);
   const [selectedItem, setSelectedItem] = useState(null);
   const [showCSVImport, setShowCSVImport] = useState(false);
-  const [showSettingsMigration, setShowSettingsMigration] = useState(false);
-  const [settingsBills, setSettingsBills] = useState([]);
-  const [migrationAnalysis, setMigrationAnalysis] = useState(null);
   
   // Filters and search
   const [filterType, setFilterType] = useState('all');
@@ -63,19 +58,10 @@ const Recurring = () => {
     setProcessedItems(processed);
   }, [recurringItems]);
 
-  useEffect(() => {
-    if (settingsBills.length > 0 && recurringItems.length >= 0) {
-      const analysis = BillMigrationManager.analyzeMigrationNeed(settingsBills, recurringItems);
-      setMigrationAnalysis(analysis);
-    }
-  }, [settingsBills, recurringItems]);
-
   const loadRecurringData = async () => {
     try {
       setLoading(true);
       await Promise.all([loadRecurringItems(), loadAccounts()]);
-      // Load settings bills after recurring items are loaded
-      await loadSettingsBillsAndAnalyzeMigration();
     } catch (error) {
       console.error('Error loading recurring data:', error);
       // Load sample data for demo
@@ -185,27 +171,6 @@ const Recurring = () => {
         usaa: { name: "USAA", type: "checking" },
         capone: { name: "Capital One", type: "credit" }
       });
-    }
-  };
-
-  const loadSettingsBillsAndAnalyzeMigration = async () => {
-    try {
-      const settingsDocRef = doc(db, 'users', 'steve-colburn', 'settings', 'personal');
-      const settingsDocSnap = await getDoc(settingsDocRef);
-      
-      if (settingsDocSnap.exists()) {
-        const data = settingsDocSnap.data();
-        const bills = data.bills || [];
-        setSettingsBills(bills);
-        
-        // Analyze migration needs
-        const analysis = BillMigrationManager.analyzeMigrationNeed(bills, recurringItems);
-        setMigrationAnalysis(analysis);
-      }
-    } catch (error) {
-      console.error('Error loading settings bills:', error);
-      setSettingsBills([]);
-      setMigrationAnalysis(null);
     }
   };
 
@@ -702,83 +667,6 @@ const Recurring = () => {
     setShowHistoryModal(true);
   };
 
-  const handleSettingsMigration = () => {
-    setShowSettingsMigration(true);
-  };
-
-  const handleMigrationImport = async (migratedItems, conflicts) => {
-    try {
-      setSaving(true);
-      
-      const settingsDocRef = doc(db, 'users', 'steve-colburn', 'settings', 'personal');
-      const currentDoc = await getDoc(settingsDocRef);
-      const currentData = currentDoc.exists() ? currentDoc.data() : {};
-      
-      const existingItems = currentData.recurringItems || [];
-      
-      // Process conflicts - merge, replace, or skip items based on resolution
-      const mergeUpdates = [];
-      conflicts.forEach(conflict => {
-        if (conflict.resolution === 'merge') {
-          const existingIndex = existingItems.findIndex(item => item.id === conflict.existing.id);
-          if (existingIndex !== -1) {
-            // Update existing item with new data, keeping original creation date
-            const mergedItem = {
-              ...existingItems[existingIndex],
-              ...conflict.incoming,
-              id: conflict.existing.id, // Keep existing ID
-              createdAt: existingItems[existingIndex].createdAt, // Keep original creation date
-              updatedAt: new Date().toISOString()
-            };
-            mergeUpdates.push({ index: existingIndex, item: mergedItem });
-          }
-        } else if (conflict.resolution === 'replace') {
-          const existingIndex = existingItems.findIndex(item => item.id === conflict.existing.id);
-          if (existingIndex !== -1) {
-            const replacementItem = {
-              ...conflict.incoming,
-              id: conflict.existing.id, // Keep existing ID for consistency
-              createdAt: existingItems[existingIndex].createdAt, // Keep original creation date
-              updatedAt: new Date().toISOString()
-            };
-            mergeUpdates.push({ index: existingIndex, item: replacementItem });
-          }
-        }
-      });
-
-      // Apply merge/replace updates
-      let updatedItems = [...existingItems];
-      mergeUpdates.forEach(({ index, item }) => {
-        updatedItems[index] = item;
-      });
-
-      // Add new items (excluding those that were skipped or merged)
-      const itemsToAdd = migratedItems.filter(item => {
-        const conflict = conflicts.find(c => c.incoming.id === item.id);
-        return !conflict || (conflict.resolution !== 'skip' && conflict.resolution !== 'merge' && conflict.resolution !== 'replace');
-      });
-
-      updatedItems = [...updatedItems, ...itemsToAdd];
-
-      await updateDoc(settingsDocRef, {
-        ...currentData,
-        recurringItems: updatedItems
-      });
-
-      // Reload data to reflect changes
-      await loadRecurringItems();
-      await loadSettingsBillsAndAnalyzeMigration();
-      
-      showNotification(`Successfully imported ${migratedItems.length} bills from Settings!`, 'success');
-      setShowSettingsMigration(false);
-    } catch (error) {
-      console.error('Error importing from settings:', error);
-      showNotification('Error importing bills from Settings', 'error');
-    } finally {
-      setSaving(false);
-    }
-  };
-
   const getStatusBadgeClass = (status) => {
     const statusClasses = {
       'active': 'status-active',
@@ -943,16 +831,6 @@ const Recurring = () => {
               title="Delete all recurring items"
             >
               🗑️ Delete All
-            </button>
-          )}
-          {migrationAnalysis?.hasUnmigratedBills && (
-            <button 
-              className="migration-button"
-              onClick={handleSettingsMigration}
-              disabled={saving}
-              title={`Import ${migrationAnalysis.unmigratedCount} bills from Settings`}
-            >
-              📦 Import from Settings ({migrationAnalysis.unmigratedCount})
             </button>
           )}
           <button 
@@ -1242,16 +1120,6 @@ const Recurring = () => {
           customMapping={customMapping}
           onImport={handleCSVImport}
           onCancel={() => setShowCSVImport(false)}
-        />
-      )}
-
-      {/* Settings Migration Modal */}
-      {showSettingsMigration && (
-        <SettingsMigrationModal
-          settingsBills={settingsBills}
-          existingItems={recurringItems}
-          onImport={handleMigrationImport}
-          onCancel={() => setShowSettingsMigration(false)}
         />
       )}
 
