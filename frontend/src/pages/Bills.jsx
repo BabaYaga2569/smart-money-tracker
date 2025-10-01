@@ -497,7 +497,10 @@ const Bills = () => {
       let billFound = false;
       
       const updatedBills = bills.map(b => {
-        if (b.name === bill.name && b.amount === bill.amount) {
+        if (b.name === bill.name && 
+            b.amount === bill.amount &&
+            b.dueDate === bill.dueDate &&
+            b.recurrence === bill.recurrence) {
           billFound = true;
           // Remove last payment and reset status
           const updatedBill = { ...b };
@@ -610,7 +613,10 @@ const Bills = () => {
       const bills = currentData.bills || [];
       
       const updatedBills = bills.map(b => {
-        if (b.name === bill.name && b.amount === bill.amount) {
+        if (b.name === bill.name && 
+            b.amount === bill.amount &&
+            b.dueDate === bill.dueDate &&
+            b.recurrence === bill.recurrence) {
           // Use RecurringBillManager to properly calculate next due date and update status
           return RecurringBillManager.markBillAsPaid(
             b, 
@@ -672,9 +678,12 @@ const Bills = () => {
       const bills = currentData.bills || [];
       
       if (editingBill) {
-        // Update existing bill
+        // Update existing bill - use name, amount, dueDate, and recurrence to identify the specific bill
         const updatedBills = bills.map(bill => {
-          if (bill.name === editingBill.name && bill.amount === editingBill.amount) {
+          if (bill.name === editingBill.name && 
+              bill.amount === editingBill.amount &&
+              bill.dueDate === editingBill.dueDate &&
+              bill.recurrence === editingBill.recurrence) {
             return { ...billData, originalDueDate: billData.dueDate };
           }
           return bill;
@@ -689,31 +698,33 @@ const Bills = () => {
       } else {
         // Check for potential duplicates before adding
         const isDuplicate = bills.some(bill => {
-          // Exact duplicate: same name, amount, and due date
+          // Exact duplicate: same name, amount, due date, and recurrence
           const exactMatch = bill.name.toLowerCase() === billData.name.toLowerCase() && 
                              parseFloat(bill.amount) === parseFloat(billData.amount) &&
-                             bill.dueDate === billData.dueDate;
+                             bill.dueDate === billData.dueDate &&
+                             bill.recurrence === billData.recurrence;
           
           return exactMatch;
         });
         
         if (isDuplicate) {
-          showNotification('A bill with the same name, amount, and due date already exists!', 'error');
+          showNotification('A bill with the same name, amount, due date, and frequency already exists!', 'error');
           return;
         }
         
-        // Check for similar bills (same name and amount but different due date)
+        // Check for similar bills (same name and amount but different date or frequency)
         const similarBill = bills.find(bill => 
           bill.name.toLowerCase() === billData.name.toLowerCase() && 
           parseFloat(bill.amount) === parseFloat(billData.amount) &&
-          bill.dueDate !== billData.dueDate
+          (bill.dueDate !== billData.dueDate || bill.recurrence !== billData.recurrence)
         );
         
         if (similarBill) {
           const proceed = window.confirm(
-            `A bill named "${similarBill.name}" with amount $${similarBill.amount} already exists with due date ${similarBill.dueDate}.\n\n` +
-            `You're adding one with due date ${billData.dueDate}. This might be legitimate (e.g., twice-monthly rent).\n\n` +
-            `Do you want to proceed?`
+            `A bill named "${similarBill.name}" with amount $${similarBill.amount} already exists.\n\n` +
+            `Existing: ${similarBill.recurrence} on ${similarBill.dueDate}\n` +
+            `New: ${billData.recurrence} on ${billData.dueDate}\n\n` +
+            `This might be legitimate (e.g., twice-monthly rent). Do you want to proceed?`
           );
           
           if (!proceed) {
@@ -764,7 +775,10 @@ const Bills = () => {
       
       const bills = currentData.bills || [];
       const updatedBills = bills.filter(bill => 
-        !(bill.name === billToDelete.name && bill.amount === billToDelete.amount)
+        !(bill.name === billToDelete.name && 
+          bill.amount === billToDelete.amount &&
+          bill.dueDate === billToDelete.dueDate &&
+          bill.recurrence === billToDelete.recurrence)
       );
       
       await updateDoc(settingsDocRef, {
