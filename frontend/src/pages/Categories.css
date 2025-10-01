@@ -480,6 +480,19 @@
   font-size: 1.1rem;
 }
 
+.btn-edit {
+  background: #555;
+  color: #fff;
+  border: 1px solid #777;
+  margin-left: 0;
+}
+
+.btn-edit:hover {
+  background: #666;
+  border-color: #00ff88;
+  color: #00ff88;
+}
+
 .budget-progress {
   margin-bottom: 15px;
 }

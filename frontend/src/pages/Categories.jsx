@@ -39,6 +39,8 @@ const Categories = () => {
   // View state
   const [activeView, setActiveView] = useState('overview'); // overview, analytics, management, budgets
   const [showAddBudgetForm, setShowAddBudgetForm] = useState(false);
+  const [showEditBudgetForm, setShowEditBudgetForm] = useState(false);
+  const [editingBudget, setEditingBudget] = useState(null);
   
   // Modal states
   const [showAddCategoryModal, setShowAddCategoryModal] = useState(false);
@@ -430,6 +432,57 @@ const Categories = () => {
     } finally {
       setSaving(false);
     }
+  };
+
+  const updateBudget = async () => {
+    if (!newBudget.category || !newBudget.amount) {
+      showNotification('Please fill in all required fields', 'error');
+      return;
+    }
+
+    try {
+      setSaving(true);
+      
+      const budgetData = {
+        category: newBudget.category,
+        amount: parseFloat(newBudget.amount),
+        period: newBudget.period,
+        rollover: newBudget.rollover,
+        alerts: newBudget.alerts,
+        createdAt: budgets[editingBudget]?.createdAt || Date.now(),
+        updatedAt: Date.now()
+      };
+
+      // Update local state
+      setBudgets(prev => ({
+        ...prev,
+        [newBudget.category]: budgetData
+      }));
+
+      setNewBudget({ category: '', amount: '', period: 'monthly', rollover: false, alerts: { fifty: true, seventyFive: true, ninety: true, hundred: true } });
+      setShowEditBudgetForm(false);
+      setEditingBudget(null);
+      showNotification('Budget updated successfully', 'success');
+    } catch (error) {
+      console.error('Error updating budget:', error);
+      showNotification('Error updating budget', 'error');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleEditBudget = (category) => {
+    const budget = budgets[category];
+    setNewBudget({
+      category: category,
+      amount: budget.amount.toString(),
+      period: budget.period,
+      rollover: budget.rollover || false,
+      alerts: budget.alerts || { fifty: true, seventyFive: true, ninety: true, hundred: true }
+    });
+    setEditingBudget(category);
+    setShowEditBudgetForm(true);
+    setShowAddBudgetForm(false);
   };
 
   // Modal handler functions
@@ -882,6 +935,74 @@ const Categories = () => {
         </div>
       )}
 
+      {/* Edit Budget Form */}
+      {showEditBudgetForm && (
+        <div className="add-budget-form">
+          <h4>Edit Category Budget</h4>
+          <div className="form-row">
+            <div className="form-group">
+              <label>Category *</label>
+              <input
+                type="text"
+                value={newBudget.category}
+                disabled
+                style={{ background: '#222', cursor: 'not-allowed' }}
+              />
+            </div>
+            <div className="form-group">
+              <label>Budget Amount *</label>
+              <input
+                type="number"
+                value={newBudget.amount}
+                onChange={(e) => setNewBudget({ ...newBudget, amount: e.target.value })}
+                placeholder="0.00"
+              />
+            </div>
+            <div className="form-group">
+              <label>Period *</label>
+              <select
+                value={newBudget.period}
+                onChange={(e) => setNewBudget({ ...newBudget, period: e.target.value })}
+              >
+                <option value="weekly">Weekly</option>
+                <option value="monthly">Monthly</option>
+              </select>
+            </div>
+          </div>
+          <div className="form-row">
+            <div className="form-group checkbox-group">
+              <label>
+                <input
+                  type="checkbox"
+                  checked={newBudget.rollover}
+                  onChange={(e) => setNewBudget({ ...newBudget, rollover: e.target.checked })}
+                />
+                <span>Roll over unused budget to next period</span>
+              </label>
+            </div>
+          </div>
+          <div className="form-actions">
+            <button 
+              className="btn btn-primary" 
+              onClick={updateBudget}
+              disabled={saving}
+            >
+              {saving ? 'Updating...' : 'Update Budget'}
+            </button>
+            <button 
+              className="btn btn-secondary" 
+              onClick={() => {
+                setShowEditBudgetForm(false);
+                setEditingBudget(null);
+                setNewBudget({ category: '', amount: '', period: 'monthly', rollover: false, alerts: { fifty: true, seventyFive: true, ninety: true, hundred: true } });
+              }}
+            >
+              Cancel
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* Budget List */}
       <div className="budgets-list">
         {Object.entries(budgets).map(([category, budget]) => {
@@ -929,6 +1050,13 @@ const Categories = () => {
                 <span className="category-name">{category}</span>
                 <span className="budget-period">{isWeekly ? '📅 Weekly' : '📆 Monthly'}</span>
                 <span className="budget-amount">{formatCurrency(periodBudget)}</span>
+                <button 
+                  className="btn btn-small btn-edit"
+                  onClick={() => handleEditBudget(category)}
+                  title="Edit budget"
+                >
+                  ✏️ Edit
+                </button>
               </div>
               
               <div className="budget-progress">
