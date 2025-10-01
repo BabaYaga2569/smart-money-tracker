@@ -1,4 +1,4 @@
-// BillIdentification.test.js - Test for bill identification with multiple bills of same name/amount
+// Simple test runner for Bill Identification tests
 
 // Simple test assertion helper
 const assert = (condition, message) => {
@@ -47,7 +47,7 @@ const filterOutBill = (bills, billToRemove) => {
     return bills.filter(bill => bill.id !== billToRemove.id);
 };
 
-export const runBillIdentificationTests = () => {
+const runBillIdentificationTests = () => {
     console.log('🧪 Testing Bill Identification with Unique IDs\n');
 
     let passedTests = 0;
@@ -238,7 +238,5 @@ export const runBillIdentificationTests = () => {
     };
 };
 
-// Auto-run if called directly
-if (typeof window !== 'undefined' && window.location) {
-    window.runBillIdentificationTests = runBillIdentificationTests;
-}
+// Run tests
+runBillIdentificationTests();
