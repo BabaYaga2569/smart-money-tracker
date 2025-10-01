@@ -3,6 +3,7 @@ import { doc, getDoc, collection, addDoc, updateDoc, deleteDoc, query, orderBy, 
 import { db } from '../firebase';
 import { formatDateForDisplay, formatDateForInput } from '../utils/DateUtils';
 import { CATEGORY_KEYWORDS } from '../constants/categories';
+import PlaidConnectionManager from '../utils/PlaidConnectionManager';
 import './Transactions.css';
 
 const Transactions = () => {
@@ -15,7 +16,11 @@ const Transactions = () => {
   const [showAddForm, setShowAddForm] = useState(false);
   const [editingTransaction, setEditingTransaction] = useState(null);
   const [notification, setNotification] = useState({ message: '', type: '' });
-  const [plaidConnected, setPlaidConnected] = useState(false);
+  const [plaidStatus, setPlaidStatus] = useState({
+    isConnected: false,
+    hasError: false,
+    errorMessage: null
+  });
   const [hasPlaidAccounts, setHasPlaidAccounts] = useState(false);
   
   // Analytics state
@@ -49,7 +54,7 @@ const Transactions = () => {
   });
 
   const [showTemplates, setShowTemplates] = useState(false);
-  const [templates, setTemplates] = useState([
+  const [templates] = useState([
     { name: 'Coffee', amount: '4.50', category: 'Food & Dining', type: 'expense' },
     { name: 'Gas Station', amount: '35.00', category: 'Gas & Fuel', type: 'expense' },
     { name: 'Grocery Store', amount: '75.00', category: 'Groceries', type: 'expense' },
@@ -62,11 +67,30 @@ const Transactions = () => {
   useEffect(() => {
     loadInitialData();
     checkPlaidConnection();
+    
+    // Subscribe to Plaid connection changes
+    const unsubscribe = PlaidConnectionManager.subscribe((status) => {
+      setPlaidStatus({
+        isConnected: status.hasToken && status.isApiWorking === true && status.hasAccounts,
+        hasError: status.error !== null,
+        errorMessage: status.error
+      });
+    });
+    
+    return () => unsubscribe();
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const checkPlaidConnection = () => {
-    const token = localStorage.getItem('plaid_access_token');
-    setPlaidConnected(!!token);
+  const checkPlaidConnection = async () => {
+    try {
+      const status = await PlaidConnectionManager.checkConnection();
+      setPlaidStatus({
+        isConnected: status.hasToken && status.isApiWorking === true && status.hasAccounts,
+        hasError: status.error !== null,
+        errorMessage: status.error
+      });
+    } catch (error) {
+      console.error('Error checking Plaid connection:', error);
+    }
   };
 
   useEffect(() => {
@@ -173,6 +197,8 @@ const Transactions = () => {
         const plaidAccountsList = data.plaidAccounts || [];
         const bankAccounts = data.bankAccounts || {};
         
+        // Update PlaidConnectionManager with account info
+        PlaidConnectionManager.setPlaidAccounts(plaidAccountsList);
         setHasPlaidAccounts(plaidAccountsList.length > 0);
         
         // Prioritize Plaid accounts if they exist (fully automated flow)
@@ -641,50 +667,71 @@ const Transactions = () => {
       </div>
 
       {/* Plaid Connection Status Banner */}
-      {!plaidConnected && (
+      {!plaidStatus.isConnected && (
         <div style={{
-          background: 'linear-gradient(135deg, #f59e0b 0%, #d97706 100%)',
+          background: plaidStatus.hasError 
+            ? 'linear-gradient(135deg, #dc2626 0%, #991b1b 100%)'
+            : 'linear-gradient(135deg, #f59e0b 0%, #d97706 100%)',
           color: '#fff',
           padding: '16px 24px',
           borderRadius: '8px',
           marginBottom: '20px',
           display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'space-between',
+          flexDirection: 'column',
+          gap: '12px',
           boxShadow: '0 4px 6px rgba(0,0,0,0.1)'
         }}>
-          <div>
-            <div style={{ fontSize: '16px', fontWeight: '600', marginBottom: '4px' }}>
-              ⚠️ Plaid Not Connected
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+            <div>
+              <div style={{ fontSize: '16px', fontWeight: '600', marginBottom: '4px' }}>
+                {plaidStatus.hasError ? '❌ Plaid Connection Error' : '⚠️ Plaid Not Connected'}
+              </div>
+              <div style={{ fontSize: '14px', opacity: 0.9 }}>
+                {plaidStatus.hasError 
+                  ? PlaidConnectionManager.getErrorMessage()
+                  : 'Connect Plaid to automatically sync transactions from your bank accounts.'}
+              </div>
             </div>
-            <div style={{ fontSize: '14px', opacity: 0.9 }}>
-              Connect Plaid to automatically sync transactions from your bank accounts.
-            </div>
+            <button
+              onClick={() => window.location.href = '/accounts'}
+              style={{
+                background: '#fff',
+                color: plaidStatus.hasError ? '#dc2626' : '#d97706',
+                border: 'none',
+                borderRadius: '6px',
+                padding: '10px 20px',
+                fontSize: '14px',
+                fontWeight: '600',
+                cursor: 'pointer',
+                transition: 'transform 0.2s',
+                whiteSpace: 'nowrap',
+                marginLeft: '20px'
+              }}
+              onMouseEnter={(e) => e.target.style.transform = 'scale(1.05)'}
+              onMouseLeave={(e) => e.target.style.transform = 'scale(1)'}
+            >
+              {plaidStatus.hasError ? 'Fix Connection →' : 'Connect Bank →'}
+            </button>
           </div>
-          <button
-            onClick={() => window.location.href = '/accounts'}
-            style={{
-              background: '#fff',
-              color: '#d97706',
-              border: 'none',
-              borderRadius: '6px',
-              padding: '10px 20px',
-              fontSize: '14px',
-              fontWeight: '600',
-              cursor: 'pointer',
-              transition: 'transform 0.2s',
-              whiteSpace: 'nowrap',
-              marginLeft: '20px'
-            }}
-            onMouseEnter={(e) => e.target.style.transform = 'scale(1.05)'}
-            onMouseLeave={(e) => e.target.style.transform = 'scale(1)'}
-          >
-            Connect Bank →
-          </button>
+          {plaidStatus.hasError && (
+            <div style={{ 
+              fontSize: '13px', 
+              opacity: 0.9,
+              borderTop: '1px solid rgba(255,255,255,0.2)',
+              paddingTop: '12px'
+            }}>
+              <div style={{ fontWeight: '600', marginBottom: '6px' }}>💡 Troubleshooting:</div>
+              <ul style={{ margin: 0, paddingLeft: '20px' }}>
+                {PlaidConnectionManager.getTroubleshootingSteps().map((step, idx) => (
+                  <li key={idx}>{step}</li>
+                ))}
+              </ul>
+            </div>
+          )}
         </div>
       )}
 
-      {hasPlaidAccounts && plaidConnected && (
+      {hasPlaidAccounts && plaidStatus.isConnected && (
         <div style={{
           background: 'linear-gradient(135deg, #11998e 0%, #38ef7d 100%)',
           color: '#fff',
@@ -748,17 +795,23 @@ const Transactions = () => {
           <button 
             className="btn-secondary"
             onClick={syncPlaidTransactions}
-            disabled={saving || syncingPlaid || !plaidConnected}
-            title={!plaidConnected ? 'Please connect Plaid to use this feature' : 'Sync transactions from your bank accounts'}
+            disabled={saving || syncingPlaid || !plaidStatus.isConnected}
+            title={
+              plaidStatus.hasError 
+                ? 'Plaid connection error - see banner above' 
+                : !plaidStatus.isConnected 
+                  ? 'Please connect Plaid to use this feature' 
+                  : 'Sync transactions from your bank accounts'
+            }
             style={{
-              background: syncingPlaid ? '#999' : (!plaidConnected ? '#6b7280' : '#007bff'),
+              background: syncingPlaid ? '#999' : (!plaidStatus.isConnected ? '#6b7280' : '#007bff'),
               color: '#fff',
               border: 'none',
-              cursor: (!plaidConnected || syncingPlaid || saving) ? 'not-allowed' : 'pointer',
-              opacity: (!plaidConnected || syncingPlaid) ? 0.6 : 1
+              cursor: (!plaidStatus.isConnected || syncingPlaid || saving) ? 'not-allowed' : 'pointer',
+              opacity: (!plaidStatus.isConnected || syncingPlaid) ? 0.6 : 1
             }}
           >
-            {syncingPlaid ? '🔄 Syncing...' : (!plaidConnected ? '🔒 Sync Plaid (Not Connected)' : '🔄 Sync Plaid Transactions')}
+            {syncingPlaid ? '🔄 Syncing...' : (!plaidStatus.isConnected ? '🔒 Sync Plaid (Not Connected)' : '🔄 Sync Plaid Transactions')}
           </button>
           
           <button 
