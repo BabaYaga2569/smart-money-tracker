@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { CSVImporter } from '../utils/CSVImporter';
 import { RecurringManager } from '../utils/RecurringManager';
 import { AccountMatcher } from '../utils/AccountMatcher';
@@ -17,6 +17,14 @@ const CSVImportModal = ({ existingItems, accounts = {}, customMapping: initialCu
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [hasBlockingErrors, setHasBlockingErrors] = useState(false);
+  const errorSectionRef = useRef(null);
+
+  // Auto-scroll to error section when errors are detected
+  useEffect(() => {
+    if (hasBlockingErrors && errorSectionRef.current) {
+      errorSectionRef.current.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }
+  }, [hasBlockingErrors]);
 
   const handleFileSelect = async (event) => {
     const selectedFile = event.target.files[0];
@@ -282,7 +290,7 @@ const CSVImportModal = ({ existingItems, accounts = {}, customMapping: initialCu
       <h3>Preview & Edit Items ({previewItems.length} items)</h3>
       
       {importData?.errors && importData.errors.length > 0 && (
-        <div className="import-errors">
+        <div className="import-errors" ref={errorSectionRef}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
             <h4>⚠️ Import Errors ({importData.errors.length}):</h4>
             <button 
@@ -295,8 +303,22 @@ const CSVImportModal = ({ existingItems, accounts = {}, customMapping: initialCu
           </div>
           <div className="error-list">
             {importData.errors.slice(0, 5).map((error, index) => (
-              <div key={index} className="error-item">
-                Row {error.row}: {error.error}
+              <div key={index} className="error-item" style={{ marginBottom: '15px', padding: '10px', backgroundColor: '#2a2a2a', borderRadius: '4px', borderLeft: '4px solid #ff9800' }}>
+                <div style={{ fontWeight: 'bold', color: '#ff9800', marginBottom: '5px' }}>
+                  Row {error.row}: {error.error}
+                </div>
+                {error.data && (
+                  <div style={{ fontSize: '12px', color: '#ccc', marginTop: '8px' }}>
+                    <div style={{ fontWeight: 'bold', marginBottom: '4px' }}>Row Data:</div>
+                    <div style={{ fontFamily: 'monospace', backgroundColor: '#1a1a1a', padding: '8px', borderRadius: '3px', overflowX: 'auto' }}>
+                      {Object.entries(error.data).map(([key, value]) => (
+                        <div key={key} style={{ marginBottom: '2px' }}>
+                          <span style={{ color: '#00ff88' }}>{key}:</span> {value || '(empty)'}
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
               </div>
             ))}
             {importData.errors.length > 5 && (
