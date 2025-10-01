@@ -23,6 +23,7 @@ const Bills = () => {
   const [searchTerm, setSearchTerm] = useState('');
   const [payingBill, setPayingBill] = useState(null);
   const [refreshingTransactions, setRefreshingTransactions] = useState(false);
+  const [isPlaidConnected, setIsPlaidConnected] = useState(false);
 
   // Use shared categories for consistency with Transactions page
   const BILL_CATEGORIES = CATEGORY_ICONS;
@@ -31,6 +32,7 @@ const Bills = () => {
     const loadData = async () => {
       await Promise.all([loadBills(), loadAccounts()]);
       await initializePlaidIntegration();
+      checkPlaidConnection();
     };
     loadData();
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
@@ -44,6 +46,11 @@ const Bills = () => {
       }, 100);
     }
   }, [processedBills]);
+
+  const checkPlaidConnection = () => {
+    const token = localStorage.getItem('plaid_access_token');
+    setIsPlaidConnected(!!token);
+  };
 
   const initializePlaidIntegration = async () => {
     // Initialize Plaid integration manager
@@ -71,19 +78,19 @@ const Bills = () => {
   };
 
   const refreshPlaidTransactions = async () => {
+    // Check for Plaid connection before attempting
+    const token = localStorage.getItem('plaid_access_token');
+    
+    if (!token) {
+      NotificationManager.showWarning(
+        'Plaid not connected',
+        'Please connect your bank account first to use automated bill matching. You can connect Plaid from the Settings page.'
+      );
+      return;
+    }
+
     try {
       setRefreshingTransactions(true);
-      
-      // Get Plaid access token from localStorage or settings
-      const token = localStorage.getItem('plaid_access_token');
-      
-      if (!token) {
-        NotificationManager.showWarning(
-          'Plaid not connected',
-          'Please connect your bank account to use automated bill matching'
-        );
-        return;
-      }
 
       // Fetch and match transactions
       const result = await PlaidIntegrationManager.refreshBillMatching(token);
@@ -430,14 +437,19 @@ const Bills = () => {
       const currentDoc = await getDoc(settingsDocRef);
       
       if (!currentDoc.exists()) {
+        NotificationManager.close(loadingNotificationId);
         throw new Error('Settings document not found');
       }
       
       const currentData = currentDoc.data();
       const bills = currentData.bills || [];
       
+      // Find the bill and track if we found it
+      let billFound = false;
+      
       const updatedBills = bills.map(b => {
         if (b.name === bill.name && b.amount === bill.amount) {
+          billFound = true;
           // Remove last payment and reset status
           const updatedBill = { ...b };
           delete updatedBill.lastPaidDate;
@@ -453,6 +465,11 @@ const Bills = () => {
         }
         return b;
       });
+      
+      if (!billFound) {
+        NotificationManager.close(loadingNotificationId);
+        throw new Error(`Bill "${bill.name}" not found in database`);
+      }
       
       await updateDoc(settingsDocRef, {
         ...currentData,
@@ -847,22 +864,23 @@ const Bills = () => {
             <button 
               className="refresh-transactions-btn"
               onClick={refreshPlaidTransactions}
-              disabled={refreshingTransactions}
+              disabled={refreshingTransactions || !isPlaidConnected}
+              title={!isPlaidConnected ? 'Please connect Plaid from Settings to use this feature' : 'Match bills with recent Plaid transactions'}
               style={{ 
                 marginLeft: '10px', 
-                background: refreshingTransactions ? '#999' : '#007bff', 
+                background: (refreshingTransactions || !isPlaidConnected) ? '#999' : '#007bff', 
                 color: '#fff',
                 border: 'none',
                 borderRadius: '6px',
                 padding: '12px 16px',
                 fontSize: '14px',
                 fontWeight: '600',
-                cursor: refreshingTransactions ? 'not-allowed' : 'pointer',
-                opacity: refreshingTransactions ? 0.6 : 1,
-                boxShadow: refreshingTransactions ? 'none' : '0 2px 4px rgba(0,123,255,0.3)'
+                cursor: (refreshingTransactions || !isPlaidConnected) ? 'not-allowed' : 'pointer',
+                opacity: (refreshingTransactions || !isPlaidConnected) ? 0.6 : 1,
+                boxShadow: (refreshingTransactions || !isPlaidConnected) ? 'none' : '0 2px 4px rgba(0,123,255,0.3)'
               }}
             >
-              {refreshingTransactions ? '🔄 Matching...' : '🔄 Match Transactions'}
+              {refreshingTransactions ? '🔄 Matching...' : !isPlaidConnected ? '🔒 Connect Plaid' : '🔄 Match Transactions'}
             </button>
             
             {/* Development: Test Plaid Auto-Payment Detection */}
