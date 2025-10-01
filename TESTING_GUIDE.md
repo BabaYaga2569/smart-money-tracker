@@ -288,7 +288,6 @@ Ensure existing functionality still works:
 5. Search and filter
 6. Sort items
 7. Account linking
-8. Settings migration
 
 ## Browser Compatibility
 

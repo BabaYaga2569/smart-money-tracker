@@ -115,9 +115,9 @@ useEffect(() => {
 
 ### 5. Import from Settings Navigation
 
-**Requirement:** Ensure importing from Settings loads the correct CSV with preview, dedupe, and error handling
+**Note:** As of the latest update, the "Import from Settings" button has been removed from the Recurring Bills page, as the CSV import workflow has been fully migrated to the Recurring page. Users can now manage all recurring bills and imports directly from the Recurring Bills page.
 
-**Implementation:**
+**Previous Implementation:**
 - Added React Router `Link` component to Settings page
 - Enhanced info section with feature list explaining CSV import capabilities
 - Provides clear guidance about what's available on the Recurring page
