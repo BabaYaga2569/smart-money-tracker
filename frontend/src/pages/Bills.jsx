@@ -108,7 +108,10 @@ const Bills = () => {
     // Check for Plaid connection before attempting
     const status = PlaidConnectionManager.getStatus();
     
-    if (!status.hasToken) {
+    // Check if Plaid is truly connected (comprehensive check)
+    const isConnected = status.hasToken && status.isApiWorking === true && status.hasAccounts;
+    
+    if (!isConnected && !hasPlaidAccounts) {
       NotificationManager.showWarning(
         'Plaid not connected',
         'Please connect your bank account first to use automated bill matching. You can connect Plaid from the Accounts page.'
@@ -1012,8 +1015,8 @@ const Bills = () => {
                 plaidStatus.hasError 
                   ? 'Plaid connection error - click banner above to see details' 
                   : (!plaidStatus.isConnected && !hasPlaidAccounts)
-                    ? 'Please connect Plaid from Accounts page to use this feature' 
-                    : 'Match bills with recent Plaid transactions'
+                    ? 'Connect your bank account with Plaid from the Accounts page to automatically match bills with your transactions' 
+                    : 'Automatically match bills with recent bank transactions from Plaid. This will mark bills as paid when matching transactions are found.'
               }
               style={{ 
                 marginLeft: '10px', 
