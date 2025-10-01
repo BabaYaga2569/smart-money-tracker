@@ -3,6 +3,7 @@ import { doc, getDoc, updateDoc, collection, query, orderBy, limit, getDocs } fr
 import { db } from '../firebase';
 import PlaidLink from '../components/PlaidLink';
 import { calculateProjectedBalance, calculateTotalProjectedBalance, getBalanceDifference, formatBalanceDifference } from '../utils/BalanceCalculator';
+import PlaidConnectionManager from '../utils/PlaidConnectionManager';
 import './Accounts.css';
 
 const Accounts = () => {
@@ -15,14 +16,43 @@ const Accounts = () => {
   const [showDeleteModal, setShowDeleteModal] = useState(null);
   const [notification, setNotification] = useState({ message: '', type: '' });
   const [plaidAccounts, setPlaidAccounts] = useState([]);
-  const [hasPlaidAccounts, setHasPlaidAccounts] = useState(false);
+  const [plaidStatus, setPlaidStatus] = useState({
+    isConnected: false,
+    hasError: false,
+    errorMessage: null
+  });
   const [transactions, setTransactions] = useState([]);
   const [showBalanceType, setShowBalanceType] = useState('both'); // 'live', 'projected', or 'both'
   const [showHelp, setShowHelp] = useState(false);
 
   useEffect(() => {
     loadAccountsAndTransactions();
+    checkPlaidConnection();
+    
+    // Subscribe to Plaid connection changes
+    const unsubscribe = PlaidConnectionManager.subscribe((status) => {
+      setPlaidStatus({
+        isConnected: status.hasToken && status.isApiWorking === true && status.hasAccounts,
+        hasError: status.error !== null,
+        errorMessage: status.error
+      });
+    });
+    
+    return () => unsubscribe();
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const checkPlaidConnection = async () => {
+    try {
+      const status = await PlaidConnectionManager.checkConnection();
+      setPlaidStatus({
+        isConnected: status.hasToken && status.isApiWorking === true && status.hasAccounts,
+        hasError: status.error !== null,
+        errorMessage: status.error
+      });
+    } catch (error) {
+      console.error('Error checking Plaid connection:', error);
+    }
+  };
 
   const loadAccountsAndTransactions = async () => {
     await Promise.all([loadAccounts(), loadTransactions()]);
@@ -58,7 +88,9 @@ const Accounts = () => {
         
         setAccounts(bankAccounts);
         setPlaidAccounts(plaidAccountsList);
-        setHasPlaidAccounts(plaidAccountsList.length > 0);
+        
+        // Update PlaidConnectionManager with account info
+        PlaidConnectionManager.setPlaidAccounts(plaidAccountsList);
         
         // If Plaid accounts exist, only use their balances (fully automated flow)
         // Otherwise, use manual account balances
@@ -226,7 +258,7 @@ const Accounts = () => {
         // Update state
         const updatedPlaidAccounts = [...plaidAccounts, ...formattedPlaidAccounts];
         setPlaidAccounts(updatedPlaidAccounts);
-        setHasPlaidAccounts(true);
+        PlaidConnectionManager.setPlaidAccounts(updatedPlaidAccounts);
 
         // Recalculate total balance (only Plaid accounts when they exist)
         const plaidTotal = updatedPlaidAccounts.reduce((sum, acc) => sum + parseFloat(acc.balance), 0);
@@ -299,7 +331,7 @@ const Accounts = () => {
           >
             ❓ Help
           </button>
-          {!hasPlaidAccounts ? (
+          {plaidAccounts.length === 0 ? (
             <PlaidLink
               onSuccess={handlePlaidSuccess}
               onExit={handlePlaidExit}
@@ -320,30 +352,51 @@ const Accounts = () => {
       </div>
 
       {/* Plaid Connection Status Banner */}
-      {!hasPlaidAccounts && (
+      {!plaidStatus.isConnected && (
         <div style={{
-          background: 'linear-gradient(135deg, #f59e0b 0%, #d97706 100%)',
+          background: plaidStatus.hasError 
+            ? 'linear-gradient(135deg, #dc2626 0%, #991b1b 100%)'
+            : 'linear-gradient(135deg, #f59e0b 0%, #d97706 100%)',
           color: '#fff',
           padding: '16px 24px',
           borderRadius: '8px',
           marginBottom: '20px',
           display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'space-between',
+          flexDirection: 'column',
+          gap: '12px',
           boxShadow: '0 4px 6px rgba(0,0,0,0.1)'
         }}>
-          <div>
-            <div style={{ fontSize: '16px', fontWeight: '600', marginBottom: '4px' }}>
-              ⚠️ No Bank Accounts Connected
-            </div>
-            <div style={{ fontSize: '14px', opacity: 0.9 }}>
-              Connect your bank account with Plaid to automatically sync balances and transactions.
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+            <div>
+              <div style={{ fontSize: '16px', fontWeight: '600', marginBottom: '4px' }}>
+                {plaidStatus.hasError ? '❌ Plaid Connection Error' : '⚠️ No Bank Accounts Connected'}
+              </div>
+              <div style={{ fontSize: '14px', opacity: 0.9 }}>
+                {plaidStatus.hasError 
+                  ? PlaidConnectionManager.getErrorMessage()
+                  : 'Connect your bank account with Plaid to automatically sync balances and transactions.'}
+              </div>
             </div>
           </div>
+          {plaidStatus.hasError && (
+            <div style={{ 
+              fontSize: '13px', 
+              opacity: 0.9,
+              borderTop: '1px solid rgba(255,255,255,0.2)',
+              paddingTop: '12px'
+            }}>
+              <div style={{ fontWeight: '600', marginBottom: '6px' }}>💡 Troubleshooting:</div>
+              <ul style={{ margin: 0, paddingLeft: '20px' }}>
+                {PlaidConnectionManager.getTroubleshootingSteps().map((step, idx) => (
+                  <li key={idx}>{step}</li>
+                ))}
+              </ul>
+            </div>
+          )}
         </div>
       )}
 
-      {hasPlaidAccounts && (
+      {plaidStatus.isConnected && (
         <div style={{
           background: 'linear-gradient(135deg, #11998e 0%, #38ef7d 100%)',
           color: '#fff',
@@ -442,7 +495,7 @@ const Accounts = () => {
               </div>
             )}
           </div>
-          <small>Across {hasPlaidAccounts ? plaidAccounts.length : Object.keys(accounts).filter(k => !accounts[k].isPlaid).length} accounts</small>
+          <small>Across {plaidAccounts.length > 0 ? plaidAccounts.length : Object.keys(accounts).filter(k => !accounts[k].isPlaid).length} accounts</small>
         </div>
       </div>
 
@@ -503,7 +556,7 @@ const Accounts = () => {
         })}
 
         {/* Manual accounts (hidden if Plaid accounts exist for fully automated flow) */}
-        {!hasPlaidAccounts && Object.entries(accounts)
+        {plaidAccounts.length === 0 && Object.entries(accounts)
           .filter(([, account]) => !account.isPlaid)
           .map(([key, account]) => {
             const liveBalance = parseFloat(account.balance) || 0;

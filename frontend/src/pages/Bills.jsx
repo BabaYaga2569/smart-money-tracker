@@ -6,6 +6,7 @@ import { BillSortingManager } from '../utils/BillSortingManager';
 import { NotificationManager } from '../utils/NotificationManager';
 import { BillAnimationManager } from '../utils/BillAnimationManager';
 import { PlaidIntegrationManager } from '../utils/PlaidIntegrationManager';
+import PlaidConnectionManager from '../utils/PlaidConnectionManager';
 import { formatDateForDisplay, formatDateForInput, getPacificTime } from '../utils/DateUtils';
 import { TRANSACTION_CATEGORIES, CATEGORY_ICONS, getCategoryIcon, migrateLegacyCategory } from '../constants/categories';
 import NotificationSystem from '../components/NotificationSystem';
@@ -23,7 +24,11 @@ const Bills = () => {
   const [searchTerm, setSearchTerm] = useState('');
   const [payingBill, setPayingBill] = useState(null);
   const [refreshingTransactions, setRefreshingTransactions] = useState(false);
-  const [isPlaidConnected, setIsPlaidConnected] = useState(false);
+  const [plaidStatus, setPlaidStatus] = useState({
+    isConnected: false,
+    hasError: false,
+    errorMessage: null
+  });
 
   // Use shared categories for consistency with Transactions page
   const BILL_CATEGORIES = CATEGORY_ICONS;
@@ -35,6 +40,17 @@ const Bills = () => {
       checkPlaidConnection();
     };
     loadData();
+    
+    // Subscribe to Plaid connection changes
+    const unsubscribe = PlaidConnectionManager.subscribe((status) => {
+      setPlaidStatus({
+        isConnected: status.hasToken && status.isApiWorking === true && status.hasAccounts,
+        hasError: status.error !== null,
+        errorMessage: status.error
+      });
+    });
+    
+    return () => unsubscribe();
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Sync visuals when bills are processed
@@ -47,9 +63,17 @@ const Bills = () => {
     }
   }, [processedBills]);
 
-  const checkPlaidConnection = () => {
-    const token = localStorage.getItem('plaid_access_token');
-    setIsPlaidConnected(!!token);
+  const checkPlaidConnection = async () => {
+    try {
+      const status = await PlaidConnectionManager.checkConnection();
+      setPlaidStatus({
+        isConnected: status.hasToken && status.isApiWorking === true && status.hasAccounts,
+        hasError: status.error !== null,
+        errorMessage: status.error
+      });
+    } catch (error) {
+      console.error('Error checking Plaid connection:', error);
+    }
   };
 
   const initializePlaidIntegration = async () => {
@@ -79,18 +103,28 @@ const Bills = () => {
 
   const refreshPlaidTransactions = async () => {
     // Check for Plaid connection before attempting
-    const token = localStorage.getItem('plaid_access_token');
+    const status = PlaidConnectionManager.getStatus();
     
-    if (!token) {
+    if (!status.hasToken) {
       NotificationManager.showWarning(
         'Plaid not connected',
-        'Please connect your bank account first to use automated bill matching. You can connect Plaid from the Settings page.'
+        'Please connect your bank account first to use automated bill matching. You can connect Plaid from the Accounts page.'
+      );
+      return;
+    }
+    
+    if (status.isApiWorking === false) {
+      NotificationManager.showError(
+        'Plaid API unavailable',
+        PlaidConnectionManager.getErrorMessage() + ' Please try again later or contact support.'
       );
       return;
     }
 
     try {
       setRefreshingTransactions(true);
+      
+      const token = localStorage.getItem('plaid_access_token');
 
       // Fetch and match transactions
       const result = await PlaidIntegrationManager.refreshBillMatching(token);
@@ -258,7 +292,7 @@ const Bills = () => {
               }
             }
           }
-        } catch (apiError) {
+        } catch {
           // Expected when API is not available - silently fallback
         }
       }
@@ -852,51 +886,72 @@ const Bills = () => {
       <NotificationSystem />
       
       {/* Plaid Connection Status Banner */}
-      {!isPlaidConnected && (
+      {!plaidStatus.isConnected && (
         <div style={{
-          background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
+          background: plaidStatus.hasError 
+            ? 'linear-gradient(135deg, #dc2626 0%, #991b1b 100%)'
+            : 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
           color: '#fff',
           padding: '16px 24px',
           borderRadius: '8px',
           marginBottom: '20px',
           display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'space-between',
+          flexDirection: 'column',
+          gap: '12px',
           boxShadow: '0 4px 6px rgba(0,0,0,0.1)'
         }}>
-          <div style={{ flex: 1 }}>
-            <div style={{ fontSize: '18px', fontWeight: '600', marginBottom: '4px' }}>
-              🔗 Connect Your Bank Account
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+            <div style={{ flex: 1 }}>
+              <div style={{ fontSize: '18px', fontWeight: '600', marginBottom: '4px' }}>
+                {plaidStatus.hasError ? '❌ Plaid Connection Error' : '🔗 Connect Your Bank Account'}
+              </div>
+              <div style={{ fontSize: '14px', opacity: 0.9 }}>
+                {plaidStatus.hasError 
+                  ? PlaidConnectionManager.getErrorMessage()
+                  : 'Automate bill tracking by connecting Plaid. Match transactions automatically and never miss a payment.'}
+              </div>
             </div>
-            <div style={{ fontSize: '14px', opacity: 0.9 }}>
-              Automate bill tracking by connecting Plaid. Match transactions automatically and never miss a payment.
-            </div>
+            <button 
+              onClick={() => window.location.href = '/accounts'}
+              style={{
+                background: '#fff',
+                color: plaidStatus.hasError ? '#dc2626' : '#667eea',
+                border: 'none',
+                borderRadius: '6px',
+                padding: '12px 24px',
+                fontSize: '14px',
+                fontWeight: '600',
+                cursor: 'pointer',
+                boxShadow: '0 2px 4px rgba(0,0,0,0.1)',
+                transition: 'transform 0.2s',
+                whiteSpace: 'nowrap',
+                marginLeft: '20px'
+              }}
+              onMouseEnter={(e) => e.target.style.transform = 'scale(1.05)'}
+              onMouseLeave={(e) => e.target.style.transform = 'scale(1)'}
+            >
+              {plaidStatus.hasError ? 'Fix Connection →' : 'Connect Bank →'}
+            </button>
           </div>
-          <button 
-            onClick={() => window.location.href = '/settings'}
-            style={{
-              background: '#fff',
-              color: '#667eea',
-              border: 'none',
-              borderRadius: '6px',
-              padding: '12px 24px',
-              fontSize: '14px',
-              fontWeight: '600',
-              cursor: 'pointer',
-              boxShadow: '0 2px 4px rgba(0,0,0,0.1)',
-              transition: 'transform 0.2s',
-              whiteSpace: 'nowrap',
-              marginLeft: '20px'
-            }}
-            onMouseEnter={(e) => e.target.style.transform = 'scale(1.05)'}
-            onMouseLeave={(e) => e.target.style.transform = 'scale(1)'}
-          >
-            Go to Settings →
-          </button>
+          {plaidStatus.hasError && (
+            <div style={{ 
+              fontSize: '13px', 
+              opacity: 0.9,
+              borderTop: '1px solid rgba(255,255,255,0.2)',
+              paddingTop: '12px'
+            }}>
+              <div style={{ fontWeight: '600', marginBottom: '6px' }}>💡 Troubleshooting:</div>
+              <ul style={{ margin: 0, paddingLeft: '20px' }}>
+                {PlaidConnectionManager.getTroubleshootingSteps().map((step, idx) => (
+                  <li key={idx}>{step}</li>
+                ))}
+              </ul>
+            </div>
+          )}
         </div>
       )}
       
-      {isPlaidConnected && (
+      {plaidStatus.isConnected && (
         <div style={{
           background: 'linear-gradient(135deg, #11998e 0%, #38ef7d 100%)',
           color: '#fff',
@@ -935,23 +990,39 @@ const Bills = () => {
             <button 
               className="refresh-transactions-btn"
               onClick={refreshPlaidTransactions}
-              disabled={refreshingTransactions || !isPlaidConnected}
-              title={!isPlaidConnected ? 'Please connect Plaid from Settings to use this feature' : 'Match bills with recent Plaid transactions'}
+              disabled={refreshingTransactions || !plaidStatus.isConnected}
+              title={
+                plaidStatus.hasError 
+                  ? 'Plaid connection error - click banner above to see details' 
+                  : !plaidStatus.isConnected 
+                    ? 'Please connect Plaid from Accounts page to use this feature' 
+                    : 'Match bills with recent Plaid transactions'
+              }
               style={{ 
                 marginLeft: '10px', 
-                background: (refreshingTransactions || !isPlaidConnected) ? '#999' : '#007bff', 
+                background: plaidStatus.hasError 
+                  ? '#dc2626' 
+                  : (refreshingTransactions || !plaidStatus.isConnected) 
+                    ? '#999' 
+                    : '#007bff', 
                 color: '#fff',
                 border: 'none',
                 borderRadius: '6px',
                 padding: '12px 16px',
                 fontSize: '14px',
                 fontWeight: '600',
-                cursor: (refreshingTransactions || !isPlaidConnected) ? 'not-allowed' : 'pointer',
-                opacity: (refreshingTransactions || !isPlaidConnected) ? 0.6 : 1,
-                boxShadow: (refreshingTransactions || !isPlaidConnected) ? 'none' : '0 2px 4px rgba(0,123,255,0.3)'
+                cursor: (refreshingTransactions || !plaidStatus.isConnected) ? 'not-allowed' : 'pointer',
+                opacity: (refreshingTransactions || !plaidStatus.isConnected) ? 0.6 : 1,
+                boxShadow: (refreshingTransactions || !plaidStatus.isConnected) ? 'none' : '0 2px 4px rgba(0,123,255,0.3)'
               }}
             >
-              {refreshingTransactions ? '🔄 Matching...' : !isPlaidConnected ? '🔒 Connect Plaid' : '🔄 Match Transactions'}
+              {refreshingTransactions 
+                ? '🔄 Matching...' 
+                : plaidStatus.hasError 
+                  ? '❌ Plaid Error' 
+                  : !plaidStatus.isConnected 
+                    ? '🔒 Connect Plaid' 
+                    : '🔄 Match Transactions'}
             </button>
             
             {/* Development: Test Plaid Auto-Payment Detection */}

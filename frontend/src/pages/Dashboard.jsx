@@ -3,13 +3,18 @@ import { useNavigate } from 'react-router-dom';
 import { doc, getDoc, collection, query, where, orderBy, limit, getDocs } from 'firebase/firestore';
 import { db } from '../firebase';
 import { calculateTotalProjectedBalance } from '../utils/BalanceCalculator';
+import PlaidConnectionManager from '../utils/PlaidConnectionManager';
 import './Dashboard.css';
 
 const Dashboard = () => {
   const navigate = useNavigate();
   const [loading, setLoading] = useState(true);
   const [firebaseConnected, setFirebaseConnected] = useState(false);
-  const [plaidConnected, setPlaidConnected] = useState(false);
+  const [plaidStatus, setPlaidStatus] = useState({
+    isConnected: false,
+    hasError: false,
+    errorMessage: null
+  });
   const [dashboardData, setDashboardData] = useState({
     totalBalance: 1530.07,  // Default fallback data (Live balance)
     totalProjectedBalance: 1530.07,  // Add projected balance
@@ -26,11 +31,30 @@ const Dashboard = () => {
   useEffect(() => {
     loadDashboardData();
     checkPlaidConnection();
+    
+    // Subscribe to Plaid connection changes
+    const unsubscribe = PlaidConnectionManager.subscribe((status) => {
+      setPlaidStatus({
+        isConnected: status.hasToken && status.isApiWorking === true && status.hasAccounts,
+        hasError: status.error !== null,
+        errorMessage: status.error
+      });
+    });
+    
+    return () => unsubscribe();
   }, []);
 
-  const checkPlaidConnection = () => {
-    const token = localStorage.getItem('plaid_access_token');
-    setPlaidConnected(!!token);
+  const checkPlaidConnection = async () => {
+    try {
+      const status = await PlaidConnectionManager.checkConnection();
+      setPlaidStatus({
+        isConnected: status.hasToken && status.isApiWorking === true && status.hasAccounts,
+        hasError: status.error !== null,
+        errorMessage: status.error
+      });
+    } catch (error) {
+      console.error('Error checking Plaid connection:', error);
+    }
   };
 
   const loadDashboardData = async () => {
@@ -58,6 +82,9 @@ const Dashboard = () => {
         // Prioritize Plaid accounts if they exist (fully automated flow)
         const plaidAccountsList = data.plaidAccounts || [];
         const bankAccounts = data.bankAccounts || {};
+        
+        // Update PlaidConnectionManager with account info
+        PlaidConnectionManager.setPlaidAccounts(plaidAccountsList);
         
         let totalBalance = 0;
         let accountCount = 0;
@@ -274,24 +301,26 @@ const Dashboard = () => {
             gap: '8px',
             padding: '6px 12px',
             borderRadius: '6px',
-            background: plaidConnected ? 'rgba(16, 185, 129, 0.1)' : 'rgba(251, 191, 36, 0.1)',
-            border: `1px solid ${plaidConnected ? 'rgba(16, 185, 129, 0.3)' : 'rgba(251, 191, 36, 0.3)'}`
+            background: plaidStatus.isConnected ? 'rgba(16, 185, 129, 0.1)' : (plaidStatus.hasError ? 'rgba(239, 68, 68, 0.1)' : 'rgba(251, 191, 36, 0.1)'),
+            border: `1px solid ${plaidStatus.isConnected ? 'rgba(16, 185, 129, 0.3)' : (plaidStatus.hasError ? 'rgba(239, 68, 68, 0.3)' : 'rgba(251, 191, 36, 0.3)')}`
           }}>
             <span style={{ fontSize: '12px' }}>
-              {plaidConnected ? '✅' : '⚠️'}
+              {plaidStatus.isConnected ? '✅' : (plaidStatus.hasError ? '❌' : '⚠️')}
             </span>
             <span style={{ 
               fontSize: '13px', 
               fontWeight: '500',
-              color: plaidConnected ? '#059669' : '#d97706'
-            }}>
-              Plaid: {plaidConnected ? 'Connected' : 'Not Connected'}
+              color: plaidStatus.isConnected ? '#059669' : (plaidStatus.hasError ? '#dc2626' : '#d97706')
+            }}
+            title={plaidStatus.hasError ? PlaidConnectionManager.getErrorMessage() : ''}
+            >
+              Plaid: {plaidStatus.isConnected ? 'Connected' : (plaidStatus.hasError ? 'Error' : 'Not Connected')}
             </span>
-            {!plaidConnected && (
+            {!plaidStatus.isConnected && (
               <button
                 onClick={() => navigate('/accounts')}
                 style={{
-                  background: '#d97706',
+                  background: plaidStatus.hasError ? '#dc2626' : '#d97706',
                   color: '#fff',
                   border: 'none',
                   borderRadius: '4px',
@@ -301,8 +330,9 @@ const Dashboard = () => {
                   cursor: 'pointer',
                   marginLeft: '4px'
                 }}
+                title={plaidStatus.hasError ? 'Click to view error details' : 'Connect your bank account'}
               >
-                Connect
+                {plaidStatus.hasError ? 'Fix' : 'Connect'}
               </button>
             )}
           </div>
