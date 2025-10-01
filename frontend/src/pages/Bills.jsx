@@ -22,6 +22,7 @@ const Bills = () => {
   const [filterStatus, setFilterStatus] = useState('all');
   const [searchTerm, setSearchTerm] = useState('');
   const [payingBill, setPayingBill] = useState(null);
+  const [refreshingTransactions, setRefreshingTransactions] = useState(false);
 
   // Use shared categories for consistency with Transactions page
   const BILL_CATEGORIES = CATEGORY_ICONS;
@@ -47,7 +48,7 @@ const Bills = () => {
   const initializePlaidIntegration = async () => {
     // Initialize Plaid integration manager
     await PlaidIntegrationManager.initialize({
-      enabled: false, // Set to true when Plaid is actually integrated
+      enabled: true, // Enable Plaid integration for transaction matching
       transactionTolerance: 0.05,
       autoMarkPaid: true
     });
@@ -67,6 +68,47 @@ const Bills = () => {
     PlaidIntegrationManager.setBillsProvider(async () => {
       return processedBills.filter(bill => bill.status !== 'paid');
     });
+  };
+
+  const refreshPlaidTransactions = async () => {
+    try {
+      setRefreshingTransactions(true);
+      
+      // Get Plaid access token from localStorage or settings
+      const token = localStorage.getItem('plaid_access_token');
+      
+      if (!token) {
+        NotificationManager.showWarning(
+          'Plaid not connected',
+          'Please connect your bank account to use automated bill matching'
+        );
+        return;
+      }
+
+      // Fetch and match transactions
+      const result = await PlaidIntegrationManager.refreshBillMatching(token);
+      
+      if (result.success) {
+        // Reload bills to see updated payment status
+        await loadBills();
+        NotificationManager.showSuccess(
+          `Matched ${result.processedCount} bills from ${result.totalTransactions} transactions`
+        );
+      } else {
+        NotificationManager.showError(
+          'Failed to fetch transactions',
+          result.error
+        );
+      }
+    } catch (error) {
+      console.error('Error refreshing Plaid transactions:', error);
+      NotificationManager.showError(
+        'Error refreshing transactions',
+        error.message
+      );
+    } finally {
+      setRefreshingTransactions(false);
+    }
   };
 
   const loadBills = async () => {
@@ -377,6 +419,47 @@ const Bills = () => {
     }
   };
 
+  const handleUnmarkAsPaid = async (bill) => {
+    try {
+      const settingsDocRef = doc(db, 'users', 'steve-colburn', 'settings', 'personal');
+      const currentDoc = await getDoc(settingsDocRef);
+      const currentData = currentDoc.exists() ? currentDoc.data() : {};
+      
+      const bills = currentData.bills || [];
+      
+      const updatedBills = bills.map(b => {
+        if (b.name === bill.name && b.amount === bill.amount) {
+          // Remove last payment and reset status
+          const updatedBill = { ...b };
+          delete updatedBill.lastPaidDate;
+          delete updatedBill.lastPayment;
+          delete updatedBill.isPaid;
+          
+          // Remove the last payment from payment history if it exists
+          if (updatedBill.paymentHistory && updatedBill.paymentHistory.length > 0) {
+            updatedBill.paymentHistory = updatedBill.paymentHistory.slice(0, -1);
+          }
+          
+          return updatedBill;
+        }
+        return b;
+      });
+      
+      await updateDoc(settingsDocRef, {
+        ...currentData,
+        bills: updatedBills
+      });
+      
+      // Reload bills to show updated state
+      await loadBills();
+      
+      NotificationManager.showSuccess(`${bill.name} unmarked as paid`);
+    } catch (error) {
+      console.error('Error unmarking bill as paid:', error);
+      NotificationManager.showError('Error unmarking bill', error);
+    }
+  };
+
   const processBillPaymentInternal = async (bill, paymentData = {}) => {
     // Create transaction
     const transaction = {
@@ -398,12 +481,14 @@ const Bills = () => {
     // Update account balance
     await updateAccountBalance('bofa', transaction.amount);
 
-    // Mark bill as paid with payment options
+    // Mark bill as paid with payment options including merchant name for display
     await updateBillAsPaid(bill, paymentData.paidDate, {
       method: paymentData.method || 'manual',
       source: paymentData.source || 'manual',
       transactionId: paymentData.transactionId,
-      accountId: paymentData.accountId
+      accountId: paymentData.accountId,
+      merchantName: paymentData.merchantName || bill.name,
+      amount: Math.abs(parseFloat(bill.amount))
     });
   };
 
@@ -743,6 +828,26 @@ const Bills = () => {
               + Add New Bill
             </button>
             
+            {/* Refresh Plaid Transactions Button */}
+            <button 
+              className="refresh-transactions-btn"
+              onClick={refreshPlaidTransactions}
+              disabled={refreshingTransactions}
+              style={{ 
+                marginLeft: '10px', 
+                background: refreshingTransactions ? '#999' : '#00d4ff', 
+                color: '#fff',
+                border: 'none',
+                borderRadius: '6px',
+                padding: '12px 16px',
+                fontSize: '12px',
+                cursor: refreshingTransactions ? 'not-allowed' : 'pointer',
+                opacity: refreshingTransactions ? 0.6 : 1
+              }}
+            >
+              {refreshingTransactions ? '🔄 Matching...' : '🔄 Match Transactions'}
+            </button>
+            
             {/* Development: Test Plaid Auto-Payment Detection */}
             {typeof window !== 'undefined' && window.location.hostname === 'localhost' && (
               <button 
@@ -872,6 +977,28 @@ const Bills = () => {
                   <div className="bill-due-date">
                     {bill.formattedDueDate || `Due: ${formatDate(bill.nextDueDate || bill.dueDate)}`}
                   </div>
+                  
+                  {/* Display matched transaction details */}
+                  {bill.lastPayment && bill.lastPayment.source === 'plaid' && bill.lastPayment.transactionId && (
+                    <div className="matched-transaction-info" style={{
+                      marginTop: '8px',
+                      padding: '6px 8px',
+                      background: 'rgba(0, 212, 255, 0.1)',
+                      borderRadius: '4px',
+                      fontSize: '11px',
+                      color: '#00d4ff'
+                    }}>
+                      <div style={{ fontWeight: '600', marginBottom: '2px' }}>
+                        ✓ Auto-matched Transaction
+                      </div>
+                      <div style={{ opacity: 0.9 }}>
+                        {bill.lastPayment.merchantName || 'Transaction'} • {formatCurrency(bill.lastPayment.amount)}
+                      </div>
+                      <div style={{ opacity: 0.7, fontSize: '10px' }}>
+                        {formatDate(bill.lastPayment.paidDate)}
+                      </div>
+                    </div>
+                  )}
                 </div>
                 
                 <div className="bill-status-section">
@@ -889,6 +1016,21 @@ const Bills = () => {
                     {payingBill === bill.name ? 'Processing...' : 
                      RecurringBillManager.isBillPaidForCurrentCycle(bill) ? 'Already Paid' : 'Mark Paid'}
                   </button>
+                  
+                  {/* Manual override to unmark bill as paid */}
+                  {RecurringBillManager.isBillPaidForCurrentCycle(bill) && (
+                    <button 
+                      className="action-btn secondary"
+                      onClick={() => handleUnmarkAsPaid(bill)}
+                      style={{
+                        background: '#ff6b00',
+                        marginTop: '4px'
+                      }}
+                    >
+                      Unmark Paid
+                    </button>
+                  )}
+                  
                   <button 
                     className="action-btn secondary"
                     onClick={() => {

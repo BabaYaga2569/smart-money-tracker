@@ -142,7 +142,8 @@ export class PlaidIntegrationManager {
                 method: 'auto-detected',
                 transactionId: transaction.transaction_id,
                 source: 'plaid',
-                accountId: transaction.account_id
+                accountId: transaction.account_id,
+                merchantName: transaction.merchant_name || transaction.name
             };
 
             // Call bill payment processing (this would be injected by the application)
@@ -323,5 +324,197 @@ export class PlaidIntegrationManager {
                 payment.transactionId === transactionId
             );
         });
+    }
+
+    /**
+     * Fetch recent transactions from Plaid and match with bills
+     * @param {string} accessToken - Plaid access token
+     * @param {Object} options - Options for date range and processing
+     * @returns {Object} Results with matched bills and transactions
+     */
+    static async fetchAndMatchTransactions(accessToken, options = {}) {
+        try {
+            const { 
+                startDate = null, 
+                endDate = null,
+                autoMarkPaid = this.autoMarkPaid 
+            } = options;
+
+            console.log('Fetching transactions from Plaid...');
+
+            // Fetch transactions from backend API
+            const response = await fetch('http://localhost:5000/api/plaid/get_transactions', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                    access_token: accessToken,
+                    start_date: startDate,
+                    end_date: endDate
+                })
+            });
+
+            if (!response.ok) {
+                throw new Error(`Failed to fetch transactions: ${response.statusText}`);
+            }
+
+            const data = await response.json();
+            const transactions = data.transactions || [];
+
+            console.log(`Fetched ${transactions.length} transactions from Plaid`);
+
+            // Process each transaction and find matches
+            const matches = [];
+            const processedTransactionIds = new Set();
+
+            for (const transaction of transactions) {
+                // Only process negative amounts (outgoing payments)
+                if (transaction.amount <= 0) {
+                    continue;
+                }
+
+                // Check if already processed
+                if (processedTransactionIds.has(transaction.transaction_id)) {
+                    continue;
+                }
+
+                // Find matching bills
+                const matchingBills = await this.findMatchingBills({
+                    amount: transaction.amount,
+                    merchantName: transaction.merchant_name || transaction.name,
+                    date: transaction.date,
+                    tolerance: this.transactionTolerance
+                });
+
+                if (matchingBills.length > 0) {
+                    for (const bill of matchingBills) {
+                        const paymentCheck = this.canPayBill(bill);
+                        
+                        if (paymentCheck.canPay) {
+                            matches.push({
+                                bill: bill,
+                                transaction: transaction,
+                                confidence: this.calculateMatchConfidence(bill, transaction)
+                            });
+
+                            // Auto-mark if enabled
+                            if (autoMarkPaid) {
+                                await this.autoMarkBillAsPaid(bill, transaction);
+                            }
+
+                            processedTransactionIds.add(transaction.transaction_id);
+                            break; // Only match one bill per transaction
+                        }
+                    }
+                }
+            }
+
+            console.log(`Found ${matches.length} bill-transaction matches`);
+
+            return {
+                success: true,
+                matches: matches,
+                totalTransactions: transactions.length,
+                processedCount: matches.length
+            };
+
+        } catch (error) {
+            console.error('Error fetching and matching transactions:', error);
+            return {
+                success: false,
+                error: error.message,
+                matches: [],
+                totalTransactions: 0,
+                processedCount: 0
+            };
+        }
+    }
+
+    /**
+     * Calculate confidence score for a bill-transaction match
+     * @param {Object} bill - Bill object
+     * @param {Object} transaction - Transaction object
+     * @returns {number} Confidence score (0-100)
+     */
+    static calculateMatchConfidence(bill, transaction) {
+        let confidence = 0;
+
+        // Amount match (40 points)
+        const billAmount = parseFloat(bill.amount);
+        const transactionAmount = transaction.amount;
+        const amountDiff = Math.abs(billAmount - transactionAmount);
+        const amountTolerance = billAmount * this.transactionTolerance;
+        
+        if (amountDiff === 0) {
+            confidence += 40;
+        } else if (amountDiff <= amountTolerance) {
+            confidence += 40 * (1 - (amountDiff / amountTolerance));
+        }
+
+        // Name match (40 points)
+        const merchantName = transaction.merchant_name || transaction.name || '';
+        const billName = bill.name || '';
+        
+        if (merchantName && billName) {
+            const s1 = merchantName.toLowerCase().trim();
+            const s2 = billName.toLowerCase().trim();
+            
+            if (s1 === s2) {
+                confidence += 40;
+            } else if (s1.includes(s2) || s2.includes(s1)) {
+                confidence += 35;
+            } else {
+                const distance = this.levenshteinDistance(s1, s2);
+                const maxLength = Math.max(s1.length, s2.length);
+                const similarity = 1 - (distance / maxLength);
+                confidence += 40 * similarity;
+            }
+        }
+
+        // Date match (20 points)
+        const transactionDate = new Date(transaction.date);
+        const dueDate = new Date(bill.nextDueDate || bill.dueDate);
+        const daysDiff = Math.abs((transactionDate - dueDate) / (1000 * 60 * 60 * 24));
+        
+        if (daysDiff === 0) {
+            confidence += 20;
+        } else if (daysDiff <= 5) {
+            confidence += 20 * (1 - (daysDiff / 5));
+        }
+
+        return Math.round(confidence);
+    }
+
+    /**
+     * Manual refresh - fetch and match transactions for a specific access token
+     * @param {string} accessToken - Plaid access token
+     * @returns {Object} Matching results
+     */
+    static async refreshBillMatching(accessToken) {
+        console.log('Manual bill matching refresh triggered');
+        
+        // Fetch last 30 days of transactions
+        const endDate = new Date().toISOString().split('T')[0];
+        const startDate = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
+        
+        const result = await this.fetchAndMatchTransactions(accessToken, {
+            startDate,
+            endDate,
+            autoMarkPaid: this.autoMarkPaid
+        });
+
+        if (result.success) {
+            NotificationManager.showSuccess(
+                `Bill matching complete: ${result.processedCount} bills matched from ${result.totalTransactions} transactions`
+            );
+        } else {
+            NotificationManager.showError(
+                'Bill matching failed',
+                result.error
+            );
+        }
+
+        return result;
     }
 }
