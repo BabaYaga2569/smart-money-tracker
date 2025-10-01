@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { doc, getDoc, updateDoc, collection, query, orderBy, limit, getDocs } from 'firebase/firestore';
 import { db } from '../firebase';
 import PlaidLink from '../components/PlaidLink';
+import PlaidErrorModal from '../components/PlaidErrorModal';
 import { calculateProjectedBalance, calculateTotalProjectedBalance, getBalanceDifference, formatBalanceDifference } from '../utils/BalanceCalculator';
 import PlaidConnectionManager from '../utils/PlaidConnectionManager';
 import './Accounts.css';
@@ -24,6 +25,7 @@ const Accounts = () => {
   const [transactions, setTransactions] = useState([]);
   const [showBalanceType, setShowBalanceType] = useState('both'); // 'live', 'projected', or 'both'
   const [showHelp, setShowHelp] = useState(false);
+  const [showErrorModal, setShowErrorModal] = useState(false);
 
   useEffect(() => {
     loadAccountsAndTransactions();
@@ -44,11 +46,17 @@ const Accounts = () => {
   const checkPlaidConnection = async () => {
     try {
       const status = await PlaidConnectionManager.checkConnection();
+      const hasError = status.error !== null;
       setPlaidStatus({
         isConnected: status.hasToken && status.isApiWorking === true && status.hasAccounts,
-        hasError: status.error !== null,
+        hasError: hasError,
         errorMessage: status.error
       });
+      
+      // Show error modal for critical errors
+      if (hasError && status.errorType !== 'config') {
+        setShowErrorModal(true);
+      }
     } catch (error) {
       console.error('Error checking Plaid connection:', error);
     }
@@ -280,6 +288,7 @@ const Accounts = () => {
     if (err) {
       console.error('Plaid Link error:', err);
       showNotification('Bank connection cancelled or failed', 'error');
+      setShowErrorModal(true);
     }
   };
 
@@ -351,48 +360,72 @@ const Accounts = () => {
         </div>
       </div>
 
-      {/* Plaid Connection Status Banner */}
-      {!plaidStatus.isConnected && (
+      {/* Plaid Connection Status Banner - Compact Version */}
+      {!plaidStatus.isConnected && !plaidStatus.hasError && (
         <div style={{
-          background: plaidStatus.hasError 
-            ? 'linear-gradient(135deg, #dc2626 0%, #991b1b 100%)'
-            : 'linear-gradient(135deg, #f59e0b 0%, #d97706 100%)',
+          background: 'linear-gradient(135deg, #f59e0b 0%, #d97706 100%)',
           color: '#fff',
-          padding: '16px 24px',
+          padding: '12px 20px',
           borderRadius: '8px',
           marginBottom: '20px',
           display: 'flex',
-          flexDirection: 'column',
-          gap: '12px',
-          boxShadow: '0 4px 6px rgba(0,0,0,0.1)'
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          boxShadow: '0 2px 4px rgba(0,0,0,0.1)',
+          fontSize: '14px'
         }}>
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-            <div>
-              <div style={{ fontSize: '16px', fontWeight: '600', marginBottom: '4px' }}>
-                {plaidStatus.hasError ? '❌ Plaid Connection Error' : '⚠️ No Bank Accounts Connected'}
-              </div>
-              <div style={{ fontSize: '14px', opacity: 0.9 }}>
-                {plaidStatus.hasError 
-                  ? PlaidConnectionManager.getErrorMessage()
-                  : 'Connect your bank account with Plaid to automatically sync balances and transactions.'}
-              </div>
-            </div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+            <span>⚠️</span>
+            <span>
+              <strong>No Bank Connected</strong> - Connect your bank to automatically sync balances and transactions
+            </span>
           </div>
-          {plaidStatus.hasError && (
-            <div style={{ 
-              fontSize: '13px', 
-              opacity: 0.9,
-              borderTop: '1px solid rgba(255,255,255,0.2)',
-              paddingTop: '12px'
-            }}>
-              <div style={{ fontWeight: '600', marginBottom: '6px' }}>💡 Troubleshooting:</div>
-              <ul style={{ margin: 0, paddingLeft: '20px' }}>
-                {PlaidConnectionManager.getTroubleshootingSteps().map((step, idx) => (
-                  <li key={idx}>{step}</li>
-                ))}
-              </ul>
-            </div>
+          {plaidAccounts.length === 0 && (
+            <PlaidLink
+              onSuccess={handlePlaidSuccess}
+              onExit={handlePlaidExit}
+              userId="steve-colburn"
+              buttonText="🔗 Connect Now"
+            />
           )}
+        </div>
+      )}
+
+      {plaidStatus.hasError && (
+        <div style={{
+          background: 'linear-gradient(135deg, #dc2626 0%, #991b1b 100%)',
+          color: '#fff',
+          padding: '12px 20px',
+          borderRadius: '8px',
+          marginBottom: '20px',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          boxShadow: '0 2px 4px rgba(0,0,0,0.1)',
+          fontSize: '14px'
+        }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+            <span>❌</span>
+            <span>
+              <strong>Connection Error</strong> - {PlaidConnectionManager.getErrorMessage()}
+            </span>
+          </div>
+          <button 
+            onClick={() => setShowErrorModal(true)}
+            style={{
+              background: 'rgba(255,255,255,0.2)',
+              border: '1px solid rgba(255,255,255,0.4)',
+              color: '#fff',
+              padding: '6px 12px',
+              borderRadius: '6px',
+              cursor: 'pointer',
+              fontSize: '13px',
+              fontWeight: '500',
+              whiteSpace: 'nowrap'
+            }}
+          >
+            View Details
+          </button>
         </div>
       )}
 
@@ -543,13 +576,24 @@ const Accounts = () => {
               </div>
               
               <div className="account-actions">
-                <button 
-                  className="action-btn"
-                  disabled
-                  title="Balance is synced automatically"
-                >
-                  🔄 Auto-synced
-                </button>
+                {plaidStatus.isConnected ? (
+                  <button 
+                    className="action-btn"
+                    disabled
+                    title="Balance is synced automatically via Plaid"
+                  >
+                    🔄 Auto-synced
+                  </button>
+                ) : (
+                  <button 
+                    className="action-btn"
+                    disabled
+                    title="Plaid connection required for auto-sync"
+                    style={{ opacity: 0.6 }}
+                  >
+                    ⏸️ Sync Paused
+                  </button>
+                )}
               </div>
             </div>
           );
@@ -692,6 +736,16 @@ const Accounts = () => {
           </div>
         </div>
       )}
+
+      {/* Plaid Error Modal */}
+      <PlaidErrorModal
+        isOpen={showErrorModal}
+        onClose={() => setShowErrorModal(false)}
+        onRetry={() => {
+          setShowErrorModal(false);
+          checkPlaidConnection();
+        }}
+      />
     </div>
   );
 };
