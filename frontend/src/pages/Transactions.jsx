@@ -96,13 +96,21 @@ const Transactions = () => {
         const data = await response.json();
         console.log('Fetched Plaid accounts:', data);
         
+        // Check if API returned success flag
+        if (data.success === false) {
+          console.log('Plaid API returned no accounts:', data.message || 'No accounts available');
+          // Fall through to Firebase fallback
+          await loadFirebaseAccounts();
+          return;
+        }
+        
         // Convert Plaid accounts to the format the component expects
         const accountsMap = {};
         
         // Handle different possible response structures
         const accountsList = data.accounts || data;
         
-        if (Array.isArray(accountsList)) {
+        if (Array.isArray(accountsList) && accountsList.length > 0) {
           accountsList.forEach(account => {
             // Use account_id or id as the key
             const accountId = account.account_id || account.id || account._id;
@@ -125,15 +133,15 @@ const Transactions = () => {
               institution: account.institution_name || ''
             };
           });
-        }
-        
-        // If we got Plaid accounts, use them; otherwise fall back to Firebase
-        if (Object.keys(accountsMap).length > 0) {
+          
           setAccounts(accountsMap);
         } else {
-          // Try Firebase as backup
+          // No accounts from API, try Firebase
           await loadFirebaseAccounts();
         }
+      } else if (response.status === 404) {
+        console.log('Accounts endpoint not available, using Firebase fallback');
+        await loadFirebaseAccounts();
       } else {
         console.error('Failed to fetch Plaid accounts, status:', response.status);
         // Try Firebase as backup

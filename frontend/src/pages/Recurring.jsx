@@ -103,34 +103,44 @@ const Recurring = () => {
           
           if (response.ok) {
             const data = await response.json();
-            const accountsList = data.accounts || data;
             
-            if (Array.isArray(accountsList) && accountsList.length > 0) {
-              const accountsMap = {};
-              accountsList.forEach(account => {
-                const accountId = account.account_id || account.id || account._id;
-                let balance = 0;
-                if (account.balances) {
-                  balance = account.balances.current || account.balances.available || 0;
-                } else if (account.current_balance !== undefined) {
-                  balance = account.current_balance;
-                } else if (account.balance !== undefined) {
-                  balance = account.balance;
-                }
-                
-                accountsMap[accountId] = {
-                  name: account.name || account.official_name || 'Unknown Account',
-                  type: account.subtype || account.type || 'checking',
-                  balance: balance.toString(),
-                  mask: account.mask || '',
-                  institution: account.institution_name || ''
-                };
-              });
-              setAccounts(accountsMap);
-              return;
+            // Check if API returned success flag
+            if (data.success === false) {
+              console.log('Plaid API returned no accounts:', data.message || 'No accounts available');
+              // Fall through to Firebase fallback
+            } else {
+              const accountsList = data.accounts || data;
+              
+              if (Array.isArray(accountsList) && accountsList.length > 0) {
+                const accountsMap = {};
+                accountsList.forEach(account => {
+                  const accountId = account.account_id || account.id || account._id;
+                  let balance = 0;
+                  if (account.balances) {
+                    balance = account.balances.current || account.balances.available || 0;
+                  } else if (account.current_balance !== undefined) {
+                    balance = account.current_balance;
+                  } else if (account.balance !== undefined) {
+                    balance = account.balance;
+                  }
+                  
+                  accountsMap[accountId] = {
+                    name: account.name || account.official_name || 'Unknown Account',
+                    type: account.subtype || account.type || 'checking',
+                    balance: balance.toString(),
+                    mask: account.mask || '',
+                    institution: account.institution_name || ''
+                  };
+                });
+                setAccounts(accountsMap);
+                return;
+              }
             }
+          } else if (response.status === 404) {
+            console.log('Accounts endpoint not available, using Firebase fallback');
           }
         } catch (apiError) {
+          // Network errors are expected when API is not available
           console.log('Plaid API not available, trying Firebase...', apiError.message || '');
         }
       }
