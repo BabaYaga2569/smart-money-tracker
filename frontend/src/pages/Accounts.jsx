@@ -26,6 +26,11 @@ const Accounts = () => {
   const [showBalanceType, setShowBalanceType] = useState('both'); // 'live', 'projected', or 'both'
   const [showHelp, setShowHelp] = useState(false);
   const [showErrorModal, setShowErrorModal] = useState(false);
+  const [showSuccessBanner, setShowSuccessBanner] = useState(false);
+  const [bannerDismissed, setBannerDismissed] = useState(() => {
+    // Check if user has dismissed the banner before
+    return localStorage.getItem('plaidBannerDismissed') === 'true';
+  });
 
   useEffect(() => {
     loadAccountsAndTransactions();
@@ -225,6 +230,10 @@ const Accounts = () => {
     try {
       setSaving(true);
       showNotification('Connecting your bank account...', 'success');
+      
+      // Show success banner temporarily when connection succeeds
+      setShowSuccessBanner(true);
+      setBannerDismissed(false);
 
       // Exchange public token for access token and get accounts
       const response = await fetch(`${import.meta.env.VITE_API_URL}/api/plaid/exchange_token`, {
@@ -273,6 +282,11 @@ const Accounts = () => {
         setTotalBalance(plaidTotal);
 
         showNotification(`Successfully connected ${formattedPlaidAccounts.length} account(s)!`, 'success');
+        
+        // Auto-hide success banner after 5 seconds
+        setTimeout(() => {
+          setShowSuccessBanner(false);
+        }, 5000);
       } else {
         showNotification('Failed to connect bank account', 'error');
       }
@@ -427,20 +441,46 @@ const Accounts = () => {
         </div>
       )}
 
-      {plaidAccounts.length > 0 && !plaidStatus.hasError && (
+      {plaidAccounts.length > 0 && !plaidStatus.hasError && showSuccessBanner && !bannerDismissed && (
         <div style={{
           background: 'linear-gradient(135deg, #11998e 0%, #38ef7d 100%)',
           color: '#fff',
-          padding: '12px 24px',
-          borderRadius: '8px',
-          marginBottom: '20px',
+          padding: '8px 16px',
+          borderRadius: '6px',
+          marginBottom: '16px',
           display: 'flex',
           alignItems: 'center',
-          boxShadow: '0 4px 6px rgba(0,0,0,0.1)'
+          justifyContent: 'space-between',
+          boxShadow: '0 2px 4px rgba(0,0,0,0.1)',
+          fontSize: '13px'
         }}>
-          <div style={{ fontSize: '16px', fontWeight: '600' }}>
-            ✅ Bank Connected - Live balance syncing enabled
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+            <span>✅</span>
+            <span style={{ fontWeight: '500' }}>
+              Bank Connected - Live balance syncing enabled
+            </span>
           </div>
+          <button 
+            onClick={() => {
+              setShowSuccessBanner(false);
+              setBannerDismissed(true);
+              localStorage.setItem('plaidBannerDismissed', 'true');
+            }}
+            style={{
+              background: 'rgba(255,255,255,0.2)',
+              border: '1px solid rgba(255,255,255,0.4)',
+              color: '#fff',
+              padding: '4px 8px',
+              borderRadius: '4px',
+              cursor: 'pointer',
+              fontSize: '12px',
+              fontWeight: '500',
+              whiteSpace: 'nowrap'
+            }}
+            title="Dismiss this message"
+          >
+            Dismiss
+          </button>
         </div>
       )}
 
