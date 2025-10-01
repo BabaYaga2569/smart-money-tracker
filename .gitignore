@@ -35,3 +35,6 @@ yarn-error.log*
 *.tmp
 *.temp
 /tmp/
+
+# Test files (standalone)
+test-*.js
