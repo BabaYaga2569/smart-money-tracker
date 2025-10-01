@@ -102,12 +102,10 @@ const Transactions = () => {
       
       if (response.ok) {
         const data = await response.json();
-        console.log('Fetched Plaid accounts:', data);
         
         // Check if API returned success flag
         if (data.success === false) {
-          console.log('Plaid API returned no accounts:', data.message || 'No accounts available');
-          // Fall through to Firebase fallback
+          // Expected behavior when Plaid not configured - use Firebase
           await loadFirebaseAccounts();
           return;
         }
@@ -148,16 +146,18 @@ const Transactions = () => {
           await loadFirebaseAccounts();
         }
       } else if (response.status === 404) {
-        console.log('Accounts endpoint not available, using Firebase fallback');
+        // Expected when API endpoint not available - use Firebase
         await loadFirebaseAccounts();
       } else {
-        console.error('Failed to fetch Plaid accounts, status:', response.status);
-        // Try Firebase as backup
+        // Unexpected error - log and fallback
+        console.warn(`API returned ${response.status}, falling back to Firebase`);
         await loadFirebaseAccounts();
       }
     } catch (error) {
-      console.error('Error loading Plaid accounts:', error);
-      // Try Firebase as backup
+      // Network error or API unavailable - fallback silently
+      if (error.name !== 'TypeError') {
+        console.warn('API unavailable, using Firebase:', error.message);
+      }
       await loadFirebaseAccounts();
     }
   };
