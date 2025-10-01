@@ -316,7 +316,7 @@ const Dashboard = () => {
             >
               Plaid: {plaidStatus.isConnected ? 'Connected' : (plaidStatus.hasError ? 'Error' : 'Not Connected')}
             </span>
-            {!plaidStatus.isConnected && (
+            {!plaidStatus.isConnected && !loading && (
               <button
                 onClick={() => navigate('/accounts')}
                 style={{
