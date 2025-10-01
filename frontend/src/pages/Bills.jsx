@@ -7,6 +7,7 @@ import { NotificationManager } from '../utils/NotificationManager';
 import { BillAnimationManager } from '../utils/BillAnimationManager';
 import { PlaidIntegrationManager } from '../utils/PlaidIntegrationManager';
 import PlaidConnectionManager from '../utils/PlaidConnectionManager';
+import PlaidErrorModal from '../components/PlaidErrorModal';
 import { formatDateForDisplay, formatDateForInput, getPacificTime } from '../utils/DateUtils';
 import { TRANSACTION_CATEGORIES, CATEGORY_ICONS, getCategoryIcon, migrateLegacyCategory } from '../constants/categories';
 import NotificationSystem from '../components/NotificationSystem';
@@ -29,6 +30,7 @@ const Bills = () => {
     hasError: false,
     errorMessage: null
   });
+  const [showErrorModal, setShowErrorModal] = useState(false);
 
   // Use shared categories for consistency with Transactions page
   const BILL_CATEGORIES = CATEGORY_ICONS;
@@ -885,69 +887,80 @@ const Bills = () => {
       {/* Notification System */}
       <NotificationSystem />
       
-      {/* Plaid Connection Status Banner */}
-      {!plaidStatus.isConnected && (
+      {/* Plaid Connection Status Banner - Compact Version */}
+      {!plaidStatus.isConnected && !plaidStatus.hasError && (
         <div style={{
-          background: plaidStatus.hasError 
-            ? 'linear-gradient(135deg, #dc2626 0%, #991b1b 100%)'
-            : 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
+          background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
           color: '#fff',
-          padding: '16px 24px',
+          padding: '12px 20px',
           borderRadius: '8px',
           marginBottom: '20px',
           display: 'flex',
-          flexDirection: 'column',
-          gap: '12px',
-          boxShadow: '0 4px 6px rgba(0,0,0,0.1)'
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          boxShadow: '0 2px 4px rgba(0,0,0,0.1)',
+          fontSize: '14px'
         }}>
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-            <div style={{ flex: 1 }}>
-              <div style={{ fontSize: '18px', fontWeight: '600', marginBottom: '4px' }}>
-                {plaidStatus.hasError ? '❌ Plaid Connection Error' : '🔗 Connect Your Bank Account'}
-              </div>
-              <div style={{ fontSize: '14px', opacity: 0.9 }}>
-                {plaidStatus.hasError 
-                  ? PlaidConnectionManager.getErrorMessage()
-                  : 'Automate bill tracking by connecting Plaid. Match transactions automatically and never miss a payment.'}
-              </div>
-            </div>
-            <button 
-              onClick={() => window.location.href = '/accounts'}
-              style={{
-                background: '#fff',
-                color: plaidStatus.hasError ? '#dc2626' : '#667eea',
-                border: 'none',
-                borderRadius: '6px',
-                padding: '12px 24px',
-                fontSize: '14px',
-                fontWeight: '600',
-                cursor: 'pointer',
-                boxShadow: '0 2px 4px rgba(0,0,0,0.1)',
-                transition: 'transform 0.2s',
-                whiteSpace: 'nowrap',
-                marginLeft: '20px'
-              }}
-              onMouseEnter={(e) => e.target.style.transform = 'scale(1.05)'}
-              onMouseLeave={(e) => e.target.style.transform = 'scale(1)'}
-            >
-              {plaidStatus.hasError ? 'Fix Connection →' : 'Connect Bank →'}
-            </button>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+            <span>🔗</span>
+            <span>
+              <strong>Connect Your Bank</strong> - Automate bill tracking and never miss a payment
+            </span>
           </div>
-          {plaidStatus.hasError && (
-            <div style={{ 
-              fontSize: '13px', 
-              opacity: 0.9,
-              borderTop: '1px solid rgba(255,255,255,0.2)',
-              paddingTop: '12px'
-            }}>
-              <div style={{ fontWeight: '600', marginBottom: '6px' }}>💡 Troubleshooting:</div>
-              <ul style={{ margin: 0, paddingLeft: '20px' }}>
-                {PlaidConnectionManager.getTroubleshootingSteps().map((step, idx) => (
-                  <li key={idx}>{step}</li>
-                ))}
-              </ul>
-            </div>
-          )}
+          <button 
+            onClick={() => window.location.href = '/accounts'}
+            style={{
+              background: 'rgba(255,255,255,0.2)',
+              border: '1px solid rgba(255,255,255,0.4)',
+              color: '#fff',
+              padding: '6px 12px',
+              borderRadius: '6px',
+              cursor: 'pointer',
+              fontSize: '13px',
+              fontWeight: '500',
+              whiteSpace: 'nowrap'
+            }}
+          >
+            Connect Bank →
+          </button>
+        </div>
+      )}
+
+      {plaidStatus.hasError && (
+        <div style={{
+          background: 'linear-gradient(135deg, #dc2626 0%, #991b1b 100%)',
+          color: '#fff',
+          padding: '12px 20px',
+          borderRadius: '8px',
+          marginBottom: '20px',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          boxShadow: '0 2px 4px rgba(0,0,0,0.1)',
+          fontSize: '14px'
+        }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+            <span>❌</span>
+            <span>
+              <strong>Connection Error</strong> - {PlaidConnectionManager.getErrorMessage()}
+            </span>
+          </div>
+          <button 
+            onClick={() => setShowErrorModal(true)}
+            style={{
+              background: 'rgba(255,255,255,0.2)',
+              border: '1px solid rgba(255,255,255,0.4)',
+              color: '#fff',
+              padding: '6px 12px',
+              borderRadius: '6px',
+              cursor: 'pointer',
+              fontSize: '13px',
+              fontWeight: '500',
+              whiteSpace: 'nowrap'
+            }}
+          >
+            View Details
+          </button>
         </div>
       )}
       
@@ -1256,6 +1269,16 @@ const Bills = () => {
           }}
         />
       )}
+
+      {/* Plaid Error Modal */}
+      <PlaidErrorModal
+        isOpen={showErrorModal}
+        onClose={() => setShowErrorModal(false)}
+        onRetry={() => {
+          setShowErrorModal(false);
+          checkPlaidConnection();
+        }}
+      />
     </div>
   );
 };
