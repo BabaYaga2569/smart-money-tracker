@@ -15,6 +15,28 @@ class PlaidConnectionManager {
       errorType: null // 'cors', 'network', 'api', 'auth', 'config'
     };
     this.listeners = [];
+    
+    // Enable diagnostic logging
+    this.enableDiagnostics = true;
+  }
+
+  /**
+   * Log diagnostic information
+   * @private
+   */
+  _log(level, message, data = {}) {
+    if (!this.enableDiagnostics) return;
+    
+    const timestamp = new Date().toISOString();
+    const prefix = `[PlaidConnectionManager] [${timestamp}]`;
+    
+    if (level === 'error') {
+      console.error(`${prefix} ${message}`, data);
+    } else if (level === 'warn') {
+      console.warn(`${prefix} ${message}`, data);
+    } else {
+      console.log(`${prefix} ${message}`, data);
+    }
   }
 
   /**
@@ -49,10 +71,16 @@ class PlaidConnectionManager {
    * @returns {Promise<Object>} Connection status with details
    */
   async checkConnection(forceRefresh = false) {
+    this._log('info', 'Checking Plaid connection', { forceRefresh });
+    
     // Use cached result if checked within last 30 seconds
     if (!forceRefresh && this.connectionState.lastChecked) {
       const timeSinceCheck = Date.now() - this.connectionState.lastChecked;
       if (timeSinceCheck < 30000) {
+        this._log('info', 'Using cached connection status', { 
+          timeSinceCheck: `${Math.round(timeSinceCheck / 1000)}s ago`,
+          status: this.connectionState
+        });
         return this.getStatus();
       }
     }
@@ -61,6 +89,8 @@ class PlaidConnectionManager {
     const token = localStorage.getItem('plaid_access_token');
     this.connectionState.hasToken = !!token;
     this.connectionState.lastChecked = Date.now();
+    
+    this._log('info', 'Access token check', { hasToken: !!token });
 
     if (!token) {
       this.connectionState.isApiWorking = null;
@@ -74,6 +104,7 @@ class PlaidConnectionManager {
     // Try to fetch accounts from API to verify connection
     try {
       const apiUrl = import.meta.env.VITE_API_URL || 'https://smart-money-tracker-09ks.onrender.com';
+      this._log('info', 'Testing API connectivity', { apiUrl });
       
       // Add timeout for network issues
       const controller = new AbortController();
@@ -88,6 +119,8 @@ class PlaidConnectionManager {
       });
 
       clearTimeout(timeoutId);
+      
+      this._log('info', 'API response received', { status: response.status, ok: response.ok });
 
       if (response.ok) {
         const data = await response.json();
@@ -98,6 +131,7 @@ class PlaidConnectionManager {
           this.connectionState.hasAccounts = false;
           this.connectionState.error = data.message || 'No accounts available';
           this.connectionState.errorType = 'config';
+          this._log('warn', 'API working but no accounts', { message: data.message });
         } else {
           // Successfully got accounts
           const accounts = data.accounts || [];
@@ -105,6 +139,7 @@ class PlaidConnectionManager {
           this.connectionState.hasAccounts = accounts.length > 0;
           this.connectionState.error = null;
           this.connectionState.errorType = null;
+          this._log('info', 'Successfully retrieved accounts', { accountCount: accounts.length });
         }
       } else if (response.status === 401) {
         // Authentication failed
@@ -112,12 +147,14 @@ class PlaidConnectionManager {
         this.connectionState.hasAccounts = false;
         this.connectionState.error = 'Access token expired or invalid';
         this.connectionState.errorType = 'auth';
+        this._log('error', 'Authentication failed', { status: 401 });
       } else {
         // Other API error
         this.connectionState.isApiWorking = false;
         this.connectionState.hasAccounts = false;
         this.connectionState.error = `API error: ${response.status}`;
         this.connectionState.errorType = 'api';
+        this._log('error', 'API error', { status: response.status });
       }
     } catch (error) {
       // Network or CORS error
@@ -126,16 +163,19 @@ class PlaidConnectionManager {
         this.connectionState.hasAccounts = false;
         this.connectionState.error = 'Connection timeout - API may be down';
         this.connectionState.errorType = 'network';
+        this._log('error', 'Connection timeout', { error: error.message });
       } else if (error.message.includes('CORS') || error.message.includes('Failed to fetch')) {
         this.connectionState.isApiWorking = false;
         this.connectionState.hasAccounts = false;
         this.connectionState.error = 'Unable to connect to Plaid API (CORS or network issue)';
         this.connectionState.errorType = 'cors';
+        this._log('error', 'CORS or network error', { error: error.message });
       } else {
         this.connectionState.isApiWorking = false;
         this.connectionState.hasAccounts = false;
         this.connectionState.error = error.message;
         this.connectionState.errorType = 'network';
+        this._log('error', 'Network error', { error: error.message });
       }
     }
 
