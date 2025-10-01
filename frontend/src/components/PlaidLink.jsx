@@ -5,15 +5,20 @@ const PlaidLink = ({ onSuccess, onExit, userId, buttonText = "Connect Bank" }) =
   const [linkToken, setLinkToken] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
+  const [retryCount, setRetryCount] = useState(0);
 
   useEffect(() => {
     const createLinkToken = async () => {
       try {
+        setLoading(true);
+        setError(null);
+        
         // Add timeout to prevent infinite loading
         const controller = new AbortController();
         const timeoutId = setTimeout(() => controller.abort(), 10000); // 10 second timeout
 
-        const response = await fetch(`${import.meta.env.VITE_API_URL}/api/plaid/create_link_token`, {
+        const apiUrl = import.meta.env.VITE_API_URL || 'https://smart-money-tracker-09ks.onrender.com';
+        const response = await fetch(`${apiUrl}/api/plaid/create_link_token`, {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
@@ -25,7 +30,8 @@ const PlaidLink = ({ onSuccess, onExit, userId, buttonText = "Connect Bank" }) =
         clearTimeout(timeoutId);
 
         if (!response.ok) {
-          throw new Error(`Failed to create link token: ${response.status}`);
+          const errorData = await response.json().catch(() => ({}));
+          throw new Error(errorData.error || `Failed to create link token: ${response.status}`);
         }
 
         const data = await response.json();
@@ -38,16 +44,26 @@ const PlaidLink = ({ onSuccess, onExit, userId, buttonText = "Connect Bank" }) =
         setError(null);
       } catch (error) {
         console.error('Error creating link token:', error);
-        setError(error.name === 'AbortError' 
-          ? 'Connection timeout. Please check your internet connection.' 
-          : 'Unable to connect to Plaid. Please try again later.');
+        
+        let errorMessage = 'Unable to connect to Plaid. ';
+        if (error.name === 'AbortError') {
+          errorMessage += 'Connection timeout. Please check your internet connection.';
+        } else if (error.message.includes('CORS')) {
+          errorMessage += 'Server configuration issue. Please contact support.';
+        } else if (error.message.includes('Failed to fetch')) {
+          errorMessage += 'Network error. Please check your connection and try again.';
+        } else {
+          errorMessage += error.message || 'Please try again later.';
+        }
+        
+        setError(errorMessage);
       } finally {
         setLoading(false);
       }
     };
 
     createLinkToken();
-  }, [userId]);
+  }, [userId, retryCount]);
 
   const onSuccessCallback = useCallback(
     (public_token, metadata) => {
@@ -65,6 +81,10 @@ const PlaidLink = ({ onSuccess, onExit, userId, buttonText = "Connect Bank" }) =
 
   const { open, ready } = usePlaidLink(config);
 
+  const handleRetry = () => {
+    setRetryCount(prev => prev + 1);
+  };
+
   if (loading) {
     return (
       <button className="btn-primary" disabled>
@@ -76,14 +96,34 @@ const PlaidLink = ({ onSuccess, onExit, userId, buttonText = "Connect Bank" }) =
   if (error) {
     return (
       <div style={{ 
-        padding: '10px', 
+        padding: '12px', 
         background: 'rgba(239, 68, 68, 0.1)', 
         border: '1px solid rgba(239, 68, 68, 0.3)',
         borderRadius: '8px',
-        color: '#ef4444'
+        color: '#ef4444',
+        maxWidth: '400px'
       }}>
-        <p style={{ margin: '0 0 8px 0', fontWeight: '500' }}>⚠️ Unable to Connect Bank</p>
-        <p style={{ margin: '0', fontSize: '14px' }}>{error}</p>
+        <p style={{ margin: '0 0 10px 0', fontWeight: '500', fontSize: '14px' }}>
+          ⚠️ Unable to Initialize Bank Connection
+        </p>
+        <p style={{ margin: '0 0 12px 0', fontSize: '13px', lineHeight: '1.4' }}>
+          {error}
+        </p>
+        <button
+          onClick={handleRetry}
+          style={{
+            background: '#ef4444',
+            color: '#fff',
+            border: 'none',
+            padding: '8px 16px',
+            borderRadius: '6px',
+            cursor: 'pointer',
+            fontSize: '13px',
+            fontWeight: '500'
+          }}
+        >
+          🔄 Try Again
+        </button>
       </div>
     );
   }
