@@ -3,7 +3,10 @@ import cors from "cors";
 import { Configuration, PlaidApi, PlaidEnvironments } from "plaid";
 
 const app = express();
-app.use(cors());
+app.use(cors({
+  origin: ['https://smart-money-tracker.netlify.app', 'http://localhost:3000'],
+  credentials: true
+}));
 app.use(express.json());
 
 // ============================================================================
