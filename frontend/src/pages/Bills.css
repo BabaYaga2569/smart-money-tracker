@@ -150,6 +150,29 @@
   display: flex;
   flex-direction: column;
   gap: 12px;
+  max-height: 1400px;
+  overflow-y: auto;
+  padding-right: 8px;
+}
+
+/* Custom scrollbar styling for bills list */
+.bills-list::-webkit-scrollbar {
+  width: 8px;
+}
+
+.bills-list::-webkit-scrollbar-track {
+  background: #1a1a1a;
+  border-radius: 4px;
+}
+
+.bills-list::-webkit-scrollbar-thumb {
+  background: #333;
+  border-radius: 4px;
+  transition: background 0.3s ease;
+}
+
+.bills-list::-webkit-scrollbar-thumb:hover {
+  background: #00ff88;
 }
 
 .bill-item {
