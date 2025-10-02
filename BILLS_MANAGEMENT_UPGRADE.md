@@ -124,20 +124,44 @@ Users can choose whether to keep or delete auto-generated bills when removing a 
 **What was added:**
 - "🔧 Cleanup" button in recurring page action bar
 - Dropdown menu with cleanup options:
-  - "Delete All Generated Bills": Removes all bills auto-created from recurring templates
+  - "➕ Generate Bills from Templates": Creates bill instances for next 3 months from active recurring templates
+  - "🗑️ Delete All Generated Bills": Removes all bills auto-created from recurring templates
 - Click-outside to close menu functionality
 
 **User benefit:**
-Centralized maintenance tools for managing the relationship between recurring templates and generated bills.
+Centralized maintenance tools for managing the relationship between recurring templates and generated bills. Users can now generate bill instances on-demand.
 
 **Technical changes:**
 - Added `showCleanupMenu` state
+- Implemented `handleGenerateBillsFromTemplates()` function
 - Implemented `handleDeleteAllGeneratedBills()` function
 - Added click-outside event listener
 - Styled dropdown menu with hover effects
 
 **Files Modified:**
 - `frontend/src/pages/Recurring.jsx`: Added cleanup menu UI and handlers
+- `frontend/src/utils/RecurringBillManager.js`: Added `generateBillsFromTemplate()` method
+
+---
+
+#### 3.4 Filter for Recurring-Generated Bills
+
+**What was added:**
+- New filter dropdown in Bills page: "All Bills", "🔄 Auto-Generated", "✋ Manual Bills"
+- Filter allows users to view only bills generated from recurring templates
+- Filter works in conjunction with existing category and status filters
+
+**User benefit:**
+Users can quickly identify and focus on auto-generated bills vs manually created bills, making it easier to manage different bill sources.
+
+**Technical changes:**
+- Added `filterRecurring` state variable
+- Updated bill filtering logic to check `recurringTemplateId` field
+- Added filter dropdown UI with three options
+- Filter integrates seamlessly with existing filter controls
+
+**Files Modified:**
+- `frontend/src/pages/Bills.jsx`: Added recurring filter state and UI
 
 ---
 
@@ -217,14 +241,19 @@ All acceptance criteria from the problem statement have been met:
 8. ✅ Test error handling with invalid CSV
 
 #### Recurring-Bill Relationship:
-1. ✅ Create a bill with recurringTemplateId field
-2. ✅ Verify "🔄 Auto" badge appears on the bill
-3. ✅ Delete a recurring template
-4. ✅ Verify checkbox option appears: "Also delete generated bills"
-5. ✅ Test both checked and unchecked scenarios
-6. ✅ Open cleanup menu from recurring page
-7. ✅ Test "Delete All Generated Bills" option
-8. ✅ Verify menu closes when clicking outside
+1. ✅ Navigate to Recurring page
+2. ✅ Click "🔧 Cleanup" button
+3. ✅ Click "➕ Generate Bills from Templates"
+4. ✅ Verify bills are generated with notification showing count
+5. ✅ Navigate to Bills page
+6. ✅ Verify "🔄 Auto" badge appears on generated bills
+7. ✅ Test filter dropdown: "All Bills", "🔄 Auto-Generated", "✋ Manual Bills"
+8. ✅ Verify filter correctly shows/hides bills based on recurringTemplateId
+9. ✅ Delete a recurring template
+10. ✅ Verify checkbox option appears: "Also delete generated bills"
+11. ✅ Test both checked and unchecked scenarios
+12. ✅ Test "Delete All Generated Bills" option from cleanup menu
+13. ✅ Verify menu closes when clicking outside
 
 ### Lint Check:
 ```bash
