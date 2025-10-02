@@ -12,6 +12,7 @@ import BillCSVImportModal from '../components/BillCSVImportModal';
 import { formatDateForDisplay, formatDateForInput, getPacificTime } from '../utils/DateUtils';
 import { TRANSACTION_CATEGORIES, CATEGORY_ICONS, getCategoryIcon, migrateLegacyCategory } from '../constants/categories';
 import NotificationSystem from '../components/NotificationSystem';
+import { BillDeduplicationManager } from '../utils/BillDeduplicationManager';
 import './Bills.css';
 
 // Generate a unique ID for bills
@@ -49,6 +50,10 @@ const Bills = () => {
   const [importHistory, setImportHistory] = useState([]);
   const [showImportHistory, setShowImportHistory] = useState(false);
   const [showHelpModal, setShowHelpModal] = useState(false);
+  
+  // Deduplication state
+  const [deduplicating, setDeduplicating] = useState(false);
+  const [lastDeduplicationResult, setLastDeduplicationResult] = useState(null);
 
   // Use shared categories for consistency with Transactions page
   const BILL_CATEGORIES = CATEGORY_ICONS;
@@ -197,7 +202,23 @@ const Bills = () => {
           return bill;
         });
         
-        // Update Firebase if we added IDs
+        // AUTO-DEDUPLICATION: Clean up any duplicate bills on load
+        const deduplicationResult = BillDeduplicationManager.removeDuplicates(billsData);
+        if (deduplicationResult.stats.duplicates > 0) {
+          console.log('[Auto-Deduplication]', BillDeduplicationManager.getSummaryMessage(deduplicationResult.stats));
+          BillDeduplicationManager.logDeduplication(deduplicationResult, 'auto-load');
+          billsData = deduplicationResult.cleanedBills;
+          needsUpdate = true;
+          
+          // Show notification about auto-cleanup
+          NotificationManager.showNotification({
+            type: 'info',
+            message: `Auto-cleanup: ${BillDeduplicationManager.getSummaryMessage(deduplicationResult.stats)}`,
+            duration: 5000
+          });
+        }
+        
+        // Update Firebase if we added IDs or removed duplicates
         if (needsUpdate) {
           await updateDoc(settingsDocRef, {
             ...data,
@@ -927,6 +948,69 @@ const Bills = () => {
     }
   };
 
+  const handleDeduplicateBills = async () => {
+    if (!confirm('This will scan all bills and remove duplicates based on name, amount, due date, and frequency. The first occurrence of each bill will be kept. Continue?')) {
+      return;
+    }
+
+    try {
+      setDeduplicating(true);
+      
+      const settingsDocRef = doc(db, 'users', 'steve-colburn', 'settings', 'personal');
+      const currentDoc = await getDoc(settingsDocRef);
+      const currentData = currentDoc.exists() ? currentDoc.data() : {};
+      
+      const existingBills = currentData.bills || [];
+      
+      // Generate detailed report before deduplication
+      const report = BillDeduplicationManager.generateDuplicateReport(existingBills);
+      
+      if (report.duplicateCount === 0) {
+        showNotification('No duplicate bills found. All bills are unique.', 'info');
+        setDeduplicating(false);
+        return;
+      }
+      
+      // Perform deduplication
+      const result = BillDeduplicationManager.removeDuplicates(existingBills);
+      
+      // Log the deduplication activity
+      BillDeduplicationManager.logDeduplication(result, 'manual');
+      
+      // Save cleaned bills to Firebase
+      await updateDoc(settingsDocRef, {
+        ...currentData,
+        bills: result.cleanedBills
+      });
+      
+      // Store result for display
+      setLastDeduplicationResult(result);
+      
+      // Reload bills
+      await loadBills();
+      
+      // Show detailed notification
+      const message = BillDeduplicationManager.getSummaryMessage(result.stats);
+      showNotification(message, 'success');
+      
+      // Log removed bills for transparency
+      if (result.removedBills.length > 0) {
+        console.log('[Manual Deduplication] Removed bills:', result.removedBills.map(b => ({
+          name: b.name,
+          amount: b.amount,
+          dueDate: b.dueDate,
+          recurrence: b.recurrence
+        })));
+      }
+      
+    } catch (error) {
+      console.error('Error deduplicating bills:', error);
+      showNotification('Error deduplicating bills', 'error');
+    } finally {
+      setDeduplicating(false);
+    }
+  };
+
   const handleCSVImport = async (importedBills) => {
     try {
       setLoading(true);
@@ -1436,6 +1520,28 @@ const Bills = () => {
               title="Delete all bills"
             >
               🗑️ Delete All Bills
+            </button>
+          )}
+          {processedBills.length > 0 && (
+            <button 
+              className="deduplicate-button"
+              onClick={handleDeduplicateBills}
+              disabled={loading || deduplicating}
+              title="Remove duplicate bills (keeps first occurrence)"
+              style={{
+                background: '#17a2b8',
+                color: '#fff',
+                border: 'none',
+                borderRadius: '8px',
+                padding: '12px 20px',
+                fontWeight: '600',
+                cursor: (loading || deduplicating) ? 'not-allowed' : 'pointer',
+                transition: 'all 0.2s ease',
+                whiteSpace: 'nowrap',
+                opacity: (loading || deduplicating) ? 0.6 : 1
+              }}
+            >
+              {deduplicating ? '🔄 Deduplicating...' : '🧹 Deduplicate Bills'}
             </button>
           )}
           <button 
