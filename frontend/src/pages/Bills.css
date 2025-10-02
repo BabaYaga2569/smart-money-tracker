@@ -146,6 +146,9 @@
   font-size: 20px;
 }
 
+/* Bills list container - displays at least 15 bills before scrolling
+   Calculation: 15 bills × ~110px per bill + 14 gaps × 12px ≈ 1,818px
+   Set to 2000px to comfortably show 15+ bills before vertical scrolling activates */
 .bills-list {
   display: flex;
   flex-direction: column;
