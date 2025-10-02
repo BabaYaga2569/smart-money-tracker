@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { doc, getDoc, updateDoc } from 'firebase/firestore';
 import { db } from '../firebase';
 import { RecurringManager } from '../utils/RecurringManager';
+import { RecurringBillManager } from '../utils/RecurringBillManager';
 import { formatDateForInput } from '../utils/DateUtils';
 import { TRANSACTION_CATEGORIES, getCategoryIcon } from '../constants/categories';
 import CSVImportModal from '../components/CSVImportModal';
@@ -630,6 +631,63 @@ const Recurring = () => {
     }
   };
 
+  const handleGenerateBillsFromTemplates = async () => {
+    try {
+      setSaving(true);
+      setShowCleanupMenu(false);
+      
+      const settingsDocRef = doc(db, 'users', 'steve-colburn', 'settings', 'personal');
+      const currentDoc = await getDoc(settingsDocRef);
+      const currentData = currentDoc.exists() ? currentDoc.data() : {};
+      
+      const bills = currentData.bills || [];
+      const generateBillId = () => `bill_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+      
+      // Generate bills from active recurring templates
+      const activeTemplates = recurringItems.filter(item => item.status === 'active' && item.type === 'expense');
+      let newBills = [];
+      
+      activeTemplates.forEach(template => {
+        try {
+          // Generate 3 months of bills from each template
+          const generatedBills = RecurringBillManager.generateBillsFromTemplate(template, 3, generateBillId);
+          
+          // Filter out bills that already exist (same template ID and due date)
+          const uniqueBills = generatedBills.filter(newBill => {
+            return !bills.some(existingBill => 
+              existingBill.recurringTemplateId === newBill.recurringTemplateId &&
+              existingBill.dueDate === newBill.dueDate
+            );
+          });
+          
+          newBills = [...newBills, ...uniqueBills];
+        } catch (error) {
+          console.error(`Error generating bills from template ${template.name}:`, error);
+        }
+      });
+      
+      if (newBills.length === 0) {
+        showNotification('No new bills to generate (all bills already exist)', 'info');
+        return;
+      }
+      
+      // Add new bills to existing bills
+      const updatedBills = [...bills, ...newBills];
+      
+      await updateDoc(settingsDocRef, {
+        ...currentData,
+        bills: updatedBills
+      });
+      
+      showNotification(`Generated ${newBills.length} bill(s) from ${activeTemplates.length} template(s)`, 'success');
+    } catch (error) {
+      console.error('Error generating bills:', error);
+      showNotification('Error generating bills from templates', 'error');
+    } finally {
+      setSaving(false);
+    }
+  };
+
   const handleTogglePause = async (item) => {
     const newStatus = item.status === 'paused' ? 'active' : 'paused';
     
@@ -950,6 +1008,30 @@ const Recurring = () => {
                       boxShadow: '0 4px 12px rgba(0,0,0,0.3)'
                     }}
                   >
+                    <button
+                      onClick={handleGenerateBillsFromTemplates}
+                      disabled={saving}
+                      style={{
+                        width: '100%',
+                        background: 'transparent',
+                        color: '#fff',
+                        border: 'none',
+                        padding: '12px 16px',
+                        textAlign: 'left',
+                        cursor: 'pointer',
+                        borderRadius: '4px',
+                        transition: 'background 0.2s',
+                        fontSize: '14px',
+                        borderBottom: '1px solid #333'
+                      }}
+                      onMouseEnter={(e) => e.target.style.background = '#2a2a2a'}
+                      onMouseLeave={(e) => e.target.style.background = 'transparent'}
+                    >
+                      ➕ Generate Bills from Templates
+                      <div style={{ fontSize: '12px', color: '#888', marginTop: '4px' }}>
+                        Create bill instances for next 3 months
+                      </div>
+                    </button>
                     <button
                       onClick={handleDeleteAllGeneratedBills}
                       disabled={saving}
