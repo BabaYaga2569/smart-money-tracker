@@ -3,11 +3,36 @@ import { TRANSACTION_CATEGORIES, getCategoryIcon } from '../constants/categories
 import './CSVImportModal.css';
 
 const BillCSVImportModal = ({ existingBills, onImport, onCancel }) => {
-  const [step, setStep] = useState('upload'); // upload, preview, complete
+  const [step, setStep] = useState('upload'); // upload, mapping, preview, complete
   const [previewBills, setPreviewBills] = useState([]);
   const [errors, setErrors] = useState([]);
   const [loading, setLoading] = useState(false);
   const fileInputRef = useRef(null);
+  const [csvHeaders, setCsvHeaders] = useState([]);
+  const [columnMapping, setColumnMapping] = useState({
+    name: -1,
+    amount: -1,
+    category: -1,
+    dueDate: -1,
+    recurrence: -1
+  });
+
+  const downloadTemplate = () => {
+    const template = `name,amount,category,dueDate,recurrence
+Electric Bill,125.50,Bills & Utilities,2025-02-15,monthly
+Internet Service,89.99,Bills & Utilities,2025-02-20,monthly
+Car Insurance,450.00,Insurance,2025-03-01,monthly`;
+    
+    const blob = new Blob([template], { type: 'text/csv' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = 'bills_template.csv';
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+  };
 
   const handleFileSelect = async (event) => {
     const selectedFile = event.target.files[0];
@@ -26,22 +51,52 @@ const BillCSVImportModal = ({ existingBills, onImport, onCancel }) => {
         return;
       }
 
-      const headers = lines[0].split(',').map(h => h.trim().toLowerCase());
-      const parsedBills = [];
-      const parseErrors = [];
+      const headers = lines[0].split(',').map(h => h.trim());
+      setCsvHeaders(headers);
 
-      // Detect column mapping
-      const nameCol = headers.findIndex(h => h.includes('name') || h.includes('bill') || h.includes('payee'));
-      const amountCol = headers.findIndex(h => h.includes('amount') || h.includes('cost') || h.includes('price'));
-      const dueDateCol = headers.findIndex(h => h.includes('due') || h.includes('date'));
-      const categoryCol = headers.findIndex(h => h.includes('category') || h.includes('type'));
-      const recurrenceCol = headers.findIndex(h => h.includes('recur') || h.includes('frequency') || h.includes('period'));
+      // Auto-detect column mapping
+      const lowerHeaders = headers.map(h => h.toLowerCase());
+      const nameCol = lowerHeaders.findIndex(h => h.includes('name') || h.includes('bill') || h.includes('payee'));
+      const amountCol = lowerHeaders.findIndex(h => h.includes('amount') || h.includes('cost') || h.includes('price'));
+      const dueDateCol = lowerHeaders.findIndex(h => h.includes('due') || h.includes('date'));
+      const categoryCol = lowerHeaders.findIndex(h => h.includes('category') || h.includes('type'));
+      const recurrenceCol = lowerHeaders.findIndex(h => h.includes('recur') || h.includes('frequency') || h.includes('period'));
+
+      setColumnMapping({
+        name: nameCol,
+        amount: amountCol,
+        category: categoryCol,
+        dueDate: dueDateCol,
+        recurrence: recurrenceCol
+      });
 
       if (nameCol === -1 || amountCol === -1) {
-        setErrors(['CSV must have "name" and "amount" columns']);
+        // Show mapping step instead of error
+        setStep('mapping');
         setLoading(false);
         return;
       }
+
+      // If auto-detection succeeded, parse immediately
+      await parseCSVData(text, {
+        name: nameCol,
+        amount: amountCol,
+        category: categoryCol,
+        dueDate: dueDateCol,
+        recurrence: recurrenceCol
+      });
+    } catch (err) {
+      console.error('Error parsing CSV:', err);
+      setErrors([`Failed to parse CSV: ${err.message}`]);
+      setLoading(false);
+    }
+  };
+
+  const parseCSVData = async (text, mapping) => {
+    try {
+      const lines = text.split('\n').filter(line => line.trim());
+      const parsedBills = [];
+      const parseErrors = [];
 
       // Parse data rows
       for (let i = 1; i < lines.length; i++) {
@@ -51,8 +106,8 @@ const BillCSVImportModal = ({ existingBills, onImport, onCancel }) => {
         const values = line.split(',').map(v => v.trim().replace(/^["']|["']$/g, ''));
         
         try {
-          const name = values[nameCol] || '';
-          const amount = parseFloat(values[amountCol]?.replace(/[$,]/g, '')) || 0;
+          const name = mapping.name >= 0 ? values[mapping.name] || '' : '';
+          const amount = mapping.amount >= 0 ? parseFloat(values[mapping.amount]?.replace(/[$,]/g, '')) || 0 : 0;
           
           if (!name || amount <= 0) {
             parseErrors.push(`Row ${i}: Invalid name or amount`);
@@ -63,9 +118,9 @@ const BillCSVImportModal = ({ existingBills, onImport, onCancel }) => {
             id: `bill_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
             name: name,
             amount: amount,
-            category: categoryCol >= 0 && values[categoryCol] ? values[categoryCol] : 'Bills & Utilities',
-            dueDate: dueDateCol >= 0 && values[dueDateCol] ? values[dueDateCol] : new Date().toISOString().split('T')[0],
-            recurrence: recurrenceCol >= 0 && values[recurrenceCol] ? values[recurrenceCol].toLowerCase() : 'monthly',
+            category: mapping.category >= 0 && values[mapping.category] ? values[mapping.category] : 'Bills & Utilities',
+            dueDate: mapping.dueDate >= 0 && values[mapping.dueDate] ? values[mapping.dueDate] : new Date().toISOString().split('T')[0],
+            recurrence: mapping.recurrence >= 0 && values[mapping.recurrence] ? values[mapping.recurrence].toLowerCase() : 'monthly',
             status: 'pending',
             autopay: false,
             account: 'bofa'
@@ -175,13 +230,109 @@ const BillCSVImportModal = ({ existingBills, onImport, onCancel }) => {
               )}
 
               <div style={{ marginTop: '30px', padding: '16px', background: 'rgba(0, 255, 136, 0.1)', borderRadius: '8px', border: '1px solid #00ff88' }}>
-                <h4 style={{ color: '#00ff88', marginBottom: '8px' }}>💡 CSV Format Example:</h4>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
+                  <h4 style={{ color: '#00ff88', margin: 0 }}>💡 CSV Format Example:</h4>
+                  <button
+                    onClick={downloadTemplate}
+                    style={{
+                      padding: '8px 16px',
+                      background: '#00ff88',
+                      color: '#000',
+                      border: 'none',
+                      borderRadius: '4px',
+                      cursor: 'pointer',
+                      fontWeight: '600',
+                      fontSize: '14px'
+                    }}
+                  >
+                    📥 Download Template
+                  </button>
+                </div>
                 <pre style={{ fontSize: '12px', color: '#ccc', overflow: 'auto' }}>
 {`name,amount,category,dueDate,recurrence
 Electric Bill,125.50,Bills & Utilities,2025-02-15,monthly
 Internet Service,89.99,Bills & Utilities,2025-02-20,monthly
 Car Insurance,450.00,Insurance,2025-03-01,monthly`}
                 </pre>
+              </div>
+            </div>
+          )}
+
+          {step === 'mapping' && (
+            <div className="mapping-section">
+              <h4 style={{ marginBottom: '16px', color: '#00ff88' }}>🗂️ Map CSV Columns</h4>
+              <p style={{ marginBottom: '20px', color: '#ccc' }}>
+                Map your CSV columns to bill fields. Required: Name and Amount
+              </p>
+
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+                {['name', 'amount', 'category', 'dueDate', 'recurrence'].map(field => (
+                  <div key={field} style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                    <label style={{ width: '120px', color: '#fff', fontWeight: '600' }}>
+                      {field.charAt(0).toUpperCase() + field.slice(1)}
+                      {(field === 'name' || field === 'amount') && <span style={{ color: '#ff6b6b' }}> *</span>}
+                    </label>
+                    <select
+                      value={columnMapping[field]}
+                      onChange={(e) => setColumnMapping({ ...columnMapping, [field]: parseInt(e.target.value) })}
+                      style={{
+                        flex: 1,
+                        padding: '8px',
+                        background: '#2a2a2a',
+                        color: '#fff',
+                        border: '1px solid #444',
+                        borderRadius: '4px',
+                        fontSize: '14px'
+                      }}
+                    >
+                      <option value={-1}>-- Not mapped --</option>
+                      {csvHeaders.map((header, idx) => (
+                        <option key={idx} value={idx}>{header}</option>
+                      ))}
+                    </select>
+                  </div>
+                ))}
+              </div>
+
+              <div style={{ marginTop: '24px', display: 'flex', gap: '12px', justifyContent: 'flex-end' }}>
+                <button
+                  onClick={() => setStep('upload')}
+                  style={{
+                    padding: '10px 20px',
+                    background: '#555',
+                    color: '#fff',
+                    border: 'none',
+                    borderRadius: '4px',
+                    cursor: 'pointer',
+                    fontWeight: '600'
+                  }}
+                >
+                  ← Back
+                </button>
+                <button
+                  onClick={() => {
+                    if (columnMapping.name === -1 || columnMapping.amount === -1) {
+                      setErrors(['Name and Amount columns are required']);
+                      return;
+                    }
+                    // Re-parse with new mapping
+                    fileInputRef.current.files[0].text().then(text => {
+                      parseCSVData(text, columnMapping);
+                    });
+                  }}
+                  disabled={columnMapping.name === -1 || columnMapping.amount === -1}
+                  style={{
+                    padding: '10px 20px',
+                    background: columnMapping.name === -1 || columnMapping.amount === -1 ? '#555' : '#00ff88',
+                    color: columnMapping.name === -1 || columnMapping.amount === -1 ? '#999' : '#000',
+                    border: 'none',
+                    borderRadius: '4px',
+                    cursor: columnMapping.name === -1 || columnMapping.amount === -1 ? 'not-allowed' : 'pointer',
+                    fontWeight: '600'
+                  }}
+                >
+                  Continue to Preview →
+                </button>
               </div>
             </div>
           )}
