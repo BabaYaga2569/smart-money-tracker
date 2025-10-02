@@ -13,6 +13,11 @@ import { TRANSACTION_CATEGORIES, CATEGORY_ICONS, getCategoryIcon, migrateLegacyC
 import NotificationSystem from '../components/NotificationSystem';
 import './Bills.css';
 
+// Generate a unique ID for bills
+const generateBillId = () => {
+  return `bill_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+};
+
 const Bills = () => {
   const [loading, setLoading] = useState(true);
   const [bills, setBills] = useState([]); // eslint-disable-line no-unused-vars
@@ -165,7 +170,26 @@ const Bills = () => {
       
       if (settingsDocSnap.exists()) {
         const data = settingsDocSnap.data();
-        const billsData = data.bills || [];
+        let billsData = data.bills || [];
+        
+        // Migration: Add IDs to bills that don't have them
+        let needsUpdate = false;
+        billsData = billsData.map(bill => {
+          if (!bill.id) {
+            needsUpdate = true;
+            return { ...bill, id: generateBillId() };
+          }
+          return bill;
+        });
+        
+        // Update Firebase if we added IDs
+        if (needsUpdate) {
+          await updateDoc(settingsDocRef, {
+            ...data,
+            bills: billsData
+          });
+        }
+        
         setBills(billsData);
         
         // Process bills with next due dates and status
@@ -500,10 +524,7 @@ const Bills = () => {
       let billFound = false;
       
       const updatedBills = bills.map(b => {
-        if (b.name === bill.name && 
-            b.amount === bill.amount &&
-            b.dueDate === bill.dueDate &&
-            b.recurrence === bill.recurrence) {
+        if (b.id === bill.id) {
           billFound = true;
           // Remove last payment and reset status
           const updatedBill = { ...b };
@@ -616,10 +637,7 @@ const Bills = () => {
       const bills = currentData.bills || [];
       
       const updatedBills = bills.map(b => {
-        if (b.name === bill.name && 
-            b.amount === bill.amount &&
-            b.dueDate === bill.dueDate &&
-            b.recurrence === bill.recurrence) {
+        if (b.id === bill.id) {
           // Use RecurringBillManager to properly calculate next due date and update status
           return RecurringBillManager.markBillAsPaid(
             b, 
@@ -681,13 +699,11 @@ const Bills = () => {
       const bills = currentData.bills || [];
       
       if (editingBill) {
-        // Update existing bill - use name, amount, dueDate, and recurrence to identify the specific bill
+        // Update existing bill - use ID to identify the specific bill
         const updatedBills = bills.map(bill => {
-          if (bill.name === editingBill.name && 
-              bill.amount === editingBill.amount &&
-              bill.dueDate === editingBill.dueDate &&
-              bill.recurrence === editingBill.recurrence) {
-            return { ...billData, originalDueDate: billData.dueDate };
+          if (bill.id === editingBill.id) {
+            // Preserve the original ID
+            return { ...billData, id: editingBill.id, originalDueDate: billData.dueDate };
           }
           return bill;
         });
@@ -735,9 +751,10 @@ const Bills = () => {
           }
         }
         
-        // Add new bill
+        // Add new bill with unique ID
         const newBill = {
           ...billData,
+          id: generateBillId(),
           originalDueDate: billData.dueDate,
           status: 'pending'
         };
@@ -777,12 +794,7 @@ const Bills = () => {
       const currentData = currentDoc.exists() ? currentDoc.data() : {};
       
       const bills = currentData.bills || [];
-      const updatedBills = bills.filter(bill => 
-        !(bill.name === billToDelete.name && 
-          bill.amount === billToDelete.amount &&
-          bill.dueDate === billToDelete.dueDate &&
-          bill.recurrence === billToDelete.recurrence)
-      );
+      const updatedBills = bills.filter(bill => bill.id !== billToDelete.id);
       
       await updateDoc(settingsDocRef, {
         ...currentData,

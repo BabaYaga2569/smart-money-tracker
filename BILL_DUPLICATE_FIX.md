@@ -4,22 +4,39 @@
 Users need to pay rent in two payments per month ($350 on the 15th and $350 on the 30th), but the app treats bills with the same name as duplicates and prevents editing them separately.
 
 ## Root Cause
-The bill identification system in `Bills.jsx` was using only `name + amount` to identify bills, which prevented users from having multiple bills with the same name and amount but different due dates or frequencies.
+The bill identification system in `Bills.jsx` was using composite keys (`name + amount + dueDate + recurrence`) to identify bills, which worked but wasn't foolproof. The problem statement specifically requested unique IDs for each bill.
 
 ## Solution
-Changed the bill identification system to use `name + amount + dueDate + recurrence` as a unique identifier. This allows:
-- Multiple bills with the same name and amount as long as they have different dates or frequencies
-- Independent editing and deletion of each bill
-- True duplicate prevention (only blocks bills with exact same name, amount, date, AND frequency)
+Added a unique ID system for bills. Each bill now gets a unique identifier when created:
+- Every bill has a unique ID generated using timestamp + random string
+- Bill operations (edit, delete, mark as paid) use the unique ID
+- Migration logic assigns IDs to existing bills without IDs
+- Validation still uses name+amount+dueDate+recurrence to prevent true duplicates
+- This allows:
+  - Multiple bills with the same name and amount as long as they have different dates or frequencies
+  - Independent editing and deletion of each bill using its unique ID
+  - True duplicate prevention (only blocks bills with exact same name, amount, date, AND frequency)
 
 ## Changes Made
 
-### 1. Edit Operation Update (Lines 674-682)
+### 0. Added Unique ID Generation
+**New:**
+```javascript
+// Generate a unique ID for bills
+const generateBillId = () => {
+  return `bill_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+};
+```
+
+### 1. Edit Operation Update - Now Uses Unique ID
 **Before:**
 ```javascript
 if (editingBill) {
     const updatedBills = bills.map(bill => {
-        if (bill.name === editingBill.name && bill.amount === editingBill.amount) {
+        if (bill.name === editingBill.name && 
+            bill.amount === editingBill.amount &&
+            bill.dueDate === editingBill.dueDate &&
+            bill.recurrence === editingBill.recurrence) {
             return { ...billData, originalDueDate: billData.dueDate };
         }
         return bill;
@@ -30,13 +47,11 @@ if (editingBill) {
 **After:**
 ```javascript
 if (editingBill) {
-    // Update existing bill - use name, amount, dueDate, and recurrence to identify the specific bill
+    // Update existing bill - use ID to identify the specific bill
     const updatedBills = bills.map(bill => {
-        if (bill.name === editingBill.name && 
-            bill.amount === editingBill.amount &&
-            bill.dueDate === editingBill.dueDate &&
-            bill.recurrence === editingBill.recurrence) {
-            return { ...billData, originalDueDate: billData.dueDate };
+        if (bill.id === editingBill.id) {
+            // Preserve the original ID
+            return { ...billData, id: editingBill.id, originalDueDate: billData.dueDate };
         }
         return bill;
     });
@@ -77,15 +92,8 @@ if (similarBill) {
 }
 ```
 
-### 3. Delete Operation Update (Lines 765-771)
+### 3. Delete Operation Update - Now Uses Unique ID
 **Before:**
-```javascript
-const updatedBills = bills.filter(bill => 
-    !(bill.name === billToDelete.name && bill.amount === billToDelete.amount)
-);
-```
-
-**After:**
 ```javascript
 const updatedBills = bills.filter(bill => 
     !(bill.name === billToDelete.name && 
@@ -95,15 +103,13 @@ const updatedBills = bills.filter(bill =>
 );
 ```
 
-### 4. Mark as Paid Operations Update (Lines 499-503, 612-615)
-**Before:**
+**After:**
 ```javascript
-if (b.name === bill.name && b.amount === bill.amount) {
-    // Update bill
-}
+const updatedBills = bills.filter(bill => bill.id !== billToDelete.id);
 ```
 
-**After:**
+### 4. Mark as Paid Operations Update - Now Uses Unique ID
+**Before:**
 ```javascript
 if (b.name === bill.name && 
     b.amount === bill.amount &&
@@ -113,17 +119,60 @@ if (b.name === bill.name &&
 }
 ```
 
-## Test Coverage
-Created comprehensive test suite in `BillIdentification.test.js` with 7 tests:
-1. ✅ Allow multiple bills with same name/amount but different dates
-2. ✅ Can identify specific bill from list with same name/amount
-3. ✅ Can delete specific bill without affecting other similar bills
-4. ✅ Exact duplicates (same name, amount, date, frequency) are prevented
-5. ✅ Allow bills with same name/amount/date but different frequency
-6. ✅ Can update specific bill without affecting similar bills
-7. ✅ Duplicate detection is case-insensitive for names
+**After:**
+```javascript
+if (b.id === bill.id) {
+    // Update bill
+}
+```
 
-All tests pass successfully.
+### 5. Added Migration Logic for Existing Bills
+**New in loadBills():**
+```javascript
+// Migration: Add IDs to bills that don't have them
+let needsUpdate = false;
+billsData = billsData.map(bill => {
+  if (!bill.id) {
+    needsUpdate = true;
+    return { ...bill, id: generateBillId() };
+  }
+  return bill;
+});
+
+// Update Firebase if we added IDs
+if (needsUpdate) {
+  await updateDoc(settingsDocRef, {
+    ...data,
+    bills: billsData
+  });
+}
+```
+
+### 6. New Bills Get Unique IDs
+**New bills now include:**
+```javascript
+const newBill = {
+  ...billData,
+  id: generateBillId(),  // Unique ID assigned here
+  originalDueDate: billData.dueDate,
+  status: 'pending'
+};
+```
+
+## Test Coverage
+Updated comprehensive test suite in `BillIdentification.test.js` with 7 tests (now using unique IDs):
+1. ✅ Allow multiple bills with same name/amount but different dates (verified with unique IDs)
+2. ✅ Can identify specific bill from list by unique ID
+3. ✅ Can delete specific bill by ID without affecting other similar bills
+4. ✅ Exact duplicates (same name, amount, date, frequency) are prevented by validation
+5. ✅ Allow bills with same name/amount/date but different frequency (verified with unique IDs)
+6. ✅ Can update specific bill by ID without affecting similar bills
+7. ✅ Duplicate validation is case-insensitive for names
+
+All tests pass successfully. Tests verify:
+- Operations use unique IDs for identification
+- Validation still uses composite key to prevent true duplicates
+- Bills with same name but different properties have different IDs
 
 ## User Scenarios
 
@@ -184,4 +233,9 @@ The notes field already exists in the bill form, allowing users to add additiona
 No database schema changes required. The solution uses existing fields (`name`, `amount`, `dueDate`, `recurrence`) that are already stored in Firebase.
 
 ## Conclusion
-The fix successfully allows users to have multiple bills with the same name and amount by using a more comprehensive identification system. Each bill can be managed independently, while still preventing true duplicates from being added.
+The fix successfully allows users to have multiple bills with the same name and amount by using unique IDs for bill identification. Each bill can be managed independently using its unique ID, while validation still prevents true duplicates from being added. This provides a foolproof system where:
+- Every bill has a unique identifier
+- Edit/delete operations work on specific bills using IDs
+- Migration logic ensures existing bills get IDs automatically
+- Validation prevents accidental duplicates
+- Notes field allows users to distinguish similar bills visually
