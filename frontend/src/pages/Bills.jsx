@@ -8,6 +8,7 @@ import { BillAnimationManager } from '../utils/BillAnimationManager';
 import { PlaidIntegrationManager } from '../utils/PlaidIntegrationManager';
 import PlaidConnectionManager from '../utils/PlaidConnectionManager';
 import PlaidErrorModal from '../components/PlaidErrorModal';
+import BillCSVImportModal from '../components/BillCSVImportModal';
 import { formatDateForDisplay, formatDateForInput, getPacificTime } from '../utils/DateUtils';
 import { TRANSACTION_CATEGORIES, CATEGORY_ICONS, getCategoryIcon, migrateLegacyCategory } from '../constants/categories';
 import NotificationSystem from '../components/NotificationSystem';
@@ -37,6 +38,13 @@ const Bills = () => {
   });
   const [hasPlaidAccounts, setHasPlaidAccounts] = useState(false);
   const [showErrorModal, setShowErrorModal] = useState(false);
+  
+  // Bulk delete state
+  const [deletedBills, setDeletedBills] = useState([]);
+  const [showBulkDeleteModal, setShowBulkDeleteModal] = useState(false);
+  
+  // CSV Import state
+  const [showCSVImport, setShowCSVImport] = useState(false);
 
   // Use shared categories for consistency with Transactions page
   const BILL_CATEGORIES = CATEGORY_ICONS;
@@ -809,6 +817,92 @@ const Bills = () => {
     }
   };
 
+  const handleBulkDelete = async () => {
+    setShowBulkDeleteModal(false);
+    
+    try {
+      setLoading(true);
+      
+      const settingsDocRef = doc(db, 'users', 'steve-colburn', 'settings', 'personal');
+      const currentDoc = await getDoc(settingsDocRef);
+      const currentData = currentDoc.exists() ? currentDoc.data() : {};
+      
+      // Store current bills for undo
+      const billsToDelete = currentData.bills || [];
+      setDeletedBills(billsToDelete);
+      
+      // Clear all bills
+      await updateDoc(settingsDocRef, {
+        ...currentData,
+        bills: []
+      });
+      
+      await loadBills();
+      showNotification(
+        `Deleted ${billsToDelete.length} bills. Click Undo to restore.`, 
+        'success'
+      );
+    } catch (error) {
+      console.error('Error bulk deleting bills:', error);
+      showNotification('Error deleting bills', 'error');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleUndoBulkDelete = async () => {
+    if (deletedBills.length === 0) return;
+    
+    try {
+      setLoading(true);
+      
+      const settingsDocRef = doc(db, 'users', 'steve-colburn', 'settings', 'personal');
+      const currentDoc = await getDoc(settingsDocRef);
+      const currentData = currentDoc.exists() ? currentDoc.data() : {};
+      
+      await updateDoc(settingsDocRef, {
+        ...currentData,
+        bills: deletedBills
+      });
+      
+      await loadBills();
+      setDeletedBills([]);
+      showNotification('Bills restored successfully!', 'success');
+    } catch (error) {
+      console.error('Error undoing bulk delete:', error);
+      showNotification('Error restoring bills', 'error');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleCSVImport = async (importedBills) => {
+    try {
+      setLoading(true);
+      
+      const settingsDocRef = doc(db, 'users', 'steve-colburn', 'settings', 'personal');
+      const currentDoc = await getDoc(settingsDocRef);
+      const currentData = currentDoc.exists() ? currentDoc.data() : {};
+      
+      const existingBills = currentData.bills || [];
+      const updatedBills = [...existingBills, ...importedBills];
+      
+      await updateDoc(settingsDocRef, {
+        ...currentData,
+        bills: updatedBills
+      });
+      
+      await loadBills();
+      setShowCSVImport(false);
+      showNotification(`Successfully imported ${importedBills.length} bills`, 'success');
+    } catch (error) {
+      console.error('Error importing bills:', error);
+      showNotification('Error importing bills', 'error');
+    } finally {
+      setLoading(false);
+    }
+  };
+
   const formatCurrency = (amount) => {
     return new Intl.NumberFormat('en-US', {
       style: 'currency',
@@ -1164,6 +1258,50 @@ const Bills = () => {
             <option value="overdue">Overdue</option>
           </select>
         </div>
+        
+        {/* Action Buttons for Bulk Operations */}
+        <div className="action-buttons">
+          {deletedBills.length > 0 && (
+            <button 
+              className="undo-button"
+              onClick={handleUndoBulkDelete}
+              disabled={loading}
+              title="Restore deleted bills"
+            >
+              ↩️ Undo Delete
+            </button>
+          )}
+          {processedBills.length > 0 && (
+            <button 
+              className="delete-all-button"
+              onClick={() => setShowBulkDeleteModal(true)}
+              disabled={loading}
+              title="Delete all bills"
+            >
+              🗑️ Delete All Bills
+            </button>
+          )}
+          <button 
+            className="import-button"
+            onClick={() => setShowCSVImport(true)}
+            disabled={loading}
+            title="Import bills from CSV"
+            style={{
+              background: '#007bff',
+              color: '#fff',
+              border: 'none',
+              borderRadius: '8px',
+              padding: '12px 20px',
+              fontWeight: '600',
+              cursor: loading ? 'not-allowed' : 'pointer',
+              transition: 'all 0.2s ease',
+              whiteSpace: 'nowrap',
+              opacity: loading ? 0.6 : 1
+            }}
+          >
+            📊 Import from CSV
+          </button>
+        </div>
       </div>
 
       {/* Enhanced Bills List */}
@@ -1184,7 +1322,26 @@ const Bills = () => {
                     {getCategoryIcon(bill.category)}
                   </div>
                   <div className="bill-details">
-                    <h4>{bill.name}</h4>
+                    <h4>
+                      {bill.name}
+                      {bill.recurringTemplateId && (
+                        <span 
+                          className="recurring-badge" 
+                          title="Generated from recurring template"
+                          style={{
+                            marginLeft: '8px',
+                            padding: '2px 8px',
+                            fontSize: '11px',
+                            background: 'rgba(138, 43, 226, 0.2)',
+                            color: '#ba68c8',
+                            borderRadius: '4px',
+                            fontWeight: 'normal'
+                          }}
+                        >
+                          🔄 Auto
+                        </span>
+                      )}
+                    </h4>
                     <div className="bill-meta">
                       <span className="bill-category">{bill.category}</span>
                       <span className="bill-frequency">{bill.recurrence}</span>
@@ -1300,6 +1457,57 @@ const Bills = () => {
             setShowModal(false);
             setEditingBill(null);
           }}
+        />
+      )}
+
+      {/* Bulk Delete Confirmation Modal */}
+      {showBulkDeleteModal && (
+        <div className="modal-overlay" onClick={() => setShowBulkDeleteModal(false)}>
+          <div className="modal" onClick={(e) => e.stopPropagation()}>
+            <div className="modal-header">
+              <h3>⚠️ Delete All Bills?</h3>
+              <button className="close-btn" onClick={() => setShowBulkDeleteModal(false)}>×</button>
+            </div>
+            
+            <div className="modal-body">
+              <p style={{ marginBottom: '20px', fontSize: '16px' }}>
+                Are you sure you want to delete <strong>all {processedBills.length} bills</strong>?
+              </p>
+              <p style={{ marginBottom: '20px', color: '#ff9800' }}>
+                ⚠️ This will permanently delete all your bills from the system.
+              </p>
+              <p style={{ marginBottom: '20px', color: '#00ff88' }}>
+                ✓ Don't worry! You can undo this action using the "Undo Delete" button that will appear after deletion.
+              </p>
+              
+              <div className="modal-actions" style={{ display: 'flex', gap: '10px', justifyContent: 'flex-end' }}>
+                <button 
+                  onClick={() => setShowBulkDeleteModal(false)}
+                  className="cancel-btn"
+                  style={{ padding: '10px 20px' }}
+                >
+                  Cancel
+                </button>
+                <button 
+                  onClick={handleBulkDelete}
+                  className="delete-btn"
+                  disabled={loading}
+                  style={{ padding: '10px 20px', backgroundColor: '#f44336' }}
+                >
+                  {loading ? 'Deleting...' : 'Delete All'}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* CSV Import Modal */}
+      {showCSVImport && (
+        <BillCSVImportModal
+          existingBills={processedBills}
+          onImport={handleCSVImport}
+          onCancel={() => setShowCSVImport(false)}
         />
       )}
 
