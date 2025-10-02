@@ -1770,11 +1770,29 @@ const Bills = () => {
                 <h4 style={{ color: '#00ff88', marginBottom: '12px' }}>📊 CSV Import</h4>
                 <ul style={{ color: '#ccc', lineHeight: '1.8' }}>
                   <li><strong>Step 1:</strong> Click "Import from CSV" and upload your CSV file</li>
-                  <li><strong>Step 2:</strong> Review column mapping (auto-detected or manual)</li>
-                  <li><strong>Step 3:</strong> Preview bills and adjust categories as needed</li>
+                  <li><strong>Step 2:</strong> Review column mapping (auto-detected or manual mapping available)</li>
+                  <li><strong>Step 3:</strong> Preview bills and fix any errors (dates, categories, etc.)</li>
                   <li><strong>Step 4:</strong> Use bulk actions to approve, skip, or assign categories</li>
-                  <li><strong>Auto-tagging:</strong> Categories are automatically detected based on bill names</li>
-                  <li><strong>Duplicates:</strong> Potential duplicates are highlighted for your review</li>
+                </ul>
+                
+                <h5 style={{ color: '#00ff88', marginTop: '16px', marginBottom: '8px' }}>Supported Fields:</h5>
+                <ul style={{ color: '#ccc', lineHeight: '1.8' }}>
+                  <li><strong>name</strong> (required): Bill name or description</li>
+                  <li><strong>amount</strong> (required): Bill amount (numeric, can include $ and commas)</li>
+                  <li><strong>institutionName</strong> (optional): Bank or company name</li>
+                  <li><strong>dueDate</strong> (optional): Supports YYYY-MM-DD, MM/DD/YYYY, or day of month (1-31)</li>
+                  <li><strong>recurrence</strong> (optional): monthly, weekly, bi-weekly, etc. (defaults to monthly)</li>
+                  <li><strong>category</strong> (optional): Auto-detected if not provided</li>
+                </ul>
+                
+                <h5 style={{ color: '#00ff88', marginTop: '16px', marginBottom: '8px' }}>Key Features:</h5>
+                <ul style={{ color: '#ccc', lineHeight: '1.8' }}>
+                  <li><strong>Date Formats:</strong> Multiple formats supported with validation</li>
+                  <li><strong>Error Prevention:</strong> Cannot import bills with date errors - fix or skip them first</li>
+                  <li><strong>Inline Editing:</strong> Edit dates directly in the preview</li>
+                  <li><strong>Duplicate Detection:</strong> Checks name + amount + date (allows same bill on different dates)</li>
+                  <li><strong>Bulk Assign Category:</strong> Apply category to all non-skipped bills at once</li>
+                  <li><strong>Skip Bills with Errors:</strong> Automatically skip problematic bills</li>
                 </ul>
               </div>
 
