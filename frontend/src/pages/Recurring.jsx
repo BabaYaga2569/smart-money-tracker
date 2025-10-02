@@ -40,7 +40,9 @@ const Recurring = () => {
     linkedAccount: '',
     autoPay: false,
     description: '',
-    status: 'active'
+    status: 'active',
+    customRecurrence: false,
+    activeMonths: []
   });
 
   // Notification state
@@ -391,7 +393,9 @@ const Recurring = () => {
       linkedAccount: '',
       autoPay: false,
       description: '',
-      status: 'active'
+      status: 'active',
+      customRecurrence: false,
+      activeMonths: []
     });
     setShowModal(true);
   };
@@ -400,7 +404,9 @@ const Recurring = () => {
     setEditingItem(item);
     setNewItem({
       ...item,
-      nextOccurrence: formatDateForInput(new Date(item.nextOccurrence))
+      nextOccurrence: formatDateForInput(new Date(item.nextOccurrence)),
+      customRecurrence: item.activeMonths && item.activeMonths.length > 0,
+      activeMonths: item.activeMonths || []
     });
     setShowModal(true);
   };
@@ -408,6 +414,12 @@ const Recurring = () => {
   const handleSaveItem = async () => {
     if (!newItem.name.trim() || !newItem.amount) {
       showNotification('Please fill in required fields', 'error');
+      return;
+    }
+    
+    // Validate custom recurrence
+    if (newItem.customRecurrence && (!newItem.activeMonths || newItem.activeMonths.length === 0)) {
+      showNotification('Please select at least one month for custom recurrence', 'error');
       return;
     }
 
@@ -419,7 +431,10 @@ const Recurring = () => {
         id: editingItem ? editingItem.id : `recurring-${Date.now()}`,
         amount: parseFloat(newItem.amount),
         createdAt: editingItem ? editingItem.createdAt : new Date().toISOString(),
-        updatedAt: new Date().toISOString()
+        updatedAt: new Date().toISOString(),
+        // Only include activeMonths if customRecurrence is enabled
+        activeMonths: newItem.customRecurrence ? newItem.activeMonths : undefined,
+        customRecurrence: newItem.customRecurrence || undefined
       };
 
       const settingsDocRef = doc(db, 'users', 'steve-colburn', 'settings', 'personal');
@@ -1102,7 +1117,24 @@ const Recurring = () => {
                         {item.type === 'income' ? '📈' : '📉'} {item.type}
                       </span>
                       <span className="item-category">{item.category}</span>
-                      <span className="item-frequency">{item.frequency}</span>
+                      <span className="item-frequency">
+                        {item.frequency}
+                        {item.activeMonths && item.activeMonths.length > 0 && (
+                          <span 
+                            style={{ 
+                              marginLeft: '5px', 
+                              fontSize: '11px', 
+                              background: 'rgba(138, 43, 226, 0.2)',
+                              padding: '2px 6px',
+                              borderRadius: '4px',
+                              fontWeight: '600'
+                            }}
+                            title={`Active in: ${item.activeMonths.map(m => ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'][m]).join(', ')}`}
+                          >
+                            📅 {item.activeMonths.length}mo
+                          </span>
+                        )}
+                      </span>
                     </div>
                   </div>
                 </div>
@@ -1260,6 +1292,74 @@ const Recurring = () => {
                   />
                 </div>
               </div>
+              
+              {newItem.frequency === 'monthly' && (
+                <div className="form-group">
+                  <label style={{ display: 'flex', alignItems: 'center', marginBottom: '10px' }}>
+                    <input
+                      type="checkbox"
+                      checked={newItem.customRecurrence}
+                      onChange={(e) => setNewItem({...newItem, customRecurrence: e.target.checked, activeMonths: e.target.checked ? [] : []})}
+                      style={{ marginRight: '10px', width: '18px', height: '18px', cursor: 'pointer' }}
+                    />
+                    <span>Custom monthly recurrence (select specific months)</span>
+                  </label>
+                  
+                  {newItem.customRecurrence && (
+                    <div style={{ 
+                      padding: '15px', 
+                      background: 'rgba(138, 43, 226, 0.05)', 
+                      borderRadius: '8px', 
+                      border: '1px solid rgba(138, 43, 226, 0.2)' 
+                    }}>
+                      <div style={{ marginBottom: '10px', fontSize: '14px', color: '#666' }}>
+                        Select the months when this bill should be generated:
+                      </div>
+                      <div style={{ 
+                        display: 'grid', 
+                        gridTemplateColumns: 'repeat(4, 1fr)', 
+                        gap: '10px' 
+                      }}>
+                        {['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'].map((month, index) => (
+                          <label 
+                            key={month}
+                            style={{ 
+                              display: 'flex', 
+                              alignItems: 'center', 
+                              padding: '8px', 
+                              background: newItem.activeMonths.includes(index) ? 'rgba(138, 43, 226, 0.2)' : 'rgba(255, 255, 255, 0.5)',
+                              borderRadius: '6px',
+                              cursor: 'pointer',
+                              border: newItem.activeMonths.includes(index) ? '2px solid #8a2be2' : '1px solid rgba(0, 0, 0, 0.1)',
+                              transition: 'all 0.2s ease'
+                            }}
+                          >
+                            <input
+                              type="checkbox"
+                              checked={newItem.activeMonths.includes(index)}
+                              onChange={(e) => {
+                                const updatedMonths = e.target.checked
+                                  ? [...newItem.activeMonths, index]
+                                  : newItem.activeMonths.filter(m => m !== index);
+                                setNewItem({...newItem, activeMonths: updatedMonths.sort((a, b) => a - b)});
+                              }}
+                              style={{ marginRight: '8px', cursor: 'pointer' }}
+                            />
+                            <span style={{ fontSize: '14px', fontWeight: newItem.activeMonths.includes(index) ? '600' : '400' }}>
+                              {month}
+                            </span>
+                          </label>
+                        ))}
+                      </div>
+                      {newItem.activeMonths.length > 0 && (
+                        <div style={{ marginTop: '10px', fontSize: '13px', color: '#8a2be2', fontWeight: '500' }}>
+                          ✓ Active in {newItem.activeMonths.length} month{newItem.activeMonths.length !== 1 ? 's' : ''}
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
+              )}
               
               <div className="form-row">
                 <div className="form-group">
