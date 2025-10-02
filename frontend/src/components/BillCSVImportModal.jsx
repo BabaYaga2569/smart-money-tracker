@@ -20,6 +20,30 @@ const BillCSVImportModal = ({ existingBills, onImport, onCancel }) => {
   });
 
   // Auto-tagging based on bill name patterns
+  // Parse CSV line handling quoted values with commas
+  const parseCSVLine = (line) => {
+    const result = [];
+    let current = '';
+    let inQuotes = false;
+    
+    for (let i = 0; i < line.length; i++) {
+      const char = line[i];
+      
+      if (char === '"' && (i === 0 || line[i - 1] !== '\\')) {
+        inQuotes = !inQuotes;
+      } else if (char === ',' && !inQuotes) {
+        result.push(current.trim());
+        current = '';
+      } else {
+        current += char;
+      }
+    }
+    result.push(current.trim());
+    
+    // Remove surrounding quotes from values
+    return result.map(v => v.replace(/^["']|["']$/g, ''));
+  };
+
   const autoDetectCategory = (billName) => {
     const name = billName.toLowerCase();
     
@@ -71,7 +95,8 @@ Car Insurance,450.00,State Farm,2025-03-01,monthly,Insurance`;
         return;
       }
 
-      const headers = lines[0].split(',').map(h => h.trim());
+      // Use parseCSVLine to handle quoted headers
+      const headers = parseCSVLine(lines[0]);
       setCsvHeaders(headers);
 
       // Auto-detect column mapping with improved logic
@@ -135,7 +160,7 @@ Car Insurance,450.00,State Farm,2025-03-01,monthly,Insurance`;
         const line = lines[i].trim();
         if (!line) continue;
 
-        const values = line.split(',').map(v => v.trim().replace(/^["']|["']$/g, ''));
+        const values = parseCSVLine(line);
         
         try {
           const name = mapping.name >= 0 ? values[mapping.name] || '' : '';
@@ -268,12 +293,6 @@ Car Insurance,450.00,State Farm,2025-03-01,monthly,Insurance`;
       updated[index].dateError = 'Invalid date format';
     }
     
-    setPreviewBills(updated);
-  };
-
-  const handleInstitutionChange = (index, newInstitution) => {
-    const updated = [...previewBills];
-    updated[index].institutionName = newInstitution;
     setPreviewBills(updated);
   };
 
