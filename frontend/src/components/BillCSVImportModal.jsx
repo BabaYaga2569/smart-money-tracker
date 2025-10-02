@@ -293,10 +293,11 @@ Car Insurance,450.00,State Farm,2025-03-01,monthly,Insurance`;
                 <ul style={{ color: '#ccc', fontSize: '14px', margin: 0, paddingLeft: '20px' }}>
                   <li>Upload a CSV file with bill information</li>
                   <li>Required columns: <strong>name</strong> and <strong>amount</strong></li>
-                  <li>Optional columns: category, dueDate, recurrence</li>
+                  <li>Optional columns: <strong>institutionName</strong>, dueDate, recurrence, category</li>
+                  <li>Date formats supported: YYYY-MM-DD, MM/DD/YYYY, or day of month (1-31)</li>
                   <li>Download the template below for proper formatting</li>
-                  <li>Review and edit bills before importing</li>
-                  <li>Duplicate bills will be highlighted for your review</li>
+                  <li>Review and edit bills before importing (fix dates, categories, etc.)</li>
+                  <li>Duplicate detection: same name + amount + date (allows same bill on different dates)</li>
                 </ul>
               </div>
               
@@ -459,14 +460,29 @@ Car Insurance,450.00,State Farm,2025-03-01,monthly,Insurance`}
 
           {step === 'preview' && (
             <div className="preview-section">
-              <div style={{ marginBottom: '20px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                <div>
+              <div style={{ marginBottom: '20px', display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                <div style={{ flex: 1 }}>
                   <h4 style={{ marginBottom: '8px' }}>
                     Preview: {previewBills.filter(b => !b.isSkipped).length} bills to import
                   </h4>
+                  {previewBills.some(b => b.dateError) && (
+                    <p style={{ color: '#f44336', fontSize: '14px', marginBottom: '4px' }}>
+                      ❌ {previewBills.filter(b => b.dateError).length} bills have date errors
+                    </p>
+                  )}
+                  {previewBills.some(b => b.dateWarning && !b.dateError) && (
+                    <p style={{ color: '#ff9800', fontSize: '14px', marginBottom: '4px' }}>
+                      ⚠️ {previewBills.filter(b => b.dateWarning && !b.dateError).length} bills have warnings
+                    </p>
+                  )}
                   {previewBills.some(b => b.isDuplicate) && (
-                    <p style={{ color: '#ff9800', fontSize: '14px' }}>
-                      ⚠️ Some bills appear to be duplicates
+                    <p style={{ color: '#ff9800', fontSize: '14px', marginBottom: '4px' }}>
+                      ⚠️ {previewBills.filter(b => b.isDuplicate).length} bills appear to be duplicates
+                    </p>
+                  )}
+                  {errors.length > 0 && (
+                    <p style={{ color: '#f44336', fontSize: '14px', marginBottom: '4px' }}>
+                      ❌ {errors.length} rows had parsing errors
                     </p>
                   )}
                 </div>
@@ -485,6 +501,20 @@ Car Insurance,450.00,State Farm,2025-03-01,monthly,Insurance`}
                   >
                     ✕ Skip All
                   </button>
+                  {previewBills.some(b => b.dateError) && (
+                    <button
+                      onClick={() => {
+                        const updated = previewBills.map(bill => 
+                          bill.dateError ? { ...bill, isSkipped: true } : bill
+                        );
+                        setPreviewBills(updated);
+                      }}
+                      style={{ padding: '8px 16px', background: '#f44336', color: '#fff', border: 'none', borderRadius: '4px', cursor: 'pointer' }}
+                      title="Skip all bills with date errors"
+                    >
+                      ✕ Skip Bills with Errors
+                    </button>
+                  )}
                   <div style={{ position: 'relative', display: 'inline-block' }}>
                     <select
                       onChange={(e) => {
@@ -524,6 +554,21 @@ Car Insurance,450.00,State Farm,2025-03-01,monthly,Insurance`}
                   </div>
                 </div>
               </div>
+
+              {errors.length > 0 && (
+                <div style={{ marginBottom: '16px', padding: '12px', background: 'rgba(244, 67, 54, 0.1)', border: '1px solid #f44336', borderRadius: '8px' }}>
+                  <details>
+                    <summary style={{ color: '#f44336', cursor: 'pointer', fontWeight: '600' }}>
+                      View Parsing Errors ({errors.length})
+                    </summary>
+                    <div style={{ marginTop: '8px', fontSize: '13px', color: '#ff9999' }}>
+                      {errors.map((error, idx) => (
+                        <div key={idx} style={{ marginBottom: '4px' }}>• {error}</div>
+                      ))}
+                    </div>
+                  </details>
+                </div>
+              )}
 
               <div className="preview-items" style={{ maxHeight: '400px', overflowY: 'auto' }}>
                 {previewBills.map((bill, index) => (
@@ -634,29 +679,58 @@ Car Insurance,450.00,State Farm,2025-03-01,monthly,Insurance`}
                 ))}
               </div>
 
-              <div style={{ marginTop: '20px', display: 'flex', gap: '10px', justifyContent: 'flex-end' }}>
-                <button
-                  onClick={onCancel}
-                  style={{ padding: '12px 24px', background: '#555', color: '#fff', border: 'none', borderRadius: '8px', cursor: 'pointer' }}
-                >
-                  Cancel
-                </button>
-                <button
-                  onClick={handleImport}
-                  disabled={previewBills.filter(b => !b.isSkipped).length === 0}
-                  style={{
-                    padding: '12px 24px',
-                    background: previewBills.filter(b => !b.isSkipped).length === 0 ? '#555' : '#00ff88',
-                    color: '#000',
-                    border: 'none',
-                    borderRadius: '8px',
-                    cursor: previewBills.filter(b => !b.isSkipped).length === 0 ? 'not-allowed' : 'pointer',
-                    fontWeight: '600',
-                    opacity: previewBills.filter(b => !b.isSkipped).length === 0 ? 0.5 : 1
-                  }}
-                >
-                  Import {previewBills.filter(b => !b.isSkipped).length} Bills
-                </button>
+              <div style={{ marginTop: '20px', display: 'flex', gap: '10px', justifyContent: 'space-between', alignItems: 'center' }}>
+                <div style={{ fontSize: '13px', color: '#ccc' }}>
+                  {previewBills.filter(b => !b.isSkipped && b.dateError).length > 0 && (
+                    <span style={{ color: '#f44336' }}>
+                      ⚠️ {previewBills.filter(b => !b.isSkipped && b.dateError).length} bills have date errors - fix or skip them before importing
+                    </span>
+                  )}
+                </div>
+                <div style={{ display: 'flex', gap: '10px' }}>
+                  <button
+                    onClick={onCancel}
+                    style={{ padding: '12px 24px', background: '#555', color: '#fff', border: 'none', borderRadius: '8px', cursor: 'pointer' }}
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    onClick={handleImport}
+                    disabled={
+                      previewBills.filter(b => !b.isSkipped).length === 0 ||
+                      previewBills.filter(b => !b.isSkipped && b.dateError).length > 0
+                    }
+                    style={{
+                      padding: '12px 24px',
+                      background: 
+                        previewBills.filter(b => !b.isSkipped).length === 0 ||
+                        previewBills.filter(b => !b.isSkipped && b.dateError).length > 0
+                          ? '#555' 
+                          : '#00ff88',
+                      color: '#000',
+                      border: 'none',
+                      borderRadius: '8px',
+                      cursor: 
+                        previewBills.filter(b => !b.isSkipped).length === 0 ||
+                        previewBills.filter(b => !b.isSkipped && b.dateError).length > 0
+                          ? 'not-allowed' 
+                          : 'pointer',
+                      fontWeight: '600',
+                      opacity: 
+                        previewBills.filter(b => !b.isSkipped).length === 0 ||
+                        previewBills.filter(b => !b.isSkipped && b.dateError).length > 0
+                          ? 0.5 
+                          : 1
+                    }}
+                    title={
+                      previewBills.filter(b => !b.isSkipped && b.dateError).length > 0
+                        ? 'Cannot import bills with date errors. Please fix or skip them.'
+                        : ''
+                    }
+                  >
+                    Import {previewBills.filter(b => !b.isSkipped).length} Bills
+                  </button>
+                </div>
               </div>
             </div>
           )}
