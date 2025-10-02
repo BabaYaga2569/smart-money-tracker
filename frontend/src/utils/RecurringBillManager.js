@@ -132,12 +132,22 @@ export class RecurringBillManager {
      * @returns {Array} Bills with nextDueDate calculated
      */
     static processBills(bills, currentDate = new Date()) {
-        return bills.map(bill => ({
-            ...bill,
-            nextDueDate: this.getNextDueDate(bill, currentDate),
-            // Keep original dueDate for reference
-            originalDueDate: bill.dueDate
-        }));
+        return bills.map(bill => {
+            const nextDueDate = this.getNextDueDate(bill, currentDate);
+            
+            // Reset isPaid and status flags - they will be recalculated based on payment history
+            // This ensures that when we advance to a new billing cycle, the bill shows as unpaid
+            return {
+                ...bill,
+                nextDueDate: nextDueDate,
+                // Keep original dueDate for reference
+                originalDueDate: bill.dueDate,
+                // Reset isPaid - will be recalculated by isBillPaidForCurrentCycle
+                isPaid: false,
+                // Reset status - will be recalculated by determineBillStatus
+                status: undefined
+            };
+        });
     }
 
     /**
@@ -249,12 +259,8 @@ export class RecurringBillManager {
      * @returns {boolean} True if bill is paid for current cycle
      */
     static isBillPaidForCurrentCycle(bill) {
-        // Direct status check first
-        if (bill.isPaid || bill.status === 'paid') {
-            return true;
-        }
-        
-        // Check payment history for current cycle
+        // Check payment history for current cycle - this is the ONLY reliable way
+        // Do NOT check bill.isPaid or bill.status directly as they persist from previous cycles
         if (bill.lastPaidDate && bill.lastPayment) {
             const currentBillDueDate = new Date(bill.nextDueDate || bill.dueDate);
             const lastPaymentDueDate = new Date(bill.lastPayment.dueDate);
