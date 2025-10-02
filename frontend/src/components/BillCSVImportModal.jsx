@@ -1,5 +1,6 @@
 import React, { useState, useRef } from 'react';
 import { TRANSACTION_CATEGORIES, getCategoryIcon } from '../constants/categories';
+import { parseLocalDate, formatDateForInput } from '../utils/DateUtils';
 import './CSVImportModal.css';
 
 const BillCSVImportModal = ({ existingBills, onImport, onCancel }) => {
@@ -14,7 +15,8 @@ const BillCSVImportModal = ({ existingBills, onImport, onCancel }) => {
     amount: -1,
     category: -1,
     dueDate: -1,
-    recurrence: -1
+    recurrence: -1,
+    institutionName: -1
   });
 
   // Auto-tagging based on bill name patterns
@@ -34,10 +36,12 @@ const BillCSVImportModal = ({ existingBills, onImport, onCancel }) => {
   };
 
   const downloadTemplate = () => {
-    const template = `name,amount,category,dueDate,recurrence
-Electric Bill,125.50,Bills & Utilities,2025-02-15,monthly
-Internet Service,89.99,Bills & Utilities,2025-02-20,monthly
-Car Insurance,450.00,Insurance,2025-03-01,monthly`;
+    const template = `name,amount,institutionName,dueDate,recurrence,category
+Electric Bill,125.50,Pacific Power,15,monthly,Bills & Utilities
+Internet Service,89.99,Comcast,20,monthly,Bills & Utilities
+Rent,350.00,ABC Properties,15,monthly,Housing
+Rent,350.00,ABC Properties,30,monthly,Housing
+Car Insurance,450.00,State Farm,2025-03-01,monthly,Insurance`;
     
     const blob = new Blob([template], { type: 'text/csv' });
     const url = URL.createObjectURL(blob);
@@ -70,11 +74,21 @@ Car Insurance,450.00,Insurance,2025-03-01,monthly`;
       const headers = lines[0].split(',').map(h => h.trim());
       setCsvHeaders(headers);
 
-      // Auto-detect column mapping
+      // Auto-detect column mapping with improved logic
       const lowerHeaders = headers.map(h => h.toLowerCase());
-      const nameCol = lowerHeaders.findIndex(h => h.includes('name') || h.includes('bill') || h.includes('payee'));
+      
+      // For institution name, check for "institution name" BEFORE checking for "name"
+      const institutionNameCol = lowerHeaders.findIndex(h => 
+        h === 'institution name' || h === 'bank name' || h === 'financial institution'
+      );
+      
+      // For bill name, exclude institution name column and prefer specific bill-related terms
+      const nameCol = lowerHeaders.findIndex((h, idx) => 
+        idx !== institutionNameCol && (h === 'name' || h === 'bill' || h === 'payee' || h.includes('bill name'))
+      );
+      
       const amountCol = lowerHeaders.findIndex(h => h.includes('amount') || h.includes('cost') || h.includes('price'));
-      const dueDateCol = lowerHeaders.findIndex(h => h.includes('due') || h.includes('date'));
+      const dueDateCol = lowerHeaders.findIndex(h => h.includes('due') || h.includes('date') || h === 'day of month' || h === 'day of month due');
       const categoryCol = lowerHeaders.findIndex(h => h.includes('category') || h.includes('type'));
       const recurrenceCol = lowerHeaders.findIndex(h => h.includes('recur') || h.includes('frequency') || h.includes('period'));
 
@@ -83,7 +97,8 @@ Car Insurance,450.00,Insurance,2025-03-01,monthly`;
         amount: amountCol,
         category: categoryCol,
         dueDate: dueDateCol,
-        recurrence: recurrenceCol
+        recurrence: recurrenceCol,
+        institutionName: institutionNameCol
       });
 
       if (nameCol === -1 || amountCol === -1) {
@@ -99,7 +114,8 @@ Car Insurance,450.00,Insurance,2025-03-01,monthly`;
         amount: amountCol,
         category: categoryCol,
         dueDate: dueDateCol,
-        recurrence: recurrenceCol
+        recurrence: recurrenceCol,
+        institutionName: institutionNameCol
       });
     } catch (err) {
       console.error('Error parsing CSV:', err);
@@ -123,11 +139,33 @@ Car Insurance,450.00,Insurance,2025-03-01,monthly`;
         
         try {
           const name = mapping.name >= 0 ? values[mapping.name] || '' : '';
+          const institutionName = mapping.institutionName >= 0 ? values[mapping.institutionName] || '' : '';
           const amount = mapping.amount >= 0 ? parseFloat(values[mapping.amount]?.replace(/[$,]/g, '')) || 0 : 0;
           
           if (!name || amount <= 0) {
-            parseErrors.push(`Row ${i}: Invalid name or amount`);
+            parseErrors.push(`Row ${i + 1}: Invalid name or amount`);
             continue;
+          }
+
+          // Enhanced date parsing with validation
+          let dueDate = null;
+          let dateError = null;
+          let dateWarning = null;
+          
+          if (mapping.dueDate >= 0 && values[mapping.dueDate]) {
+            const dateValue = values[mapping.dueDate].trim();
+            const parsedDate = parseLocalDate(dateValue);
+            
+            if (parsedDate && !isNaN(parsedDate.getTime())) {
+              dueDate = formatDateForInput(parsedDate);
+            } else {
+              dateError = `Invalid date format: "${dateValue}"`;
+              parseErrors.push(`Row ${i + 1}: ${dateError}`);
+            }
+          } else {
+            // No date provided - use today as default with warning
+            dueDate = formatDateForInput(new Date());
+            dateWarning = 'Date not provided, using today';
           }
 
           // Auto-detect category if not provided in CSV
@@ -138,25 +176,31 @@ Car Insurance,450.00,Insurance,2025-03-01,monthly`;
           const bill = {
             id: `bill_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
             name: name,
+            institutionName: institutionName,
             amount: amount,
             category: detectedCategory || 'Bills & Utilities',
-            dueDate: mapping.dueDate >= 0 && values[mapping.dueDate] ? values[mapping.dueDate] : new Date().toISOString().split('T')[0],
+            dueDate: dueDate || formatDateForInput(new Date()),
             recurrence: mapping.recurrence >= 0 && values[mapping.recurrence] ? values[mapping.recurrence].toLowerCase() : 'monthly',
             status: 'pending',
             autopay: false,
-            account: 'bofa'
+            account: 'bofa',
+            dateError: dateError,
+            dateWarning: dateWarning,
+            rowNumber: i + 1
           };
 
-          // Check for duplicates
+          // Enhanced duplicate detection: consider name AND due date
+          // This allows same bill name with different dates (e.g., rent on 15th and 30th)
           const isDuplicate = existingBills.some(existing => 
             existing.name.toLowerCase() === bill.name.toLowerCase() &&
-            Math.abs(parseFloat(existing.amount) - bill.amount) < 0.01
+            Math.abs(parseFloat(existing.amount) - bill.amount) < 0.01 &&
+            existing.dueDate === bill.dueDate
           );
 
           bill.isDuplicate = isDuplicate;
           parsedBills.push(bill);
         } catch (err) {
-          parseErrors.push(`Row ${i}: ${err.message}`);
+          parseErrors.push(`Row ${i + 1}: ${err.message}`);
         }
       }
 
@@ -209,6 +253,27 @@ Car Insurance,450.00,Insurance,2025-03-01,monthly`;
   const handleCategoryChange = (index, newCategory) => {
     const updated = [...previewBills];
     updated[index].category = newCategory;
+    setPreviewBills(updated);
+  };
+
+  const handleDateChange = (index, newDate) => {
+    const updated = [...previewBills];
+    const parsedDate = parseLocalDate(newDate);
+    
+    if (parsedDate && !isNaN(parsedDate.getTime())) {
+      updated[index].dueDate = formatDateForInput(parsedDate);
+      updated[index].dateError = null;
+      updated[index].dateWarning = null;
+    } else {
+      updated[index].dateError = 'Invalid date format';
+    }
+    
+    setPreviewBills(updated);
+  };
+
+  const handleInstitutionChange = (index, newInstitution) => {
+    const updated = [...previewBills];
+    updated[index].institutionName = newInstitution;
     setPreviewBills(updated);
   };
 
@@ -291,10 +356,12 @@ Car Insurance,450.00,Insurance,2025-03-01,monthly`;
                   </button>
                 </div>
                 <pre style={{ fontSize: '12px', color: '#ccc', overflow: 'auto' }}>
-{`name,amount,category,dueDate,recurrence
-Electric Bill,125.50,Bills & Utilities,2025-02-15,monthly
-Internet Service,89.99,Bills & Utilities,2025-02-20,monthly
-Car Insurance,450.00,Insurance,2025-03-01,monthly`}
+{`name,amount,institutionName,dueDate,recurrence,category
+Electric Bill,125.50,Pacific Power,15,monthly,Bills & Utilities
+Internet Service,89.99,Comcast,20,monthly,Bills & Utilities
+Rent,350.00,ABC Properties,15,monthly,Housing
+Rent,350.00,ABC Properties,30,monthly,Housing
+Car Insurance,450.00,State Farm,2025-03-01,monthly,Insurance`}
                 </pre>
               </div>
             </div>
@@ -308,15 +375,25 @@ Car Insurance,450.00,Insurance,2025-03-01,monthly`}
               </p>
 
               <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
-                {['name', 'amount', 'category', 'dueDate', 'recurrence'].map(field => (
-                  <div key={field} style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-                    <label style={{ width: '120px', color: '#fff', fontWeight: '600' }}>
-                      {field.charAt(0).toUpperCase() + field.slice(1)}
-                      {(field === 'name' || field === 'amount') && <span style={{ color: '#ff6b6b' }}> *</span>}
+                {[
+                  { key: 'name', label: 'Bill Name', required: true, tooltip: 'The name or description of the bill' },
+                  { key: 'amount', label: 'Amount', required: true, tooltip: 'The bill amount (numeric value)' },
+                  { key: 'institutionName', label: 'Institution Name', required: false, tooltip: 'Bank or company name (e.g., Bank of America)' },
+                  { key: 'dueDate', label: 'Due Date', required: false, tooltip: 'Due date or day of month (e.g., 15, 2025-01-15, 01/15/2025)' },
+                  { key: 'category', label: 'Category', required: false, tooltip: 'Bill category (auto-detected if not provided)' },
+                  { key: 'recurrence', label: 'Recurrence', required: false, tooltip: 'Frequency: monthly, weekly, etc. (defaults to monthly)' }
+                ].map(field => (
+                  <div key={field.key} style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                    <label 
+                      style={{ width: '140px', color: '#fff', fontWeight: '600' }}
+                      title={field.tooltip}
+                    >
+                      {field.label}
+                      {field.required && <span style={{ color: '#ff6b6b' }}> *</span>}
                     </label>
                     <select
-                      value={columnMapping[field]}
-                      onChange={(e) => setColumnMapping({ ...columnMapping, [field]: parseInt(e.target.value) })}
+                      value={columnMapping[field.key]}
+                      onChange={(e) => setColumnMapping({ ...columnMapping, [field.key]: parseInt(e.target.value) })}
                       style={{
                         flex: 1,
                         padding: '8px',
@@ -326,6 +403,7 @@ Car Insurance,450.00,Insurance,2025-03-01,monthly`}
                         borderRadius: '4px',
                         fontSize: '14px'
                       }}
+                      title={field.tooltip}
                     >
                       <option value={-1}>-- Not mapped --</option>
                       {csvHeaders.map((header, idx) => (
@@ -407,29 +485,43 @@ Car Insurance,450.00,Insurance,2025-03-01,monthly`}
                   >
                     ✕ Skip All
                   </button>
-                  <select
-                    onChange={(e) => {
-                      if (e.target.value) {
-                        handleBulkCategoryAssignment(e.target.value);
-                        e.target.value = '';
-                      }
-                    }}
-                    style={{
-                      padding: '8px 12px',
-                      background: '#6c757d',
-                      color: '#fff',
-                      border: 'none',
-                      borderRadius: '4px',
-                      cursor: 'pointer',
-                      fontSize: '14px'
-                    }}
-                    title="Assign category to all non-skipped bills"
-                  >
-                    <option value="">🏷️ Bulk Assign Category</option>
-                    {Object.keys(TRANSACTION_CATEGORIES).map(cat => (
-                      <option key={cat} value={cat}>{cat}</option>
-                    ))}
-                  </select>
+                  <div style={{ position: 'relative', display: 'inline-block' }}>
+                    <select
+                      onChange={(e) => {
+                        if (e.target.value) {
+                          handleBulkCategoryAssignment(e.target.value);
+                          e.target.value = '';
+                        }
+                      }}
+                      style={{
+                        padding: '8px 12px',
+                        background: '#6c757d',
+                        color: '#fff',
+                        border: 'none',
+                        borderRadius: '4px',
+                        cursor: 'pointer',
+                        fontSize: '14px'
+                      }}
+                      title="Select a category to apply to all non-skipped bills at once. This is useful when importing bills that all belong to the same category."
+                    >
+                      <option value="">🏷️ Bulk Assign Category</option>
+                      {Object.keys(TRANSACTION_CATEGORIES).map(cat => (
+                        <option key={cat} value={cat}>{cat}</option>
+                      ))}
+                    </select>
+                    <span 
+                      style={{ 
+                        marginLeft: '6px', 
+                        color: '#00ff88', 
+                        cursor: 'help',
+                        fontSize: '16px',
+                        fontWeight: 'bold'
+                      }}
+                      title="Bulk Assign Category allows you to set the same category for all bills that haven't been skipped. Simply select a category from the dropdown and it will be applied to all visible (non-skipped) bills at once."
+                    >
+                      ℹ️
+                    </span>
+                  </div>
                 </div>
               </div>
 
@@ -442,25 +534,60 @@ Car Insurance,450.00,Insurance,2025-03-01,monthly`}
                       padding: '16px',
                       marginBottom: '12px',
                       background: bill.isSkipped ? '#2a2a2a' : '#1a1a1a',
-                      border: `2px solid ${bill.isDuplicate ? '#ff9800' : '#333'}`,
+                      border: `2px solid ${bill.dateError ? '#f44336' : bill.isDuplicate ? '#ff9800' : '#333'}`,
                       borderRadius: '8px',
                       opacity: bill.isSkipped ? 0.5 : 1
                     }}
                   >
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
                       <div style={{ flex: 1 }}>
                         <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '8px' }}>
                           <span style={{ fontSize: '24px' }}>{getCategoryIcon(bill.category)}</span>
-                          <div>
+                          <div style={{ flex: 1 }}>
                             <h4 style={{ margin: 0, color: '#fff' }}>{bill.name}</h4>
+                            {bill.institutionName && (
+                              <div style={{ fontSize: '12px', color: '#888', marginTop: '2px' }}>
+                                🏦 {bill.institutionName}
+                              </div>
+                            )}
                             {bill.isDuplicate && (
-                              <span style={{ fontSize: '12px', color: '#ff9800' }}>⚠️ Possible Duplicate</span>
+                              <span style={{ fontSize: '12px', color: '#ff9800', display: 'block', marginTop: '4px' }}>
+                                ⚠️ Possible Duplicate (same name, amount, and date)
+                              </span>
+                            )}
+                            {bill.dateError && (
+                              <span style={{ fontSize: '12px', color: '#f44336', display: 'block', marginTop: '4px' }}>
+                                ❌ {bill.dateError}
+                              </span>
+                            )}
+                            {bill.dateWarning && !bill.dateError && (
+                              <span style={{ fontSize: '12px', color: '#ff9800', display: 'block', marginTop: '4px' }}>
+                                ⚠️ {bill.dateWarning}
+                              </span>
                             )}
                           </div>
                         </div>
-                        <div style={{ fontSize: '14px', color: '#888', display: 'flex', gap: '20px', flexWrap: 'wrap', marginTop: '8px' }}>
+                        <div style={{ fontSize: '14px', color: '#888', display: 'flex', gap: '20px', flexWrap: 'wrap', marginTop: '8px', alignItems: 'center' }}>
                           <span>💰 ${bill.amount.toFixed(2)}</span>
-                          <span>📅 {bill.dueDate}</span>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                            <span>📅</span>
+                            <input
+                              type="date"
+                              value={bill.dueDate}
+                              onChange={(e) => handleDateChange(index, e.target.value)}
+                              disabled={bill.isSkipped}
+                              style={{
+                                padding: '4px 8px',
+                                background: bill.dateError ? '#3a1a1a' : '#2a2a2a',
+                                color: bill.dateError ? '#ff6b6b' : '#fff',
+                                border: bill.dateError ? '1px solid #f44336' : '1px solid #444',
+                                borderRadius: '4px',
+                                fontSize: '12px',
+                                cursor: bill.isSkipped ? 'not-allowed' : 'pointer'
+                              }}
+                              title="Edit due date"
+                            />
+                          </div>
                           <span>🔄 {bill.recurrence}</span>
                           <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                             <span>🏷️</span>
@@ -495,7 +622,8 @@ Car Insurance,450.00,Insurance,2025-03-01,monthly`}
                           border: 'none',
                           borderRadius: '4px',
                           cursor: 'pointer',
-                          fontWeight: '600'
+                          fontWeight: '600',
+                          marginLeft: '12px'
                         }}
                         title={bill.isSkipped ? 'Include this bill' : 'Skip this bill'}
                       >

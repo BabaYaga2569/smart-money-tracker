@@ -893,12 +893,26 @@ const Bills = () => {
       const existingBills = currentData.bills || [];
       const updatedBills = [...existingBills, ...importedBills];
       
-      // Create import history entry
+      // Count bills with errors or warnings
+      const errorsCount = importedBills.filter(b => b.dateError).length;
+      const warningsCount = importedBills.filter(b => b.dateWarning && !b.dateError).length;
+      
+      // Create enhanced import history entry
       const importEntry = {
         id: `import_${Date.now()}`,
         timestamp: new Date().toISOString(),
         billCount: importedBills.length,
-        bills: importedBills.map(b => ({ id: b.id, name: b.name, amount: b.amount }))
+        errorsCount: errorsCount,
+        warningsCount: warningsCount,
+        bills: importedBills.map(b => ({ 
+          id: b.id, 
+          name: b.name, 
+          amount: b.amount, 
+          dueDate: b.dueDate,
+          institutionName: b.institutionName || '',
+          dateError: b.dateError || null,
+          dateWarning: b.dateWarning || null
+        }))
       };
       
       const newHistory = [importEntry, ...importHistory].slice(0, 10); // Keep last 10 imports
@@ -912,7 +926,12 @@ const Bills = () => {
       
       await loadBills();
       setShowCSVImport(false);
-      showNotification(`Successfully imported ${importedBills.length} bills`, 'success');
+      
+      // Show detailed notification
+      let message = `Successfully imported ${importedBills.length} bills`;
+      if (errorsCount > 0) message += ` (${errorsCount} with errors)`;
+      if (warningsCount > 0) message += ` (${warningsCount} with warnings)`;
+      showNotification(message, errorsCount > 0 ? 'warning' : 'success');
     } catch (error) {
       console.error('Error importing bills:', error);
       showNotification('Error importing bills', 'error');
@@ -1651,19 +1670,47 @@ const Bills = () => {
                       borderRadius: '8px'
                     }}
                   >
-                    <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '8px' }}>
-                      <div>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '8px', alignItems: 'flex-start' }}>
+                      <div style={{ flex: 1 }}>
                         <strong style={{ color: '#fff' }}>
                           {new Date(entry.timestamp).toLocaleString()}
                           {index === 0 && <span style={{ color: '#00ff88', marginLeft: '8px' }}>(Most Recent)</span>}
                         </strong>
-                      </div>
-                      <div style={{ color: '#00ff88' }}>
-                        {entry.billCount} bills
+                        <div style={{ fontSize: '14px', color: '#888', marginTop: '4px' }}>
+                          {entry.billCount} bills imported
+                          {entry.errorsCount > 0 && (
+                            <span style={{ color: '#f44336', marginLeft: '8px' }}>
+                              • {entry.errorsCount} errors
+                            </span>
+                          )}
+                          {entry.warningsCount > 0 && (
+                            <span style={{ color: '#ff9800', marginLeft: '8px' }}>
+                              • {entry.warningsCount} warnings
+                            </span>
+                          )}
+                        </div>
                       </div>
                     </div>
-                    <div style={{ fontSize: '14px', color: '#ccc' }}>
-                      Bills: {entry.bills.map(b => b.name).join(', ')}
+                    <div style={{ fontSize: '13px', color: '#ccc', marginTop: '12px' }}>
+                      <div style={{ fontWeight: '600', marginBottom: '6px' }}>Bills:</div>
+                      {entry.bills.map((b, idx) => (
+                        <div key={idx} style={{ paddingLeft: '12px', marginBottom: '4px' }}>
+                          • {b.name} 
+                          {b.institutionName && <span style={{ color: '#888' }}> ({b.institutionName})</span>}
+                          <span style={{ color: '#888' }}> - ${b.amount?.toFixed?.(2) || b.amount}</span>
+                          {b.dueDate && <span style={{ color: '#888' }}> - Due: {b.dueDate}</span>}
+                          {b.dateError && (
+                            <span style={{ color: '#f44336', marginLeft: '8px' }}>
+                              ❌ {b.dateError}
+                            </span>
+                          )}
+                          {b.dateWarning && !b.dateError && (
+                            <span style={{ color: '#ff9800', marginLeft: '8px' }}>
+                              ⚠️ {b.dateWarning}
+                            </span>
+                          )}
+                        </div>
+                      ))}
                     </div>
                   </div>
                 ))}
