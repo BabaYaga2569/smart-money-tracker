@@ -53,7 +53,6 @@ const Bills = () => {
   
   // Deduplication state
   const [deduplicating, setDeduplicating] = useState(false);
-  const [lastDeduplicationResult, setLastDeduplicationResult] = useState(null);
 
   // Use shared categories for consistency with Transactions page
   const BILL_CATEGORIES = CATEGORY_ICONS;
@@ -982,9 +981,6 @@ const Bills = () => {
         ...currentData,
         bills: result.cleanedBills
       });
-      
-      // Store result for display
-      setLastDeduplicationResult(result);
       
       // Reload bills
       await loadBills();
