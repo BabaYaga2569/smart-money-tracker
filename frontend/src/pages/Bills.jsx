@@ -389,6 +389,11 @@ const Bills = () => {
   };
 
   const determineBillStatus = (bill) => {
+    // Check if bill is manually skipped
+    if (bill.status === 'skipped') {
+      return 'skipped';
+    }
+    
     // Use the centralized logic from RecurringBillManager
     if (RecurringBillManager.isBillPaidForCurrentCycle(bill)) {
       return 'paid';
@@ -429,15 +434,20 @@ const Bills = () => {
       .reduce((sum, bill) => sum + (parseFloat(bill.amount) || 0), 0);
     
     const upcomingBills = processedBills.filter(bill => {
+      if (bill.status === 'skipped') return false; // Exclude skipped bills
       const dueDate = new Date(bill.nextDueDate || bill.dueDate);
       const status = determineBillStatus(bill);
       return ['pending', 'this-week', 'urgent'].includes(status) && dueDate <= nextMonth;
     });
     
-    const overdueBills = processedBills.filter(bill => determineBillStatus(bill) === 'overdue');
+    const overdueBills = processedBills.filter(bill => {
+      if (bill.status === 'skipped') return false; // Exclude skipped bills
+      return determineBillStatus(bill) === 'overdue';
+    });
     
     const nextBillDue = processedBills
       .filter(bill => {
+        if (bill.status === 'skipped') return false; // Exclude skipped bills
         const status = determineBillStatus(bill);
         return ['pending', 'this-week', 'urgent', 'due-today'].includes(status);
       })
@@ -827,6 +837,37 @@ const Bills = () => {
     }
   };
 
+  const handleToggleSkipBill = async (bill) => {
+    try {
+      const settingsDocRef = doc(db, 'users', 'steve-colburn', 'settings', 'personal');
+      const currentDoc = await getDoc(settingsDocRef);
+      const currentData = currentDoc.exists() ? currentDoc.data() : {};
+      
+      const bills = currentData.bills || [];
+      const newStatus = bill.status === 'skipped' ? 'pending' : 'skipped';
+      
+      const updatedBills = bills.map(b => 
+        b.id === bill.id 
+          ? { ...b, status: newStatus, skippedAt: newStatus === 'skipped' ? new Date().toISOString() : null }
+          : b
+      );
+      
+      await updateDoc(settingsDocRef, {
+        ...currentData,
+        bills: updatedBills
+      });
+      
+      await loadBills();
+      showNotification(
+        newStatus === 'skipped' ? 'Bill skipped for this month' : 'Bill unskipped', 
+        'success'
+      );
+    } catch (error) {
+      console.error('Error toggling skip status:', error);
+      showNotification('Error updating bill', 'error');
+    }
+  };
+
   const handleBulkDelete = async () => {
     setShowBulkDeleteModal(false);
     
@@ -1010,6 +1051,11 @@ const Bills = () => {
   };
 
   const getStatusDisplayText = (bill) => {
+    // Check if bill is manually skipped
+    if (bill.status === 'skipped') {
+      return '⏭️ SKIPPED';
+    }
+    
     const now = new Date();
     const dueDate = new Date(bill.nextDueDate || bill.dueDate);
     const daysUntilDue = Math.ceil((dueDate - now) / (1000 * 60 * 60 * 24));
@@ -1046,7 +1092,7 @@ const Bills = () => {
       billElement.setAttribute('data-status', currentStatus);
       
       // Remove old status classes
-      const statusClasses = ['overdue', 'urgent', 'due-today', 'this-week', 'pending', 'paid'];
+      const statusClasses = ['overdue', 'urgent', 'due-today', 'this-week', 'pending', 'paid', 'skipped'];
       billElement.classList.remove(...statusClasses);
       
       // Add current status class
@@ -1059,7 +1105,8 @@ const Bills = () => {
         'due-today': '#ff6b00',
         'this-week': '#00b4ff',
         'pending': '#00ff88',
-        'paid': '#00ff88'
+        'paid': '#00ff88',
+        'skipped': '#9c27b0'
       };
       
       const borderColor = statusColors[currentStatus] || '#00ff88';
@@ -1354,6 +1401,7 @@ const Bills = () => {
             <option value="all">All Status</option>
             <option value="pending">Pending</option>
             <option value="paid">Paid</option>
+            <option value="skipped">Skipped</option>
             <option value="overdue">Overdue</option>
           </select>
           <select 
@@ -1545,10 +1593,11 @@ const Bills = () => {
                   <button 
                     className="action-btn mark-paid"
                     onClick={() => handleMarkAsPaid(bill)}
-                    disabled={payingBill === bill.name || RecurringBillManager.isBillPaidForCurrentCycle(bill)}
+                    disabled={payingBill === bill.name || RecurringBillManager.isBillPaidForCurrentCycle(bill) || bill.status === 'skipped'}
                   >
                     {payingBill === bill.name ? 'Processing...' : 
-                     RecurringBillManager.isBillPaidForCurrentCycle(bill) ? 'Already Paid' : 'Mark Paid'}
+                     RecurringBillManager.isBillPaidForCurrentCycle(bill) ? 'Already Paid' :
+                     bill.status === 'skipped' ? 'Skipped' : 'Mark Paid'}
                   </button>
                   
                   {/* Manual override to unmark bill as paid */}
@@ -1562,6 +1611,21 @@ const Bills = () => {
                       }}
                     >
                       Unmark Paid
+                    </button>
+                  )}
+                  
+                  {/* Skip/Unskip button for recurring bills */}
+                  {bill.recurringTemplateId && bill.status !== 'paid' && (
+                    <button 
+                      className="action-btn secondary"
+                      onClick={() => handleToggleSkipBill(bill)}
+                      style={{
+                        background: bill.status === 'skipped' ? '#4caf50' : '#9c27b0',
+                        marginTop: '4px'
+                      }}
+                      title={bill.status === 'skipped' ? 'Unskip this bill' : 'Skip this month'}
+                    >
+                      {bill.status === 'skipped' ? '↩️ Unskip' : '⏭️ Skip Month'}
                     </button>
                   )}
                   

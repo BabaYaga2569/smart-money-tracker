@@ -366,6 +366,10 @@ export class RecurringBillManager {
 
         const recurrence = frequencyMap[recurringTemplate.frequency] || 'monthly';
         
+        // Get active months if custom recurrence is enabled
+        const activeMonths = recurringTemplate.activeMonths || null;
+        const hasCustomRecurrence = activeMonths && Array.isArray(activeMonths) && activeMonths.length > 0;
+        
         // Create a base bill object from the template
         const baseBill = {
             name: recurringTemplate.name,
@@ -388,15 +392,21 @@ export class RecurringBillManager {
             
             // Only create bills for future dates
             if (nextDueDate >= today) {
-                const billInstance = {
-                    ...baseBill,
-                    id: generateBillId ? generateBillId() : `bill_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
-                    dueDate: nextDueDate.toISOString().split('T')[0],
-                    originalDueDate: nextDueDate.toISOString().split('T')[0],
-                    lastDueDate: currentBill.dueDate
-                };
+                // Check if this month is active (for custom recurrence)
+                const billMonth = nextDueDate.getMonth(); // 0-11 (Jan=0, Dec=11)
+                const isMonthActive = !hasCustomRecurrence || activeMonths.includes(billMonth);
                 
-                bills.push(billInstance);
+                if (isMonthActive) {
+                    const billInstance = {
+                        ...baseBill,
+                        id: generateBillId ? generateBillId() : `bill_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+                        dueDate: nextDueDate.toISOString().split('T')[0],
+                        originalDueDate: nextDueDate.toISOString().split('T')[0],
+                        lastDueDate: currentBill.dueDate
+                    };
+                    
+                    bills.push(billInstance);
+                }
             }
             
             // Update for next iteration
