@@ -891,14 +891,35 @@ const Bills = () => {
       const currentData = currentDoc.exists() ? currentDoc.data() : {};
       
       const existingBills = currentData.bills || [];
-      const updatedBills = [...existingBills, ...importedBills];
       
-      // Create import history entry
+      // Clean up temporary preview fields before saving
+      const cleanedBills = importedBills.map(bill => {
+        const { dateError, dateWarning, rowNumber, isDuplicate, ...cleanBill } = bill;
+        return cleanBill;
+      });
+      
+      const updatedBills = [...existingBills, ...cleanedBills];
+      
+      // Count bills with errors or warnings
+      const errorsCount = importedBills.filter(b => b.dateError).length;
+      const warningsCount = importedBills.filter(b => b.dateWarning && !b.dateError).length;
+      
+      // Create enhanced import history entry
       const importEntry = {
         id: `import_${Date.now()}`,
         timestamp: new Date().toISOString(),
         billCount: importedBills.length,
-        bills: importedBills.map(b => ({ id: b.id, name: b.name, amount: b.amount }))
+        errorsCount: errorsCount,
+        warningsCount: warningsCount,
+        bills: importedBills.map(b => ({ 
+          id: b.id, 
+          name: b.name, 
+          amount: b.amount, 
+          dueDate: b.dueDate,
+          institutionName: b.institutionName || '',
+          dateError: b.dateError || null,
+          dateWarning: b.dateWarning || null
+        }))
       };
       
       const newHistory = [importEntry, ...importHistory].slice(0, 10); // Keep last 10 imports
@@ -912,7 +933,12 @@ const Bills = () => {
       
       await loadBills();
       setShowCSVImport(false);
-      showNotification(`Successfully imported ${importedBills.length} bills`, 'success');
+      
+      // Show detailed notification
+      let message = `Successfully imported ${importedBills.length} bills`;
+      if (errorsCount > 0) message += ` (${errorsCount} with errors)`;
+      if (warningsCount > 0) message += ` (${warningsCount} with warnings)`;
+      showNotification(message, errorsCount > 0 ? 'warning' : 'success');
     } catch (error) {
       console.error('Error importing bills:', error);
       showNotification('Error importing bills', 'error');
@@ -1651,19 +1677,47 @@ const Bills = () => {
                       borderRadius: '8px'
                     }}
                   >
-                    <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '8px' }}>
-                      <div>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '8px', alignItems: 'flex-start' }}>
+                      <div style={{ flex: 1 }}>
                         <strong style={{ color: '#fff' }}>
                           {new Date(entry.timestamp).toLocaleString()}
                           {index === 0 && <span style={{ color: '#00ff88', marginLeft: '8px' }}>(Most Recent)</span>}
                         </strong>
-                      </div>
-                      <div style={{ color: '#00ff88' }}>
-                        {entry.billCount} bills
+                        <div style={{ fontSize: '14px', color: '#888', marginTop: '4px' }}>
+                          {entry.billCount} bills imported
+                          {entry.errorsCount > 0 && (
+                            <span style={{ color: '#f44336', marginLeft: '8px' }}>
+                              • {entry.errorsCount} errors
+                            </span>
+                          )}
+                          {entry.warningsCount > 0 && (
+                            <span style={{ color: '#ff9800', marginLeft: '8px' }}>
+                              • {entry.warningsCount} warnings
+                            </span>
+                          )}
+                        </div>
                       </div>
                     </div>
-                    <div style={{ fontSize: '14px', color: '#ccc' }}>
-                      Bills: {entry.bills.map(b => b.name).join(', ')}
+                    <div style={{ fontSize: '13px', color: '#ccc', marginTop: '12px' }}>
+                      <div style={{ fontWeight: '600', marginBottom: '6px' }}>Bills:</div>
+                      {entry.bills.map((b, idx) => (
+                        <div key={idx} style={{ paddingLeft: '12px', marginBottom: '4px' }}>
+                          • {b.name} 
+                          {b.institutionName && <span style={{ color: '#888' }}> ({b.institutionName})</span>}
+                          <span style={{ color: '#888' }}> - ${b.amount?.toFixed?.(2) || b.amount}</span>
+                          {b.dueDate && <span style={{ color: '#888' }}> - Due: {b.dueDate}</span>}
+                          {b.dateError && (
+                            <span style={{ color: '#f44336', marginLeft: '8px' }}>
+                              ❌ {b.dateError}
+                            </span>
+                          )}
+                          {b.dateWarning && !b.dateError && (
+                            <span style={{ color: '#ff9800', marginLeft: '8px' }}>
+                              ⚠️ {b.dateWarning}
+                            </span>
+                          )}
+                        </div>
+                      ))}
                     </div>
                   </div>
                 ))}
@@ -1723,11 +1777,29 @@ const Bills = () => {
                 <h4 style={{ color: '#00ff88', marginBottom: '12px' }}>📊 CSV Import</h4>
                 <ul style={{ color: '#ccc', lineHeight: '1.8' }}>
                   <li><strong>Step 1:</strong> Click "Import from CSV" and upload your CSV file</li>
-                  <li><strong>Step 2:</strong> Review column mapping (auto-detected or manual)</li>
-                  <li><strong>Step 3:</strong> Preview bills and adjust categories as needed</li>
+                  <li><strong>Step 2:</strong> Review column mapping (auto-detected or manual mapping available)</li>
+                  <li><strong>Step 3:</strong> Preview bills and fix any errors (dates, categories, etc.)</li>
                   <li><strong>Step 4:</strong> Use bulk actions to approve, skip, or assign categories</li>
-                  <li><strong>Auto-tagging:</strong> Categories are automatically detected based on bill names</li>
-                  <li><strong>Duplicates:</strong> Potential duplicates are highlighted for your review</li>
+                </ul>
+                
+                <h5 style={{ color: '#00ff88', marginTop: '16px', marginBottom: '8px' }}>Supported Fields:</h5>
+                <ul style={{ color: '#ccc', lineHeight: '1.8' }}>
+                  <li><strong>name</strong> (required): Bill name or description</li>
+                  <li><strong>amount</strong> (required): Bill amount (numeric, can include $ and commas)</li>
+                  <li><strong>institutionName</strong> (optional): Bank or company name</li>
+                  <li><strong>dueDate</strong> (optional): Supports YYYY-MM-DD, MM/DD/YYYY, or day of month (1-31)</li>
+                  <li><strong>recurrence</strong> (optional): monthly, weekly, bi-weekly, etc. (defaults to monthly)</li>
+                  <li><strong>category</strong> (optional): Auto-detected if not provided</li>
+                </ul>
+                
+                <h5 style={{ color: '#00ff88', marginTop: '16px', marginBottom: '8px' }}>Key Features:</h5>
+                <ul style={{ color: '#ccc', lineHeight: '1.8' }}>
+                  <li><strong>Date Formats:</strong> Multiple formats supported with validation</li>
+                  <li><strong>Error Prevention:</strong> Cannot import bills with date errors - fix or skip them first</li>
+                  <li><strong>Inline Editing:</strong> Edit dates directly in the preview</li>
+                  <li><strong>Duplicate Detection:</strong> Checks name + amount + date (allows same bill on different dates)</li>
+                  <li><strong>Bulk Assign Category:</strong> Apply category to all non-skipped bills at once</li>
+                  <li><strong>Skip Bills with Errors:</strong> Automatically skip problematic bills</li>
                 </ul>
               </div>
 
