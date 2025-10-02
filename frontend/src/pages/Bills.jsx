@@ -45,6 +45,9 @@ const Bills = () => {
   
   // CSV Import state
   const [showCSVImport, setShowCSVImport] = useState(false);
+  const [importHistory, setImportHistory] = useState([]);
+  const [showImportHistory, setShowImportHistory] = useState(false);
+  const [showHelpModal, setShowHelpModal] = useState(false);
 
   // Use shared categories for consistency with Transactions page
   const BILL_CATEGORIES = CATEGORY_ICONS;
@@ -179,6 +182,9 @@ const Bills = () => {
       if (settingsDocSnap.exists()) {
         const data = settingsDocSnap.data();
         let billsData = data.bills || [];
+        
+        // Load import history
+        setImportHistory(data.importHistory || []);
         
         // Migration: Add IDs to bills that don't have them
         let needsUpdate = false;
@@ -887,9 +893,21 @@ const Bills = () => {
       const existingBills = currentData.bills || [];
       const updatedBills = [...existingBills, ...importedBills];
       
+      // Create import history entry
+      const importEntry = {
+        id: `import_${Date.now()}`,
+        timestamp: new Date().toISOString(),
+        billCount: importedBills.length,
+        bills: importedBills.map(b => ({ id: b.id, name: b.name, amount: b.amount }))
+      };
+      
+      const newHistory = [importEntry, ...importHistory].slice(0, 10); // Keep last 10 imports
+      setImportHistory(newHistory);
+      
       await updateDoc(settingsDocRef, {
         ...currentData,
-        bills: updatedBills
+        bills: updatedBills,
+        importHistory: newHistory
       });
       
       await loadBills();
@@ -898,6 +916,41 @@ const Bills = () => {
     } catch (error) {
       console.error('Error importing bills:', error);
       showNotification('Error importing bills', 'error');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleUndoLastImport = async () => {
+    if (importHistory.length === 0) return;
+    
+    try {
+      setLoading(true);
+      const lastImport = importHistory[0];
+      
+      const settingsDocRef = doc(db, 'users', 'steve-colburn', 'settings', 'personal');
+      const currentDoc = await getDoc(settingsDocRef);
+      const currentData = currentDoc.exists() ? currentDoc.data() : {};
+      
+      const existingBills = currentData.bills || [];
+      // Remove bills from the last import
+      const importedBillIds = new Set(lastImport.bills.map(b => b.id));
+      const updatedBills = existingBills.filter(bill => !importedBillIds.has(bill.id));
+      
+      const newHistory = importHistory.slice(1);
+      setImportHistory(newHistory);
+      
+      await updateDoc(settingsDocRef, {
+        ...currentData,
+        bills: updatedBills,
+        importHistory: newHistory
+      });
+      
+      await loadBills();
+      showNotification(`Undid import of ${lastImport.billCount} bills`, 'success');
+    } catch (error) {
+      console.error('Error undoing import:', error);
+      showNotification('Error undoing import', 'error');
     } finally {
       setLoading(false);
     }
@@ -1115,7 +1168,23 @@ const Bills = () => {
             <h2>🧾 Bills Management</h2>
             <p>Complete bill lifecycle management and automation</p>
           </div>
-          <div>
+          <div style={{ display: 'flex', gap: '12px' }}>
+            <button 
+              onClick={() => setShowHelpModal(true)}
+              style={{
+                background: '#6c757d',
+                color: '#fff',
+                border: 'none',
+                borderRadius: '8px',
+                padding: '12px 20px',
+                fontWeight: '600',
+                cursor: 'pointer',
+                transition: 'all 0.2s ease'
+              }}
+              title="Show help and documentation"
+            >
+              ❓ Help
+            </button>
             <button 
               className="add-bill-btn-header"
               onClick={() => {
@@ -1301,6 +1370,51 @@ const Bills = () => {
           >
             📊 Import from CSV
           </button>
+          {importHistory.length > 0 && (
+            <>
+              <button 
+                className="import-history-button"
+                onClick={() => setShowImportHistory(true)}
+                disabled={loading}
+                title="View import history"
+                style={{
+                  background: '#6c757d',
+                  color: '#fff',
+                  border: 'none',
+                  borderRadius: '8px',
+                  padding: '12px 20px',
+                  fontWeight: '600',
+                  cursor: loading ? 'not-allowed' : 'pointer',
+                  transition: 'all 0.2s ease',
+                  whiteSpace: 'nowrap',
+                  opacity: loading ? 0.6 : 1
+                }}
+              >
+                📜 Import History ({importHistory.length})
+              </button>
+              <button 
+                className="undo-import-button"
+                onClick={handleUndoLastImport}
+                disabled={loading}
+                title="Undo last import"
+                style={{
+                  background: '#ff9800',
+                  color: '#000',
+                  border: 'none',
+                  borderRadius: '8px',
+                  padding: '12px 20px',
+                  fontWeight: '600',
+                  cursor: loading ? 'not-allowed' : 'pointer',
+                  transition: 'all 0.2s ease',
+                  whiteSpace: 'nowrap',
+                  opacity: loading ? 0.6 : 1,
+                  animation: 'pulse 2s ease-in-out infinite'
+                }}
+              >
+                ↩️ Undo Last Import
+              </button>
+            </>
+          )}
         </div>
       </div>
 
@@ -1509,6 +1623,187 @@ const Bills = () => {
           onImport={handleCSVImport}
           onCancel={() => setShowCSVImport(false)}
         />
+      )}
+
+      {/* Import History Modal */}
+      {showImportHistory && (
+        <div className="modal-overlay" onClick={() => setShowImportHistory(false)}>
+          <div className="modal" onClick={(e) => e.stopPropagation()} style={{ maxWidth: '700px' }}>
+            <div className="modal-header">
+              <h3>📜 Import History</h3>
+              <button className="close-btn" onClick={() => setShowImportHistory(false)}>×</button>
+            </div>
+            
+            <div className="modal-body">
+              <p style={{ marginBottom: '20px', color: '#ccc' }}>
+                History of CSV imports (last 10)
+              </p>
+              
+              <div style={{ maxHeight: '500px', overflowY: 'auto' }}>
+                {importHistory.map((entry, index) => (
+                  <div 
+                    key={entry.id}
+                    style={{
+                      padding: '16px',
+                      marginBottom: '12px',
+                      background: index === 0 ? '#1a3a1a' : '#1a1a1a',
+                      border: index === 0 ? '2px solid #00ff88' : '1px solid #333',
+                      borderRadius: '8px'
+                    }}
+                  >
+                    <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '8px' }}>
+                      <div>
+                        <strong style={{ color: '#fff' }}>
+                          {new Date(entry.timestamp).toLocaleString()}
+                          {index === 0 && <span style={{ color: '#00ff88', marginLeft: '8px' }}>(Most Recent)</span>}
+                        </strong>
+                      </div>
+                      <div style={{ color: '#00ff88' }}>
+                        {entry.billCount} bills
+                      </div>
+                    </div>
+                    <div style={{ fontSize: '14px', color: '#ccc' }}>
+                      Bills: {entry.bills.map(b => b.name).join(', ')}
+                    </div>
+                  </div>
+                ))}
+              </div>
+              
+              <div style={{ marginTop: '20px', display: 'flex', justifyContent: 'space-between' }}>
+                <button
+                  onClick={() => setShowImportHistory(false)}
+                  style={{
+                    padding: '10px 20px',
+                    background: '#555',
+                    color: '#fff',
+                    border: 'none',
+                    borderRadius: '4px',
+                    cursor: 'pointer',
+                    fontWeight: '600'
+                  }}
+                >
+                  Close
+                </button>
+                {importHistory.length > 0 && (
+                  <button
+                    onClick={() => {
+                      setShowImportHistory(false);
+                      handleUndoLastImport();
+                    }}
+                    style={{
+                      padding: '10px 20px',
+                      background: '#ff9800',
+                      color: '#000',
+                      border: 'none',
+                      borderRadius: '4px',
+                      cursor: 'pointer',
+                      fontWeight: '600'
+                    }}
+                  >
+                    ↩️ Undo Last Import
+                  </button>
+                )}
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Help Modal */}
+      {showHelpModal && (
+        <div className="modal-overlay" onClick={() => setShowHelpModal(false)}>
+          <div className="modal" onClick={(e) => e.stopPropagation()} style={{ maxWidth: '800px', maxHeight: '90vh', overflowY: 'auto' }}>
+            <div className="modal-header">
+              <h3>❓ Bills Management Help</h3>
+              <button className="close-btn" onClick={() => setShowHelpModal(false)}>×</button>
+            </div>
+            
+            <div className="modal-body">
+              <div style={{ marginBottom: '24px' }}>
+                <h4 style={{ color: '#00ff88', marginBottom: '12px' }}>📊 CSV Import</h4>
+                <ul style={{ color: '#ccc', lineHeight: '1.8' }}>
+                  <li><strong>Step 1:</strong> Click "Import from CSV" and upload your CSV file</li>
+                  <li><strong>Step 2:</strong> Review column mapping (auto-detected or manual)</li>
+                  <li><strong>Step 3:</strong> Preview bills and adjust categories as needed</li>
+                  <li><strong>Step 4:</strong> Use bulk actions to approve, skip, or assign categories</li>
+                  <li><strong>Auto-tagging:</strong> Categories are automatically detected based on bill names</li>
+                  <li><strong>Duplicates:</strong> Potential duplicates are highlighted for your review</li>
+                </ul>
+              </div>
+
+              <div style={{ marginBottom: '24px' }}>
+                <h4 style={{ color: '#00ff88', marginBottom: '12px' }}>📜 Import History</h4>
+                <ul style={{ color: '#ccc', lineHeight: '1.8' }}>
+                  <li>Track your last 10 CSV imports with timestamps</li>
+                  <li>View bill count and names for each import</li>
+                  <li>Undo the most recent import if needed</li>
+                  <li>History is saved automatically with each import</li>
+                </ul>
+              </div>
+
+              <div style={{ marginBottom: '24px' }}>
+                <h4 style={{ color: '#00ff88', marginBottom: '12px' }}>🔄 Transaction Matching</h4>
+                <ul style={{ color: '#ccc', lineHeight: '1.8' }}>
+                  <li><strong>Connect Plaid:</strong> Link your bank accounts from the Accounts page</li>
+                  <li><strong>Auto-match:</strong> Click "Match Transactions" to automatically find payments</li>
+                  <li><strong>Smart matching:</strong> Bills are matched by amount, date, and merchant name</li>
+                  <li><strong>Status updates:</strong> Bills are automatically marked as paid when matched</li>
+                  <li><strong>Manual override:</strong> You can manually mark bills as paid or unpaid</li>
+                </ul>
+              </div>
+
+              <div style={{ marginBottom: '24px' }}>
+                <h4 style={{ color: '#00ff88', marginBottom: '12px' }}>🔄 Recurring Bills</h4>
+                <ul style={{ color: '#ccc', lineHeight: '1.8' }}>
+                  <li><strong>Auto badge:</strong> Bills with 🔄 Auto are generated from recurring templates</li>
+                  <li><strong>Create templates:</strong> Set up recurring bills on the Recurring page</li>
+                  <li><strong>Template control:</strong> Delete templates with option to remove generated bills</li>
+                  <li><strong>Cleanup menu:</strong> Bulk maintenance tools for recurring bills</li>
+                </ul>
+              </div>
+
+              <div style={{ marginBottom: '24px' }}>
+                <h4 style={{ color: '#00ff88', marginBottom: '12px' }}>🗑️ Bulk Operations</h4>
+                <ul style={{ color: '#ccc', lineHeight: '1.8' }}>
+                  <li><strong>Delete All:</strong> Remove all bills with one click (with undo option)</li>
+                  <li><strong>Undo Delete:</strong> Restore all deleted bills if done by mistake</li>
+                  <li><strong>Undo Import:</strong> Remove bills from the last CSV import</li>
+                  <li><strong>Safety first:</strong> All destructive actions require confirmation</li>
+                </ul>
+              </div>
+
+              <div style={{ marginBottom: '24px' }}>
+                <h4 style={{ color: '#00ff88', marginBottom: '12px' }}>💡 Tips & Best Practices</h4>
+                <ul style={{ color: '#ccc', lineHeight: '1.8' }}>
+                  <li>Download the CSV template for proper formatting</li>
+                  <li>Review duplicate warnings before importing</li>
+                  <li>Use bulk category assignment to speed up imports</li>
+                  <li>Connect Plaid for automatic transaction matching</li>
+                  <li>Set up recurring templates for repeating bills</li>
+                  <li>Use the search and filter to find specific bills</li>
+                </ul>
+              </div>
+
+              <div style={{ marginTop: '24px', textAlign: 'center' }}>
+                <button
+                  onClick={() => setShowHelpModal(false)}
+                  style={{
+                    padding: '12px 24px',
+                    background: '#00ff88',
+                    color: '#000',
+                    border: 'none',
+                    borderRadius: '4px',
+                    cursor: 'pointer',
+                    fontWeight: '600',
+                    fontSize: '16px'
+                  }}
+                >
+                  Got it!
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
       )}
 
       {/* Plaid Error Modal */}
