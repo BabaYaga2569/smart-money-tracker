@@ -148,12 +148,15 @@
 
 /* Bills list container - displays at least 15 bills before scrolling
    Calculation: 15 bills × ~110px per bill + 14 gaps × 12px ≈ 1,818px
-   Set to 2000px to comfortably show 15+ bills before vertical scrolling activates */
+   Set to 2000px to comfortably show 15+ bills before vertical scrolling activates
+   Using !important to override any conflicting styles from other CSS files */
 .bills-list {
   display: flex;
   flex-direction: column;
   gap: 12px;
-  max-height: 2000px;
+  height: 2000px !important;
+  min-height: 2000px !important;
+  max-height: 2000px !important;
   overflow-y: auto;
   padding-right: 8px;
 }
