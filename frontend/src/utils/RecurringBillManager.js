@@ -419,4 +419,95 @@ export class RecurringBillManager {
 
         return bills;
     }
+
+    /**
+     * Sync bill instances when a recurring template is updated
+     * This handles:
+     * - Generating new bills for newly selected months
+     * - Removing unpaid bills for unselected months (preserving paid bills)
+     * - Updating bill properties (amount, category, etc.) for existing unpaid bills
+     * 
+     * @param {Object} updatedTemplate - Updated recurring template object
+     * @param {Array} existingBills - Current array of all bills
+     * @param {Number} monthsAhead - Number of months to generate bills for (default: 3)
+     * @param {Function} generateBillId - Function to generate unique bill IDs
+     * @returns {Object} { updatedBills: Array, stats: Object } - Updated bills array and statistics
+     */
+    static syncBillsWithTemplate(updatedTemplate, existingBills, monthsAhead = 3, generateBillId) {
+        if (!updatedTemplate || !updatedTemplate.id) {
+            throw new Error('Valid recurring template with ID is required');
+        }
+
+        const templateId = updatedTemplate.id;
+        const stats = {
+            added: 0,
+            removed: 0,
+            updated: 0,
+            preserved: 0
+        };
+
+        // Separate bills into those from this template and others
+        const billsFromTemplate = existingBills.filter(bill => 
+            bill.recurringTemplateId === templateId
+        );
+        const otherBills = existingBills.filter(bill => 
+            bill.recurringTemplateId !== templateId
+        );
+
+        // Generate the desired bill instances based on updated template
+        const desiredBills = this.generateBillsFromTemplate(updatedTemplate, monthsAhead, generateBillId);
+        
+        // Create a map of desired bills by due date for easy lookup
+        const desiredBillsByDate = new Map();
+        desiredBills.forEach(bill => {
+            desiredBillsByDate.set(bill.dueDate, bill);
+        });
+
+        // Process existing bills from this template
+        const updatedBillsFromTemplate = [];
+        
+        billsFromTemplate.forEach(existingBill => {
+            const isPaid = existingBill.status === 'paid' || this.isBillPaidForCurrentCycle(existingBill);
+            const dueDate = existingBill.dueDate;
+            
+            if (isPaid) {
+                // Always preserve paid bills for history
+                updatedBillsFromTemplate.push(existingBill);
+                stats.preserved++;
+            } else if (desiredBillsByDate.has(dueDate)) {
+                // Bill exists and should continue to exist - update its properties
+                const desiredBill = desiredBillsByDate.get(dueDate);
+                updatedBillsFromTemplate.push({
+                    ...existingBill,
+                    name: desiredBill.name,
+                    amount: desiredBill.amount,
+                    category: desiredBill.category,
+                    autopay: desiredBill.autopay,
+                    account: desiredBill.account,
+                    recurrence: desiredBill.recurrence
+                });
+                stats.updated++;
+                // Remove from desired map since we've handled it
+                desiredBillsByDate.delete(dueDate);
+            } else {
+                // Bill exists but is no longer desired (month was unselected) - remove it
+                stats.removed++;
+                // Don't add to updatedBillsFromTemplate
+            }
+        });
+
+        // Add any remaining desired bills that don't exist yet
+        desiredBillsByDate.forEach(desiredBill => {
+            updatedBillsFromTemplate.push(desiredBill);
+            stats.added++;
+        });
+
+        // Combine with other bills
+        const allUpdatedBills = [...otherBills, ...updatedBillsFromTemplate];
+
+        return {
+            updatedBills: allUpdatedBills,
+            stats
+        };
+    }
 }

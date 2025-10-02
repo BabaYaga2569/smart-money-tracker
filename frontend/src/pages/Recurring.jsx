@@ -491,17 +491,51 @@ const Recurring = () => {
         updatedItems = [...existingItems, itemData];
       }
       
+      // Auto-sync bills if this is an expense template with status active
+      let billSyncStats = null;
+      let updatedBills = currentData.bills || [];
+      
+      if (itemData.type === 'expense' && itemData.status === 'active') {
+        try {
+          const generateBillId = () => `bill_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+          const syncResult = RecurringBillManager.syncBillsWithTemplate(
+            itemData,
+            updatedBills,
+            3, // Generate 3 months ahead
+            generateBillId
+          );
+          updatedBills = syncResult.updatedBills;
+          billSyncStats = syncResult.stats;
+        } catch (error) {
+          console.error('Error syncing bills with template:', error);
+          // Continue with template save even if bill sync fails
+        }
+      }
+      
       await updateDoc(settingsDocRef, {
         ...currentData,
-        recurringItems: updatedItems
+        recurringItems: updatedItems,
+        bills: updatedBills
       });
       
       setRecurringItems(updatedItems);
       setShowModal(false);
-      showNotification(
-        editingItem ? 'Recurring item updated!' : 'Recurring item added!', 
-        'success'
-      );
+      
+      // Show success notification with bill sync details
+      let message = editingItem ? 'Recurring item updated!' : 'Recurring item added!';
+      if (billSyncStats) {
+        const parts = [];
+        if (billSyncStats.added > 0) parts.push(`${billSyncStats.added} added`);
+        if (billSyncStats.updated > 0) parts.push(`${billSyncStats.updated} updated`);
+        if (billSyncStats.removed > 0) parts.push(`${billSyncStats.removed} removed`);
+        if (billSyncStats.preserved > 0) parts.push(`${billSyncStats.preserved} preserved`);
+        
+        if (parts.length > 0) {
+          message += ` Bills: ${parts.join(', ')}`;
+        }
+      }
+      
+      showNotification(message, 'success');
     } catch (error) {
       console.error('Error saving recurring item:', error);
       showNotification('Error saving item', 'error');
