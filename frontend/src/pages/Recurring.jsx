@@ -790,6 +790,61 @@ const Recurring = () => {
       }
       
       showNotification(message, 'success');
+      
+      // AUTO-GENERATE BILLS: Automatically generate bill instances from newly imported recurring templates
+      console.log('[CSV Import] Auto-generating bills from imported recurring templates...');
+      try {
+        const bills = currentData.bills || [];
+        const generateBillId = () => `bill_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+        
+        // Generate bills only from newly imported active expense templates
+        const newActiveExpenses = itemsToAdd.filter(item => item.status === 'active' && item.type === 'expense');
+        let newBills = [];
+        
+        newActiveExpenses.forEach(template => {
+          try {
+            // Generate 3 months of bills from each template
+            const generatedBills = RecurringBillManager.generateBillsFromTemplate(template, 3, generateBillId);
+            
+            // Filter out bills that already exist (same template ID and due date)
+            const uniqueBills = generatedBills.filter(newBill => {
+              return !bills.some(existingBill => 
+                existingBill.recurringTemplateId === newBill.recurringTemplateId &&
+                existingBill.dueDate === newBill.dueDate
+              );
+            });
+            
+            newBills = [...newBills, ...uniqueBills];
+            console.log(`[CSV Import] Generated ${uniqueBills.length} bills from template: ${template.name}`);
+          } catch (error) {
+            console.error(`[CSV Import] Error generating bills from template ${template.name}:`, error);
+          }
+        });
+        
+        if (newBills.length > 0) {
+          // Add new bills to existing bills
+          const updatedBills = [...bills, ...newBills];
+          
+          // Update Firebase with the new bills
+          await updateDoc(settingsDocRef, {
+            ...currentData,
+            recurringItems: updatedItems,
+            bills: updatedBills
+          });
+          
+          console.log(`[CSV Import] Successfully generated ${newBills.length} bill instances`);
+          
+          // Update notification to include bill generation info
+          let finalMessage = message + `. Auto-generated ${newBills.length} bill instance(s) for Bills Management.`;
+          showNotification(finalMessage, 'success');
+        } else {
+          console.log('[CSV Import] No new bills to generate (templates already have bills or no active expense templates)');
+        }
+      } catch (billError) {
+        console.error('[CSV Import] Error auto-generating bills:', billError);
+        // Don't fail the entire import if bill generation fails, just log it
+        showNotification(message + ' (Note: Bill generation encountered an issue)', 'warning');
+      }
     } catch (error) {
       console.error('Error importing CSV data:', error);
       showNotification('Error importing CSV data', 'error');
