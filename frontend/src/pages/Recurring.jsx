@@ -48,6 +48,11 @@ const Recurring = () => {
   // Bulk delete state
   const [deletedItems, setDeletedItems] = useState([]);
   const [showBulkDeleteModal, setShowBulkDeleteModal] = useState(false);
+  
+  // Single item delete with options
+  const [itemToDelete, setItemToDelete] = useState(null);
+  const [showDeleteModal, setShowDeleteModal] = useState(false);
+  const [deleteGeneratedBills, setDeleteGeneratedBills] = useState(false);
 
   useEffect(() => {
     loadRecurringData();
@@ -474,9 +479,7 @@ const Recurring = () => {
     }
   };
 
-  const handleDeleteItem = async (item) => {
-    if (!window.confirm(`Delete "${item.name}"?`)) return;
-
+  const handleDeleteItem = async (item, alsoDeleteGeneratedBills = false) => {
     try {
       setSaving(true);
       
@@ -486,13 +489,30 @@ const Recurring = () => {
       
       const updatedItems = (currentData.recurringItems || []).filter(i => i.id !== item.id);
       
-      await updateDoc(settingsDocRef, {
-        ...currentData,
-        recurringItems: updatedItems
-      });
-      
-      setRecurringItems(updatedItems);
-      showNotification('Recurring item deleted', 'success');
+      // If requested, also delete bills generated from this template
+      let updatedBills = currentData.bills || [];
+      if (alsoDeleteGeneratedBills && item.id) {
+        const initialCount = updatedBills.length;
+        updatedBills = updatedBills.filter(bill => bill.recurringTemplateId !== item.id);
+        const deletedCount = initialCount - updatedBills.length;
+        
+        await updateDoc(settingsDocRef, {
+          ...currentData,
+          recurringItems: updatedItems,
+          bills: updatedBills
+        });
+        
+        setRecurringItems(updatedItems);
+        showNotification(`Recurring item and ${deletedCount} generated bill(s) deleted`, 'success');
+      } else {
+        await updateDoc(settingsDocRef, {
+          ...currentData,
+          recurringItems: updatedItems
+        });
+        
+        setRecurringItems(updatedItems);
+        showNotification('Recurring item deleted', 'success');
+      }
     } catch (error) {
       console.error('Error deleting recurring item:', error);
       showNotification('Error deleting item', 'error');
@@ -940,7 +960,11 @@ const Recurring = () => {
                   </button>
                   <button 
                     className="action-btn delete"
-                    onClick={() => handleDeleteItem(item)}
+                    onClick={() => {
+                      setItemToDelete(item);
+                      setDeleteGeneratedBills(false);
+                      setShowDeleteModal(true);
+                    }}
                     title="Delete"
                   >
                     🗑️
@@ -1131,6 +1155,63 @@ const Recurring = () => {
           onImport={handleCSVImport}
           onCancel={() => setShowCSVImport(false)}
         />
+      )}
+
+      {/* Single Item Delete Confirmation Modal */}
+      {showDeleteModal && itemToDelete && (
+        <div className="modal-overlay" onClick={() => setShowDeleteModal(false)}>
+          <div className="modal" onClick={(e) => e.stopPropagation()}>
+            <div className="modal-header">
+              <h3>⚠️ Delete "{itemToDelete.name}"?</h3>
+              <button className="close-btn" onClick={() => setShowDeleteModal(false)}>×</button>
+            </div>
+            
+            <div className="modal-body">
+              <p style={{ marginBottom: '20px', fontSize: '16px' }}>
+                Are you sure you want to delete this recurring item?
+              </p>
+              
+              <div style={{ marginBottom: '20px', padding: '12px', background: 'rgba(138, 43, 226, 0.1)', borderRadius: '8px', border: '1px solid rgba(138, 43, 226, 0.3)' }}>
+                <label style={{ display: 'flex', alignItems: 'center', cursor: 'pointer', fontSize: '14px' }}>
+                  <input
+                    type="checkbox"
+                    checked={deleteGeneratedBills}
+                    onChange={(e) => setDeleteGeneratedBills(e.target.checked)}
+                    style={{ marginRight: '10px', width: '18px', height: '18px', cursor: 'pointer' }}
+                  />
+                  <span>
+                    <strong>Also delete bills generated from this template</strong>
+                    <br />
+                    <small style={{ color: '#ba68c8', marginTop: '4px', display: 'block' }}>
+                      This will remove any bills in the Bills page that were auto-generated from this recurring template
+                    </small>
+                  </span>
+                </label>
+              </div>
+              
+              <div className="modal-actions" style={{ display: 'flex', gap: '10px', justifyContent: 'flex-end' }}>
+                <button 
+                  onClick={() => setShowDeleteModal(false)}
+                  className="cancel-btn"
+                  style={{ padding: '10px 20px' }}
+                >
+                  Cancel
+                </button>
+                <button 
+                  onClick={() => {
+                    setShowDeleteModal(false);
+                    handleDeleteItem(itemToDelete, deleteGeneratedBills);
+                  }}
+                  className="delete-btn"
+                  disabled={saving}
+                  style={{ padding: '10px 20px', backgroundColor: '#f44336' }}
+                >
+                  {saving ? 'Deleting...' : 'Delete'}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
       )}
 
       {/* Bulk Delete Confirmation Modal */}

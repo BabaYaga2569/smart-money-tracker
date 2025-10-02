@@ -1271,7 +1271,26 @@ const Bills = () => {
                     {getCategoryIcon(bill.category)}
                   </div>
                   <div className="bill-details">
-                    <h4>{bill.name}</h4>
+                    <h4>
+                      {bill.name}
+                      {bill.recurringTemplateId && (
+                        <span 
+                          className="recurring-badge" 
+                          title="Generated from recurring template"
+                          style={{
+                            marginLeft: '8px',
+                            padding: '2px 8px',
+                            fontSize: '11px',
+                            background: 'rgba(138, 43, 226, 0.2)',
+                            color: '#ba68c8',
+                            borderRadius: '4px',
+                            fontWeight: 'normal'
+                          }}
+                        >
+                          🔄 Auto
+                        </span>
+                      )}
+                    </h4>
                     <div className="bill-meta">
                       <span className="bill-category">{bill.category}</span>
                       <span className="bill-frequency">{bill.recurrence}</span>
