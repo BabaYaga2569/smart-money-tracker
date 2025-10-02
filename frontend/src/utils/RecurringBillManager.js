@@ -338,4 +338,75 @@ export class RecurringBillManager {
         
         return schedule;
     }
+
+    /**
+     * Generate bill instances from a recurring template
+     * @param {Object} recurringTemplate - Recurring template object
+     * @param {Number} monthsAhead - Number of months to generate bills for (default: 3)
+     * @param {Function} generateBillId - Function to generate unique bill IDs
+     * @returns {Array} Array of bill instances
+     */
+    static generateBillsFromTemplate(recurringTemplate, monthsAhead = 3, generateBillId) {
+        if (!recurringTemplate || !recurringTemplate.id) {
+            throw new Error('Valid recurring template with ID is required');
+        }
+
+        const bills = [];
+        const today = new Date();
+        today.setHours(0, 0, 0, 0);
+
+        // Convert recurring template frequency to bill recurrence
+        const frequencyMap = {
+            'weekly': 'weekly',
+            'bi-weekly': 'bi-weekly',
+            'monthly': 'monthly',
+            'quarterly': 'quarterly',
+            'annually': 'annually'
+        };
+
+        const recurrence = frequencyMap[recurringTemplate.frequency] || 'monthly';
+        
+        // Create a base bill object from the template
+        const baseBill = {
+            name: recurringTemplate.name,
+            amount: parseFloat(recurringTemplate.amount) || 0,
+            category: recurringTemplate.category || 'Bills & Utilities',
+            recurrence: recurrence,
+            dueDate: recurringTemplate.nextOccurrence || new Date().toISOString().split('T')[0],
+            status: 'pending',
+            recurringTemplateId: recurringTemplate.id, // This is the key field for badge display
+            autopay: recurringTemplate.autoPay || false,
+            account: recurringTemplate.linkedAccount || '',
+            originalDueDate: recurringTemplate.nextOccurrence || new Date().toISOString().split('T')[0]
+        };
+
+        // Generate bill instances for the specified number of months
+        let currentBill = { ...baseBill };
+        
+        for (let i = 0; i < monthsAhead; i++) {
+            const nextDueDate = this.getNextDueDate(currentBill, i === 0 ? today : new Date(currentBill.dueDate));
+            
+            // Only create bills for future dates
+            if (nextDueDate >= today) {
+                const billInstance = {
+                    ...baseBill,
+                    id: generateBillId ? generateBillId() : `bill_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+                    dueDate: nextDueDate.toISOString().split('T')[0],
+                    originalDueDate: nextDueDate.toISOString().split('T')[0],
+                    lastDueDate: currentBill.dueDate
+                };
+                
+                bills.push(billInstance);
+            }
+            
+            // Update for next iteration
+            currentBill = {
+                ...currentBill,
+                dueDate: nextDueDate.toISOString().split('T')[0],
+                lastDueDate: nextDueDate.toISOString().split('T')[0]
+            };
+        }
+
+        return bills;
+    }
 }

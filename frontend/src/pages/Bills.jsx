@@ -28,6 +28,7 @@ const Bills = () => {
   const [editingBill, setEditingBill] = useState(null);
   const [filterCategory, setFilterCategory] = useState('all');
   const [filterStatus, setFilterStatus] = useState('all');
+  const [filterRecurring, setFilterRecurring] = useState('all'); // all, recurring, manual
   const [searchTerm, setSearchTerm] = useState('');
   const [payingBill, setPayingBill] = useState(null);
   const [refreshingTransactions, setRefreshingTransactions] = useState(false);
@@ -461,7 +462,10 @@ const Bills = () => {
       const matchesSearch = bill.name.toLowerCase().includes(searchTerm.toLowerCase());
       const matchesCategory = filterCategory === 'all' || bill.category === filterCategory;
       const matchesStatus = filterStatus === 'all' || bill.status === filterStatus;
-      return matchesSearch && matchesCategory && matchesStatus;
+      const matchesRecurring = filterRecurring === 'all' || 
+                              (filterRecurring === 'recurring' && bill.recurringTemplateId) ||
+                              (filterRecurring === 'manual' && !bill.recurringTemplateId);
+      return matchesSearch && matchesCategory && matchesStatus && matchesRecurring;
     });
 
     // Apply smart sorting with urgency information
@@ -1351,6 +1355,16 @@ const Bills = () => {
             <option value="pending">Pending</option>
             <option value="paid">Paid</option>
             <option value="overdue">Overdue</option>
+          </select>
+          <select 
+            value={filterRecurring} 
+            onChange={(e) => setFilterRecurring(e.target.value)}
+            className="filter-select"
+            title="Filter by bill source"
+          >
+            <option value="all">All Bills</option>
+            <option value="recurring">🔄 Auto-Generated</option>
+            <option value="manual">✋ Manual Bills</option>
           </select>
         </div>
         
