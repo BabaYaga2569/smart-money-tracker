@@ -8,6 +8,7 @@ import { BillAnimationManager } from '../utils/BillAnimationManager';
 import { PlaidIntegrationManager } from '../utils/PlaidIntegrationManager';
 import PlaidConnectionManager from '../utils/PlaidConnectionManager';
 import PlaidErrorModal from '../components/PlaidErrorModal';
+import BillCSVImportModal from '../components/BillCSVImportModal';
 import { formatDateForDisplay, formatDateForInput, getPacificTime } from '../utils/DateUtils';
 import { TRANSACTION_CATEGORIES, CATEGORY_ICONS, getCategoryIcon, migrateLegacyCategory } from '../constants/categories';
 import NotificationSystem from '../components/NotificationSystem';
@@ -41,6 +42,9 @@ const Bills = () => {
   // Bulk delete state
   const [deletedBills, setDeletedBills] = useState([]);
   const [showBulkDeleteModal, setShowBulkDeleteModal] = useState(false);
+  
+  // CSV Import state
+  const [showCSVImport, setShowCSVImport] = useState(false);
 
   // Use shared categories for consistency with Transactions page
   const BILL_CATEGORIES = CATEGORY_ICONS;
@@ -872,6 +876,33 @@ const Bills = () => {
     }
   };
 
+  const handleCSVImport = async (importedBills) => {
+    try {
+      setLoading(true);
+      
+      const settingsDocRef = doc(db, 'users', 'steve-colburn', 'settings', 'personal');
+      const currentDoc = await getDoc(settingsDocRef);
+      const currentData = currentDoc.exists() ? currentDoc.data() : {};
+      
+      const existingBills = currentData.bills || [];
+      const updatedBills = [...existingBills, ...importedBills];
+      
+      await updateDoc(settingsDocRef, {
+        ...currentData,
+        bills: updatedBills
+      });
+      
+      await loadBills();
+      setShowCSVImport(false);
+      showNotification(`Successfully imported ${importedBills.length} bills`, 'success');
+    } catch (error) {
+      console.error('Error importing bills:', error);
+      showNotification('Error importing bills', 'error');
+    } finally {
+      setLoading(false);
+    }
+  };
+
   const formatCurrency = (amount) => {
     return new Intl.NumberFormat('en-US', {
       style: 'currency',
@@ -1250,6 +1281,26 @@ const Bills = () => {
               🗑️ Delete All Bills
             </button>
           )}
+          <button 
+            className="import-button"
+            onClick={() => setShowCSVImport(true)}
+            disabled={loading}
+            title="Import bills from CSV"
+            style={{
+              background: '#007bff',
+              color: '#fff',
+              border: 'none',
+              borderRadius: '8px',
+              padding: '12px 20px',
+              fontWeight: '600',
+              cursor: loading ? 'not-allowed' : 'pointer',
+              transition: 'all 0.2s ease',
+              whiteSpace: 'nowrap',
+              opacity: loading ? 0.6 : 1
+            }}
+          >
+            📊 Import from CSV
+          </button>
         </div>
       </div>
 
@@ -1449,6 +1500,15 @@ const Bills = () => {
             </div>
           </div>
         </div>
+      )}
+
+      {/* CSV Import Modal */}
+      {showCSVImport && (
+        <BillCSVImportModal
+          existingBills={processedBills}
+          onImport={handleCSVImport}
+          onCancel={() => setShowCSVImport(false)}
+        />
       )}
 
       {/* Plaid Error Modal */}
