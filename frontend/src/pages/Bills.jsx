@@ -891,7 +891,14 @@ const Bills = () => {
       const currentData = currentDoc.exists() ? currentDoc.data() : {};
       
       const existingBills = currentData.bills || [];
-      const updatedBills = [...existingBills, ...importedBills];
+      
+      // Clean up temporary preview fields before saving
+      const cleanedBills = importedBills.map(bill => {
+        const { dateError, dateWarning, rowNumber, isDuplicate, ...cleanBill } = bill;
+        return cleanBill;
+      });
+      
+      const updatedBills = [...existingBills, ...cleanedBills];
       
       // Count bills with errors or warnings
       const errorsCount = importedBills.filter(b => b.dateError).length;
