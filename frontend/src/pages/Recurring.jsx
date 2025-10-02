@@ -7,6 +7,7 @@ import { formatDateForInput } from '../utils/DateUtils';
 import { TRANSACTION_CATEGORIES, getCategoryIcon } from '../constants/categories';
 import CSVImportModal from '../components/CSVImportModal';
 import { BillSortingManager } from '../utils/BillSortingManager';
+import { BillDeduplicationManager } from '../utils/BillDeduplicationManager';
 import './Recurring.css';
 
 const Recurring = () => {
@@ -745,14 +746,22 @@ const Recurring = () => {
       }
       
       // Add new bills to existing bills
-      const updatedBills = [...bills, ...newBills];
+      let updatedBills = [...bills, ...newBills];
+      
+      // DEDUPLICATION: Remove any duplicates that might have been created
+      const deduplicationResult = BillDeduplicationManager.removeDuplicates(updatedBills);
+      if (deduplicationResult.stats.duplicates > 0) {
+        console.log('[Bill Generation] Removed duplicates:', deduplicationResult.stats.duplicates);
+        updatedBills = deduplicationResult.cleanedBills;
+      }
       
       await updateDoc(settingsDocRef, {
         ...currentData,
         bills: updatedBills
       });
       
-      showNotification(`Generated ${newBills.length} bill(s) from ${activeTemplates.length} template(s)`, 'success');
+      const finalCount = updatedBills.length - bills.length;
+      showNotification(`Generated ${finalCount} bill(s) from ${activeTemplates.length} template(s)`, 'success');
     } catch (error) {
       console.error('Error generating bills:', error);
       showNotification('Error generating bills from templates', 'error');
@@ -940,7 +949,15 @@ const Recurring = () => {
         
         if (newBills.length > 0) {
           // Add new bills to existing bills
-          const updatedBills = [...bills, ...newBills];
+          let updatedBills = [...bills, ...newBills];
+          
+          // DEDUPLICATION: Remove any duplicates that might have been created during CSV import
+          const deduplicationResult = BillDeduplicationManager.removeDuplicates(updatedBills);
+          if (deduplicationResult.stats.duplicates > 0) {
+            console.log('[CSV Import] Removed duplicates during bill generation:', deduplicationResult.stats.duplicates);
+            BillDeduplicationManager.logDeduplication(deduplicationResult, 'csv-import');
+            updatedBills = deduplicationResult.cleanedBills;
+          }
           
           // Update Firebase with the new bills
           await updateDoc(settingsDocRef, {
@@ -949,10 +966,11 @@ const Recurring = () => {
             bills: updatedBills
           });
           
-          console.log(`[CSV Import] Successfully generated ${newBills.length} bill instances`);
+          const finalBillCount = updatedBills.length - bills.length;
+          console.log(`[CSV Import] Successfully generated ${finalBillCount} bill instances`);
           
           // Update notification to include bill generation info
-          let finalMessage = message + `. Auto-generated ${newBills.length} bill instance(s) for Bills Management.`;
+          let finalMessage = message + `. Auto-generated ${finalBillCount} bill instance(s) for Bills Management.`;
           showNotification(finalMessage, 'success');
         } else {
           console.log('[CSV Import] No new bills to generate (templates already have bills or no active expense templates)');
