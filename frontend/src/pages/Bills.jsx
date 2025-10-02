@@ -47,6 +47,7 @@ const Bills = () => {
   const [showCSVImport, setShowCSVImport] = useState(false);
   const [importHistory, setImportHistory] = useState([]);
   const [showImportHistory, setShowImportHistory] = useState(false);
+  const [showHelpModal, setShowHelpModal] = useState(false);
 
   // Use shared categories for consistency with Transactions page
   const BILL_CATEGORIES = CATEGORY_ICONS;
@@ -1167,7 +1168,23 @@ const Bills = () => {
             <h2>🧾 Bills Management</h2>
             <p>Complete bill lifecycle management and automation</p>
           </div>
-          <div>
+          <div style={{ display: 'flex', gap: '12px' }}>
+            <button 
+              onClick={() => setShowHelpModal(true)}
+              style={{
+                background: '#6c757d',
+                color: '#fff',
+                border: 'none',
+                borderRadius: '8px',
+                padding: '12px 20px',
+                fontWeight: '600',
+                cursor: 'pointer',
+                transition: 'all 0.2s ease'
+              }}
+              title="Show help and documentation"
+            >
+              ❓ Help
+            </button>
             <button 
               className="add-bill-btn-header"
               onClick={() => {
@@ -1686,6 +1703,103 @@ const Bills = () => {
                     ↩️ Undo Last Import
                   </button>
                 )}
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Help Modal */}
+      {showHelpModal && (
+        <div className="modal-overlay" onClick={() => setShowHelpModal(false)}>
+          <div className="modal" onClick={(e) => e.stopPropagation()} style={{ maxWidth: '800px', maxHeight: '90vh', overflowY: 'auto' }}>
+            <div className="modal-header">
+              <h3>❓ Bills Management Help</h3>
+              <button className="close-btn" onClick={() => setShowHelpModal(false)}>×</button>
+            </div>
+            
+            <div className="modal-body">
+              <div style={{ marginBottom: '24px' }}>
+                <h4 style={{ color: '#00ff88', marginBottom: '12px' }}>📊 CSV Import</h4>
+                <ul style={{ color: '#ccc', lineHeight: '1.8' }}>
+                  <li><strong>Step 1:</strong> Click "Import from CSV" and upload your CSV file</li>
+                  <li><strong>Step 2:</strong> Review column mapping (auto-detected or manual)</li>
+                  <li><strong>Step 3:</strong> Preview bills and adjust categories as needed</li>
+                  <li><strong>Step 4:</strong> Use bulk actions to approve, skip, or assign categories</li>
+                  <li><strong>Auto-tagging:</strong> Categories are automatically detected based on bill names</li>
+                  <li><strong>Duplicates:</strong> Potential duplicates are highlighted for your review</li>
+                </ul>
+              </div>
+
+              <div style={{ marginBottom: '24px' }}>
+                <h4 style={{ color: '#00ff88', marginBottom: '12px' }}>📜 Import History</h4>
+                <ul style={{ color: '#ccc', lineHeight: '1.8' }}>
+                  <li>Track your last 10 CSV imports with timestamps</li>
+                  <li>View bill count and names for each import</li>
+                  <li>Undo the most recent import if needed</li>
+                  <li>History is saved automatically with each import</li>
+                </ul>
+              </div>
+
+              <div style={{ marginBottom: '24px' }}>
+                <h4 style={{ color: '#00ff88', marginBottom: '12px' }}>🔄 Transaction Matching</h4>
+                <ul style={{ color: '#ccc', lineHeight: '1.8' }}>
+                  <li><strong>Connect Plaid:</strong> Link your bank accounts from the Accounts page</li>
+                  <li><strong>Auto-match:</strong> Click "Match Transactions" to automatically find payments</li>
+                  <li><strong>Smart matching:</strong> Bills are matched by amount, date, and merchant name</li>
+                  <li><strong>Status updates:</strong> Bills are automatically marked as paid when matched</li>
+                  <li><strong>Manual override:</strong> You can manually mark bills as paid or unpaid</li>
+                </ul>
+              </div>
+
+              <div style={{ marginBottom: '24px' }}>
+                <h4 style={{ color: '#00ff88', marginBottom: '12px' }}>🔄 Recurring Bills</h4>
+                <ul style={{ color: '#ccc', lineHeight: '1.8' }}>
+                  <li><strong>Auto badge:</strong> Bills with 🔄 Auto are generated from recurring templates</li>
+                  <li><strong>Create templates:</strong> Set up recurring bills on the Recurring page</li>
+                  <li><strong>Template control:</strong> Delete templates with option to remove generated bills</li>
+                  <li><strong>Cleanup menu:</strong> Bulk maintenance tools for recurring bills</li>
+                </ul>
+              </div>
+
+              <div style={{ marginBottom: '24px' }}>
+                <h4 style={{ color: '#00ff88', marginBottom: '12px' }}>🗑️ Bulk Operations</h4>
+                <ul style={{ color: '#ccc', lineHeight: '1.8' }}>
+                  <li><strong>Delete All:</strong> Remove all bills with one click (with undo option)</li>
+                  <li><strong>Undo Delete:</strong> Restore all deleted bills if done by mistake</li>
+                  <li><strong>Undo Import:</strong> Remove bills from the last CSV import</li>
+                  <li><strong>Safety first:</strong> All destructive actions require confirmation</li>
+                </ul>
+              </div>
+
+              <div style={{ marginBottom: '24px' }}>
+                <h4 style={{ color: '#00ff88', marginBottom: '12px' }}>💡 Tips & Best Practices</h4>
+                <ul style={{ color: '#ccc', lineHeight: '1.8' }}>
+                  <li>Download the CSV template for proper formatting</li>
+                  <li>Review duplicate warnings before importing</li>
+                  <li>Use bulk category assignment to speed up imports</li>
+                  <li>Connect Plaid for automatic transaction matching</li>
+                  <li>Set up recurring templates for repeating bills</li>
+                  <li>Use the search and filter to find specific bills</li>
+                </ul>
+              </div>
+
+              <div style={{ marginTop: '24px', textAlign: 'center' }}>
+                <button
+                  onClick={() => setShowHelpModal(false)}
+                  style={{
+                    padding: '12px 24px',
+                    background: '#00ff88',
+                    color: '#000',
+                    border: 'none',
+                    borderRadius: '4px',
+                    cursor: 'pointer',
+                    fontWeight: '600',
+                    fontSize: '16px'
+                  }}
+                >
+                  Got it!
+                </button>
               </div>
             </div>
           </div>

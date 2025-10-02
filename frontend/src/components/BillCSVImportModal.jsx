@@ -17,6 +17,22 @@ const BillCSVImportModal = ({ existingBills, onImport, onCancel }) => {
     recurrence: -1
   });
 
+  // Auto-tagging based on bill name patterns
+  const autoDetectCategory = (billName) => {
+    const name = billName.toLowerCase();
+    
+    if (name.includes('electric') || name.includes('power') || name.includes('utility')) return 'Bills & Utilities';
+    if (name.includes('internet') || name.includes('cable') || name.includes('phone')) return 'Bills & Utilities';
+    if (name.includes('rent') || name.includes('mortgage') || name.includes('hoa')) return 'Housing';
+    if (name.includes('insurance') || name.includes('premium')) return 'Insurance';
+    if (name.includes('gym') || name.includes('fitness') || name.includes('membership')) return 'Health & Fitness';
+    if (name.includes('subscription') || name.includes('netflix') || name.includes('spotify')) return 'Entertainment';
+    if (name.includes('loan') || name.includes('credit') || name.includes('debt')) return 'Loans & Debt';
+    if (name.includes('gas') || name.includes('fuel') || name.includes('auto')) return 'Transportation';
+    
+    return 'Bills & Utilities'; // Default
+  };
+
   const downloadTemplate = () => {
     const template = `name,amount,category,dueDate,recurrence
 Electric Bill,125.50,Bills & Utilities,2025-02-15,monthly
@@ -114,11 +130,16 @@ Car Insurance,450.00,Insurance,2025-03-01,monthly`;
             continue;
           }
 
+          // Auto-detect category if not provided in CSV
+          const detectedCategory = mapping.category >= 0 && values[mapping.category] 
+            ? values[mapping.category] 
+            : autoDetectCategory(name);
+
           const bill = {
             id: `bill_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
             name: name,
             amount: amount,
-            category: mapping.category >= 0 && values[mapping.category] ? values[mapping.category] : 'Bills & Utilities',
+            category: detectedCategory || 'Bills & Utilities',
             dueDate: mapping.dueDate >= 0 && values[mapping.dueDate] ? values[mapping.dueDate] : new Date().toISOString().split('T')[0],
             recurrence: mapping.recurrence >= 0 && values[mapping.recurrence] ? values[mapping.recurrence].toLowerCase() : 'monthly',
             status: 'pending',
@@ -178,6 +199,19 @@ Car Insurance,450.00,Insurance,2025-03-01,monthly`;
     setPreviewBills(updated);
   };
 
+  const handleBulkCategoryAssignment = (category) => {
+    const updated = previewBills.map(bill => 
+      bill.isSkipped ? bill : { ...bill, category }
+    );
+    setPreviewBills(updated);
+  };
+
+  const handleCategoryChange = (index, newCategory) => {
+    const updated = [...previewBills];
+    updated[index].category = newCategory;
+    setPreviewBills(updated);
+  };
+
   return (
     <div className="modal-overlay" onClick={onCancel}>
       <div className="modal csv-import-modal" onClick={(e) => e.stopPropagation()}>
@@ -189,9 +223,17 @@ Car Insurance,450.00,Insurance,2025-03-01,monthly`;
         <div className="modal-body">
           {step === 'upload' && (
             <div className="upload-section">
-              <p style={{ marginBottom: '20px', color: '#ccc' }}>
-                Upload a CSV file with bill information. Required columns: name, amount
-              </p>
+              <div style={{ marginBottom: '20px', padding: '16px', background: 'rgba(0, 123, 255, 0.1)', borderRadius: '8px', border: '1px solid #007bff' }}>
+                <h4 style={{ color: '#007bff', marginBottom: '8px', marginTop: 0 }}>📖 How to Import Bills</h4>
+                <ul style={{ color: '#ccc', fontSize: '14px', margin: 0, paddingLeft: '20px' }}>
+                  <li>Upload a CSV file with bill information</li>
+                  <li>Required columns: <strong>name</strong> and <strong>amount</strong></li>
+                  <li>Optional columns: category, dueDate, recurrence</li>
+                  <li>Download the template below for proper formatting</li>
+                  <li>Review and edit bills before importing</li>
+                  <li>Duplicate bills will be highlighted for your review</li>
+                </ul>
+              </div>
               
               <div className="file-upload-area">
                 <input
@@ -350,19 +392,44 @@ Car Insurance,450.00,Insurance,2025-03-01,monthly`}
                     </p>
                   )}
                 </div>
-                <div style={{ display: 'flex', gap: '10px' }}>
+                <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
                   <button
                     onClick={handleApproveAll}
                     style={{ padding: '8px 16px', background: '#00ff88', color: '#000', border: 'none', borderRadius: '4px', cursor: 'pointer' }}
+                    title="Include all bills for import"
                   >
                     ✓ Approve All
                   </button>
                   <button
                     onClick={handleSkipAll}
                     style={{ padding: '8px 16px', background: '#ff9800', color: '#000', border: 'none', borderRadius: '4px', cursor: 'pointer' }}
+                    title="Skip all bills"
                   >
                     ✕ Skip All
                   </button>
+                  <select
+                    onChange={(e) => {
+                      if (e.target.value) {
+                        handleBulkCategoryAssignment(e.target.value);
+                        e.target.value = '';
+                      }
+                    }}
+                    style={{
+                      padding: '8px 12px',
+                      background: '#6c757d',
+                      color: '#fff',
+                      border: 'none',
+                      borderRadius: '4px',
+                      cursor: 'pointer',
+                      fontSize: '14px'
+                    }}
+                    title="Assign category to all non-skipped bills"
+                  >
+                    <option value="">🏷️ Bulk Assign Category</option>
+                    {Object.keys(TRANSACTION_CATEGORIES).map(cat => (
+                      <option key={cat} value={cat}>{cat}</option>
+                    ))}
+                  </select>
                 </div>
               </div>
 
@@ -391,11 +458,32 @@ Car Insurance,450.00,Insurance,2025-03-01,monthly`}
                             )}
                           </div>
                         </div>
-                        <div style={{ fontSize: '14px', color: '#888', display: 'flex', gap: '20px' }}>
+                        <div style={{ fontSize: '14px', color: '#888', display: 'flex', gap: '20px', flexWrap: 'wrap', marginTop: '8px' }}>
                           <span>💰 ${bill.amount.toFixed(2)}</span>
                           <span>📅 {bill.dueDate}</span>
                           <span>🔄 {bill.recurrence}</span>
-                          <span>🏷️ {bill.category}</span>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                            <span>🏷️</span>
+                            <select
+                              value={bill.category}
+                              onChange={(e) => handleCategoryChange(index, e.target.value)}
+                              disabled={bill.isSkipped}
+                              style={{
+                                padding: '4px 8px',
+                                background: '#2a2a2a',
+                                color: '#fff',
+                                border: '1px solid #444',
+                                borderRadius: '4px',
+                                fontSize: '12px',
+                                cursor: bill.isSkipped ? 'not-allowed' : 'pointer'
+                              }}
+                              title="Change category for this bill"
+                            >
+                              {Object.keys(TRANSACTION_CATEGORIES).map(cat => (
+                                <option key={cat} value={cat}>{cat}</option>
+                              ))}
+                            </select>
+                          </div>
                         </div>
                       </div>
                       <button
@@ -409,6 +497,7 @@ Car Insurance,450.00,Insurance,2025-03-01,monthly`}
                           cursor: 'pointer',
                           fontWeight: '600'
                         }}
+                        title={bill.isSkipped ? 'Include this bill' : 'Skip this bill'}
                       >
                         {bill.isSkipped ? '✓ Include' : '✕ Skip'}
                       </button>
