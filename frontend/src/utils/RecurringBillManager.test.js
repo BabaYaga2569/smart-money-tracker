@@ -144,23 +144,41 @@ const runBillPaymentTests = () => {
             status: 'pending'
         };
 
-        const paidBill = {
+        // Bill paid for current cycle - lastPayment.dueDate matches current nextDueDate
+        const paidBillCurrentCycle = {
             name: 'Electric Bill',
             amount: '125.50',
-            dueDate: '2025-02-15', // Advanced to next cycle
+            dueDate: '2025-02-15',
             nextDueDate: '2025-02-15',
             recurrence: 'monthly',
             status: 'paid',
             isPaid: true,
-            lastPaidDate: '2025-01-15',
+            lastPaidDate: '2025-02-15',
             lastPayment: {
-                dueDate: '2025-01-15', // Paid for January cycle
+                dueDate: '2025-02-15', // Paid for current February cycle
                 amount: 125.50
             }
         };
 
+        // Bill advanced to next cycle - lastPayment was for previous cycle
+        const billAdvancedToNextCycle = {
+            name: 'Water Bill',
+            amount: '45.00',
+            dueDate: '2025-02-20', // Advanced to next cycle
+            nextDueDate: '2025-02-20',
+            recurrence: 'monthly',
+            status: 'paid',
+            isPaid: true,
+            lastPaidDate: '2025-01-20',
+            lastPayment: {
+                dueDate: '2025-01-20', // Paid for January cycle, now in February
+                amount: 45.00
+            }
+        };
+
         assert(!RecurringBillManager.isBillPaidForCurrentCycle(unpaidBill), 'Unpaid bill should not be considered paid');
-        assert(RecurringBillManager.isBillPaidForCurrentCycle(paidBill), 'Paid bill should be considered paid for current cycle');
+        assert(RecurringBillManager.isBillPaidForCurrentCycle(paidBillCurrentCycle), 'Bill paid for current cycle should be considered paid');
+        assert(!RecurringBillManager.isBillPaidForCurrentCycle(billAdvancedToNextCycle), 'Bill advanced to next cycle should NOT be considered paid');
         
         console.log('✅ isBillPaidForCurrentCycle helper working correctly');
     });
@@ -183,7 +201,12 @@ const runBillPaymentTests = () => {
                 nextDueDate: '2025-01-18',
                 recurrence: 'monthly',
                 status: 'paid',
-                isPaid: true
+                isPaid: true,
+                lastPaidDate: '2025-01-18',
+                lastPayment: {
+                    dueDate: '2025-01-18',
+                    amount: 45.00
+                }
             }
         ];
 
