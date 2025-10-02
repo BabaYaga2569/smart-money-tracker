@@ -556,10 +556,25 @@ const Recurring = () => {
       
       // If requested, also delete bills generated from this template
       let updatedBills = currentData.bills || [];
+      let deletedCount = 0;
+      let preservedCount = 0;
+      
       if (alsoDeleteGeneratedBills && item.id) {
         const initialCount = updatedBills.length;
-        updatedBills = updatedBills.filter(bill => bill.recurringTemplateId !== item.id);
-        const deletedCount = initialCount - updatedBills.length;
+        
+        // Filter bills: preserve paid bills, remove unpaid bills from this template
+        updatedBills = updatedBills.filter(bill => {
+          if (bill.recurringTemplateId !== item.id) return true; // Keep bills from other templates
+          
+          const isPaid = bill.status === 'paid' || RecurringBillManager.isBillPaidForCurrentCycle(bill);
+          if (isPaid) {
+            preservedCount++;
+            return true; // Preserve paid bills for history
+          }
+          
+          deletedCount++;
+          return false; // Remove unpaid bills
+        });
         
         await updateDoc(settingsDocRef, {
           ...currentData,
@@ -568,7 +583,16 @@ const Recurring = () => {
         });
         
         setRecurringItems(updatedItems);
-        showNotification(`Recurring item and ${deletedCount} generated bill(s) deleted`, 'success');
+        
+        let message = 'Recurring item deleted';
+        if (deletedCount > 0 || preservedCount > 0) {
+          const parts = [];
+          if (deletedCount > 0) parts.push(`${deletedCount} bill(s) removed`);
+          if (preservedCount > 0) parts.push(`${preservedCount} paid bill(s) preserved`);
+          message += ` (${parts.join(', ')})`;
+        }
+        
+        showNotification(message, 'success');
       } else {
         await updateDoc(settingsDocRef, {
           ...currentData,
@@ -747,20 +771,64 @@ const Recurring = () => {
       const currentDoc = await getDoc(settingsDocRef);
       const currentData = currentDoc.exists() ? currentDoc.data() : {};
       
+      const updatedItem = { ...item, status: newStatus, updatedAt: new Date().toISOString() };
       const updatedItems = (currentData.recurringItems || []).map(i => 
-        i.id === item.id ? { ...i, status: newStatus, updatedAt: new Date().toISOString() } : i
+        i.id === item.id ? updatedItem : i
       );
+      
+      // Auto-sync bills when toggling pause/active status
+      let billSyncStats = null;
+      let updatedBills = currentData.bills || [];
+      
+      if (item.type === 'expense') {
+        try {
+          const generateBillId = () => `bill_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+          
+          if (newStatus === 'active') {
+            // When activating, generate bills for the template
+            const syncResult = RecurringBillManager.syncBillsWithTemplate(
+              updatedItem,
+              updatedBills,
+              3,
+              generateBillId
+            );
+            updatedBills = syncResult.updatedBills;
+            billSyncStats = syncResult.stats;
+          } else {
+            // When pausing, remove unpaid bills but preserve paid ones
+            const billsToPreserve = updatedBills.filter(bill => {
+              if (bill.recurringTemplateId !== item.id) return true; // Keep bills from other templates
+              const isPaid = bill.status === 'paid' || RecurringBillManager.isBillPaidForCurrentCycle(bill);
+              return isPaid; // Only keep paid bills from this template
+            });
+            const removedCount = updatedBills.length - billsToPreserve.length;
+            updatedBills = billsToPreserve;
+            billSyncStats = { removed: removedCount };
+          }
+        } catch (error) {
+          console.error('Error syncing bills on pause toggle:', error);
+        }
+      }
       
       await updateDoc(settingsDocRef, {
         ...currentData,
-        recurringItems: updatedItems
+        recurringItems: updatedItems,
+        bills: updatedBills
       });
       
       setRecurringItems(updatedItems);
-      showNotification(
-        newStatus === 'paused' ? 'Item paused' : 'Item resumed', 
-        'success'
-      );
+      
+      // Show notification with bill sync details
+      let message = newStatus === 'paused' ? 'Item paused' : 'Item resumed';
+      if (billSyncStats) {
+        if (newStatus === 'active' && billSyncStats.added > 0) {
+          message += ` (${billSyncStats.added} bills generated)`;
+        } else if (newStatus === 'paused' && billSyncStats.removed > 0) {
+          message += ` (${billSyncStats.removed} future bills removed)`;
+        }
+      }
+      
+      showNotification(message, 'success');
     } catch (error) {
       console.error('Error toggling pause:', error);
       showNotification('Error updating item', 'error');
