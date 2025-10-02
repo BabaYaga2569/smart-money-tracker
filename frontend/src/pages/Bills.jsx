@@ -37,6 +37,10 @@ const Bills = () => {
   });
   const [hasPlaidAccounts, setHasPlaidAccounts] = useState(false);
   const [showErrorModal, setShowErrorModal] = useState(false);
+  
+  // Bulk delete state
+  const [deletedBills, setDeletedBills] = useState([]);
+  const [showBulkDeleteModal, setShowBulkDeleteModal] = useState(false);
 
   // Use shared categories for consistency with Transactions page
   const BILL_CATEGORIES = CATEGORY_ICONS;
@@ -809,6 +813,58 @@ const Bills = () => {
     }
   };
 
+  const handleBulkDelete = async () => {
+    setShowBulkDeleteModal(false);
+    
+    try {
+      const settingsDocRef = doc(db, 'users', 'steve-colburn', 'settings', 'personal');
+      const currentDoc = await getDoc(settingsDocRef);
+      const currentData = currentDoc.exists() ? currentDoc.data() : {};
+      
+      // Store current bills for undo
+      const billsToDelete = currentData.bills || [];
+      setDeletedBills(billsToDelete);
+      
+      // Clear all bills
+      await updateDoc(settingsDocRef, {
+        ...currentData,
+        bills: []
+      });
+      
+      await loadBills();
+      showNotification(
+        `Deleted ${billsToDelete.length} bills. Click Undo to restore.`, 
+        'success'
+      );
+    } catch (error) {
+      console.error('Error bulk deleting bills:', error);
+      showNotification('Error deleting bills', 'error');
+    }
+  };
+
+  const handleUndoBulkDelete = async () => {
+    if (deletedBills.length === 0) return;
+    
+    try {
+      const settingsDocRef = doc(db, 'users', 'steve-colburn', 'settings', 'personal');
+      const currentDoc = await getDoc(settingsDocRef);
+      const currentData = currentDoc.exists() ? currentDoc.data() : {};
+      
+      // Restore deleted bills
+      await updateDoc(settingsDocRef, {
+        ...currentData,
+        bills: deletedBills
+      });
+      
+      await loadBills();
+      setDeletedBills([]);
+      showNotification(`Restored ${deletedBills.length} bills`, 'success');
+    } catch (error) {
+      console.error('Error restoring bills:', error);
+      showNotification('Error restoring bills', 'error');
+    }
+  };
+
   const formatCurrency = (amount) => {
     return new Intl.NumberFormat('en-US', {
       style: 'currency',
@@ -1022,6 +1078,30 @@ const Bills = () => {
             <p>Complete bill lifecycle management and automation</p>
           </div>
           <div>
+            {/* Undo Delete Button */}
+            {deletedBills.length > 0 && (
+              <button 
+                className="undo-button"
+                onClick={handleUndoBulkDelete}
+                title="Restore deleted bills"
+                style={{ marginRight: '10px' }}
+              >
+                ↩️ Undo Delete
+              </button>
+            )}
+            
+            {/* Delete All Button */}
+            {processedBills.length > 0 && (
+              <button 
+                className="delete-all-button"
+                onClick={() => setShowBulkDeleteModal(true)}
+                title="Delete all bills"
+                style={{ marginRight: '10px' }}
+              >
+                🗑️ Delete All
+              </button>
+            )}
+            
             <button 
               className="add-bill-btn-header"
               onClick={() => {
@@ -1301,6 +1381,47 @@ const Bills = () => {
             setEditingBill(null);
           }}
         />
+      )}
+
+      {/* Bulk Delete Confirmation Modal */}
+      {showBulkDeleteModal && (
+        <div className="modal-overlay" onClick={() => setShowBulkDeleteModal(false)}>
+          <div className="modal" onClick={(e) => e.stopPropagation()}>
+            <div className="modal-header">
+              <h3>⚠️ Delete All Bills?</h3>
+              <button className="close-btn" onClick={() => setShowBulkDeleteModal(false)}>×</button>
+            </div>
+            
+            <div className="modal-body">
+              <p style={{ marginBottom: '20px', fontSize: '16px' }}>
+                Are you sure you want to delete <strong>all {processedBills.length} bills</strong>?
+              </p>
+              <p style={{ marginBottom: '20px', color: '#ff9800' }}>
+                ⚠️ This will permanently delete all your bills.
+              </p>
+              <p style={{ marginBottom: '20px', color: '#00ff88' }}>
+                ✓ Don't worry! You can undo this action using the "Undo Delete" button that will appear after deletion.
+              </p>
+              
+              <div className="modal-actions" style={{ display: 'flex', gap: '10px', justifyContent: 'flex-end' }}>
+                <button 
+                  onClick={() => setShowBulkDeleteModal(false)}
+                  className="cancel-btn"
+                  style={{ padding: '10px 20px' }}
+                >
+                  Cancel
+                </button>
+                <button 
+                  onClick={handleBulkDelete}
+                  className="delete-btn"
+                  style={{ padding: '10px 20px', backgroundColor: '#f44336' }}
+                >
+                  Delete All
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
       )}
 
       {/* Plaid Error Modal */}

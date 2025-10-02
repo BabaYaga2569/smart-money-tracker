@@ -1253,3 +1253,68 @@ html body .layout .main-content .bills-container button[class*="delete"] {
 .bill-item * {
   transition: color 0.3s ease, background 0.3s ease, transform 0.2s ease;
 }
+
+/* Bulk Delete Button Styles */
+.delete-all-button {
+  background: #f44336;
+  color: #fff;
+  border: none;
+  border-radius: 6px;
+  padding: 12px 20px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  white-space: nowrap;
+  font-size: 14px;
+  box-shadow: 0 2px 4px rgba(244, 67, 54, 0.3);
+}
+
+.delete-all-button:hover {
+  background: #d32f2f;
+  transform: translateY(-1px);
+  box-shadow: 0 4px 8px rgba(244, 67, 54, 0.4);
+}
+
+.delete-all-button:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+  transform: none;
+}
+
+/* Undo Button Styles */
+.undo-button {
+  background: #ff9800;
+  color: #000;
+  border: none;
+  border-radius: 6px;
+  padding: 12px 20px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  white-space: nowrap;
+  font-size: 14px;
+  animation: pulse 2s infinite;
+  box-shadow: 0 2px 4px rgba(255, 152, 0, 0.3);
+}
+
+.undo-button:hover {
+  background: #f57c00;
+  transform: translateY(-1px);
+  box-shadow: 0 4px 8px rgba(255, 152, 0, 0.4);
+}
+
+.undo-button:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+  transform: none;
+  animation: none;
+}
+
+@keyframes pulse {
+  0%, 100% {
+    box-shadow: 0 0 0 0 rgba(255, 152, 0, 0.7);
+  }
+  50% {
+    box-shadow: 0 0 0 10px rgba(255, 152, 0, 0);
+  }
+}
