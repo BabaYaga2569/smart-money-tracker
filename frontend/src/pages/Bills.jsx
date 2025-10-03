@@ -22,14 +22,14 @@ const generateBillId = () => {
 
 const Bills = () => {
   const [loading, setLoading] = useState(true);
-  const [bills, setBills] = useState([]); // eslint-disable-line no-unused-vars
+  const [bills, setBills] = useState([]);
   const [processedBills, setProcessedBills] = useState([]);
   const [accounts, setAccounts] = useState({});
   const [showModal, setShowModal] = useState(false);
   const [editingBill, setEditingBill] = useState(null);
   const [filterCategory, setFilterCategory] = useState('all');
   const [filterStatus, setFilterStatus] = useState('all');
-  const [filterRecurring, setFilterRecurring] = useState('all'); // all, recurring, manual
+  const [filterRecurring, setFilterRecurring] = useState('all');
   const [searchTerm, setSearchTerm] = useState('');
   const [payingBill, setPayingBill] = useState(null);
   const [refreshingTransactions, setRefreshingTransactions] = useState(false);
@@ -41,20 +41,16 @@ const Bills = () => {
   const [hasPlaidAccounts, setHasPlaidAccounts] = useState(false);
   const [showErrorModal, setShowErrorModal] = useState(false);
   
-  // Bulk delete state
   const [deletedBills, setDeletedBills] = useState([]);
   const [showBulkDeleteModal, setShowBulkDeleteModal] = useState(false);
   
-  // CSV Import state
   const [showCSVImport, setShowCSVImport] = useState(false);
   const [importHistory, setImportHistory] = useState([]);
   const [showImportHistory, setShowImportHistory] = useState(false);
   const [showHelpModal, setShowHelpModal] = useState(false);
   
-  // Deduplication state
   const [deduplicating, setDeduplicating] = useState(false);
 
-  // Use shared categories for consistency with Transactions page
   const BILL_CATEGORIES = CATEGORY_ICONS;
 
   useEffect(() => {
@@ -65,7 +61,6 @@ const Bills = () => {
     };
     loadData();
     
-    // Subscribe to Plaid connection changes
     const unsubscribe = PlaidConnectionManager.subscribe((status) => {
       setPlaidStatus({
         isConnected: status.hasToken && status.isApiWorking === true && status.hasAccounts,
@@ -75,12 +70,10 @@ const Bills = () => {
     });
     
     return () => unsubscribe();
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  }, []);
 
-  // Sync visuals when bills are processed
   useEffect(() => {
     if (processedBills.length > 0) {
-      // Use setTimeout to ensure DOM elements are rendered
       setTimeout(() => {
         syncBillVisuals();
       }, 100);
@@ -101,16 +94,13 @@ const Bills = () => {
   };
 
   const initializePlaidIntegration = async () => {
-    // Initialize Plaid integration manager
     await PlaidIntegrationManager.initialize({
-      enabled: true, // Enable Plaid integration for transaction matching
+      enabled: true,
       transactionTolerance: 0.05,
       autoMarkPaid: true
     });
 
-    // Set up callbacks for bill operations
     PlaidIntegrationManager.setBillPaymentProcessor(async (billId, paymentData) => {
-      // Find the bill by ID or name
       const bill = processedBills.find(b => 
         b.id === billId || b.name === billId
       );
@@ -126,10 +116,8 @@ const Bills = () => {
   };
 
   const refreshPlaidTransactions = async () => {
-    // Check for Plaid connection before attempting
     const status = PlaidConnectionManager.getStatus();
     
-    // Check if Plaid is truly connected (comprehensive check)
     const isConnected = status.hasToken && status.isApiWorking === true && status.hasAccounts;
     
     if (!isConnected && !hasPlaidAccounts) {
@@ -153,11 +141,9 @@ const Bills = () => {
       
       const token = localStorage.getItem('plaid_access_token');
 
-      // Fetch and match transactions
       const result = await PlaidIntegrationManager.refreshBillMatching(token);
       
       if (result.success) {
-        // Reload bills to see updated payment status
         await loadBills();
         NotificationManager.showSuccess(
           `Matched ${result.processedCount} bills from ${result.totalTransactions} transactions`
@@ -188,10 +174,8 @@ const Bills = () => {
         const data = settingsDocSnap.data();
         let billsData = data.bills || [];
         
-        // Load import history
         setImportHistory(data.importHistory || []);
         
-        // Migration: Add IDs to bills that don't have them
         let needsUpdate = false;
         billsData = billsData.map(bill => {
           if (!bill.id) {
@@ -201,23 +185,24 @@ const Bills = () => {
           return bill;
         });
         
-        // AUTO-DEDUPLICATION: Clean up any duplicate bills on load
-        const deduplicationResult = BillDeduplicationManager.removeDuplicates(billsData);
-        if (deduplicationResult.stats.duplicates > 0) {
-          console.log('[Auto-Deduplication]', BillDeduplicationManager.getSummaryMessage(deduplicationResult.stats));
-          BillDeduplicationManager.logDeduplication(deduplicationResult, 'auto-load');
-          billsData = deduplicationResult.cleanedBills;
-          needsUpdate = true;
-          
-          // Show notification about auto-cleanup
-          NotificationManager.showNotification({
-            type: 'info',
-            message: `Auto-cleanup: ${BillDeduplicationManager.getSummaryMessage(deduplicationResult.stats)}`,
-            duration: 5000
-          });
+        try {
+          const deduplicationResult = BillDeduplicationManager.removeDuplicates(billsData);
+          if (deduplicationResult.stats.duplicates > 0) {
+            console.log('[Auto-Deduplication]', BillDeduplicationManager.getSummaryMessage(deduplicationResult.stats));
+            BillDeduplicationManager.logDeduplication(deduplicationResult, 'auto-load');
+            billsData = deduplicationResult.cleanedBills;
+            needsUpdate = true;
+            
+            NotificationManager.showNotification({
+              type: 'info',
+              message: `Auto-cleanup: ${BillDeduplicationManager.getSummaryMessage(deduplicationResult.stats)}`,
+              duration: 5000
+            });
+          }
+        } catch (dedupeError) {
+          console.error('[Auto-Deduplication] Failed:', dedupeError);
         }
         
-        // Update Firebase if we added IDs or removed duplicates
         if (needsUpdate) {
           await updateDoc(settingsDocRef, {
             ...data,
@@ -227,7 +212,6 @@ const Bills = () => {
         
         setBills(billsData);
         
-        // Process bills with next due dates and status
         const processed = RecurringBillManager.processBills(billsData).map(bill => ({
           ...bill,
           status: determineBillStatus(bill),
@@ -238,8 +222,6 @@ const Bills = () => {
     } catch (error) {
       console.error('Error loading bills:', error);
       
-      // Use mock data for demonstration when Firebase is unavailable  
-      // Mock data updated to show UPCOMING bills as mentioned in the problem statement
       const mockBills = [
         {
           name: 'PiercePrime',
@@ -312,7 +294,6 @@ const Bills = () => {
     try {
       const token = localStorage.getItem('token');
       
-      // Try to load from Plaid API first
       if (token) {
         try {
           const apiUrl = import.meta.env.VITE_API_URL || 'https://smart-money-tracker-09ks.onrender.com';
@@ -330,19 +311,16 @@ const Bills = () => {
               data = await response.json();
             } catch (parseError) {
               console.warn('Failed to parse API response, falling back to Firebase:', parseError);
-              // Fall through to Firebase below
             }
             
-            // Check if API returned success flag
             if (data?.success === false) {
-              // Expected - Plaid not configured, fall through to Firebase
             } else if (data) {
               const accountsList = data?.accounts || data;
               
               if (Array.isArray(accountsList) && accountsList.length > 0) {
                 const accountsMap = {};
                 accountsList.forEach(account => {
-                  if (!account) return; // Skip null/undefined accounts
+                  if (!account) return;
                   
                   const accountId = account?.account_id || account?.id || account?._id;
                   
@@ -374,11 +352,9 @@ const Bills = () => {
             }
           }
         } catch {
-          // Expected when API is not available - silently fallback
         }
       }
       
-      // Fallback to Firebase
       const settingsDocRef = doc(db, 'users', 'steve-colburn', 'settings', 'personal');
       const settingsDocSnap = await getDoc(settingsDocRef);
       
@@ -387,10 +363,8 @@ const Bills = () => {
         const plaidAccountsList = data.plaidAccounts || [];
         const bankAccounts = data.bankAccounts || {};
         
-        // Track if we have Plaid accounts
         setHasPlaidAccounts(plaidAccountsList.length > 0);
         
-        // Prioritize Plaid accounts if they exist
         if (plaidAccountsList.length > 0) {
           const accountsMap = {};
           plaidAccountsList.forEach(account => {
@@ -405,16 +379,13 @@ const Bills = () => {
           });
           setAccounts(accountsMap);
         } else {
-          // Fall back to manual accounts
           setAccounts(bankAccounts);
         }
       }
     } catch (error) {
-      // Only log actual errors, not expected fallback scenarios
       if (error.name !== 'TypeError') {
         console.warn('Error loading accounts, using defaults:', error.message);
       }
-      // Set default demo accounts as fallback
       setAccounts({
         bofa: { name: 'Bank of America', type: 'Checking', balance: '0' },
         chase: { name: 'Chase', type: 'Checking', balance: '0' },
@@ -425,12 +396,10 @@ const Bills = () => {
   };
 
   const determineBillStatus = (bill) => {
-    // Check if bill is manually skipped
     if (bill.status === 'skipped') {
       return 'skipped';
     }
     
-    // Use the centralized logic from RecurringBillManager
     if (RecurringBillManager.isBillPaidForCurrentCycle(bill)) {
       return 'paid';
     }
@@ -439,7 +408,6 @@ const Bills = () => {
     const dueDate = new Date(bill.nextDueDate || bill.dueDate);
     const daysUntilDue = Math.ceil((dueDate - now) / (1000 * 60 * 60 * 24));
     
-    // Status based on urgency relative to due date
     if (daysUntilDue < 0) {
       return 'overdue';
     } else if (daysUntilDue === 0) {
@@ -453,7 +421,6 @@ const Bills = () => {
     }
   };
 
-  // Calculate dashboard metrics
   const calculateMetrics = () => {
     const now = new Date();
     const currentMonth = new Date(now.getFullYear(), now.getMonth(), 1);
@@ -463,27 +430,26 @@ const Bills = () => {
     
     const paidThisMonth = processedBills
       .filter(bill => {
-        // Check payment history instead of bill status
         const lastPaidDate = bill.lastPaidDate ? new Date(bill.lastPaidDate) : null;
         return lastPaidDate && lastPaidDate >= currentMonth && lastPaidDate <= nextMonth;
       })
       .reduce((sum, bill) => sum + (parseFloat(bill.amount) || 0), 0);
     
     const upcomingBills = processedBills.filter(bill => {
-      if (bill.status === 'skipped') return false; // Exclude skipped bills
+      if (bill.status === 'skipped') return false;
       const dueDate = new Date(bill.nextDueDate || bill.dueDate);
       const status = determineBillStatus(bill);
       return ['pending', 'this-week', 'urgent'].includes(status) && dueDate <= nextMonth;
     });
     
     const overdueBills = processedBills.filter(bill => {
-      if (bill.status === 'skipped') return false; // Exclude skipped bills
+      if (bill.status === 'skipped') return false;
       return determineBillStatus(bill) === 'overdue';
     });
     
     const nextBillDue = processedBills
       .filter(bill => {
-        if (bill.status === 'skipped') return false; // Exclude skipped bills
+        if (bill.status === 'skipped') return false;
         const status = determineBillStatus(bill);
         return ['pending', 'this-week', 'urgent', 'due-today'].includes(status);
       })
@@ -502,21 +468,17 @@ const Bills = () => {
 
   const metrics = calculateMetrics();
 
-  // Filter bills based on search and filters, then apply smart sorting
   const filteredBills = (() => {
     const filtered = processedBills.filter(bill => {
       const matchesSearch = bill.name.toLowerCase().includes(searchTerm.toLowerCase());
       const matchesCategory = filterCategory === 'all' || bill.category === filterCategory;
       
-      // Enhanced status filtering to handle all bill statuses and grouped filters
       let matchesStatus = false;
       if (filterStatus === 'all') {
         matchesStatus = true;
       } else if (filterStatus === 'upcoming') {
-        // Group all upcoming/unpaid statuses: pending, urgent, due-today, this-week
         matchesStatus = ['pending', 'urgent', 'due-today', 'this-week'].includes(bill.status);
       } else {
-        // Direct status match
         matchesStatus = bill.status === filterStatus;
       }
       
@@ -526,14 +488,12 @@ const Bills = () => {
       return matchesSearch && matchesCategory && matchesStatus && matchesRecurring;
     });
 
-    // Apply smart sorting with urgency information
     return BillSortingManager.processBillsWithUrgency(filtered, 'dueDate');
   })();
 
   const handleMarkAsPaid = async (bill) => {
     if (payingBill) return;
     
-    // Check if bill can be paid (duplicate protection)
     const paymentCheck = RecurringBillManager.canPayBill(bill);
     if (!paymentCheck.canPay) {
       NotificationManager.showWarning(paymentCheck.reason);
@@ -542,30 +502,25 @@ const Bills = () => {
     
     setPayingBill(bill.name);
 
-    // Show loading notification
     const loadingNotificationId = NotificationManager.showLoading(
       `Processing payment for ${bill.name}...`
     );
 
     try {
-      // Animate payment processing
       BillAnimationManager.animateBillPayment(
         `${bill.name}-${bill.amount}`, 
         async () => {
-          // This callback runs when animation completes
-          await loadBills(); // Reload bills to show updated state
-          BillAnimationManager.addStaggerAnimation(); // Re-animate the list
+          await loadBills();
+          BillAnimationManager.addStaggerAnimation();
         }
       );
 
       await processBillPaymentInternal(bill);
 
-      // Sync visuals immediately after payment processing
       setTimeout(() => {
         syncBillVisuals();
       }, 500);
 
-      // Remove loading notification and show success
       NotificationManager.removeNotification(loadingNotificationId);
       NotificationManager.showPaymentSuccess(bill);
 
@@ -580,7 +535,6 @@ const Bills = () => {
 
   const handleUnmarkAsPaid = async (bill) => {
     try {
-      // Show loading notification
       const loadingNotificationId = NotificationManager.showLoading(
         `Unmarking ${bill.name} as paid...`
       );
@@ -589,26 +543,23 @@ const Bills = () => {
       const currentDoc = await getDoc(settingsDocRef);
       
       if (!currentDoc.exists()) {
-        NotificationManager.close(loadingNotificationId);
+        NotificationManager.removeNotification(loadingNotificationId);
         throw new Error('Settings document not found');
       }
       
       const currentData = currentDoc.data();
       const bills = currentData.bills || [];
       
-      // Find the bill and track if we found it
       let billFound = false;
       
       const updatedBills = bills.map(b => {
         if (b.id === bill.id) {
           billFound = true;
-          // Remove last payment and reset status
           const updatedBill = { ...b };
           delete updatedBill.lastPaidDate;
           delete updatedBill.lastPayment;
           delete updatedBill.isPaid;
           
-          // Remove the last payment from payment history if it exists
           if (updatedBill.paymentHistory && updatedBill.paymentHistory.length > 0) {
             updatedBill.paymentHistory = updatedBill.paymentHistory.slice(0, -1);
           }
@@ -619,7 +570,7 @@ const Bills = () => {
       });
       
       if (!billFound) {
-        NotificationManager.close(loadingNotificationId);
+        NotificationManager.removeNotification(loadingNotificationId);
         throw new Error(`Bill "${bill.name}" not found in database`);
       }
       
@@ -628,10 +579,8 @@ const Bills = () => {
         bills: updatedBills
       });
       
-      // Close loading notification
-      NotificationManager.close(loadingNotificationId);
+      NotificationManager.removeNotification(loadingNotificationId);
       
-      // Reload bills to show updated state
       await loadBills();
       
       NotificationManager.showSuccess(`${bill.name} unmarked as paid`);
@@ -645,27 +594,23 @@ const Bills = () => {
   };
 
   const processBillPaymentInternal = async (bill, paymentData = {}) => {
-    // Create transaction
     const transaction = {
       amount: -Math.abs(parseFloat(bill.amount)),
       description: `${bill.name} Payment`,
       category: 'Bills & Utilities',
-      account: 'bofa', // Default to main account
+      account: 'bofa',
       date: formatDateForInput(paymentData.paidDate || getPacificTime()),
       timestamp: Date.now(),
       type: 'expense',
-      source: paymentData.source || 'manual', // Track source (plaid or manual)
+      source: paymentData.source || 'manual',
       ...paymentData
     };
 
-    // Add transaction to Firebase
     const transactionsRef = collection(db, 'users', 'steve-colburn', 'transactions');
     await addDoc(transactionsRef, transaction);
 
-    // Update account balance
     await updateAccountBalance('bofa', transaction.amount);
 
-    // Mark bill as paid with payment options including merchant name for display
     await updateBillAsPaid(bill, paymentData.paidDate, {
       method: paymentData.method || 'manual',
       source: paymentData.source || 'manual',
@@ -704,10 +649,6 @@ const Bills = () => {
     }
   };
 
-  // BUG FIX (2025-01-09): Previously, bills marked as paid would lose their "paid" status
-  // on reload due to incorrect logic in isBillPaidForCurrentCycle. This has been fixed in
-  // RecurringBillManager.js. This function correctly uses .map() to preserve all bills in
-  // the array - bills are NEVER removed, only their status is updated.
   const updateBillAsPaid = async (bill, paidDate = null, paymentOptions = {}) => {
     try {
       const settingsDocRef = doc(db, 'users', 'steve-colburn', 'settings', 'personal'); 
@@ -716,10 +657,8 @@ const Bills = () => {
       
       const bills = currentData.bills || [];
       
-      // Use .map() to preserve all bills - bills are never removed from the array
       const updatedBills = bills.map(b => {
         if (b.id === bill.id) {
-          // Use RecurringBillManager to properly calculate next due date and update status
           return RecurringBillManager.markBillAsPaid(
             b, 
             paidDate || getPacificTime(),
@@ -740,7 +679,6 @@ const Bills = () => {
   };
 
   const testPlaidAutoPayment = async () => {
-    // Find an unpaid bill to simulate auto-payment for
     const unpaidBills = processedBills.filter(bill => bill.status !== 'paid');
     
     if (unpaidBills.length === 0) {
@@ -754,7 +692,6 @@ const Bills = () => {
 
     const testBill = unpaidBills[0];
     
-    // Simulate a Plaid transaction
     await PlaidIntegrationManager.simulateTransaction({
       amount: parseFloat(testBill.amount),
       merchantName: testBill.name,
@@ -763,7 +700,6 @@ const Bills = () => {
   };
 
   const showNotification = (message, type) => {
-    // Use the new NotificationManager instead of console.log
     NotificationManager.showNotification({
       type,
       message,
@@ -780,10 +716,8 @@ const Bills = () => {
       const bills = currentData.bills || [];
       
       if (editingBill) {
-        // Update existing bill - use ID to identify the specific bill
         const updatedBills = bills.map(bill => {
           if (bill.id === editingBill.id) {
-            // Preserve the original ID
             return { ...billData, id: editingBill.id, originalDueDate: billData.dueDate };
           }
           return bill;
@@ -796,9 +730,7 @@ const Bills = () => {
         
         showNotification('Bill updated successfully!', 'success');
       } else {
-        // Check for potential duplicates before adding
         const isDuplicate = bills.some(bill => {
-          // Exact duplicate: same name, amount, due date, and recurrence
           const exactMatch = bill.name.toLowerCase() === billData.name.toLowerCase() && 
                              parseFloat(bill.amount) === parseFloat(billData.amount) &&
                              bill.dueDate === billData.dueDate &&
@@ -812,7 +744,6 @@ const Bills = () => {
           return;
         }
         
-        // Check for similar bills (same name and amount but different date or frequency)
         const similarBill = bills.find(bill => 
           bill.name.toLowerCase() === billData.name.toLowerCase() && 
           parseFloat(bill.amount) === parseFloat(billData.amount) &&
@@ -832,7 +763,6 @@ const Bills = () => {
           }
         }
         
-        // Add new bill with unique ID
         const newBill = {
           ...billData,
           id: generateBillId(),
@@ -848,10 +778,8 @@ const Bills = () => {
         showNotification('Bill added successfully!', 'success');
       }
       
-      // Reload bills and close modal
       await loadBills();
       
-      // Sync visuals after loading
       setTimeout(() => {
         syncBillVisuals();
       }, 200);
@@ -931,11 +859,9 @@ const Bills = () => {
       const currentDoc = await getDoc(settingsDocRef);
       const currentData = currentDoc.exists() ? currentDoc.data() : {};
       
-      // Store current bills for undo
       const billsToDelete = currentData.bills || [];
       setDeletedBills(billsToDelete);
       
-      // Clear all bills
       await updateDoc(settingsDocRef, {
         ...currentData,
         bills: []
@@ -994,7 +920,6 @@ const Bills = () => {
       
       const existingBills = currentData.bills || [];
       
-      // Generate detailed report before deduplication
       const report = BillDeduplicationManager.generateDuplicateReport(existingBills);
       
       if (report.duplicateCount === 0) {
@@ -1003,26 +928,20 @@ const Bills = () => {
         return;
       }
       
-      // Perform deduplication
       const result = BillDeduplicationManager.removeDuplicates(existingBills);
       
-      // Log the deduplication activity
       BillDeduplicationManager.logDeduplication(result, 'manual');
       
-      // Save cleaned bills to Firebase
       await updateDoc(settingsDocRef, {
         ...currentData,
         bills: result.cleanedBills
       });
       
-      // Reload bills
       await loadBills();
       
-      // Show detailed notification
       const message = BillDeduplicationManager.getSummaryMessage(result.stats);
       showNotification(message, 'success');
       
-      // Log removed bills for transparency
       if (result.removedBills.length > 0) {
         console.log('[Manual Deduplication] Removed bills:', result.removedBills.map(b => ({
           name: b.name,
@@ -1050,7 +969,6 @@ const Bills = () => {
       
       const existingBills = currentData.bills || [];
       
-      // Clean up temporary preview fields before saving
       const cleanedBills = importedBills.map(bill => {
         const { dateError, dateWarning, rowNumber, isDuplicate, ...cleanBill } = bill;
         return cleanBill;
@@ -1058,11 +976,9 @@ const Bills = () => {
       
       const updatedBills = [...existingBills, ...cleanedBills];
       
-      // Count bills with errors or warnings
       const errorsCount = importedBills.filter(b => b.dateError).length;
       const warningsCount = importedBills.filter(b => b.dateWarning && !b.dateError).length;
       
-      // Create enhanced import history entry
       const importEntry = {
         id: `import_${Date.now()}`,
         timestamp: new Date().toISOString(),
@@ -1080,7 +996,7 @@ const Bills = () => {
         }))
       };
       
-      const newHistory = [importEntry, ...importHistory].slice(0, 10); // Keep last 10 imports
+      const newHistory = [importEntry, ...importHistory].slice(0, 10);
       setImportHistory(newHistory);
       
       await updateDoc(settingsDocRef, {
@@ -1092,7 +1008,6 @@ const Bills = () => {
       await loadBills();
       setShowCSVImport(false);
       
-      // Show detailed notification
       let message = `Successfully imported ${importedBills.length} bills`;
       if (errorsCount > 0) message += ` (${errorsCount} with errors)`;
       if (warningsCount > 0) message += ` (${warningsCount} with warnings)`;
@@ -1117,7 +1032,6 @@ const Bills = () => {
       const currentData = currentDoc.exists() ? currentDoc.data() : {};
       
       const existingBills = currentData.bills || [];
-      // Remove bills from the last import
       const importedBillIds = new Set(lastImport.bills.map(b => b.id));
       const updatedBills = existingBills.filter(bill => !importedBillIds.has(bill.id));
       
@@ -1164,7 +1078,6 @@ const Bills = () => {
   };
 
   const getStatusDisplayText = (bill) => {
-    // Check if bill is manually skipped
     if (bill.status === 'skipped') {
       return '⏭️ SKIPPED';
     }
@@ -1192,26 +1105,20 @@ const Bills = () => {
     }
   };
 
-  // Visual sync function to ensure bill styling matches status
   const syncBillVisuals = () => {
     processedBills.forEach(bill => {
       const billElement = document.getElementById(`bill-${bill.name}-${bill.amount}`);
       if (!billElement) return;
       
-      // Calculate current status
       const currentStatus = determineBillStatus(bill);
       
-      // Update data-status attribute
       billElement.setAttribute('data-status', currentStatus);
       
-      // Remove old status classes
       const statusClasses = ['overdue', 'urgent', 'due-today', 'this-week', 'pending', 'paid', 'skipped'];
       billElement.classList.remove(...statusClasses);
       
-      // Add current status class
       billElement.classList.add(currentStatus);
       
-      // Update border color based on status
       const statusColors = {
         'overdue': '#ff073a',
         'urgent': '#ffdd00', 
@@ -1225,7 +1132,6 @@ const Bills = () => {
       const borderColor = statusColors[currentStatus] || '#00ff88';
       billElement.style.borderColor = borderColor;
       
-      // Update box shadow
       const shadowColors = {
         'overdue': 'rgba(255, 7, 58, 0.3)',
         'urgent': 'rgba(255, 221, 0, 0.3)', 
@@ -1254,10 +1160,8 @@ const Bills = () => {
 
   return (
     <div className="bills-container">
-      {/* Notification System */}
       <NotificationSystem />
       
-      {/* Plaid Connection Status Banner - Compact Version */}
       {!plaidStatus.isConnected && !hasPlaidAccounts && !plaidStatus.hasError && (
         <div style={{
           background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
@@ -1351,7 +1255,6 @@ const Bills = () => {
         </div>
       )}
       
-      {/* Header with Add Bill Button */}
       <div className="page-header">
         <div className="header-content">
           <div>
@@ -1385,7 +1288,6 @@ const Bills = () => {
               + Add New Bill
             </button>
             
-            {/* Refresh Plaid Transactions Button */}
             <button 
               className="refresh-transactions-btn"
               onClick={refreshPlaidTransactions}
@@ -1424,7 +1326,6 @@ const Bills = () => {
                     : '🔄 Match Transactions'}
             </button>
             
-            {/* Development: Test Plaid Auto-Payment Detection */}
             {typeof window !== 'undefined' && window.location.hostname === 'localhost' && (
               <button 
                 className="test-plaid-btn"
@@ -1447,7 +1348,6 @@ const Bills = () => {
         </div>
       </div>
 
-      {/* Enhanced Overview Dashboard */}
       <div className="bills-overview">
         <div className="overview-grid">
           <div className="overview-card">
@@ -1482,7 +1382,6 @@ const Bills = () => {
         </div>
       </div>
 
-      {/* Search and Filter Controls */}
       <div className="bills-controls">
         <div className="search-box">
           <input
@@ -1533,7 +1432,6 @@ const Bills = () => {
           </select>
         </div>
         
-        {/* Action Buttons for Bulk Operations */}
         <div className="action-buttons">
           {deletedBills.length > 0 && (
             <button 
@@ -1645,8 +1543,6 @@ const Bills = () => {
         </div>
       </div>
 
-      {/* Enhanced Bills List */}
-      {/* Deployed: 2025-10-03 19:30:52 UTC */}
       <div className="bills-list-section">
         <h3>Bills ({filteredBills.length === processedBills.length ? filteredBills.length : `${filteredBills.length} of ${processedBills.length}`})</h3>
         <div className="bills-list">
@@ -1700,7 +1596,6 @@ const Bills = () => {
                     {bill.formattedDueDate || `Due: ${formatDate(bill.nextDueDate || bill.dueDate)}`}
                   </div>
                   
-                  {/* Display matched transaction details */}
                   {bill.lastPayment && bill.lastPayment.source === 'plaid' && bill.lastPayment.transactionId && (
                     <div className="matched-transaction-info" style={{
                       marginTop: '8px',
@@ -1740,7 +1635,6 @@ const Bills = () => {
                      bill.status === 'skipped' ? 'Skipped' : 'Mark Paid'}
                   </button>
                   
-                  {/* Manual override to unmark bill as paid */}
                   {RecurringBillManager.isBillPaidForCurrentCycle(bill) && (
                     <button 
                       className="action-btn secondary"
@@ -1755,7 +1649,6 @@ const Bills = () => {
                     </button>
                   )}
                   
-                  {/* Skip/Unskip button for recurring bills */}
                   {bill.recurringTemplateId && bill.status !== 'paid' && (
                     <button 
                       className="action-btn secondary"
@@ -1805,7 +1698,6 @@ const Bills = () => {
         </div>
       </div>
 
-      {/* Add/Edit Bill Modal */}
       {showModal && (
         <BillModal
           bill={editingBill}
@@ -1819,7 +1711,6 @@ const Bills = () => {
         />
       )}
 
-      {/* Bulk Delete Confirmation Modal */}
       {showBulkDeleteModal && (
         <div className="modal-overlay" onClick={() => setShowBulkDeleteModal(false)}>
           <div className="modal" onClick={(e) => e.stopPropagation()}>
@@ -1861,7 +1752,6 @@ const Bills = () => {
         </div>
       )}
 
-      {/* CSV Import Modal */}
       {showCSVImport && (
         <BillCSVImportModal
           existingBills={processedBills}
@@ -1870,7 +1760,6 @@ const Bills = () => {
         />
       )}
 
-      {/* Import History Modal */}
       {showImportHistory && (
         <div className="modal-overlay" onClick={() => setShowImportHistory(false)}>
           <div className="modal" onClick={(e) => e.stopPropagation()} style={{ maxWidth: '700px' }}>
@@ -1982,7 +1871,6 @@ const Bills = () => {
         </div>
       )}
 
-      {/* Help Modal */}
       {showHelpModal && (
         <div className="modal-overlay" onClick={() => setShowHelpModal(false)}>
           <div className="modal" onClick={(e) => e.stopPropagation()} style={{ maxWidth: '800px', maxHeight: '90vh', overflowY: 'auto' }}>
@@ -2097,7 +1985,6 @@ const Bills = () => {
         </div>
       )}
 
-      {/* Plaid Error Modal */}
       <PlaidErrorModal
         isOpen={showErrorModal}
         onClose={() => setShowErrorModal(false)}
@@ -2110,7 +1997,6 @@ const Bills = () => {
   );
 };
 
-// Bill Modal Component
 const BillModal = ({ bill, categories, accounts, onSave, onCancel }) => {
   const [formData, setFormData] = useState({
     name: bill?.name || '',
@@ -2124,7 +2010,6 @@ const BillModal = ({ bill, categories, accounts, onSave, onCancel }) => {
 
   const [errors, setErrors] = useState({});
 
-  // Convert accounts object to array format for dropdown
   const accountsList = Object.entries(accounts).map(([key, account]) => ({
     key: key,
     name: account.name,
@@ -2143,7 +2028,6 @@ const BillModal = ({ bill, categories, accounts, onSave, onCancel }) => {
 
   const handleInputChange = (field, value) => {
     setFormData(prev => ({ ...prev, [field]: value }));
-    // Clear error when user starts typing
     if (errors[field]) {
       setErrors(prev => ({ ...prev, [field]: '' }));
     }
@@ -2174,7 +2058,7 @@ const BillModal = ({ bill, categories, accounts, onSave, onCancel }) => {
     if (validateForm()) {
       onSave({
         ...formData,
-        amount: parseFloat(formData.amount).toString() // Ensure amount is stored as string for consistency
+        amount: parseFloat(formData.amount).toString()
       });
     }
   };
