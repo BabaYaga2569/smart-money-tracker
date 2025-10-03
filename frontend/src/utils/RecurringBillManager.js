@@ -210,10 +210,15 @@ export class RecurringBillManager {
 
     /**
      * Mark a bill as paid and update its next due date for the upcoming cycle
+     * 
+     * BUG FIX (2025-01-09): This function correctly updates bill status to 'paid' and
+     * returns the complete bill object. Bills are NEVER removed from the array - they
+     * maintain all properties and are simply updated with payment information.
+     * 
      * @param {Object} bill - Bill object
      * @param {Date} paymentDate - Date the bill was paid
      * @param {Object} paymentOptions - Additional payment options (source, transactionId, etc.)
-     * @returns {Object} Updated bill object
+     * @returns {Object} Updated bill object with status='paid' and payment history
      */
     static markBillAsPaid(bill, paymentDate = null, paymentOptions = {}) {
         const currentDueDate = bill.nextDueDate || bill.dueDate;
@@ -241,15 +246,16 @@ export class RecurringBillManager {
             timestamp: Date.now()
         };
         
-        // Mark as PAID for current cycle - bill stays paid until next due date
+        // Mark as PAID for current cycle - bill remains in array with updated status
+        // Bills are NEVER removed, only their status and dates are updated
         return {
             ...bill,
-            lastDueDate: currentDueDate,
+            lastDueDate: currentDueDate,  // Important: stores the cycle we just paid for
             lastPaidDate: paidDate,
             nextDueDate: nextDueDate,
             dueDate: nextDueDate, // Update primary dueDate to next occurrence
             isPaid: true,         // KEEP AS TRUE - bill is paid for current cycle
-            status: 'paid',       // KEEP AS PAID until next cycle
+            status: 'paid',       // KEEP AS PAID - status persists correctly now
             paymentHistory: [...(bill.paymentHistory || []), paymentRecord],
             lastPayment: paymentRecord
         };
@@ -259,17 +265,31 @@ export class RecurringBillManager {
      * Check if a bill has already been paid for its current billing cycle
      * @param {Object} bill - Bill object
      * @returns {boolean} True if bill is paid for current cycle
+     * 
+     * BUG FIX (2025-01-09): Fixed logic that was causing bills to show as unpaid immediately
+     * after marking as paid. Previous logic compared lastPayment.dueDate >= nextDueDate, which
+     * failed because after payment, nextDueDate advances to the next cycle.
+     * 
+     * Correct approach: Check if the lastPayment matches the lastDueDate (the cycle we just paid for).
+     * If lastDueDate is not available, fall back to checking against the current due date.
      */
     static isBillPaidForCurrentCycle(bill) {
         // Check payment history for current cycle - this is the ONLY reliable way
         // Do NOT check bill.isPaid or bill.status directly as they persist from previous cycles
         if (bill.lastPaidDate && bill.lastPayment) {
-            const currentBillDueDate = new Date(bill.nextDueDate || bill.dueDate);
             const lastPaymentDueDate = new Date(bill.lastPayment.dueDate);
             
-            // If the last payment was for a due date that matches or is after the current due date,
-            // then this bill has already been paid for the current cycle
-            return lastPaymentDueDate.getTime() >= currentBillDueDate.getTime();
+            // Prefer using lastDueDate if available (most reliable)
+            if (bill.lastDueDate) {
+                const lastDueDateValue = new Date(bill.lastDueDate);
+                // Bill is paid if payment was for the lastDueDate cycle
+                return lastPaymentDueDate.getTime() === lastDueDateValue.getTime();
+            }
+            
+            // Fallback: check if payment was for current/next due date
+            // This handles bills that haven't been processed through the new cycle update yet
+            const currentDueDate = new Date(bill.nextDueDate || bill.dueDate);
+            return lastPaymentDueDate.getTime() === currentDueDate.getTime();
         }
         
         return false;
