@@ -507,7 +507,19 @@ const Bills = () => {
     const filtered = processedBills.filter(bill => {
       const matchesSearch = bill.name.toLowerCase().includes(searchTerm.toLowerCase());
       const matchesCategory = filterCategory === 'all' || bill.category === filterCategory;
-      const matchesStatus = filterStatus === 'all' || bill.status === filterStatus;
+      
+      // Enhanced status filtering to handle all bill statuses and grouped filters
+      let matchesStatus = false;
+      if (filterStatus === 'all') {
+        matchesStatus = true;
+      } else if (filterStatus === 'upcoming') {
+        // Group all upcoming/unpaid statuses: pending, urgent, due-today, this-week
+        matchesStatus = ['pending', 'urgent', 'due-today', 'this-week'].includes(bill.status);
+      } else {
+        // Direct status match
+        matchesStatus = bill.status === filterStatus;
+      }
+      
       const matchesRecurring = filterRecurring === 'all' || 
                               (filterRecurring === 'recurring' && bill.recurringTemplateId) ||
                               (filterRecurring === 'manual' && !bill.recurringTemplateId);
@@ -1494,11 +1506,15 @@ const Bills = () => {
             onChange={(e) => setFilterStatus(e.target.value)}
             className="filter-select"
           >
-            <option value="all">All Status</option>
-            <option value="pending">Pending</option>
-            <option value="paid">Paid</option>
-            <option value="skipped">Skipped</option>
-            <option value="overdue">Overdue</option>
+            <option value="all">📋 All Status</option>
+            <option value="upcoming">⏳ Show Upcoming</option>
+            <option value="paid">✅ Paid</option>
+            <option value="overdue">🚨 Overdue</option>
+            <option value="due-today">📅 Due Today</option>
+            <option value="urgent">⚠️ Urgent (≤3 days)</option>
+            <option value="this-week">📆 This Week</option>
+            <option value="pending">🔵 Pending</option>
+            <option value="skipped">⏭️ Skipped</option>
           </select>
           <select 
             value={filterRecurring} 
