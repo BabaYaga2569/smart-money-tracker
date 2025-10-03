@@ -9,6 +9,24 @@
 export const parseLocalDate = (dateString) => {
   if (!dateString) return null;
   
+  // Handle Firebase Timestamp objects
+  if (dateString && typeof dateString === 'object' && typeof dateString.toDate === 'function') {
+    try {
+      return dateString.toDate();
+    } catch (error) {
+      console.error('Error converting Firebase Timestamp:', error);
+      return null;
+    }
+  }
+  
+  // Handle Firebase Timestamp in string format (from console.log or serialization)
+  if (typeof dateString === 'string' && dateString.includes('Timestamp')) {
+    const match = dateString.match(/seconds=(\d+)/);
+    if (match) {
+      return new Date(parseInt(match[1]) * 1000);
+    }
+  }
+  
   // Convert to string if it's not already
   const dateStr = String(dateString);
   
@@ -65,13 +83,12 @@ export const parseLocalDate = (dateString) => {
   }
   
   // Fallback: try the original Date constructor
-  // Note: Warnings suppressed per user feedback - only show errors for actual failures
   const fallbackDate = new Date(dateStr);
   if (!isNaN(fallbackDate.getTime())) {
     return fallbackDate;
   }
   
-  // If all parsing attempts failed, return null (only log actual errors, not warnings)
+  // If all parsing attempts failed, return null
   console.error(`DateUtils.parseLocalDate: Unable to parse date string "${dateStr}"`);
   return null;
 };
