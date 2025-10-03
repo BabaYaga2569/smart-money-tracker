@@ -556,10 +556,11 @@ const Bills = () => {
           billFound = true;
           const updatedBill = { ...b };
           
-          // CRITICAL FIX: Restore the original due date when unmarking
-          if (updatedBill.lastDueDate) {
-            updatedBill.nextDueDate = updatedBill.lastDueDate;
-            updatedBill.dueDate = updatedBill.lastDueDate;
+          // CRITICAL FIX: Restore to the cycle that was actually paid
+          // lastPayment.dueDate contains the original cycle, not the advanced one
+          if (updatedBill.lastPayment && updatedBill.lastPayment.dueDate) {
+            updatedBill.nextDueDate = updatedBill.lastPayment.dueDate;
+            updatedBill.dueDate = updatedBill.lastPayment.dueDate;
           }
           
           // Remove payment data
@@ -600,7 +601,6 @@ const Bills = () => {
       );
     }
   };
-
   const processBillPaymentInternal = async (bill, paymentData = {}) => {
     const transaction = {
       amount: -Math.abs(parseFloat(bill.amount)),
