@@ -159,18 +159,21 @@ export class RecurringBillManager {
      * @returns {Array} Bills with nextDueDate calculated
      */
     static processBills(bills, currentDate = new Date()) {
-        return bills.map(bill => {
-            const nextDueDate = this.getNextDueDate(bill, currentDate);
-            
-            return {
-                ...bill,
-                nextDueDate: nextDueDate,
-                originalDueDate: bill.dueDate,
-                isPaid: false,
-                status: bill.status === 'skipped' ? 'skipped' : undefined
-            };
-        });
-    }
+    return bills.map(bill => {
+        const nextDueDate = this.getNextDueDate(bill, currentDate);
+        
+        // Preserve the isPaid status if the bill was paid for its cycle
+        const wasPaid = this.isBillPaidForCurrentCycle(bill);
+        
+        return {
+            ...bill,
+            nextDueDate: nextDueDate,
+            originalDueDate: bill.dueDate,
+            isPaid: wasPaid, // Keep the paid status if it exists
+            status: bill.status === 'skipped' ? 'skipped' : undefined
+        };
+    });
+}
 
     /**
      * Filter bills that are due before a specific date
