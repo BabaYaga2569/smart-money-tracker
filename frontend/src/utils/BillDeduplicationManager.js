@@ -58,8 +58,20 @@ export class BillDeduplicationManager {
         // Normalize amount (parse as float, fix to 2 decimals)
         const amount = parseFloat(bill.amount || 0).toFixed(2);
         
-        // Normalize due date (YYYY-MM-DD format)
-        const dueDate = (bill.dueDate || '').trim();
+        // Normalize due date to YYYY-MM-DD format (handle string, Date object, or other types)
+        let dueDate = '';
+        if (bill.dueDate) {
+            if (bill.dueDate instanceof Date) {
+                // Date object - convert to YYYY-MM-DD
+                dueDate = bill.dueDate.toISOString().split('T')[0];
+            } else if (typeof bill.dueDate === 'string') {
+                // String - just trim it
+                dueDate = bill.dueDate.trim();
+            } else {
+                // Number or other type - convert to string first
+                dueDate = String(bill.dueDate).trim();
+            }
+        }
         
         // Normalize recurrence
         const recurrence = (bill.recurrence || 'one-time').toLowerCase().trim();
