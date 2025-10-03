@@ -15,7 +15,6 @@ import NotificationSystem from '../components/NotificationSystem';
 import { BillDeduplicationManager } from '../utils/BillDeduplicationManager';
 import './Bills.css';
 
-// Generate a unique ID for bills
 const generateBillId = () => {
   return `bill_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
 };
@@ -558,7 +557,6 @@ const Bills = () => {
           const updatedBill = { ...b };
           
           // CRITICAL FIX: Restore the original due date when unmarking
-          // If lastDueDate exists, that's the cycle that was paid - restore it
           if (updatedBill.lastDueDate) {
             updatedBill.nextDueDate = updatedBill.lastDueDate;
             updatedBill.dueDate = updatedBill.lastDueDate;
@@ -570,7 +568,6 @@ const Bills = () => {
           delete updatedBill.isPaid;
           delete updatedBill.status;
           
-          // Remove the last payment from payment history if it exists
           if (updatedBill.paymentHistory && updatedBill.paymentHistory.length > 0) {
             updatedBill.paymentHistory = updatedBill.paymentHistory.slice(0, -1);
           }
@@ -1771,7 +1768,7 @@ const Bills = () => {
         />
       )}
 
-      {showImportHistory && (
+{showImportHistory && (
         <div className="modal-overlay" onClick={() => setShowImportHistory(false)}>
           <div className="modal" onClick={(e) => e.stopPropagation()} style={{ maxWidth: '700px' }}>
             <div className="modal-header">
