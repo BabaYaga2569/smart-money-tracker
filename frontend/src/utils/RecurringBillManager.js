@@ -271,26 +271,38 @@ export class RecurringBillManager {
         };
     }
 
-    /**
-     * Check if a bill has already been paid for its current billing cycle
-     * @param {Object} bill - Bill object
-     * @returns {boolean} True if bill is paid for current cycle
-     */
-    static isBillPaidForCurrentCycle(bill) {
-        if (bill.lastPaidDate && bill.lastPayment) {
-            const lastPaymentDueDate = new Date(bill.lastPayment.dueDate);
+   /**
+ * Check if a bill has already been paid for its current billing cycle
+ * @param {Object} bill - Bill object
+ * @returns {boolean} True if bill is paid for current cycle
+ */
+static isBillPaidForCurrentCycle(bill) {
+    if (bill.lastPaidDate && bill.lastPayment) {
+        // Use parseLocalDate to handle Firebase Timestamps properly
+        const lastPaymentDueDate = parseLocalDate(bill.lastPayment.dueDate);
+        
+        if (bill.lastDueDate) {
+            const lastDueDateValue = parseLocalDate(bill.lastDueDate);
             
-            if (bill.lastDueDate) {
-                const lastDueDateValue = new Date(bill.lastDueDate);
-                return lastPaymentDueDate.getTime() === lastDueDateValue.getTime();
+            if (!lastPaymentDueDate || !lastDueDateValue) {
+                return false;
             }
             
-            const currentDueDate = new Date(bill.nextDueDate || bill.dueDate);
-            return lastPaymentDueDate.getTime() === currentDueDate.getTime();
+            // Compare just the date part (ignore time)
+            return lastPaymentDueDate.toDateString() === lastDueDateValue.toDateString();
         }
         
-        return false;
+        const currentDueDate = parseLocalDate(bill.nextDueDate || bill.dueDate);
+        
+        if (!lastPaymentDueDate || !currentDueDate) {
+            return false;
+        }
+        
+        return lastPaymentDueDate.toDateString() === currentDueDate.toDateString();
     }
+    
+    return false;
+}
 
     /**
      * Check if a bill can be paid (not already paid by another transaction)
