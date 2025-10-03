@@ -50,40 +50,29 @@ const Spendability = () => {
       const settingsData = settingsDocSnap.data();
       const payCycleData = payCycleDocSnap.exists() ? payCycleDocSnap.data() : null;
 
-      const bankAccounts = settingsData.bankAccounts || {};
-      const totalAvailable = Object.values(bankAccounts).reduce((sum, account) => {
-        return sum + (parseFloat(account.balance) || 0);
-      }, 0);
+      // Get Plaid accounts from API or stored plaidAccounts
+const plaidAccounts = settingsData.plaidAccounts || [];
+const totalAvailable = plaidAccounts.reduce((sum, account) => {
+  return sum + (parseFloat(account.balance) || 0);
+}, 0);
 
-      let nextPayday = '2025-09-30';
-      let daysUntilPayday = 0;
-      
-      // Enhanced logging for payday calculation debugging
-      console.log('Spendability: Starting payday calculation', {
-        currentPacificTime: getPacificTime().toISOString(),
-        settingsHasOverride: !!settingsData.nextPaydayOverride,
-        overrideValue: settingsData.nextPaydayOverride,
-        payCycleExists: !!payCycleData,
-        payCycleDate: payCycleData?.date,
-        defaultPayday: nextPayday
-      });
-      
-      // NUCLEAR OPTION: Use manual Pacific Time calculation for payday
-      // Force use of September 30, 2025 as specified in requirements
-      console.log('NUCLEAR OPTION: Using manual Pacific Time payday calculation');
-      nextPayday = '2025-09-30';
-      daysUntilPayday = getManualPacificDaysUntilPayday();
-      
-      // Secondary verification with regular calculation
-      const secondaryCalculation = getDaysUntilDateInPacific(nextPayday);
-      
-      console.log('NUCLEAR PAYDAY CALCULATION RESULTS:', {
-        hardCodedPayday: nextPayday,
-        manualCalculationResult: daysUntilPayday,
-        secondaryVerification: secondaryCalculation,
-        shouldDisplay: `${daysUntilPayday} days`,
-        expected: '5 days'
-      });
+     // Get pay cycle data
+let nextPayday, daysUntilPayday;
+
+if (settingsData.nextPaydayOverride) {
+  nextPayday = settingsData.nextPaydayOverride;
+  daysUntilPayday = getDaysUntilDateInPacific(nextPayday);
+} else if (payCycleData && payCycleData.date) {
+  nextPayday = payCycleData.date;
+  daysUntilPayday = payCycleData.daysUntil || getDaysUntilDateInPacific(nextPayday);
+} else {
+  const result = PayCycleCalculator.calculateNextPayday(
+    { lastPaydate: '2025-10-03', amount: 0 },
+    { amount: 0 }
+  );
+  nextPayday = result.date;
+  daysUntilPayday = result.daysUntil;
+}
       
       // Check for manual override (but prefer nuclear calculation for debugging)
       if (settingsData.nextPaydayOverride) {
