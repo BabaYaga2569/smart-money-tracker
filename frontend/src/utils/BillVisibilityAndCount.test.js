@@ -1,4 +1,5 @@
 // BillVisibilityAndCount.test.js - Test bill visibility across filters and accurate count display
+/* eslint-disable no-undef */
 import { RecurringBillManager } from './RecurringBillManager.js';
 
 /**
@@ -71,7 +72,7 @@ const runBillVisibilityTests = () => {
         }));
 
         // Simulate "All Status" filter (filterStatus === 'all')
-        const filteredBills = mockBills.filter(bill => {
+        const filteredBills = mockBills.filter(() => {
             const filterStatus = 'all';
             let matchesStatus = false;
             if (filterStatus === 'all') {
@@ -212,10 +213,11 @@ const runBillVisibilityTests = () => {
 if (typeof process !== 'undefined' && process.argv[1] && process.argv[1].endsWith('BillVisibilityAndCount.test.js')) {
     try {
         runBillVisibilityTests();
-        process.exit(0);
-    } catch (error) {
+        if (typeof process !== 'undefined' && process.exit) process.exit(0);
+    } catch (err) {
         console.error('\n❌ Test suite failed!');
-        process.exit(1);
+        console.error(err);
+        if (typeof process !== 'undefined' && process.exit) process.exit(1);
     }
 }
 
