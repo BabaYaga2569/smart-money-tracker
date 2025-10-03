@@ -206,6 +206,28 @@ const runBillVisibilityTests = () => {
         console.log(`   All ${allPossibleStatuses.length} statuses are accessible via filters`);
     });
 
+    // Test 7: Skipped status is preserved when bills are processed
+    test('Skipped status is preserved through bill processing', () => {
+        const mockSkippedBill = {
+            name: 'Gym Membership',
+            amount: '45.00',
+            dueDate: '2025-02-15',
+            recurrence: 'monthly',
+            status: 'skipped',
+            skippedAt: new Date().toISOString()
+        };
+
+        // Process the bill (simulating what happens in loadBills)
+        const processed = RecurringBillManager.processBills([mockSkippedBill]);
+        
+        assert(processed.length === 1, 'Should have 1 processed bill');
+        assert(processed[0].status === 'skipped', 
+            `Skipped status should be preserved, got: ${processed[0].status}`);
+        assert(processed[0].skippedAt, 'skippedAt timestamp should be preserved');
+        
+        console.log(`   Skipped bill status preserved: ${mockSkippedBill.name} → status: ${processed[0].status}`);
+    });
+
     console.log('\n✅ All bill visibility and count tests passed!');
 };
 
