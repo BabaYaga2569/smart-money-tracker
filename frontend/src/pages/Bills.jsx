@@ -1743,8 +1743,9 @@ const Bills = () => {
                         background: '#ff6b00',
                         marginTop: '4px'
                       }}
+                      title="Mark this bill as unpaid"
                     >
-                      Unmark Paid
+                      Mark Unpaid
                     </button>
                   )}
                   
