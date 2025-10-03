@@ -119,7 +119,9 @@ const Transactions = () => {
   const loadAccounts = async () => {
     try {
       const token = localStorage.getItem('token');
-      const response = await fetch('https://smart-money-tracker-09ks.onrender.com/api/accounts', {
+      const apiUrl = import.meta.env.VITE_API_URL || 'https://smart-money-tracker-09ks.onrender.com';
+      
+      const response = await fetch(`${apiUrl}/api/accounts`, {
         headers: {
           'Authorization': `Bearer ${token}`,
           'Content-Type': 'application/json'
@@ -127,10 +129,17 @@ const Transactions = () => {
       });
       
       if (response.ok) {
-        const data = await response.json();
+        let data;
+        try {
+          data = await response.json();
+        } catch (parseError) {
+          console.warn('Failed to parse API response, falling back to Firebase:', parseError);
+          await loadFirebaseAccounts();
+          return;
+        }
         
         // Check if API returned success flag
-        if (data.success === false) {
+        if (data?.success === false) {
           // Expected behavior when Plaid not configured - use Firebase
           await loadFirebaseAccounts();
           return;
@@ -140,29 +149,36 @@ const Transactions = () => {
         const accountsMap = {};
         
         // Handle different possible response structures
-        const accountsList = data.accounts || data;
+        const accountsList = data?.accounts || data;
         
         if (Array.isArray(accountsList) && accountsList.length > 0) {
           accountsList.forEach(account => {
+            if (!account) return; // Skip null/undefined accounts
+            
             // Use account_id or id as the key
-            const accountId = account.account_id || account.id || account._id;
+            const accountId = account?.account_id || account?.id || account?._id;
+            
+            if (!accountId) {
+              console.warn('Account missing ID, skipping:', account);
+              return;
+            }
             
             // Extract balance - handle different possible structures
             let balance = 0;
-            if (account.balances) {
-              balance = account.balances.current || account.balances.available || 0;
-            } else if (account.current_balance !== undefined) {
+            if (account?.balances) {
+              balance = account.balances?.current || account.balances?.available || 0;
+            } else if (account?.current_balance !== undefined) {
               balance = account.current_balance;
-            } else if (account.balance !== undefined) {
+            } else if (account?.balance !== undefined) {
               balance = account.balance;
             }
             
             accountsMap[accountId] = {
-              name: account.name || account.official_name || 'Unknown Account',
-              type: account.subtype || account.type || 'checking',
+              name: account?.name || account?.official_name || 'Unknown Account',
+              type: account?.subtype || account?.type || 'checking',
               balance: balance.toString(),
-              mask: account.mask || '',
-              institution: account.institution_name || ''
+              mask: account?.mask || '',
+              institution: account?.institution_name || ''
             };
           });
           
