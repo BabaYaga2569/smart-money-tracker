@@ -1642,7 +1642,7 @@ const Bills = () => {
 
       {/* Enhanced Bills List */}
       <div className="bills-list-section">
-        <h3>Bills ({filteredBills.length})</h3>
+        <h3>Bills ({filteredBills.length === processedBills.length ? filteredBills.length : `${filteredBills.length} of ${processedBills.length}`})</h3>
         <div className="bills-list">
           {filteredBills.length > 0 ? (
             filteredBills.map((bill, index) => (
