@@ -315,7 +315,9 @@ const Bills = () => {
       // Try to load from Plaid API first
       if (token) {
         try {
-          const response = await fetch('https://smart-money-tracker-09ks.onrender.com/api/accounts', {
+          const apiUrl = import.meta.env.VITE_API_URL || 'https://smart-money-tracker-09ks.onrender.com';
+          
+          const response = await fetch(`${apiUrl}/api/accounts`, {
             headers: {
               'Authorization': `Bearer ${token}`,
               'Content-Type': 'application/json'
@@ -323,33 +325,47 @@ const Bills = () => {
           });
           
           if (response.ok) {
-            const data = await response.json();
+            let data;
+            try {
+              data = await response.json();
+            } catch (parseError) {
+              console.warn('Failed to parse API response, falling back to Firebase:', parseError);
+              // Fall through to Firebase below
+            }
             
             // Check if API returned success flag
-            if (data.success === false) {
+            if (data?.success === false) {
               // Expected - Plaid not configured, fall through to Firebase
-            } else {
-              const accountsList = data.accounts || data;
+            } else if (data) {
+              const accountsList = data?.accounts || data;
               
               if (Array.isArray(accountsList) && accountsList.length > 0) {
                 const accountsMap = {};
                 accountsList.forEach(account => {
-                  const accountId = account.account_id || account.id || account._id;
+                  if (!account) return; // Skip null/undefined accounts
+                  
+                  const accountId = account?.account_id || account?.id || account?._id;
+                  
+                  if (!accountId) {
+                    console.warn('Account missing ID, skipping:', account);
+                    return;
+                  }
+                  
                   let balance = 0;
-                  if (account.balances) {
-                    balance = account.balances.current || account.balances.available || 0;
-                  } else if (account.current_balance !== undefined) {
+                  if (account?.balances) {
+                    balance = account.balances?.current || account.balances?.available || 0;
+                  } else if (account?.current_balance !== undefined) {
                     balance = account.current_balance;
-                  } else if (account.balance !== undefined) {
+                  } else if (account?.balance !== undefined) {
                     balance = account.balance;
                   }
                   
                   accountsMap[accountId] = {
-                    name: account.name || account.official_name || 'Unknown Account',
-                    type: account.subtype || account.type || 'checking',
+                    name: account?.name || account?.official_name || 'Unknown Account',
+                    type: account?.subtype || account?.type || 'checking',
                     balance: balance.toString(),
-                    mask: account.mask || '',
-                    institution: account.institution_name || ''
+                    mask: account?.mask || '',
+                    institution: account?.institution_name || ''
                   };
                 });
                 setAccounts(accountsMap);

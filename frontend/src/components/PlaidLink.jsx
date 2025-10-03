@@ -18,11 +18,21 @@ const PlaidLink = ({ onSuccess, onExit, userId, buttonText = "Connect Bank" }) =
         
         console.log('[PlaidLink] Creating link token for user:', userId || 'steve-colburn');
         
+        // Calculate timeout with exponential backoff for retries
+        const baseTimeout = 10000; // 10 seconds
+        const timeout = baseTimeout + (retryCount * 5000); // Add 5s per retry
+        
         // Add timeout to prevent infinite loading
         const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), 10000); // 10 second timeout
+        const timeoutId = setTimeout(() => controller.abort(), timeout);
 
         const apiUrl = import.meta.env.VITE_API_URL || 'https://smart-money-tracker-09ks.onrender.com';
+        
+        // Validate API URL before using it
+        if (!apiUrl || typeof apiUrl !== 'string') {
+          throw new Error('API URL is not configured');
+        }
+        
         console.log('[PlaidLink] Backend API URL:', apiUrl);
         
         const response = await fetch(`${apiUrl}/api/plaid/create_link_token`, {
@@ -37,14 +47,25 @@ const PlaidLink = ({ onSuccess, onExit, userId, buttonText = "Connect Bank" }) =
         clearTimeout(timeoutId);
 
         if (!response.ok) {
-          const errorData = await response.json().catch(() => ({}));
+          let errorData = {};
+          try {
+            errorData = await response.json();
+          } catch (parseError) {
+            console.error('[PlaidLink] Failed to parse error response:', parseError);
+          }
           console.error('[PlaidLink] Failed to create link token:', response.status, errorData);
-          throw new Error(errorData.error || `Failed to create link token: ${response.status}`);
+          throw new Error(errorData?.error || `Failed to create link token: ${response.status}`);
         }
 
-        const data = await response.json();
+        let data;
+        try {
+          data = await response.json();
+        } catch (parseError) {
+          console.error('[PlaidLink] Failed to parse response:', parseError);
+          throw new Error('Invalid response from server');
+        }
         
-        if (!data.link_token) {
+        if (!data?.link_token) {
           console.error('[PlaidLink] No link token in response:', data);
           throw new Error('No link token received from server');
         }
@@ -104,8 +125,14 @@ const PlaidLink = ({ onSuccess, onExit, userId, buttonText = "Connect Bank" }) =
   const { open, ready } = usePlaidLink(config);
 
   const handleRetry = () => {
-    console.log('[PlaidLink] Retrying link token creation');
+    console.log('[PlaidLink] Retrying link token creation (attempt:', retryCount + 1, ')');
     setRetryCount(prev => prev + 1);
+  };
+
+  const getRetryDelay = () => {
+    if (retryCount === 0) return '';
+    const delaySeconds = 5 * retryCount;
+    return ` (${delaySeconds}s extended timeout)`;
   };
 
   const getTroubleshootingSteps = () => {
@@ -215,7 +242,7 @@ const PlaidLink = ({ onSuccess, onExit, userId, buttonText = "Connect Bank" }) =
             width: '100%'
           }}
         >
-          🔄 Try Again
+          🔄 Try Again{retryCount > 0 ? ` (Retry ${retryCount})${getRetryDelay()}` : ''}
         </button>
       </div>
     );

@@ -104,6 +104,12 @@ class PlaidConnectionManager {
     // Try to fetch accounts from API to verify connection
     try {
       const apiUrl = import.meta.env.VITE_API_URL || 'https://smart-money-tracker-09ks.onrender.com';
+      
+      // Validate URL before attempting to use it
+      if (!apiUrl || typeof apiUrl !== 'string') {
+        throw new Error('Invalid API URL configuration');
+      }
+      
       this._log('info', 'Testing API connectivity', { apiUrl });
       
       // Add timeout for network issues
@@ -123,18 +129,24 @@ class PlaidConnectionManager {
       this._log('info', 'API response received', { status: response.status, ok: response.ok });
 
       if (response.ok) {
-        const data = await response.json();
+        let data;
+        try {
+          data = await response.json();
+        } catch (parseError) {
+          this._log('error', 'Failed to parse API response', { error: parseError.message });
+          throw new Error('Invalid response from API');
+        }
         
-        if (data.success === false) {
+        if (data?.success === false) {
           // API responded but no accounts available
           this.connectionState.isApiWorking = true;
           this.connectionState.hasAccounts = false;
-          this.connectionState.error = data.message || 'No accounts available';
+          this.connectionState.error = data?.message || 'No accounts available';
           this.connectionState.errorType = 'config';
-          this._log('warn', 'API working but no accounts', { message: data.message });
+          this._log('warn', 'API working but no accounts', { message: data?.message });
         } else {
           // Successfully got accounts
-          const accounts = data.accounts || [];
+          const accounts = Array.isArray(data?.accounts) ? data.accounts : [];
           this.connectionState.isApiWorking = true;
           this.connectionState.hasAccounts = accounts.length > 0;
           this.connectionState.error = null;

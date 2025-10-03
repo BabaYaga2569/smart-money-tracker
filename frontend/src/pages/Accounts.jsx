@@ -235,8 +235,14 @@ const Accounts = () => {
       setShowSuccessBanner(true);
       setBannerDismissed(false);
 
+      // Validate and construct API URL
+      const apiUrl = import.meta.env.VITE_API_URL || 'https://smart-money-tracker-09ks.onrender.com';
+      if (!apiUrl) {
+        throw new Error('API URL is not configured');
+      }
+
       // Exchange public token for access token and get accounts
-      const response = await fetch(`${import.meta.env.VITE_API_URL}/api/plaid/exchange_token`, {
+      const response = await fetch(`${apiUrl}/api/plaid/exchange_token`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -246,19 +252,19 @@ const Accounts = () => {
 
       const data = await response.json();
 
-      if (data.success) {
-        // Format Plaid accounts for display
+      if (data?.success && data?.accounts) {
+        // Format Plaid accounts for display with null checks
         const formattedPlaidAccounts = data.accounts.map((account) => ({
-          account_id: account.account_id,
-          name: account.name,
-          official_name: account.official_name || account.name,
-          type: account.subtype || account.type,
-          balance: account.balances.current?.toString() || '0',
-          available: account.balances.available?.toString() || '0',
-          mask: account.mask,
+          account_id: account?.account_id || '',
+          name: account?.name || 'Unknown Account',
+          official_name: account?.official_name || account?.name || 'Unknown Account',
+          type: account?.subtype || account?.type || 'checking',
+          balance: account?.balances?.current?.toString() || '0',
+          available: account?.balances?.available?.toString() || '0',
+          mask: account?.mask || '',
           isPlaid: true,
-          access_token: data.access_token,
-          item_id: data.item_id,
+          access_token: data.access_token || '',
+          item_id: data.item_id || '',
         }));
 
         // Save to Firebase
