@@ -120,8 +120,8 @@ if (settingsData.nextPaydayOverride) {
 
       setFinancialData({
         totalAvailable,
-        checking: parseFloat(bankAccounts.bofa?.balance) || 0,
-        savings: parseFloat(bankAccounts.sofi?.balance) || 0,
+        checking: plaidAccounts.find(a => a.account_id?.includes('checking') || a.type === 'depository')?.balance || 0,
+        savings: plaidAccounts.find(a => a.account_id?.includes('savings') || a.subtype === 'savings')?.balance || 0,
         billsBeforePayday: billsDueBeforePayday,
         totalBillsDue,
         safeToSpend,
