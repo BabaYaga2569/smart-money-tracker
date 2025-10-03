@@ -12,10 +12,20 @@ export class RecurringBillManager {
      */
     static getNextDueDate(bill, currentDate = new Date()) {
         if (!bill.recurrence || bill.recurrence === 'one-time') {
-            return parseLocalDate(bill.dueDate); // Use local date parsing to prevent timezone shift
+            return parseLocalDate(bill.dueDate);
         }
 
         const lastDue = parseLocalDate(bill.lastDueDate || bill.dueDate);
+        
+        // Add null check - if parsing failed, return current date
+        if (!lastDue) {
+            console.error('getNextDueDate: Failed to parse lastDueDate or dueDate', {
+                lastDueDate: bill.lastDueDate,
+                dueDate: bill.dueDate
+            });
+            return new Date();
+        }
+        
         let nextDue;
 
         switch (bill.recurrence) {
@@ -35,16 +45,22 @@ export class RecurringBillManager {
                 nextDue = this.calculateNextAnnualDate(lastDue, currentDate);
                 break;
             default:
-                nextDue = parseLocalDate(bill.dueDate); // Use local date parsing for fallback
+                nextDue = parseLocalDate(bill.dueDate);
         }
 
-        return nextDue;
+        return nextDue || new Date();
     }
 
     /**
      * Calculate next monthly due date (handles month-end dates properly)
      */
     static calculateNextMonthlyDate(lastDue, currentDate) {
+        // Add null check
+        if (!lastDue) {
+            console.error('calculateNextMonthlyDate: lastDue is null');
+            return new Date();
+        }
+        
         let nextDue = new Date(lastDue);
         const dayOfMonth = lastDue.getDate();
 
@@ -66,6 +82,11 @@ export class RecurringBillManager {
      * Calculate next weekly due date
      */
     static calculateNextWeeklyDate(lastDue, currentDate) {
+        if (!lastDue) {
+            console.error('calculateNextWeeklyDate: lastDue is null');
+            return new Date();
+        }
+        
         let nextDue = new Date(lastDue);
         
         // Keep adding weeks until we find a future date
@@ -80,6 +101,11 @@ export class RecurringBillManager {
      * Calculate next bi-weekly due date
      */
     static calculateNextBiWeeklyDate(lastDue, currentDate) {
+        if (!lastDue) {
+            console.error('calculateNextBiWeeklyDate: lastDue is null');
+            return new Date();
+        }
+        
         let nextDue = new Date(lastDue);
         
         // Keep adding 2 weeks until we find a future date
@@ -94,6 +120,11 @@ export class RecurringBillManager {
      * Calculate next quarterly due date
      */
     static calculateNextQuarterlyDate(lastDue, currentDate) {
+        if (!lastDue) {
+            console.error('calculateNextQuarterlyDate: lastDue is null');
+            return new Date();
+        }
+        
         let nextDue = new Date(lastDue);
         const dayOfMonth = lastDue.getDate();
 
@@ -115,6 +146,11 @@ export class RecurringBillManager {
      * Calculate next annual due date
      */
     static calculateNextAnnualDate(lastDue, currentDate) {
+        if (!lastDue) {
+            console.error('calculateNextAnnualDate: lastDue is null');
+            return new Date();
+        }
+        
         let nextDue = new Date(lastDue);
         
         // Keep adding years until we find a future date
@@ -135,18 +171,11 @@ export class RecurringBillManager {
         return bills.map(bill => {
             const nextDueDate = this.getNextDueDate(bill, currentDate);
             
-            // Reset isPaid and status flags - they will be recalculated based on payment history
-            // This ensures that when we advance to a new billing cycle, the bill shows as unpaid
-            // IMPORTANT: Preserve 'skipped' status as it's a manual user action that shouldn't be reset
             return {
                 ...bill,
                 nextDueDate: nextDueDate,
-                // Keep original dueDate for reference
                 originalDueDate: bill.dueDate,
-                // Reset isPaid - will be recalculated by isBillPaidForCurrentCycle
                 isPaid: false,
-                // Reset status - will be recalculated by determineBillStatus
-                // BUT preserve 'skipped' status as it's a manual override
                 status: bill.status === 'skipped' ? 'skipped' : undefined
             };
         });
@@ -160,17 +189,14 @@ export class RecurringBillManager {
      */
     static getBillsDueBefore(bills, beforeDate) {
         return bills.filter(bill => {
-            // Skip bills that are paid for the current cycle
             if (this.isBillPaidForCurrentCycle(bill)) {
                 return false;
             }
             
-            // Get the due date and ensure it's parsed as a Date object
             const dueDateValue = bill.nextDueDate || bill.dueDate;
             const dueDate = typeof dueDateValue === 'string' ? parseLocalDate(dueDateValue) : dueDateValue;
             
-            // Check if bill is due before the given date
-            return dueDate < beforeDate;
+            return dueDate && dueDate < beforeDate;
         });
     }
 
@@ -183,16 +209,14 @@ export class RecurringBillManager {
      */
     static getBillsInRange(bills, startDate, endDate) {
         return bills.filter(bill => {
-            // Skip bills that are paid for the current cycle
             if (this.isBillPaidForCurrentCycle(bill)) {
                 return false;
             }
             
-            // Get the due date and ensure it's parsed as a Date object
             const dueDateValue = bill.nextDueDate || bill.dueDate;
             const dueDate = typeof dueDateValue === 'string' ? parseLocalDate(dueDateValue) : dueDateValue;
             
-            return dueDate >= startDate && dueDate <= endDate;
+            return dueDate && dueDate >= startDate && dueDate <= endDate;
         });
     }
 
@@ -210,11 +234,6 @@ export class RecurringBillManager {
 
     /**
      * Mark a bill as paid and update its next due date for the upcoming cycle
-     * 
-     * BUG FIX (2025-01-09): This function correctly updates bill status to 'paid' and
-     * returns the complete bill object. Bills are NEVER removed from the array - they
-     * maintain all properties and are simply updated with payment information.
-     * 
      * @param {Object} bill - Bill object
      * @param {Date} paymentDate - Date the bill was paid
      * @param {Object} paymentOptions - Additional payment options (source, transactionId, etc.)
@@ -224,38 +243,33 @@ export class RecurringBillManager {
         const currentDueDate = bill.nextDueDate || bill.dueDate;
         const paidDate = paymentDate || getPacificTime();
         
-        // Create a temporary bill object with the current due date as last due date
         const tempBill = {
             ...bill,
             lastDueDate: currentDueDate,
             dueDate: currentDueDate
         };
         
-        // Calculate the next due date for the upcoming billing cycle
         const nextDueDate = this.getNextDueDate(tempBill, paidDate);
         
-        // Create payment record for history
         const paymentRecord = {
             amount: parseFloat(bill.amount) || 0,
             paidDate: paidDate,
             dueDate: currentDueDate,
             paymentMethod: paymentOptions.method || 'manual',
-            source: paymentOptions.source || 'manual', // 'manual' or 'plaid'
+            source: paymentOptions.source || 'manual',
             transactionId: paymentOptions.transactionId || null,
             accountId: paymentOptions.accountId || null,
             timestamp: Date.now()
         };
         
-        // Mark as PAID for current cycle - bill remains in array with updated status
-        // Bills are NEVER removed, only their status and dates are updated
         return {
             ...bill,
-            lastDueDate: currentDueDate,  // Important: stores the cycle we just paid for
+            lastDueDate: currentDueDate,
             lastPaidDate: paidDate,
             nextDueDate: nextDueDate,
-            dueDate: nextDueDate, // Update primary dueDate to next occurrence
-            isPaid: true,         // KEEP AS TRUE - bill is paid for current cycle
-            status: 'paid',       // KEEP AS PAID - status persists correctly now
+            dueDate: nextDueDate,
+            isPaid: true,
+            status: 'paid',
             paymentHistory: [...(bill.paymentHistory || []), paymentRecord],
             lastPayment: paymentRecord
         };
@@ -265,29 +279,16 @@ export class RecurringBillManager {
      * Check if a bill has already been paid for its current billing cycle
      * @param {Object} bill - Bill object
      * @returns {boolean} True if bill is paid for current cycle
-     * 
-     * BUG FIX (2025-01-09): Fixed logic that was causing bills to show as unpaid immediately
-     * after marking as paid. Previous logic compared lastPayment.dueDate >= nextDueDate, which
-     * failed because after payment, nextDueDate advances to the next cycle.
-     * 
-     * Correct approach: Check if the lastPayment matches the lastDueDate (the cycle we just paid for).
-     * If lastDueDate is not available, fall back to checking against the current due date.
      */
     static isBillPaidForCurrentCycle(bill) {
-        // Check payment history for current cycle - this is the ONLY reliable way
-        // Do NOT check bill.isPaid or bill.status directly as they persist from previous cycles
         if (bill.lastPaidDate && bill.lastPayment) {
             const lastPaymentDueDate = new Date(bill.lastPayment.dueDate);
             
-            // Prefer using lastDueDate if available (most reliable)
             if (bill.lastDueDate) {
                 const lastDueDateValue = new Date(bill.lastDueDate);
-                // Bill is paid if payment was for the lastDueDate cycle
                 return lastPaymentDueDate.getTime() === lastDueDateValue.getTime();
             }
             
-            // Fallback: check if payment was for current/next due date
-            // This handles bills that haven't been processed through the new cycle update yet
             const currentDueDate = new Date(bill.nextDueDate || bill.dueDate);
             return lastPaymentDueDate.getTime() === currentDueDate.getTime();
         }
@@ -301,7 +302,6 @@ export class RecurringBillManager {
      * @returns {Object} { canPay: boolean, reason: string }
      */
     static canPayBill(bill) {
-        // Check if already paid for current cycle
         if (this.isBillPaidForCurrentCycle(bill)) {
             const lastPayment = bill.lastPayment;
             const source = lastPayment?.source || 'manual';
@@ -353,7 +353,6 @@ export class RecurringBillManager {
                 name: bill.name
             });
             
-            // Update for next iteration
             currentBill.lastDueDate = nextDue;
             startDate = nextDue;
         }
@@ -377,7 +376,6 @@ export class RecurringBillManager {
         const today = new Date();
         today.setHours(0, 0, 0, 0);
 
-        // Convert recurring template frequency to bill recurrence
         const frequencyMap = {
             'weekly': 'weekly',
             'bi-weekly': 'bi-weekly',
@@ -388,11 +386,9 @@ export class RecurringBillManager {
 
         const recurrence = frequencyMap[recurringTemplate.frequency] || 'monthly';
         
-        // Get active months if custom recurrence is enabled
         const activeMonths = recurringTemplate.activeMonths || null;
         const hasCustomRecurrence = activeMonths && Array.isArray(activeMonths) && activeMonths.length > 0;
         
-        // Create a base bill object from the template
         const baseBill = {
             name: recurringTemplate.name,
             amount: parseFloat(recurringTemplate.amount) || 0,
@@ -400,22 +396,19 @@ export class RecurringBillManager {
             recurrence: recurrence,
             dueDate: recurringTemplate.nextOccurrence || new Date().toISOString().split('T')[0],
             status: 'pending',
-            recurringTemplateId: recurringTemplate.id, // This is the key field for badge display
+            recurringTemplateId: recurringTemplate.id,
             autopay: recurringTemplate.autoPay || false,
             account: recurringTemplate.linkedAccount || '',
             originalDueDate: recurringTemplate.nextOccurrence || new Date().toISOString().split('T')[0]
         };
 
-        // Generate bill instances for the specified number of months
         let currentBill = { ...baseBill };
         
         for (let i = 0; i < monthsAhead; i++) {
             const nextDueDate = this.getNextDueDate(currentBill, i === 0 ? today : new Date(currentBill.dueDate));
             
-            // Only create bills for future dates
             if (nextDueDate >= today) {
-                // Check if this month is active (for custom recurrence)
-                const billMonth = nextDueDate.getMonth(); // 0-11 (Jan=0, Dec=11)
+                const billMonth = nextDueDate.getMonth();
                 const isMonthActive = !hasCustomRecurrence || activeMonths.includes(billMonth);
                 
                 if (isMonthActive) {
@@ -431,7 +424,6 @@ export class RecurringBillManager {
                 }
             }
             
-            // Update for next iteration
             currentBill = {
                 ...currentBill,
                 dueDate: nextDueDate.toISOString().split('T')[0],
@@ -444,16 +436,11 @@ export class RecurringBillManager {
 
     /**
      * Sync bill instances when a recurring template is updated
-     * This handles:
-     * - Generating new bills for newly selected months
-     * - Removing unpaid bills for unselected months (preserving paid bills)
-     * - Updating bill properties (amount, category, etc.) for existing unpaid bills
-     * 
      * @param {Object} updatedTemplate - Updated recurring template object
      * @param {Array} existingBills - Current array of all bills
      * @param {Number} monthsAhead - Number of months to generate bills for (default: 3)
      * @param {Function} generateBillId - Function to generate unique bill IDs
-     * @returns {Object} { updatedBills: Array, stats: Object } - Updated bills array and statistics
+     * @returns {Object} { updatedBills: Array, stats: Object }
      */
     static syncBillsWithTemplate(updatedTemplate, existingBills, monthsAhead = 3, generateBillId) {
         if (!updatedTemplate || !updatedTemplate.id) {
@@ -468,7 +455,6 @@ export class RecurringBillManager {
             preserved: 0
         };
 
-        // Separate bills into those from this template and others
         const billsFromTemplate = existingBills.filter(bill => 
             bill.recurringTemplateId === templateId
         );
@@ -476,16 +462,13 @@ export class RecurringBillManager {
             bill.recurringTemplateId !== templateId
         );
 
-        // Generate the desired bill instances based on updated template
         const desiredBills = this.generateBillsFromTemplate(updatedTemplate, monthsAhead, generateBillId);
         
-        // Create a map of desired bills by due date for easy lookup
         const desiredBillsByDate = new Map();
         desiredBills.forEach(bill => {
             desiredBillsByDate.set(bill.dueDate, bill);
         });
 
-        // Process existing bills from this template
         const updatedBillsFromTemplate = [];
         
         billsFromTemplate.forEach(existingBill => {
@@ -493,11 +476,9 @@ export class RecurringBillManager {
             const dueDate = existingBill.dueDate;
             
             if (isPaid) {
-                // Always preserve paid bills for history
                 updatedBillsFromTemplate.push(existingBill);
                 stats.preserved++;
             } else if (desiredBillsByDate.has(dueDate)) {
-                // Bill exists and should continue to exist - update its properties
                 const desiredBill = desiredBillsByDate.get(dueDate);
                 updatedBillsFromTemplate.push({
                     ...existingBill,
@@ -509,22 +490,17 @@ export class RecurringBillManager {
                     recurrence: desiredBill.recurrence
                 });
                 stats.updated++;
-                // Remove from desired map since we've handled it
                 desiredBillsByDate.delete(dueDate);
             } else {
-                // Bill exists but is no longer desired (month was unselected) - remove it
                 stats.removed++;
-                // Don't add to updatedBillsFromTemplate
             }
         });
 
-        // Add any remaining desired bills that don't exist yet
         desiredBillsByDate.forEach(desiredBill => {
             updatedBillsFromTemplate.push(desiredBill);
             stats.added++;
         });
 
-        // Combine with other bills
         const allUpdatedBills = [...otherBills, ...updatedBillsFromTemplate];
 
         return {
