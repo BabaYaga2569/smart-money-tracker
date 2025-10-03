@@ -556,10 +556,21 @@ const Bills = () => {
         if (b.id === bill.id) {
           billFound = true;
           const updatedBill = { ...b };
+          
+          // CRITICAL FIX: Restore the original due date when unmarking
+          // If lastDueDate exists, that's the cycle that was paid - restore it
+          if (updatedBill.lastDueDate) {
+            updatedBill.nextDueDate = updatedBill.lastDueDate;
+            updatedBill.dueDate = updatedBill.lastDueDate;
+          }
+          
+          // Remove payment data
           delete updatedBill.lastPaidDate;
           delete updatedBill.lastPayment;
           delete updatedBill.isPaid;
+          delete updatedBill.status;
           
+          // Remove the last payment from payment history if it exists
           if (updatedBill.paymentHistory && updatedBill.paymentHistory.length > 0) {
             updatedBill.paymentHistory = updatedBill.paymentHistory.slice(0, -1);
           }
