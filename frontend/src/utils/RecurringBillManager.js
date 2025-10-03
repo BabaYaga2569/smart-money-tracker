@@ -137,6 +137,7 @@ export class RecurringBillManager {
             
             // Reset isPaid and status flags - they will be recalculated based on payment history
             // This ensures that when we advance to a new billing cycle, the bill shows as unpaid
+            // IMPORTANT: Preserve 'skipped' status as it's a manual user action that shouldn't be reset
             return {
                 ...bill,
                 nextDueDate: nextDueDate,
@@ -145,7 +146,8 @@ export class RecurringBillManager {
                 // Reset isPaid - will be recalculated by isBillPaidForCurrentCycle
                 isPaid: false,
                 // Reset status - will be recalculated by determineBillStatus
-                status: undefined
+                // BUT preserve 'skipped' status as it's a manual override
+                status: bill.status === 'skipped' ? 'skipped' : undefined
             };
         });
     }
