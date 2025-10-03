@@ -17,7 +17,6 @@ export class RecurringBillManager {
 
         const lastDue = parseLocalDate(bill.lastDueDate || bill.dueDate);
         
-        // Add null check - if parsing failed, return current date
         if (!lastDue) {
             console.error('getNextDueDate: Failed to parse lastDueDate or dueDate', {
                 lastDueDate: bill.lastDueDate,
@@ -55,7 +54,6 @@ export class RecurringBillManager {
      * Calculate next monthly due date (handles month-end dates properly)
      */
     static calculateNextMonthlyDate(lastDue, currentDate) {
-        // Add null check
         if (!lastDue) {
             console.error('calculateNextMonthlyDate: lastDue is null');
             return new Date();
@@ -64,11 +62,9 @@ export class RecurringBillManager {
         let nextDue = new Date(lastDue);
         const dayOfMonth = lastDue.getDate();
 
-        // Keep advancing monthly until we find a future date
         while (nextDue <= currentDate) {
             nextDue.setMonth(nextDue.getMonth() + 1);
             
-            // Handle month-end dates (30th, 31st in shorter months)
             if (dayOfMonth > 28) {
                 const lastDayOfMonth = new Date(nextDue.getFullYear(), nextDue.getMonth() + 1, 0).getDate();
                 nextDue.setDate(Math.min(dayOfMonth, lastDayOfMonth));
@@ -89,7 +85,6 @@ export class RecurringBillManager {
         
         let nextDue = new Date(lastDue);
         
-        // Keep adding weeks until we find a future date
         while (nextDue <= currentDate) {
             nextDue.setDate(nextDue.getDate() + 7);
         }
@@ -108,7 +103,6 @@ export class RecurringBillManager {
         
         let nextDue = new Date(lastDue);
         
-        // Keep adding 2 weeks until we find a future date
         while (nextDue <= currentDate) {
             nextDue.setDate(nextDue.getDate() + 14);
         }
@@ -128,11 +122,9 @@ export class RecurringBillManager {
         let nextDue = new Date(lastDue);
         const dayOfMonth = lastDue.getDate();
 
-        // Keep advancing by quarters (3 months) until we find a future date
         while (nextDue <= currentDate) {
             nextDue.setMonth(nextDue.getMonth() + 3);
             
-            // Handle month-end dates
             if (dayOfMonth > 28) {
                 const lastDayOfMonth = new Date(nextDue.getFullYear(), nextDue.getMonth() + 1, 0).getDate();
                 nextDue.setDate(Math.min(dayOfMonth, lastDayOfMonth));
@@ -153,7 +145,6 @@ export class RecurringBillManager {
         
         let nextDue = new Date(lastDue);
         
-        // Keep adding years until we find a future date
         while (nextDue <= currentDate) {
             nextDue.setFullYear(nextDue.getFullYear() + 1);
         }
@@ -249,7 +240,10 @@ export class RecurringBillManager {
             dueDate: currentDueDate
         };
         
-        const nextDueDate = this.getNextDueDate(tempBill, paidDate);
+        // CRITICAL FIX: Always advance from the bill's due date, not the payment date
+        // This ensures paying early (e.g., Oct 3 for Oct 5 bill) still advances to next month
+        const currentDueDateObj = parseLocalDate(currentDueDate);
+        const nextDueDate = this.getNextDueDate(tempBill, currentDueDateObj);
         
         const paymentRecord = {
             amount: parseFloat(bill.amount) || 0,
