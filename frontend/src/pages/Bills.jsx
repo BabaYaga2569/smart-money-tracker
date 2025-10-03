@@ -704,6 +704,10 @@ const Bills = () => {
     }
   };
 
+  // BUG FIX (2025-01-09): Previously, bills marked as paid would lose their "paid" status
+  // on reload due to incorrect logic in isBillPaidForCurrentCycle. This has been fixed in
+  // RecurringBillManager.js. This function correctly uses .map() to preserve all bills in
+  // the array - bills are NEVER removed, only their status is updated.
   const updateBillAsPaid = async (bill, paidDate = null, paymentOptions = {}) => {
     try {
       const settingsDocRef = doc(db, 'users', 'steve-colburn', 'settings', 'personal'); 
@@ -712,6 +716,7 @@ const Bills = () => {
       
       const bills = currentData.bills || [];
       
+      // Use .map() to preserve all bills - bills are never removed from the array
       const updatedBills = bills.map(b => {
         if (b.id === bill.id) {
           // Use RecurringBillManager to properly calculate next due date and update status

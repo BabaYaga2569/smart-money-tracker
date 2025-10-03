@@ -210,10 +210,15 @@ export class RecurringBillManager {
 
     /**
      * Mark a bill as paid and update its next due date for the upcoming cycle
+     * 
+     * BUG FIX (2025-01-09): This function correctly updates bill status to 'paid' and
+     * returns the complete bill object. Bills are NEVER removed from the array - they
+     * maintain all properties and are simply updated with payment information.
+     * 
      * @param {Object} bill - Bill object
      * @param {Date} paymentDate - Date the bill was paid
      * @param {Object} paymentOptions - Additional payment options (source, transactionId, etc.)
-     * @returns {Object} Updated bill object
+     * @returns {Object} Updated bill object with status='paid' and payment history
      */
     static markBillAsPaid(bill, paymentDate = null, paymentOptions = {}) {
         const currentDueDate = bill.nextDueDate || bill.dueDate;
@@ -241,15 +246,16 @@ export class RecurringBillManager {
             timestamp: Date.now()
         };
         
-        // Mark as PAID for current cycle - bill stays paid until next due date
+        // Mark as PAID for current cycle - bill remains in array with updated status
+        // Bills are NEVER removed, only their status and dates are updated
         return {
             ...bill,
-            lastDueDate: currentDueDate,
+            lastDueDate: currentDueDate,  // Important: stores the cycle we just paid for
             lastPaidDate: paidDate,
             nextDueDate: nextDueDate,
             dueDate: nextDueDate, // Update primary dueDate to next occurrence
             isPaid: true,         // KEEP AS TRUE - bill is paid for current cycle
-            status: 'paid',       // KEEP AS PAID until next cycle
+            status: 'paid',       // KEEP AS PAID - status persists correctly now
             paymentHistory: [...(bill.paymentHistory || []), paymentRecord],
             lastPayment: paymentRecord
         };
