@@ -81,27 +81,10 @@ if (wasUpdated) {
   settingsData = refreshedDoc.data();
 }
 
-      // Get Plaid accounts from API or stored plaidAccounts
-// Fetch Plaid balances from API
-let totalAvailable = 0;
-try {
-  const token = localStorage.getItem('plaid_access_token');
-  if (token) {
-    const apiUrl = import.meta.env.VITE_API_URL || 'https://smart-money-tracker-09ks.onrender.com';
-    const response = await fetch(`${apiUrl}/api/accounts`, {
-      headers: { 'Authorization': `Bearer ${token}` }
-    });
-    const data = await response.json();
-    const accounts = data?.accounts || data || [];
-    totalAvailable = accounts.reduce((sum, acc) => {
-      const balance = acc?.balances?.current || acc?.balances?.available || acc?.balance || 0;
-      return sum + balance;
-    }, 0);
-  }
-} catch (error) {
-  console.error('Error fetching Plaid balances:', error);
-}
-
+  const plaidAccounts = settingsData.plaidAccounts || [];
+const totalAvailable = plaidAccounts.reduce((sum, account) => {
+  return sum + (parseFloat(account.balance) || 0);
+}, 0); 
      // Get pay cycle data
 let nextPayday, daysUntilPayday;
 
