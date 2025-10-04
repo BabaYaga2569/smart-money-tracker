@@ -313,14 +313,14 @@ const Accounts = () => {
   };
 
   const getAccountTypeIcon = (type) => {
-    switch (type.toLowerCase()) {
-      case 'checking': return '🏦';
-      case 'savings': return '💰';
-      case 'credit': return '💳';
-      case 'investment': return '📈';
-      default: return '🏛️';
-    }
-  };
+  switch ((type || 'checking').toLowerCase()) {
+    case 'checking': return '🦁';
+    case 'savings': return '💰';
+    case 'credit': return '💳';
+    case 'investment': return '📈';
+    default: return '🛍️';
+  }
+};
 
   const formatCurrency = (amount) => {
     return new Intl.NumberFormat('en-US', {
