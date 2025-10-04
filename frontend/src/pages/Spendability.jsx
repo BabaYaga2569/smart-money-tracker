@@ -31,6 +31,31 @@ const Spendability = () => {
   useEffect(() => {
     fetchFinancialData();
   }, [refreshTrigger]); // Re-fetch when refresh is triggered
+  const autoUpdatePayday = async (settingsData) => {
+  const today = getPacificTime();
+  const lastPayDateStr = settingsData?.lastPayDate || settingsData?.yoursSchedule?.lastPaydate;
+  
+  if (!lastPayDateStr) return false;
+  
+  const lastPayDate = new Date(lastPayDateStr);
+  const daysSinceLastPay = Math.floor((today - lastPayDate) / (1000 * 60 * 60 * 24));
+  
+  if (daysSinceLastPay >= 14) {
+    const payPeriods = Math.floor(daysSinceLastPay / 14);
+    const newLastPayDate = new Date(lastPayDate);
+    newLastPayDate.setDate(lastPayDate.getDate() + (payPeriods * 14));
+    
+    const settingsDocRef = doc(db, 'users', 'steve-colburn', 'settings', 'personal');
+    await updateDoc(settingsDocRef, {
+      lastPayDate: formatDateForInput(newLastPayDate)
+    });
+    
+    console.log(`Auto-updated last pay date to ${formatDateForInput(newLastPayDate)}`);
+    return true;
+  }
+  
+  return false;
+};
 
   const fetchFinancialData = async () => {
     try {
@@ -49,6 +74,12 @@ const Spendability = () => {
 
       const settingsData = settingsDocSnap.data();
       const payCycleData = payCycleDocSnap.exists() ? payCycleDocSnap.data() : null;
+      // Auto-update payday if needed
+const wasUpdated = await autoUpdatePayday(settingsData);
+if (wasUpdated) {
+  const refreshedDoc = await getDoc(settingsDocRef);
+  settingsData = refreshedDoc.data();
+}
 
       // Get Plaid accounts from API or stored plaidAccounts
 const plaidAccounts = settingsData.plaidAccounts || [];
