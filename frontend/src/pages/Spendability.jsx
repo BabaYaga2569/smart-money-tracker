@@ -96,7 +96,7 @@ if (settingsData.nextPaydayOverride) {
   daysUntilPayday = payCycleData.daysUntil || getDaysUntilDateInPacific(nextPayday);
 } else {
   const result = PayCycleCalculator.calculateNextPayday(
-    { lastPaydate: '2025-10-03', amount: 0 },
+    { lastPaydate: settingsData.lastPayDate || '2025-10-03', amount: 0 },
     { amount: 0 }
   );
   nextPayday = result.date;
