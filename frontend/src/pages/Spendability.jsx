@@ -103,18 +103,16 @@ if (settingsData.nextPaydayOverride) {
   daysUntilPayday = result.daysUntil;
 }
       
-      // Check for manual override (but prefer nuclear calculation for debugging)
-      if (settingsData.nextPaydayOverride) {
-        console.log('Spendability: Manual override detected but using nuclear calculation for debugging', {
-          override: settingsData.nextPaydayOverride,
-          nuclearResult: daysUntilPayday
-        });
-      } else if (payCycleData && payCycleData.date) {
-        console.log('Spendability: Pay cycle data detected but using nuclear calculation for debugging', {
-          payCycleDate: payCycleData.date,
-          nuclearResult: daysUntilPayday
-        });
-      }
+      // Check for manual override
+if (settingsData.nextPaydayOverride) {
+  nextPayday = settingsData.nextPaydayOverride;
+  daysUntilPayday = getDaysUntilDateInPacific(nextPayday);
+  console.log('Spendability: Using manual payday override:', nextPayday, daysUntilPayday);
+} else if (payCycleData && payCycleData.date) {
+  nextPayday = payCycleData.date;
+  daysUntilPayday = getDaysUntilDateInPacific(nextPayday);
+  console.log('Spendability: Using payCycle data:', nextPayday, daysUntilPayday);
+}
 
       const bills = settingsData.bills || [];
       const billsWithRecurrence = bills.map(bill => ({
