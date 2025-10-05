@@ -87,7 +87,15 @@ const Settings = () => {
       setSaving(true);
       setMessage('');
 
+      const settingsDocRef = doc(db, 'users', 'steve-colburn', 'settings', 'personal');
+      
+      // READ CURRENT DATA FIRST - THIS PRESERVES plaidAccounts AND ALL OTHER FIELDS
+      const currentDoc = await getDoc(settingsDocRef);
+      const currentData = currentDoc.exists() ? currentDoc.data() : {};
+
+      // MERGE WITH EXISTING DATA
       const settingsData = {
+        ...currentData,  // ← CRITICAL: Preserves plaidAccounts, transactions, etc.
         personalInfo,
         paySchedules,
         bankAccounts,
@@ -97,7 +105,7 @@ const Settings = () => {
         lastUpdated: new Date().toISOString()
       };
 
-      await setDoc(doc(db, 'users', 'steve-colburn', 'settings', 'personal'), settingsData);
+      await setDoc(settingsDocRef, settingsData);
 
       // Use override date if provided, otherwise calculate next payday
       let nextPaydayInfo;
@@ -310,7 +318,7 @@ const Settings = () => {
                 onChange={(e) => setNextPaydayOverride(e.target.value)}
                 placeholder="Override calculated payday"
               />
-              <small>Leave blank to use automatic calculation. Set to 2025-09-30 to fix current issue.</small>
+              <small>Leave blank to use automatic calculation.</small>
             </div>
             <div className="form-group">
               <label>Safety Buffer</label>
