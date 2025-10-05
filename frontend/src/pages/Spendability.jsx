@@ -96,24 +96,13 @@ if (settingsData.nextPaydayOverride) {
   daysUntilPayday = payCycleData.daysUntil || getDaysUntilDateInPacific(nextPayday);
 } else {
   const result = PayCycleCalculator.calculateNextPayday(
-    { lastPaydate: settingsData.lastPayDate || '2025-10-03', amount: 0 },
+    { lastPaydate: settingsData.paySchedules?.yours?.lastPaydate, amount: 0 },
     { amount: 0 }
   );
   nextPayday = result.date;
   daysUntilPayday = result.daysUntil;
-}
-      
-      // Check for manual override
-if (settingsData.nextPaydayOverride) {
-  nextPayday = settingsData.nextPaydayOverride;
-  daysUntilPayday = getDaysUntilDateInPacific(nextPayday);
-  console.log('Spendability: Using manual payday override:', nextPayday, daysUntilPayday);
-} else if (payCycleData && payCycleData.date) {
-  nextPayday = payCycleData.date;
-  daysUntilPayday = getDaysUntilDateInPacific(nextPayday);
-  console.log('Spendability: Using payCycle data:', nextPayday, daysUntilPayday);
-}
-
+}      
+ 
       const bills = settingsData.bills || [];
       const billsWithRecurrence = bills.map(bill => ({
         ...bill,
