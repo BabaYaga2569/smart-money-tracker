@@ -4,6 +4,7 @@ import { db } from '../firebase';
 import { PaycycleManager } from '../utils/PaycycleManager';
 import { PayCycleCalculator } from '../utils/PayCycleCalculator';
 import { CashFlowAnalytics } from '../utils/CashFlowAnalytics';
+import { useAuth } from '../contexts/AuthContext';
 import {
   IncomeTimelineChart,
   CashFlowForecastChart,
@@ -14,6 +15,7 @@ import {
 import './Paycycle.css';
 
 const PayCycle = () => {
+  const { currentUser } = useAuth();
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState('overview'); // overview, income, forecast, schedule
   const [incomeSources, setIncomeSources] = useState([]);
@@ -34,28 +36,28 @@ const PayCycle = () => {
       setLoading(true);
       
       // Load income sources
-      const incomeSourcesSnap = await getDocs(collection(db, 'incomeSources'));
+      const incomeSourcesSnap = await getDocs(collection(db, 'users', currentUser.uid, 'incomeSources'));
       const loadedIncomeSources = incomeSourcesSnap.docs.map(doc => ({
         id: doc.id,
         ...doc.data()
       }));
       
       // Load bills
-      const billsSnap = await getDocs(collection(db, 'bills'));
+      const billsSnap = await getDocs(collection(db, 'users', currentUser.uid, 'bills'));
       const loadedBills = billsSnap.docs.map(doc => ({
         id: doc.id,
         ...doc.data()
       }));
       
       // Load transactions
-      const transactionsSnap = await getDocs(collection(db, 'transactions'));
+      const transactionsSnap = await getDocs(collection(db, 'users', currentUser.uid, 'transactions'));
       const loadedTransactions = transactionsSnap.docs.map(doc => ({
         id: doc.id,
         ...doc.data()
       }));
       
       // Load current balance
-      const accountsSnap = await getDocs(collection(db, 'accounts'));
+      const accountsSnap = await getDocs(collection(db, 'users', currentUser.uid, 'accounts'));
       let totalBalance = 0;
       accountsSnap.forEach(doc => {
         const account = doc.data();
