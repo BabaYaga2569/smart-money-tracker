@@ -52,13 +52,21 @@ const Bills = () => {
 
   const BILL_CATEGORIES = CATEGORY_ICONS;
 
+  // Main initialization useEffect
   useEffect(() => {
-    const loadData = async () => {
-      await Promise.all([loadBills(), loadAccounts()]);
-      await initializePlaidIntegration();
-      checkPlaidConnection();
-    };
-    loadData();
+    // Load data immediately - don't wait
+    loadBills();
+    loadAccounts();
+    
+    // Initialize Plaid in background (non-blocking)
+    initializePlaidIntegration().catch(err => {
+      console.error('Plaid init failed:', err);
+    });
+    
+    // Check connection in background
+    checkPlaidConnection().catch(err => {
+      console.error('Plaid check failed:', err);
+    });
     
     const unsubscribe = PlaidConnectionManager.subscribe((status) => {
       setPlaidStatus({
@@ -71,6 +79,7 @@ const Bills = () => {
     return () => unsubscribe();
   }, []);
 
+  // Visual sync useEffect
   useEffect(() => {
     if (processedBills.length > 0) {
       setTimeout(() => {
@@ -232,50 +241,6 @@ const Bills = () => {
           status: 'pending',
           account: 'bofa',
           autopay: false
-        },
-        {
-          name: 'Southwest Gas',
-          amount: 89.99,
-          category: 'Bills & Utilities', 
-          recurrence: 'monthly',
-          dueDate: '2025-10-24',
-          nextDueDate: '2025-10-24',
-          status: 'pending',
-          account: 'bofa',
-          autopay: false
-        },
-        {
-          name: 'Credit Card Payment',
-          amount: 450.00,
-          category: 'Bills & Utilities',
-          recurrence: 'monthly', 
-          dueDate: '2025-11-15',
-          nextDueDate: '2025-11-15',
-          status: 'pending',
-          account: 'bofa',
-          autopay: false
-        },
-        {
-          name: 'Rent Payment',
-          amount: 1850.00,
-          category: 'Bills & Utilities',
-          recurrence: 'monthly',
-          dueDate: '2025-12-01',
-          nextDueDate: '2025-12-01', 
-          status: 'pending',
-          account: 'bofa',
-          autopay: false
-        },
-        {
-          name: 'Phone Bill',
-          amount: 65.00,
-          category: 'Bills & Utilities',
-          recurrence: 'monthly',
-          dueDate: '2025-11-01',
-          nextDueDate: '2025-11-01',
-          status: 'pending',
-          account: 'bofa',
-          autopay: false
         }
       ];
       
@@ -290,6 +255,7 @@ const Bills = () => {
   };
 
   const loadAccounts = async () => {
+    // ... rest of your loadAccounts function stays exactly the same
     try {
       const token = localStorage.getItem('token');
       
