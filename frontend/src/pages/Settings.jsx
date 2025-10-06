@@ -5,11 +5,13 @@ import { PayCycleCalculator } from '../utils/PayCycleCalculator';
 import { getDaysUntilDateInPacific } from '../utils/DateUtils';
 import { Link } from 'react-router-dom';
 import './Settings.css';
+import { useAuth } from '../contexts/AuthContext';
 
 const Settings = () => {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState('');
+  const { currentUser } = useAuth();
   
   const [personalInfo, setPersonalInfo] = useState({
     yourName: '',
@@ -61,7 +63,7 @@ const Settings = () => {
     try {
       setLoading(true);
       
-      const settingsDocRef = doc(db, 'users', 'steve-colburn', 'settings', 'personal');
+      const settingsDocRef = doc(db, 'users', currentUser.uid, 'settings', 'personal');
       const settingsDocSnap = await getDoc(settingsDocRef);
 
       if (settingsDocSnap.exists()) {
@@ -91,7 +93,7 @@ const Settings = () => {
       console.log('🔵 paySchedules.yours:', paySchedules.yours);
       console.log('🔵 nextPaydayOverride:', nextPaydayOverride);
 
-      const settingsDocRef = doc(db, 'users', 'steve-colburn', 'settings', 'personal');
+      const settingsDocRef = doc(db, 'users', currentUser.uid, 'settings', 'personal');
       
       // READ CURRENT DATA FIRST - THIS PRESERVES plaidAccounts AND ALL OTHER FIELDS
       const currentDoc = await getDoc(settingsDocRef);
@@ -145,7 +147,7 @@ const Settings = () => {
 
       if (nextPaydayInfo) {
         console.log('🔵 Saving to Firebase payCycle collection:', nextPaydayInfo);
-        await setDoc(doc(db, 'users', 'steve-colburn', 'financial', 'payCycle'), nextPaydayInfo);
+        await setDoc(doc(db, 'users', currentUser.uid, 'financial', 'payCycle'), nextPaydayInfo);
         console.log('✅ PayCycle saved successfully to Firebase');
       } else {
         console.warn('⚠️ nextPaydayInfo is null/undefined - not saving to payCycle');
