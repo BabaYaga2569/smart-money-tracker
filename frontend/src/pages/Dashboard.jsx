@@ -5,8 +5,10 @@ import { db } from '../firebase';
 import { calculateTotalProjectedBalance } from '../utils/BalanceCalculator';
 import PlaidConnectionManager from '../utils/PlaidConnectionManager';
 import './Dashboard.css';
+import { useAuth } from '../contexts/AuthContext';
 
 const Dashboard = () => {
+  const { currentUser } = useAuth();
   const navigate = useNavigate();
   const [loading, setLoading] = useState(true);
   const [firebaseConnected, setFirebaseConnected] = useState(false);
@@ -68,7 +70,7 @@ const Dashboard = () => {
       );
 
       const dataPromise = async () => {
-        const settingsDocRef = doc(db, 'users', 'steve-colburn', 'settings', 'personal');
+        const settingsDocRef = doc(db, 'users', 'currentUser.uid', 'settings', 'personal');
         const settingsDocSnap = await getDoc(settingsDocRef);
         return settingsDocSnap;
       };
@@ -144,7 +146,7 @@ const Dashboard = () => {
 
   const loadTransactions = async () => {
     try {
-      const transactionsRef = collection(db, 'users', 'steve-colburn', 'transactions');
+      const transactionsRef = collection(db, 'users', 'currentUser.uid', 'transactions');
       const q = query(transactionsRef, orderBy('timestamp', 'desc'), limit(100));
       const querySnapshot = await getDocs(q);
       
@@ -170,7 +172,7 @@ const Dashboard = () => {
       const startDateStr = startOfMonth.toISOString().split('T')[0];
       const endDateStr = endOfMonth.toISOString().split('T')[0];
       
-      const transactionsRef = collection(db, 'users', 'steve-colburn', 'transactions');
+      const transactionsRef = collection(db, 'users', 'currentUser.uid', 'transactions');
       const q = query(
         transactionsRef, 
         where('date', '>=', startDateStr),
