@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { doc, getDoc, updateDoc, collection, addDoc, deleteDoc, getDocs } from 'firebase/firestore';
 import { db } from '../firebase';
 import { formatDateForDisplay, formatDateForInput } from '../utils/DateUtils';
+import { useAuth } from '../contexts/AuthContext';
 import { 
   calculateGoalProgress, 
   calculateRemainingAmount, 
@@ -24,6 +25,7 @@ import { TRANSACTION_CATEGORIES } from '../constants/categories';
 import './Goals.css';
 
 const Goals = () => {
+  const { currentUser } = useAuth();
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [goals, setGoals] = useState([]);
@@ -77,7 +79,7 @@ const Goals = () => {
 
   const loadGoals = async () => {
     try {
-      const goalsRef = collection(db, 'users', 'steve-colburn', 'goals');
+      const goalsRef = collection(db, 'users', currentUser.uid, 'goals');
       const querySnapshot = await getDocs(goalsRef);
       const goalsData = [];
       
@@ -208,7 +210,7 @@ const Goals = () => {
 
   const loadAccounts = async () => {
     try {
-      const settingsDocRef = doc(db, 'users', 'steve-colburn', 'settings', 'personal');
+      const settingsDocRef = doc(db, 'users', currentUser.uid, 'settings', 'personal');
       const settingsDocSnap = await getDoc(settingsDocRef);
       
       if (settingsDocSnap.exists()) {
@@ -223,7 +225,7 @@ const Goals = () => {
   const loadMonthlyExpenses = async () => {
     try {
       // Load bills to calculate monthly expenses for emergency fund recommendations
-      const settingsDocRef = doc(db, 'users', 'steve-colburn', 'settings', 'personal');
+      const settingsDocRef = doc(db, 'users', currentUser.uid, 'settings', 'personal');
       const settingsDocSnap = await getDoc(settingsDocRef);
       
       if (settingsDocSnap.exists()) {
@@ -350,13 +352,13 @@ const Goals = () => {
 
       if (editingGoal) {
         // Update existing goal
-        const goalRef = doc(db, 'users', 'steve-colburn', 'goals', editingGoal.id);
+        const goalRef = doc(db, 'users', currentUser.uid, 'goals', editingGoal.id);
         await updateDoc(goalRef, goalData);
         showNotification('Goal updated successfully!', 'success');
       } else {
         // Add new goal
         goalData.createdAt = Date.now();
-        const goalsRef = collection(db, 'users', 'steve-colburn', 'goals');
+        const goalsRef = collection(db, 'users', currentUser.uid, 'goals');
         await addDoc(goalsRef, goalData);
         showNotification('Goal created successfully!', 'success');
       }
@@ -378,7 +380,7 @@ const Goals = () => {
     }
 
     try {
-      const goalRef = doc(db, 'users', 'steve-colburn', 'goals', goalId);
+      const goalRef = doc(db, 'users', currentUser.uid, 'goals', goalId);
       await deleteDoc(goalRef);
       showNotification('Goal deleted successfully', 'success');
       await loadGoals();
