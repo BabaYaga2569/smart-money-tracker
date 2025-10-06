@@ -154,39 +154,27 @@ if (settingsData.nextPaydayOverride) {
         console.log('Spendability: Component state updated, days until payday:', finalDaysUntilPayday);
       }, 100);
 
-    } catch (err) {
-      console.error('Error fetching data:', err);
-      
-      // Use demo data for testing when Firebase is unavailable
-    console.error('No financial data found:', err);
-    setError('No financial data found. Please set up your Settings first.');
-    
-    const emptyData = {
-      totalAvailable: 0,
-      checking: 0,
-      savings: 0,
-      billsBeforePayday: [],
-      totalBillsDue: 0,
-      safeToSpend: 0,
-      nextPayday: 'Not set',
-      daysUntilPayday: 0,
-      weeklyEssentials: 0,
-      safetyBuffer: 0
-    };
-    
-    setFinancialData(emptyData);
-        nextPayday: '2025-09-30',
-        daysUntilPayday: getManualPacificDaysUntilPayday(), // NUCLEAR: Use manual calculation
-        weeklyEssentials: 150.00,
-        safetyBuffer: 42.00
-      };
-      
-      setFinancialData(demoData);
-      setError(null); // Clear error to show demo data
-    } finally {
-      setLoading(false);
-    }
+   } catch (err) {
+  console.error('Error loading data:', err);
+  setError('No financial data found. Please set up your Settings first.');
+  
+  const emptyData = {
+    totalAvailable: 0,
+    checking: 0,
+    savings: 0,
+    billsBeforePayday: [],
+    totalBillsDue: 0,
+    safeToSpend: 0,
+    nextPayday: 'Not set',
+    daysUntilPayday: 0,
+    weeklyEssentials: 0,
+    safetyBuffer: 0
   };
+  
+  setFinancialData(emptyData);
+} finally {
+  setLoading(false);
+}
   
   // NUCLEAR: Enhanced force refresh of payday calculation with immediate feedback
   const forceRefreshPaydayCalculation = () => {
