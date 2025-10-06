@@ -3,6 +3,7 @@ import { doc, getDoc, collection, getDocs } from 'firebase/firestore';
 import { db } from '../firebase';
 import { CashFlowAnalytics } from '../utils/CashFlowAnalytics';
 import { mockTransactions, mockAccounts } from '../utils/MockCashFlowData';
+import { useAuth } from '../contexts/AuthContext';
 import {
   CashFlowTrendChart,
   WaterfallChart,
@@ -15,6 +16,7 @@ import {
 import './Cashflow.css';
 
 const CashFlow = () => {
+  const { currentUser } = useAuth();
   const [loading, setLoading] = useState(true);
   const [transactions, setTransactions] = useState([]);
   const [accounts, setAccounts] = useState({});
@@ -51,7 +53,7 @@ const CashFlow = () => {
 
   const loadAccounts = async () => {
     try {
-      const settingsDocRef = doc(db, 'users', 'steve-colburn', 'settings', 'personal');
+      const settingsDocRef = doc(db, 'users', 'currentUser.uid', 'settings', 'personal');
       const settingsDocSnap = await getDoc(settingsDocRef);
       
       if (settingsDocSnap.exists()) {
@@ -68,7 +70,7 @@ const CashFlow = () => {
 
   const loadTransactions = async () => {
     try {
-      const transactionsRef = collection(db, 'users', 'steve-colburn', 'transactions');
+      const transactionsRef = collection(db, 'users', 'currentUser.uid', 'transactions');
       const querySnapshot = await getDocs(transactionsRef);
       
       const transactionsList = [];
