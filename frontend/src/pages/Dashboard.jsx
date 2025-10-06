@@ -19,18 +19,18 @@ const Dashboard = () => {
   });
   const [hasPlaidAccounts, setHasPlaidAccounts] = useState(false);
   const [dashboardData, setDashboardData] = useState({
-    totalBalance: 1530.07,  // Default fallback data (Live balance)
-    totalProjectedBalance: 1530.07,  // Add projected balance
-    accountCount: 4,
-    safeToSpend: 1247.50,
-    billsDueSoon: 2,
-    recurringCount: 8,
-    daysUntilPayday: 5,
-    monthlyIncome: 5500,
-    monthlyExpenses: 4957,
-    transactionCount: 0  // Add transaction count
-  });
-
+    const [dashboardData, setDashboardData] = useState({
+  totalBalance: 0,
+  totalProjectedBalance: 0,
+  accountCount: 0,
+  safeToSpend: 0,
+  billsDueSoon: 0,
+  recurringCount: 0,
+  daysUntilPayday: 0,
+  monthlyIncome: 0,
+  monthlyExpenses: 0,
+  transactionCount: 0
+});
   useEffect(() => {
     loadDashboardData();
     checkPlaidConnection();
