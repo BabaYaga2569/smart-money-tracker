@@ -32,22 +32,25 @@ const Accounts = () => {
     return localStorage.getItem('plaidBannerDismissed') === 'true';
   });
 
-  useEffect(() => {
-    loadAccountsAndTransactions();
-    checkPlaidConnection();
-    
-    // Subscribe to Plaid connection changes
-    const unsubscribe = PlaidConnectionManager.subscribe((status) => {
-      setPlaidStatus({
-        isConnected: status.hasToken && status.isApiWorking === true && status.hasAccounts,
-        hasError: status.error !== null,
-        errorMessage: status.error
-      });
+ useEffect(() => {
+  // Load immediately - don't wait for Plaid
+  loadAccountsAndTransactions();
+  
+  // Check Plaid in background (non-blocking)
+  checkPlaidConnection().catch(err => {
+    console.error('Plaid check failed:', err);
+  });
+  
+  const unsubscribe = PlaidConnectionManager.subscribe((status) => {
+    setPlaidStatus({
+      isConnected: status.hasToken && status.isApiWorking === true && status.hasAccounts,
+      hasError: status.error !== null,
+      errorMessage: status.error
     });
-    
-    return () => unsubscribe();
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
-
+  });
+  
+  return () => unsubscribe();
+}, []);
   const checkPlaidConnection = async () => {
     try {
       const status = await PlaidConnectionManager.checkConnection();
