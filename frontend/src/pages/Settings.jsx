@@ -87,6 +87,10 @@ const Settings = () => {
       setSaving(true);
       setMessage('');
 
+      console.log('🔵 SAVE SETTINGS CLICKED');
+      console.log('🔵 paySchedules.yours:', paySchedules.yours);
+      console.log('🔵 nextPaydayOverride:', nextPaydayOverride);
+
       const settingsDocRef = doc(db, 'users', 'steve-colburn', 'settings', 'personal');
       
       // READ CURRENT DATA FIRST - THIS PRESERVES plaidAccounts AND ALL OTHER FIELDS
@@ -95,7 +99,7 @@ const Settings = () => {
 
       // MERGE WITH EXISTING DATA
       const settingsData = {
-        ...currentData,  // ← CRITICAL: Preserves plaidAccounts, transactions, etc.
+        ...currentData, // ← CRITICAL: Preserves plaidAccounts, transactions, etc.
         personalInfo,
         paySchedules,
         bankAccounts,
@@ -105,11 +109,17 @@ const Settings = () => {
         lastUpdated: new Date().toISOString()
       };
 
+      console.log('🔵 Settings data prepared:', settingsData);
+
       await setDoc(settingsDocRef, settingsData);
+
+      console.log('🔵 Settings saved to Firebase');
+      console.log('🔵 Now calculating payday...');
 
       // Use override date if provided, otherwise calculate next payday
       let nextPaydayInfo;
       if (nextPaydayOverride) {
+        console.log('🔵 Using manual override:', nextPaydayOverride);
         const daysUntil = getDaysUntilDateInPacific(nextPaydayOverride);
         nextPaydayInfo = {
           date: nextPaydayOverride,
@@ -117,29 +127,42 @@ const Settings = () => {
           source: "manual_override",
           amount: 0
         };
+        console.log('🔵 Override payday info:', nextPaydayInfo);
       } else {
+        console.log('🔵 Calculating from paySchedules...');
+        console.log('🔵 Input to calculator:', {
+          yours: paySchedules.yours,
+          spouse: paySchedules.spouse
+        });
+        
         nextPaydayInfo = PayCycleCalculator.calculateNextPayday(
           paySchedules.yours,
           paySchedules.spouse
         );
+        
+        console.log('🔵 Calculated payday result:', nextPaydayInfo);
       }
 
       if (nextPaydayInfo) {
+        console.log('🔵 Saving to Firebase payCycle collection:', nextPaydayInfo);
         await setDoc(doc(db, 'users', 'steve-colburn', 'financial', 'payCycle'), nextPaydayInfo);
+        console.log('✅ PayCycle saved successfully to Firebase');
+      } else {
+        console.warn('⚠️ nextPaydayInfo is null/undefined - not saving to payCycle');
       }
 
+      console.log('✅ SAVE COMPLETE');
       setMessage('Settings saved successfully!');
     } catch (error) {
-      console.error('Error saving settings:', error);
+      console.error('❌ Error saving settings:', error);
       setMessage('Error saving settings');
     } finally {
       setSaving(false);
     }
   };
 
-  // Fixed Add Bill function
   const addBill = () => {
-    console.log('Adding new bill...'); // Debug log
+    console.log('Adding new bill...');
     const newBill = { 
       name: '', 
       amount: '', 
@@ -283,7 +306,7 @@ const Settings = () => {
 
         {/* Tile 3: Spouse Pay Schedule */}
         <div className="settings-tile">
-          <h3>💝 Spouse Pay Schedule (15th & 30th)</h3>
+          <h3>💑 Spouse Pay Schedule (15th & 30th)</h3>
           <div className="tile-content">
             <div className="form-group">
               <label>Pay Amount</label>
@@ -318,7 +341,7 @@ const Settings = () => {
                 onChange={(e) => setNextPaydayOverride(e.target.value)}
                 placeholder="Override calculated payday"
               />
-              <small>Leave blank to use automatic calculation.</small>
+              <small>Leave blank to use automatic calculation</small>
             </div>
             <div className="form-group">
               <label>Safety Buffer</label>
@@ -428,9 +451,9 @@ const Settings = () => {
           </div>
         </div>
 
-        {/* Tile 6: Recurring Bills - Focus on Basic Bill Management */}
+        {/* Tile 6: Recurring Bills */}
         <div className="settings-tile bills-tile">
-          <h3>📄 Recurring Bills</h3>
+          <h3>🔄 Recurring Bills</h3>
           <div className="tile-content">
             
             {/* Info about advanced import */}
