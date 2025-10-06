@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { doc, collection, getDocs, addDoc, updateDoc } from 'firebase/firestore';
 import { db } from '../firebase';
 import { TRANSACTION_CATEGORIES, getCategoryIcon } from '../constants/categories';
+import { useAuth } from '../contexts/AuthContext';
 import {
   Chart as ChartJS,
   CategoryScale,
@@ -30,6 +31,7 @@ ChartJS.register(
 );
 
 const Categories = () => {
+  const { currentUser } = useAuth();
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [transactions, setTransactions] = useState([]);
@@ -245,7 +247,7 @@ const Categories = () => {
 
   const loadTransactions = async () => {
     try {
-      const transactionsRef = collection(db, 'users', 'steve-colburn', 'transactions');
+      const transactionsRef = collection(db, 'users', currentUser.uid, 'transactions');
       const querySnapshot = await getDocs(transactionsRef);
       const transactionsData = [];
       
@@ -271,7 +273,7 @@ const Categories = () => {
 
   const loadBudgets = async () => {
     try {
-      const budgetsRef = collection(db, 'users', 'steve-colburn', 'budgets');
+      const budgetsRef = collection(db, 'users', 'currentUser.uid', 'budgets');
       const querySnapshot = await getDocs(budgetsRef);
       const budgetsData = {};
       
@@ -310,7 +312,7 @@ const Categories = () => {
 
   const loadCustomCategories = async () => {
     try {
-      const categoriesRef = collection(db, 'users', 'steve-colburn', 'categories');
+      const categoriesRef = collection(db, 'users', currentUser.uid, 'categories');
       const querySnapshot = await getDocs(categoriesRef);
       const categoriesData = [];
       
@@ -420,7 +422,7 @@ const Categories = () => {
       };
 
       // Save to Firebase
-      const budgetsRef = collection(db, 'users', 'steve-colburn', 'budgets');
+      const budgetsRef = collection(db, 'users', 'currentUser.uid', 'budgets');
       const docRef = await addDoc(budgetsRef, budgetData);
       
       // Update local state with the document ID
@@ -467,7 +469,7 @@ const Categories = () => {
       };
 
       // Update in Firebase
-      const budgetDocRef = doc(db, 'users', 'steve-colburn', 'budgets', existingBudget.id);
+      const budgetDocRef = doc(db, 'users', 'currentUser.uid', 'budgets', existingBudget.id);
       await updateDoc(budgetDocRef, budgetData);
 
       // Update local state with the document ID preserved
@@ -572,13 +574,13 @@ const Categories = () => {
         // Update existing category
         const existingCategory = customCategories.find(cat => cat.name === selectedCategory);
         if (existingCategory) {
-          const categoryRef = doc(db, 'users', 'steve-colburn', 'categories', existingCategory.id);
+          const categoryRef = doc(db, 'users', 'currentUser.uid', 'categories', existingCategory.id);
           await updateDoc(categoryRef, categoryData);
           showNotification('Category updated successfully', 'success');
         }
       } else {
         // Add new category
-        const categoriesRef = collection(db, 'users', 'steve-colburn', 'categories');
+        const categoriesRef = collection(db, 'users', 'currentUser.uid', 'categories');
         await addDoc(categoriesRef, categoryData);
         showNotification('Category added successfully', 'success');
       }
@@ -608,7 +610,7 @@ const Categories = () => {
 
   const loadCategoryRules = async (category) => {
     try {
-      const rulesRef = collection(db, 'users', 'steve-colburn', 'categoryRules');
+      const rulesRef = collection(db, 'users', 'currentUser.uid', 'categoryRules');
       const querySnapshot = await getDocs(rulesRef);
       const rulesData = [];
       
@@ -643,7 +645,7 @@ const Categories = () => {
         updatedAt: Date.now()
       };
 
-      const rulesRef = collection(db, 'users', 'steve-colburn', 'categoryRules');
+      const rulesRef = collection(db, 'users', 'currentUser.uid', 'categoryRules');
       await addDoc(rulesRef, ruleData);
       
       showNotification('Rule added successfully', 'success');
