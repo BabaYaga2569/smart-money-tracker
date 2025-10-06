@@ -6,8 +6,10 @@ import { CATEGORY_KEYWORDS } from '../constants/categories';
 import PlaidConnectionManager from '../utils/PlaidConnectionManager';
 import PlaidErrorModal from '../components/PlaidErrorModal';
 import './Transactions.css';
+import { useAuth } from '../contexts/AuthContext';
 
 const Transactions = () => {
+  const { currentUser } = useAuth();
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [syncingPlaid, setSyncingPlaid] = useState(false);
@@ -207,7 +209,7 @@ const Transactions = () => {
   // Fallback function to load from Firebase
   const loadFirebaseAccounts = async () => {
     try {
-      const settingsDocRef = doc(db, 'users', 'steve-colburn', 'settings', 'personal');
+      const settingsDocRef = doc(db, 'users', currentUser.uid, 'settings', 'personal');
       const settingsDocSnap = await getDoc(settingsDocRef);
       
       if (settingsDocSnap.exists()) {
@@ -259,7 +261,7 @@ const Transactions = () => {
 
   const loadTransactions = async () => {
     try {
-      const transactionsRef = collection(db, 'users', 'steve-colburn', 'transactions');
+      const transactionsRef = collection(db, 'users', currentUser.uid, 'transactions');
       const q = query(transactionsRef, orderBy('timestamp', 'desc'), limit(100));
       const querySnapshot = await getDocs(q);
       
@@ -345,7 +347,7 @@ const Transactions = () => {
 
       // Add Plaid transactions to Firebase (avoid duplicates)
       let addedCount = 0;
-      const transactionsRef = collection(db, 'users', 'steve-colburn', 'transactions');
+      const transactionsRef = collection(db, 'users', currentUser.uid, 'transactions');
       
       for (const plaidTx of plaidTransactions) {
         // Check if transaction already exists by transaction_id
@@ -442,7 +444,7 @@ const Transactions = () => {
       };
 
       // Add to Firebase
-      const transactionsRef = collection(db, 'users', 'steve-colburn', 'transactions');
+      const transactionsRef = collection(db, 'users', currentUser.uid, 'transactions');
       const docRef = await addDoc(transactionsRef, transaction);
       
       // Add to local state
@@ -503,7 +505,7 @@ const Transactions = () => {
       setSaving(true);
       
       // Update Firebase
-      await updateDoc(doc(db, 'users', 'steve-colburn', 'transactions', transactionId), updatedFields);
+      await updateDoc(doc(db, 'users', currentUser.uid, 'transactions', transactionId), updatedFields);
       
       // Update local state
       setTransactions(prev => prev.map(t => 
@@ -529,7 +531,7 @@ const Transactions = () => {
       setSaving(true);
       
       // Delete from Firebase
-      await deleteDoc(doc(db, 'users', 'steve-colburn', 'transactions', transactionId));
+      await deleteDoc(doc(db, 'users', currentUser.uid, 'transactions', transactionId));
       
       // Reverse the account balance change
       await updateAccountBalance(transaction.account, -transaction.amount);
