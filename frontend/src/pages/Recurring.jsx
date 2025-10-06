@@ -9,8 +9,10 @@ import CSVImportModal from '../components/CSVImportModal';
 import { BillSortingManager } from '../utils/BillSortingManager';
 import { BillDeduplicationManager } from '../utils/BillDeduplicationManager';
 import './Recurring.css';
+import { useAuth } from '../contexts/AuthContext';
 
 const Recurring = () => {
+  const { currentUser } = useAuth();
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [recurringItems, setRecurringItems] = useState([]);
@@ -97,7 +99,7 @@ const Recurring = () => {
 
   const loadRecurringItems = async () => {
     try {
-      const settingsDocRef = doc(db, 'users', 'steve-colburn', 'settings', 'personal');
+      const settingsDocRef = doc(db, 'users', currentUser.uid, 'settings', 'personal');
       const settingsDocSnap = await getDoc(settingsDocRef);
       
       if (settingsDocSnap.exists()) {
@@ -170,7 +172,7 @@ const Recurring = () => {
       }
       
       // Fallback to Firebase
-      const settingsDocRef = doc(db, 'users', 'steve-colburn', 'settings', 'personal');
+      const settingsDocRef = doc(db, 'users', currentUser.uid, 'settings', 'personal');
       const settingsDocSnap = await getDoc(settingsDocRef);
       
       if (settingsDocSnap.exists()) {
@@ -438,7 +440,7 @@ const Recurring = () => {
         customRecurrence: newItem.customRecurrence || undefined
       };
 
-      const settingsDocRef = doc(db, 'users', 'steve-colburn', 'settings', 'personal');
+      const settingsDocRef = doc(db, 'users', currentUser.uid, 'settings', 'personal');
       const currentDoc = await getDoc(settingsDocRef);
       const currentData = currentDoc.exists() ? currentDoc.data() : {};
       
@@ -549,7 +551,7 @@ const Recurring = () => {
     try {
       setSaving(true);
       
-      const settingsDocRef = doc(db, 'users', 'steve-colburn', 'settings', 'personal');
+      const settingsDocRef = doc(db, 'users', currentUser.uid, 'settings', 'personal');
       const currentDoc = await getDoc(settingsDocRef);
       const currentData = currentDoc.exists() ? currentDoc.data() : {};
       
@@ -617,7 +619,7 @@ const Recurring = () => {
     try {
       setSaving(true);
       
-      const settingsDocRef = doc(db, 'users', 'steve-colburn', 'settings', 'personal');
+      const settingsDocRef = doc(db, 'users', currentUser.uid, 'settings', 'personal');
       const currentDoc = await getDoc(settingsDocRef);
       const currentData = currentDoc.exists() ? currentDoc.data() : {};
       
@@ -650,7 +652,7 @@ const Recurring = () => {
     try {
       setSaving(true);
       
-      const settingsDocRef = doc(db, 'users', 'steve-colburn', 'settings', 'personal');
+      const settingsDocRef = doc(db, 'users', currentUser.uid, 'settings', 'personal');
       const currentDoc = await getDoc(settingsDocRef);
       const currentData = currentDoc.exists() ? currentDoc.data() : {};
       
@@ -679,7 +681,7 @@ const Recurring = () => {
       setSaving(true);
       setShowCleanupMenu(false);
       
-      const settingsDocRef = doc(db, 'users', 'steve-colburn', 'settings', 'personal');
+      const settingsDocRef = doc(db, 'users', currentUser.uid, 'settings', 'personal');
       const currentDoc = await getDoc(settingsDocRef);
       const currentData = currentDoc.exists() ? currentDoc.data() : {};
       
@@ -710,7 +712,7 @@ const Recurring = () => {
       setSaving(true);
       setShowCleanupMenu(false);
       
-      const settingsDocRef = doc(db, 'users', 'steve-colburn', 'settings', 'personal');
+      const settingsDocRef = doc(db, 'users', currentUser.uid, 'settings', 'personal');
       const currentDoc = await getDoc(settingsDocRef);
       const currentData = currentDoc.exists() ? currentDoc.data() : {};
       
@@ -776,7 +778,7 @@ const Recurring = () => {
     try {
       setSaving(true);
       
-      const settingsDocRef = doc(db, 'users', 'steve-colburn', 'settings', 'personal');
+      const settingsDocRef = doc(db, 'users', currentUser.uid, 'settings', 'personal');
       const currentDoc = await getDoc(settingsDocRef);
       const currentData = currentDoc.exists() ? currentDoc.data() : {};
       
@@ -850,7 +852,7 @@ const Recurring = () => {
     try {
       setSaving(true);
       
-      const settingsDocRef = doc(db, 'users', 'steve-colburn', 'settings', 'personal');
+      const settingsDocRef = doc(db, 'users', currentUser.uid, 'settings', 'personal');
       const currentDoc = await getDoc(settingsDocRef);
       const currentData = currentDoc.exists() ? currentDoc.data() : {};
       
