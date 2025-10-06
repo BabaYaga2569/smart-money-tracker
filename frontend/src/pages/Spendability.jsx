@@ -5,8 +5,10 @@ import { PayCycleCalculator } from '../utils/PayCycleCalculator';
 import { RecurringBillManager } from '../utils/RecurringBillManager';
 import { formatDateForDisplay, formatDateForInput, getDaysUntilDateInPacific, getPacificTime, getManualPacificDaysUntilPayday } from '../utils/DateUtils';
 import './Spendability.css';
+import { useAuth } from '../contexts/AuthContext';
 
 const Spendability = () => {
+  const { currentUser } = useAuth();
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [spendAmount, setSpendAmount] = useState('');
@@ -45,7 +47,7 @@ const Spendability = () => {
     const newLastPayDate = new Date(lastPayDate);
     newLastPayDate.setDate(lastPayDate.getDate() + (payPeriods * 14));
     
-    const settingsDocRef = doc(db, 'users', 'steve-colburn', 'settings', 'personal');
+    const settingsDocRef = doc(db, 'users', currentUser.uid, 'settings', 'personal');
     await updateDoc(settingsDocRef, {
       lastPayDate: formatDateForInput(newLastPayDate)
     });
@@ -62,10 +64,10 @@ const Spendability = () => {
       setLoading(true);
       setError(null);
 
-      const settingsDocRef = doc(db, 'users', 'steve-colburn', 'settings', 'personal');
+      const settingsDocRef = doc(db, 'users', currentUser.uid, 'settings', 'personal');
       const settingsDocSnap = await getDoc(settingsDocRef);
       
-      const payCycleDocRef = doc(db, 'users', 'steve-colburn', 'financial', 'payCycle');
+      const payCycleDocRef = doc(db, 'users', currentUser.uid, 'financial', 'payCycle');
       const payCycleDocSnap = await getDoc(payCycleDocRef);
 
       if (!settingsDocSnap.exists()) {
@@ -267,7 +269,7 @@ if (settingsData.nextPaydayOverride) {
       };
 
       // Add transaction to Firebase
-      const transactionsRef = collection(db, 'users', 'steve-colburn', 'transactions');
+      const transactionsRef = collection(db, 'users', currentUser.uid, 'transactions');
       await addDoc(transactionsRef, transaction);
 
       // Update account balance
@@ -298,7 +300,7 @@ if (settingsData.nextPaydayOverride) {
 
   const updateAccountBalance = async (accountKey, amount) => {
     try {
-      const settingsDocRef = doc(db, 'users', 'steve-colburn', 'settings', 'personal');
+      const settingsDocRef = doc(db, 'users', currentUser.uid, 'settings', 'personal');
       const currentDoc = await getDoc(settingsDocRef);
       const currentData = currentDoc.exists() ? currentDoc.data() : {};
       
@@ -326,7 +328,7 @@ if (settingsData.nextPaydayOverride) {
 
   const updateBillAsPaid = async (bill) => {
     try {
-      const settingsDocRef = doc(db, 'users', 'steve-colburn', 'settings', 'personal'); 
+      const settingsDocRef = doc(db, 'users', currentUser.uid, 'settings', 'personal'); 
       const currentDoc = await getDoc(settingsDocRef);
       const currentData = currentDoc.exists() ? currentDoc.data() : {};
       
