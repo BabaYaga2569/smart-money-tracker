@@ -18,8 +18,7 @@ const Dashboard = () => {
     errorMessage: null
   });
   const [hasPlaidAccounts, setHasPlaidAccounts] = useState(false);
-  const [dashboardData, setDashboardData] = useState({
-    const [dashboardData, setDashboardData] = useState({
+  const [dashboardData, setDashboardData] = useState({    
   totalBalance: 0,
   totalProjectedBalance: 0,
   accountCount: 0,
