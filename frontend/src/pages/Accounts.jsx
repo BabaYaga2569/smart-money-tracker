@@ -6,8 +6,10 @@ import PlaidErrorModal from '../components/PlaidErrorModal';
 import { calculateProjectedBalance, calculateTotalProjectedBalance, getBalanceDifference, formatBalanceDifference } from '../utils/BalanceCalculator';
 import PlaidConnectionManager from '../utils/PlaidConnectionManager';
 import './Accounts.css';
+import { useAuth } from '../contexts/AuthContext';
 
 const Accounts = () => {
+  const { currentUser } = useAuth();
   const [loading, setLoading] = useState(true);
   const [accounts, setAccounts] = useState({});
   const [totalBalance, setTotalBalance] = useState(0);
@@ -76,7 +78,7 @@ const Accounts = () => {
 
   const loadTransactions = async () => {
     try {
-      const transactionsRef = collection(db, 'users', 'steve-colburn', 'transactions');
+      const transactionsRef = collection(db, 'users', currentUser.uid, 'transactions');
       const q = query(transactionsRef, orderBy('timestamp', 'desc'), limit(100));
       const querySnapshot = await getDocs(q);
       
@@ -94,7 +96,7 @@ const Accounts = () => {
 
   const loadAccounts = async () => {
     try {
-      const settingsDocRef = doc(db, 'users', 'steve-colburn', 'settings', 'personal');
+      const settingsDocRef = doc(db, 'users', currentUser.uid, 'settings', 'personal');
       const settingsDocSnap = await getDoc(settingsDocRef);
       
       if (settingsDocSnap.exists()) {
@@ -159,7 +161,7 @@ const Accounts = () => {
   const saveAccountsToFirebase = async (updatedAccounts) => {
     try {
       setSaving(true);
-      const settingsDocRef = doc(db, 'users', 'steve-colburn', 'settings', 'personal');
+      const settingsDocRef = doc(db, 'users', currentUser.uid, 'settings', 'personal');
       
       // Get current settings to preserve other data
       const currentDoc = await getDoc(settingsDocRef);
@@ -271,7 +273,7 @@ const Accounts = () => {
         }));
 
         // Save to Firebase
-        const settingsDocRef = doc(db, 'users', 'steve-colburn', 'settings', 'personal');
+        const settingsDocRef = doc(db, 'users', currentUser.uid, 'settings', 'personal');
         const currentDoc = await getDoc(settingsDocRef);
         const currentData = currentDoc.exists() ? currentDoc.data() : {};
 
@@ -367,7 +369,7 @@ const Accounts = () => {
             <PlaidLink
               onSuccess={handlePlaidSuccess}
               onExit={handlePlaidExit}
-              userId="steve-colburn"
+              userId=currentUser.uid
               buttonText="🔗 Connect Bank"
             />
           ) : (
@@ -375,7 +377,7 @@ const Accounts = () => {
               <PlaidLink
                 onSuccess={handlePlaidSuccess}
                 onExit={handlePlaidExit}
-                userId="steve-colburn"
+                userId=currentUser.uid
                 buttonText="➕ Add Another Bank"
               />
             </>
@@ -406,7 +408,7 @@ const Accounts = () => {
           <PlaidLink
             onSuccess={handlePlaidSuccess}
             onExit={handlePlaidExit}
-            userId="steve-colburn"
+            userId=currentUser.uid
             buttonText="🔗 Connect Now"
           />
         </div>
@@ -740,7 +742,7 @@ const Accounts = () => {
             <PlaidLink
               onSuccess={handlePlaidSuccess}
               onExit={handlePlaidExit}
-              userId="steve-colburn"
+              userId=currentUser.uid
               buttonText="🔗 Connect Your First Bank"
             />
           </div>
