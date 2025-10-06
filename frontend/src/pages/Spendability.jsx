@@ -72,7 +72,7 @@ const Spendability = () => {
         throw new Error('No financial data found. Please set up your Settings first.');
       }
 
-      const settingsData = settingsDocSnap.data();
+      let settingsData = settingsDocSnap.data();
       const payCycleData = payCycleDocSnap.exists() ? payCycleDocSnap.data() : null;
       // Auto-update payday if needed
 const wasUpdated = await autoUpdatePayday(settingsData);
