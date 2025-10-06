@@ -14,12 +14,14 @@ import { TRANSACTION_CATEGORIES, CATEGORY_ICONS, getCategoryIcon, migrateLegacyC
 import NotificationSystem from '../components/NotificationSystem';
 import { BillDeduplicationManager } from '../utils/BillDeduplicationManager';
 import './Bills.css';
+import { useAuth } from '../contexts/AuthContext';
 
 const generateBillId = () => {
   return `bill_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
 };
 
 const Bills = () => {
+  const { currentUser } = useAuth();
   const [loading, setLoading] = useState(true);
   const [bills, setBills] = useState([]);
   const [processedBills, setProcessedBills] = useState([]);
@@ -175,7 +177,7 @@ const Bills = () => {
 
   const loadBills = async () => {
     try {
-      const settingsDocRef = doc(db, 'users', 'steve-colburn', 'settings', 'personal');
+      const settingsDocRef = doc(db, 'users', currentUser.uid, 'settings', 'personal');
       const settingsDocSnap = await getDoc(settingsDocRef);
       
       if (settingsDocSnap.exists()) {
@@ -320,7 +322,7 @@ const Bills = () => {
         }
       }
       
-      const settingsDocRef = doc(db, 'users', 'steve-colburn', 'settings', 'personal');
+      const settingsDocRef = doc(db, 'users', currentUser.uid, 'settings', 'personal');
       const settingsDocSnap = await getDoc(settingsDocRef);
       
       if (settingsDocSnap.exists()) {
@@ -504,7 +506,7 @@ const Bills = () => {
         `Unmarking ${bill.name} as paid...`
       );
 
-      const settingsDocRef = doc(db, 'users', 'steve-colburn', 'settings', 'personal');
+      const settingsDocRef = doc(db, 'users', currentUser.uid, 'settings', 'personal');
       const currentDoc = await getDoc(settingsDocRef);
       
       if (!currentDoc.exists()) {
@@ -580,7 +582,7 @@ const Bills = () => {
       ...paymentData
     };
 
-    const transactionsRef = collection(db, 'users', 'steve-colburn', 'transactions');
+    const transactionsRef = collection(db, 'users', currentUser.uid, 'transactions');
     await addDoc(transactionsRef, transaction);
 
     await updateAccountBalance('bofa', transaction.amount);
@@ -597,7 +599,7 @@ const Bills = () => {
 
   const updateAccountBalance = async (accountKey, amount) => {
     try {
-      const settingsDocRef = doc(db, 'users', 'steve-colburn', 'settings', 'personal');
+      const settingsDocRef = doc(db, 'users', currentUser.uid, 'settings', 'personal');
       const currentDoc = await getDoc(settingsDocRef);
       const currentData = currentDoc.exists() ? currentDoc.data() : {};
       
@@ -625,7 +627,7 @@ const Bills = () => {
 
   const updateBillAsPaid = async (bill, paidDate = null, paymentOptions = {}) => {
     try {
-      const settingsDocRef = doc(db, 'users', 'steve-colburn', 'settings', 'personal'); 
+      const settingsDocRef = doc(db, 'users', currentUser.uid, 'settings', 'personal'); 
       const currentDoc = await getDoc(settingsDocRef);
       const currentData = currentDoc.exists() ? currentDoc.data() : {};
       
@@ -683,7 +685,7 @@ const Bills = () => {
 
   const handleSaveBill = async (billData) => {
     try {
-      const settingsDocRef = doc(db, 'users', 'steve-colburn', 'settings', 'personal');
+      const settingsDocRef = doc(db, 'users', currentUser.uid, 'settings', 'personal');
       const currentDoc = await getDoc(settingsDocRef);
       const currentData = currentDoc.exists() ? currentDoc.data() : {};
       
@@ -772,7 +774,7 @@ const Bills = () => {
     }
 
     try {
-      const settingsDocRef = doc(db, 'users', 'steve-colburn', 'settings', 'personal');
+      const settingsDocRef = doc(db, 'users', currentUser.uid, 'settings', 'personal');
       const currentDoc = await getDoc(settingsDocRef);
       const currentData = currentDoc.exists() ? currentDoc.data() : {};
       
@@ -794,7 +796,7 @@ const Bills = () => {
 
   const handleToggleSkipBill = async (bill) => {
     try {
-      const settingsDocRef = doc(db, 'users', 'steve-colburn', 'settings', 'personal');
+      const settingsDocRef = doc(db, 'users', currentUser.uid, 'settings', 'personal');
       const currentDoc = await getDoc(settingsDocRef);
       const currentData = currentDoc.exists() ? currentDoc.data() : {};
       
@@ -829,7 +831,7 @@ const Bills = () => {
     try {
       setLoading(true);
       
-      const settingsDocRef = doc(db, 'users', 'steve-colburn', 'settings', 'personal');
+      const settingsDocRef = doc(db, 'users', currentUser.uid, 'settings', 'personal');
       const currentDoc = await getDoc(settingsDocRef);
       const currentData = currentDoc.exists() ? currentDoc.data() : {};
       
@@ -860,7 +862,7 @@ const Bills = () => {
     try {
       setLoading(true);
       
-      const settingsDocRef = doc(db, 'users', 'steve-colburn', 'settings', 'personal');
+      const settingsDocRef = doc(db, 'users', currentUser.uid, 'settings', 'personal');
       const currentDoc = await getDoc(settingsDocRef);
       const currentData = currentDoc.exists() ? currentDoc.data() : {};
       
@@ -888,7 +890,7 @@ const Bills = () => {
     try {
       setDeduplicating(true);
       
-      const settingsDocRef = doc(db, 'users', 'steve-colburn', 'settings', 'personal');
+      const settingsDocRef = doc(db, 'users', currentUser.uid, 'settings', 'personal');
       const currentDoc = await getDoc(settingsDocRef);
       const currentData = currentDoc.exists() ? currentDoc.data() : {};
       
@@ -937,7 +939,7 @@ const Bills = () => {
     try {
       setLoading(true);
       
-      const settingsDocRef = doc(db, 'users', 'steve-colburn', 'settings', 'personal');
+      const settingsDocRef = doc(db, 'users', currentUser.uid, 'settings', 'personal');
       const currentDoc = await getDoc(settingsDocRef);
       const currentData = currentDoc.exists() ? currentDoc.data() : {};
       
@@ -1001,7 +1003,7 @@ const Bills = () => {
       setLoading(true);
       const lastImport = importHistory[0];
       
-      const settingsDocRef = doc(db, 'users', 'steve-colburn', 'settings', 'personal');
+      const settingsDocRef = doc(db, 'users', currentUser.uid, 'settings', 'personal');
       const currentDoc = await getDoc(settingsDocRef);
       const currentData = currentDoc.exists() ? currentDoc.data() : {};
       
