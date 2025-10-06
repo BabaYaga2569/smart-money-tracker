@@ -158,26 +158,23 @@ if (settingsData.nextPaydayOverride) {
       console.error('Error fetching data:', err);
       
       // Use demo data for testing when Firebase is unavailable
-      const demoData = {
-        totalAvailable: 1530.07,
-        checking: 1230.07,
-        savings: 300.00,
-        billsBeforePayday: [
-          {
-            name: 'NV Energy',
-            amount: 254.00,
-            nextDueDate: '2025-01-30',
-            recurrence: 'monthly'
-          },
-          {
-            name: 'Southwest Gas',
-            amount: 36.62,
-            nextDueDate: '2025-01-28',
-            recurrence: 'monthly'
-          }
-        ],
-        totalBillsDue: 290.62,
-        safeToSpend: 1047.50,
+    console.error('No financial data found:', err);
+    setError('No financial data found. Please set up your Settings first.');
+    
+    const emptyData = {
+      totalAvailable: 0,
+      checking: 0,
+      savings: 0,
+      billsBeforePayday: [],
+      totalBillsDue: 0,
+      safeToSpend: 0,
+      nextPayday: 'Not set',
+      daysUntilPayday: 0,
+      weeklyEssentials: 0,
+      safetyBuffer: 0
+    };
+    
+    setFinancialData(emptyData);
         nextPayday: '2025-09-30',
         daysUntilPayday: getManualPacificDaysUntilPayday(), // NUCLEAR: Use manual calculation
         weeklyEssentials: 150.00,
