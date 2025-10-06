@@ -23,7 +23,7 @@ const Login = () => {
       } else {
         await login(email, password);
       }
-      navigate('/dashboard');
+     navigate('/');
     } catch (err) {
       setError(err.message);
     } finally {
