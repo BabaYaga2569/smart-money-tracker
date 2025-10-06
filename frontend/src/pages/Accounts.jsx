@@ -369,7 +369,7 @@ const Accounts = () => {
             <PlaidLink
               onSuccess={handlePlaidSuccess}
               onExit={handlePlaidExit}
-              userId=currentUser.uid
+              userId={currentUser.uid}  // ✅ Correct
               buttonText="🔗 Connect Bank"
             />
           ) : (
