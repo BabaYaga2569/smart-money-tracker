@@ -377,7 +377,7 @@ const Accounts = () => {
               <PlaidLink
                 onSuccess={handlePlaidSuccess}
                 onExit={handlePlaidExit}
-                userId=currentUser.uid
+                userId={currentUser.uid}  // Add { } around every instance
                 buttonText="➕ Add Another Bank"
               />
             </>
@@ -408,7 +408,7 @@ const Accounts = () => {
           <PlaidLink
             onSuccess={handlePlaidSuccess}
             onExit={handlePlaidExit}
-            userId=currentUser.uid
+            userId={currentUser.uid}  // Add { } around every instance
             buttonText="🔗 Connect Now"
           />
         </div>
@@ -742,7 +742,7 @@ const Accounts = () => {
             <PlaidLink
               onSuccess={handlePlaidSuccess}
               onExit={handlePlaidExit}
-              userId=currentUser.uid
+              userId={currentUser.uid}  // Add { } around every instance
               buttonText="🔗 Connect Your First Bank"
             />
           </div>
