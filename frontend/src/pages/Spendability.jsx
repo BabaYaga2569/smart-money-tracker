@@ -175,6 +175,7 @@ if (settingsData.nextPaydayOverride) {
 } finally {
   setLoading(false);
 }
+};    
   
   // NUCLEAR: Enhanced force refresh of payday calculation with immediate feedback
   const forceRefreshPaydayCalculation = () => {
