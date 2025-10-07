@@ -397,11 +397,11 @@ export class PlaidIntegrationManager {
 
     /**
      * Fetch recent transactions from Plaid and match with bills
-     * @param {string} accessToken - Plaid access token
+     * @param {string} userId - User's UID (tokens retrieved server-side)
      * @param {Object} options - Options for date range and processing
      * @returns {Object} Results with matched bills and transactions
      */
-    static async fetchAndMatchTransactions(accessToken, options = {}) {
+    static async fetchAndMatchTransactions(userId, options = {}) {
         try {
             const { 
                 startDate = null, 
@@ -417,13 +417,14 @@ export class PlaidIntegrationManager {
                 : 'https://smart-money-tracker-09ks.onrender.com';
 
             // Fetch transactions from backend API
+            // Note: Access token is retrieved server-side from Firestore using userId
             const response = await fetch(`${backendUrl}/api/plaid/get_transactions`, {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
                 },
                 body: JSON.stringify({
-                    access_token: accessToken,
+                    userId: userId,
                     start_date: startDate,
                     end_date: endDate
                 })
@@ -574,18 +575,18 @@ export class PlaidIntegrationManager {
     }
 
     /**
-     * Manual refresh - fetch and match transactions for a specific access token
-     * @param {string} accessToken - Plaid access token
+     * Manual refresh - fetch and match transactions for a specific user
+     * @param {string} userId - User's UID (tokens retrieved server-side)
      * @returns {Object} Matching results
      */
-    static async refreshBillMatching(accessToken) {
+    static async refreshBillMatching(userId) {
         console.log('Manual bill matching refresh triggered');
         
         // Fetch last 30 days of transactions
         const endDate = new Date().toISOString().split('T')[0];
         const startDate = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
         
-        const result = await this.fetchAndMatchTransactions(accessToken, {
+        const result = await this.fetchAndMatchTransactions(userId, {
             startDate,
             endDate,
             autoMarkPaid: this.autoMarkPaid

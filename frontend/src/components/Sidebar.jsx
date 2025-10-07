@@ -25,8 +25,7 @@ const Sidebar = () => {
 
   const handleLogout = async () => {
     try {
-      // Clear Plaid token from localStorage
-      localStorage.removeItem('plaid_access_token');
+      // Note: Plaid tokens are now stored securely server-side only
       
       // Sign out from Firebase
       await auth.signOut();
