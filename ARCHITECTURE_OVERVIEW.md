@@ -170,12 +170,16 @@ Plaid is a financial data aggregation service that connects to thousands of bank
       │                       │ 6. Exchange Token     │                       │
       │                       │──────────────────────>│                       │
       │                       │<──────────────────────│                       │
-      │<──────────────────────│  (access_token)       │                       │
-      │ 7. Store access_token │                       │                       │
-      │   in localStorage     │                       │                       │
+      │                       │  (access_token)       │                       │
+      │                       │ 7. Store in Firestore │                       │
+      │                       │   (server-side only)  │                       │
+      │<──────────────────────│  (accounts, NO token) │                       │
       │                       │                       │                       │
       │ 8. Get Balances       │                       │                       │
-      │──────────────────────>│ 9. Get Balances       │                       │
+      │ (send userId only)    │                       │                       │
+      │──────────────────────>│ 9. Get token from     │                       │
+      │                       │    Firestore          │                       │
+      │                       │ 10. Get Balances      │                       │
       │                       │──────────────────────>│                       │
       │                       │<──────────────────────│                       │
       │<──────────────────────│  (account data)       │                       │
@@ -187,17 +191,29 @@ Plaid is a financial data aggregation service that connects to thousands of bank
 - `PLAID_CLIENT_ID`: Your Plaid application client ID
 - `PLAID_SECRET`: Your Plaid secret (sandbox/development/production)
 - `PLAID_ENV`: Environment (`sandbox`, `development`, or `production`)
+- `FIREBASE_SERVICE_ACCOUNT`: Firebase Admin SDK credentials for Firestore access
+
+**Server-Side Secure Storage (Firestore):**
+- `users/{userId}/plaid/credentials`
+  - `accessToken`: Plaid access token (encrypted at rest)
+  - `itemId`: Plaid item ID
+  - `updatedAt`: Last update timestamp
+- ✅ **Never exposed to frontend**
+- ✅ **Per-user isolation**
+- ✅ **Multi-user safe**
 
 **Frontend (User Data):**
-- `plaid_access_token`: Stored in localStorage after successful connection
-- Account data: Stored in Firebase for persistence
+- ❌ `plaid_access_token`: **NO LONGER STORED** (security improvement)
+- ✅ Account data: Stored in Firebase for display only (no sensitive tokens)
+- ✅ Frontend only sends `userId` for API calls
 
 ### Plaid Security Best Practices
 
-1. **Never expose Plaid secrets in frontend code**
-2. **Always exchange tokens server-side** ✓ (We do this)
-3. **Use environment-specific secrets** (sandbox for testing, production for live)
-4. **Store access tokens securely** (Consider encrypting in production)
+1. **Never expose Plaid secrets in frontend code** ✅
+2. **Always exchange tokens server-side** ✅
+3. **Store access tokens securely** ✅ (Server-side Firestore only)
+4. **Never send tokens to frontend** ✅ (Tokens stay server-side)
+5. **Use per-user storage isolation** ✅ (Separate Firestore documents)
 5. **Implement token refresh** (Plaid tokens can expire)
 
 ---
@@ -297,29 +313,32 @@ All endpoints are prefixed with the backend URL: `https://smart-money-tracker-09
   ```
 
 **POST /api/plaid/exchange_token**
-- Exchanges public token for access token
+- Exchanges public token for access token and stores it securely server-side
+- **Security:** Access token is stored in Firestore and never returned to frontend
 - Request:
   ```json
   {
-    "public_token": "public-sandbox-xxx-xxx"
+    "public_token": "public-sandbox-xxx-xxx",
+    "userId": "firebase-user-uid"
   }
   ```
 - Response:
   ```json
   {
     "success": true,
-    "access_token": "access-sandbox-xxx-xxx",
     "item_id": "item-id",
     "accounts": [...]
   }
   ```
+  Note: `access_token` is NOT in response (stored securely server-side)
 
 **POST /api/plaid/get_balances**
 - Fetches current account balances
+- **Security:** Retrieves access token from Firestore using userId
 - Request:
   ```json
   {
-    "access_token": "access-sandbox-xxx-xxx"
+    "userId": "firebase-user-uid"
   }
   ```
 - Response:
@@ -343,10 +362,11 @@ All endpoints are prefixed with the backend URL: `https://smart-money-tracker-09
 
 **POST /api/plaid/get_transactions**
 - Fetches transaction history
+- **Security:** Retrieves access token from Firestore using userId
 - Request:
   ```json
   {
-    "access_token": "access-sandbox-xxx-xxx",
+    "userId": "firebase-user-uid",
     "start_date": "2024-01-01",
     "end_date": "2024-01-31"
   }
