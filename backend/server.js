@@ -1,6 +1,7 @@
 import express from "express";
 import cors from "cors";
 import { Configuration, PlaidApi, PlaidEnvironments } from "plaid";
+import admin from "firebase-admin";
 
 const app = express();
 app.use(cors({
@@ -72,6 +73,115 @@ const configuration = new Configuration({
 
 const plaidClient = new PlaidApi(configuration);
 
+// ============================================================================
+// FIREBASE ADMIN SDK INITIALIZATION
+// ============================================================================
+
+// Initialize Firebase Admin SDK
+// For production, use service account key. For development, use application default credentials.
+if (!admin.apps.length) {
+  try {
+    // Try to use service account key from environment variable
+    const serviceAccount = process.env.FIREBASE_SERVICE_ACCOUNT 
+      ? JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT)
+      : null;
+
+    if (serviceAccount) {
+      admin.initializeApp({
+        credential: admin.credential.cert(serviceAccount)
+      });
+      console.log('✓ Firebase Admin initialized with service account');
+    } else {
+      // Fallback to application default credentials (for local development)
+      admin.initializeApp({
+        credential: admin.credential.applicationDefault()
+      });
+      console.log('✓ Firebase Admin initialized with application default credentials');
+    }
+  } catch (error) {
+    console.error('✗ Failed to initialize Firebase Admin:', error.message);
+    console.log('⚠ Some features requiring Firestore will be unavailable');
+  }
+}
+
+const db = admin.firestore();
+
+// ============================================================================
+// SECURE PLAID CREDENTIAL STORAGE HELPERS
+// ============================================================================
+
+/**
+ * Store Plaid credentials securely in Firestore
+ * @param {string} userId - User's UID
+ * @param {string} accessToken - Plaid access token
+ * @param {string} itemId - Plaid item ID
+ * @returns {Promise<void>}
+ */
+async function storePlaidCredentials(userId, accessToken, itemId) {
+  if (!userId || !accessToken || !itemId) {
+    throw new Error('Missing required parameters for storing Plaid credentials');
+  }
+
+  logDiagnostic.info('STORE_CREDENTIALS', `Storing credentials for user: ${userId}, item: ${itemId}`);
+
+  const userPlaidRef = db.collection('users').doc(userId).collection('plaid').doc('credentials');
+  
+  await userPlaidRef.set({
+    accessToken,
+    itemId,
+    updatedAt: admin.firestore.FieldValue.serverTimestamp()
+  }, { merge: true });
+
+  logDiagnostic.info('STORE_CREDENTIALS', 'Credentials stored successfully');
+}
+
+/**
+ * Retrieve Plaid access token from Firestore
+ * @param {string} userId - User's UID
+ * @returns {Promise<{accessToken: string, itemId: string}|null>}
+ */
+async function getPlaidCredentials(userId) {
+  if (!userId) {
+    throw new Error('userId is required to retrieve Plaid credentials');
+  }
+
+  logDiagnostic.info('GET_CREDENTIALS', `Retrieving credentials for user: ${userId}`);
+
+  const userPlaidRef = db.collection('users').doc(userId).collection('plaid').doc('credentials');
+  const doc = await userPlaidRef.get();
+
+  if (!doc.exists) {
+    logDiagnostic.info('GET_CREDENTIALS', 'No credentials found for user');
+    return null;
+  }
+
+  const data = doc.data();
+  logDiagnostic.info('GET_CREDENTIALS', `Credentials retrieved for item: ${data.itemId}`);
+  
+  return {
+    accessToken: data.accessToken,
+    itemId: data.itemId
+  };
+}
+
+/**
+ * Delete Plaid credentials from Firestore
+ * @param {string} userId - User's UID
+ * @returns {Promise<void>}
+ */
+async function deletePlaidCredentials(userId) {
+  if (!userId) {
+    throw new Error('userId is required to delete Plaid credentials');
+  }
+
+  logDiagnostic.info('DELETE_CREDENTIALS', `Deleting credentials for user: ${userId}`);
+
+  const userPlaidRef = db.collection('users').doc(userId).collection('plaid').doc('credentials');
+  await userPlaidRef.delete();
+
+  logDiagnostic.info('DELETE_CREDENTIALS', 'Credentials deleted successfully');
+}
+
 // Test route
 app.get("/api/hello", (req, res) => {
   res.json({ message: "Backend is working!" });
@@ -137,14 +247,19 @@ app.post("/api/plaid/exchange_token", async (req, res) => {
   logDiagnostic.request(endpoint, req.body);
   
   try {
-    const { public_token } = req.body;
+    const { public_token, userId } = req.body;
 
     if (!public_token) {
       logDiagnostic.error('EXCHANGE_TOKEN', 'Missing public_token in request');
       return res.status(400).json({ error: "public_token is required" });
     }
 
-    logDiagnostic.info('EXCHANGE_TOKEN', 'Exchanging public token for access token');
+    if (!userId) {
+      logDiagnostic.error('EXCHANGE_TOKEN', 'Missing userId in request');
+      return res.status(400).json({ error: "userId is required" });
+    }
+
+    logDiagnostic.info('EXCHANGE_TOKEN', `Exchanging public token for user: ${userId}`);
 
     // Exchange public token for access token
     const exchangeResponse = await plaidClient.itemPublicTokenExchange({
@@ -155,6 +270,9 @@ app.post("/api/plaid/exchange_token", async (req, res) => {
     const itemId = exchangeResponse.data.item_id;
     
     logDiagnostic.info('EXCHANGE_TOKEN', `Successfully exchanged token, item_id: ${itemId}`);
+
+    // Store credentials securely in Firestore (server-side only)
+    await storePlaidCredentials(userId, accessToken, itemId);
 
     // Get account information
     logDiagnostic.info('EXCHANGE_TOKEN', 'Fetching account information');
@@ -176,9 +294,9 @@ app.post("/api/plaid/exchange_token", async (req, res) => {
       account_count: balanceResponse.data.accounts.length 
     });
 
+    // IMPORTANT: Do NOT send access_token to frontend
     res.json({
       success: true,
-      access_token: accessToken,
       item_id: itemId,
       accounts: balanceResponse.data.accounts,
     });
@@ -202,17 +320,27 @@ app.post("/api/plaid/get_balances", async (req, res) => {
   logDiagnostic.request(endpoint, req.body);
   
   try {
-    const { access_token } = req.body;
+    const { userId } = req.body;
 
-    if (!access_token) {
-      logDiagnostic.error('GET_BALANCES', 'Missing access_token in request');
-      return res.status(400).json({ error: "access_token is required" });
+    if (!userId) {
+      logDiagnostic.error('GET_BALANCES', 'Missing userId in request');
+      return res.status(400).json({ error: "userId is required" });
+    }
+
+    // Retrieve access token from Firestore
+    const credentials = await getPlaidCredentials(userId);
+    if (!credentials) {
+      logDiagnostic.error('GET_BALANCES', 'No Plaid credentials found for user');
+      return res.status(404).json({ 
+        error: "No Plaid connection found. Please connect your bank account first.",
+        error_code: "NO_CREDENTIALS"
+      });
     }
 
     logDiagnostic.info('GET_BALANCES', 'Fetching account balances');
 
     const balanceResponse = await plaidClient.accountsBalanceGet({
-      access_token,
+      access_token: credentials.accessToken,
     });
 
     const accountCount = balanceResponse.data.accounts.length;
@@ -237,22 +365,32 @@ app.post("/api/plaid/get_balances", async (req, res) => {
   }
 });
 
-// Get accounts - provides account list for frontend (gracefully handles missing access_token)
+// Get accounts - provides account list for frontend (gracefully handles missing credentials)
 app.get("/api/accounts", async (req, res) => {
   try {
-    const authHeader = req.headers.authorization;
-    const access_token = authHeader ? authHeader.replace('Bearer ', '') : null;
+    // Extract userId from query parameter or header
+    const userId = req.query.userId || req.headers['x-user-id'];
 
-    if (!access_token) {
+    if (!userId) {
       return res.status(200).json({ 
         success: false,
         accounts: [],
-        message: "No access token provided. Please connect your bank account." 
+        message: "No userId provided. Please authenticate." 
+      });
+    }
+
+    // Retrieve access token from Firestore
+    const credentials = await getPlaidCredentials(userId);
+    if (!credentials) {
+      return res.status(200).json({ 
+        success: false,
+        accounts: [],
+        message: "No Plaid connection found. Please connect your bank account."
       });
     }
 
     const balanceResponse = await plaidClient.accountsBalanceGet({
-      access_token,
+      access_token: credentials.accessToken,
     });
 
     res.json({
@@ -278,13 +416,24 @@ app.post("/api/plaid/get_transactions", async (req, res) => {
   logDiagnostic.request(endpoint, req.body);
   
   try {
-    const { access_token, start_date, end_date } = req.body;
+    const { userId, start_date, end_date } = req.body;
 
-    if (!access_token) {
-      logDiagnostic.error('GET_TRANSACTIONS', 'Missing access_token in request');
+    if (!userId) {
+      logDiagnostic.error('GET_TRANSACTIONS', 'Missing userId in request');
       return res.status(400).json({ 
         success: false,
-        error: "Access token is required. Please connect your bank account first." 
+        error: "userId is required. Please authenticate." 
+      });
+    }
+
+    // Retrieve access token from Firestore
+    const credentials = await getPlaidCredentials(userId);
+    if (!credentials) {
+      logDiagnostic.error('GET_TRANSACTIONS', 'No Plaid credentials found for user');
+      return res.status(404).json({ 
+        success: false,
+        error: "No Plaid connection found. Please connect your bank account first.",
+        error_code: "NO_CREDENTIALS"
       });
     }
 
@@ -295,7 +444,7 @@ app.post("/api/plaid/get_transactions", async (req, res) => {
     logDiagnostic.info('GET_TRANSACTIONS', `Fetching transactions from ${startDate} to ${endDate}`);
 
     const transactionsResponse = await plaidClient.transactionsGet({
-      access_token,
+      access_token: credentials.accessToken,
       start_date: startDate,
       end_date: endDate,
       options: {

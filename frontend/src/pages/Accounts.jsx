@@ -252,13 +252,17 @@ const Accounts = () => {
         headers: {
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({ public_token: publicToken }),
+        body: JSON.stringify({ 
+          public_token: publicToken,
+          userId: currentUser.uid 
+        }),
       });
 
       const data = await response.json();
 
       if (data?.success && data?.accounts) {
         // Format Plaid accounts for display with null checks
+        // IMPORTANT: Do NOT store access_token - it's now stored securely server-side
         const formattedPlaidAccounts = data.accounts.map((account) => ({
           account_id: account?.account_id || '',
           name: account?.name || 'Unknown Account',
@@ -268,7 +272,6 @@ const Accounts = () => {
           available: account?.balances?.available?.toString() || '0',
           mask: account?.mask || '',
           isPlaid: true,
-          access_token: data.access_token || '',
           item_id: data.item_id || '',
         }));
 

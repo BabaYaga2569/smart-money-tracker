@@ -304,10 +304,8 @@ const Transactions = () => {
     try {
       setSyncingPlaid(true);
       
-      // Get Plaid access token from localStorage
-      const accessToken = localStorage.getItem('plaid_access_token');
-      
-      if (!accessToken) {
+      // Check if user has Plaid accounts configured
+      if (!hasPlaidAccounts) {
         showNotification('Plaid not connected. Please connect your bank account first.', 'warning');
         return;
       }
@@ -321,13 +319,14 @@ const Transactions = () => {
       const endDate = new Date().toISOString().split('T')[0];
       const startDate = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
 
+      // Pass userId instead of access_token - tokens are retrieved server-side
       const response = await fetch(`${backendUrl}/api/plaid/get_transactions`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-          access_token: accessToken,
+          userId: currentUser.uid,
           start_date: startDate,
           end_date: endDate
         })

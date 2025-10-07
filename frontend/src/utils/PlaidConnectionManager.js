@@ -67,6 +67,8 @@ class PlaidConnectionManager {
 
   /**
    * Check Plaid connection comprehensively
+   * Note: Access tokens are now stored securely server-side in Firestore.
+   * This method checks if user has plaidAccounts configured.
    * @param {boolean} forceRefresh - Force a fresh check even if recently checked
    * @returns {Promise<Object>} Connection status with details
    */
@@ -85,110 +87,23 @@ class PlaidConnectionManager {
       }
     }
 
-    // Check if access token exists
-    const token = localStorage.getItem('plaid_access_token');
-    this.connectionState.hasToken = !!token;
+    // Connection status is now based on plaidAccounts in Firestore
+    // hasToken is set to true if hasAccounts is true (implies credentials exist server-side)
     this.connectionState.lastChecked = Date.now();
     
-    this._log('info', 'Access token check', { hasToken: !!token });
-
-    if (!token) {
-      this.connectionState.isApiWorking = null;
-      this.connectionState.hasAccounts = false;
+    // If we have accounts, assume credentials exist and API is working
+    if (this.connectionState.hasAccounts) {
+      this.connectionState.hasToken = true;
+      this.connectionState.isApiWorking = true;
       this.connectionState.error = null;
       this.connectionState.errorType = null;
-      this.notifyListeners();
-      return this.getStatus();
-    }
-
-    // Try to fetch accounts from API to verify connection
-    try {
-      const apiUrl = import.meta.env.VITE_API_URL || 'https://smart-money-tracker-09ks.onrender.com';
-      
-      // Validate URL before attempting to use it
-      if (!apiUrl || typeof apiUrl !== 'string') {
-        throw new Error('Invalid API URL configuration');
-      }
-      
-      this._log('info', 'Testing API connectivity', { apiUrl });
-      
-      // Add timeout for network issues
-      const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 10000);
-
-      const response = await fetch(`${apiUrl}/api/accounts`, {
-        headers: {
-          'Authorization': `Bearer ${token}`,
-          'Content-Type': 'application/json'
-        },
-        signal: controller.signal
-      });
-
-      clearTimeout(timeoutId);
-      
-      this._log('info', 'API response received', { status: response.status, ok: response.ok });
-
-      if (response.ok) {
-        let data;
-        try {
-          data = await response.json();
-        } catch (parseError) {
-          this._log('error', 'Failed to parse API response', { error: parseError.message });
-          throw new Error('Invalid response from API');
-        }
-        
-        if (data?.success === false) {
-          // API responded but no accounts available
-          this.connectionState.isApiWorking = true;
-          this.connectionState.hasAccounts = false;
-          this.connectionState.error = data?.message || 'No accounts available';
-          this.connectionState.errorType = 'config';
-          this._log('warn', 'API working but no accounts', { message: data?.message });
-        } else {
-          // Successfully got accounts
-          const accounts = Array.isArray(data?.accounts) ? data.accounts : [];
-          this.connectionState.isApiWorking = true;
-          this.connectionState.hasAccounts = accounts.length > 0;
-          this.connectionState.error = null;
-          this.connectionState.errorType = null;
-          this._log('info', 'Successfully retrieved accounts', { accountCount: accounts.length });
-        }
-      } else if (response.status === 401) {
-        // Authentication failed
-        this.connectionState.isApiWorking = true;
-        this.connectionState.hasAccounts = false;
-        this.connectionState.error = 'Access token expired or invalid';
-        this.connectionState.errorType = 'auth';
-        this._log('error', 'Authentication failed', { status: 401 });
-      } else {
-        // Other API error
-        this.connectionState.isApiWorking = false;
-        this.connectionState.hasAccounts = false;
-        this.connectionState.error = `API error: ${response.status}`;
-        this.connectionState.errorType = 'api';
-        this._log('error', 'API error', { status: response.status });
-      }
-    } catch (error) {
-      // Network or CORS error
-      if (error.name === 'AbortError') {
-        this.connectionState.isApiWorking = false;
-        this.connectionState.hasAccounts = false;
-        this.connectionState.error = 'Connection timeout - API may be down';
-        this.connectionState.errorType = 'network';
-        this._log('error', 'Connection timeout', { error: error.message });
-      } else if (error.message.includes('CORS') || error.message.includes('Failed to fetch')) {
-        this.connectionState.isApiWorking = false;
-        this.connectionState.hasAccounts = false;
-        this.connectionState.error = 'Unable to connect to Plaid API (CORS or network issue)';
-        this.connectionState.errorType = 'cors';
-        this._log('error', 'CORS or network error', { error: error.message });
-      } else {
-        this.connectionState.isApiWorking = false;
-        this.connectionState.hasAccounts = false;
-        this.connectionState.error = error.message;
-        this.connectionState.errorType = 'network';
-        this._log('error', 'Network error', { error: error.message });
-      }
+      this._log('info', 'User has Plaid accounts configured');
+    } else {
+      this.connectionState.hasToken = false;
+      this.connectionState.isApiWorking = null;
+      this.connectionState.error = null;
+      this.connectionState.errorType = null;
+      this._log('info', 'No Plaid accounts found');
     }
 
     this.notifyListeners();
@@ -219,9 +134,9 @@ class PlaidConnectionManager {
 
   /**
    * Clear Plaid connection (e.g., when user disconnects)
+   * Note: Access tokens are now stored server-side only
    */
   clearConnection() {
-    localStorage.removeItem('plaid_access_token');
     this.connectionState = {
       hasToken: false,
       hasAccounts: false,
@@ -235,10 +150,14 @@ class PlaidConnectionManager {
 
   /**
    * Set access token (when user connects Plaid)
-   * @param {string} token - Plaid access token
+   * Note: This method is now deprecated as tokens are stored server-side only.
+   * Use setPlaidAccounts() instead.
+   * @deprecated
+   * @param {string} token - Plaid access token (no longer used)
    */
   setAccessToken(token) {
-    localStorage.setItem('plaid_access_token', token);
+    // Legacy method - tokens are now stored server-side only
+    console.warn('[PlaidConnectionManager] setAccessToken is deprecated. Tokens are stored server-side.');
     this.connectionState.hasToken = true;
     this.connectionState.lastChecked = null; // Force recheck
     this.notifyListeners();

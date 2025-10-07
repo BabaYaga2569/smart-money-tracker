@@ -149,9 +149,8 @@ const Bills = () => {
     try {
       setRefreshingTransactions(true);
       
-      const token = localStorage.getItem('plaid_access_token');
-
-      const result = await PlaidIntegrationManager.refreshBillMatching(token);
+      // Pass userId instead of token - tokens are now stored server-side
+      const result = await PlaidIntegrationManager.refreshBillMatching(currentUser.uid);
       
       if (result.success) {
         await loadBills();
