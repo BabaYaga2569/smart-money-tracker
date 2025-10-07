@@ -566,13 +566,27 @@ app.post("/api/plaid/sync_transactions", async (req, res) => {
     
     logDiagnostic.info('SYNC_TRANSACTIONS', `Fetched ${txCount} of ${totalTx} transactions from Plaid`);
 
+    // Load existing manual pending charges for deduplication
+    const transactionsRef = db.collection('users').doc(userId).collection('transactions');
+    const manualPendingSnapshot = await transactionsRef
+      .where('source', '==', 'manual')
+      .where('pending', '==', true)
+      .get();
+    
+    const manualPendingCharges = [];
+    manualPendingSnapshot.forEach(doc => {
+      manualPendingCharges.push({ id: doc.id, ...doc.data() });
+    });
+
+    logDiagnostic.info('SYNC_TRANSACTIONS', `Found ${manualPendingCharges.length} manual pending charges for deduplication check`);
+
     // Sync transactions to Firebase
     let addedCount = 0;
     let updatedCount = 0;
     let pendingCount = 0;
+    let deduplicatedCount = 0;
 
     const batch = db.batch();
-    const transactionsRef = db.collection('users').doc(userId).collection('transactions');
 
     for (const plaidTx of plaidTransactions) {
       const txDocRef = transactionsRef.doc(plaidTx.transaction_id);
@@ -591,12 +605,53 @@ app.post("/api/plaid/sync_transactions", async (req, res) => {
         category: plaidTx.category || [],
         pending: plaidTx.pending || false,  // ← KEY FIELD!
         payment_channel: plaidTx.payment_channel || 'other',
+        source: 'plaid',
         timestamp: admin.firestore.FieldValue.serverTimestamp(),
         lastSyncedAt: admin.firestore.FieldValue.serverTimestamp()
       };
 
       if (plaidTx.pending) {
         pendingCount++;
+      }
+
+      // Check for duplicate manual pending charges
+      const matchingManualCharge = manualPendingCharges.find(manual => {
+        // Match criteria:
+        // 1. Same account
+        // 2. Same amount (within $0.01 tolerance for floating point)
+        // 3. Date within 3 days
+        // 4. Merchant name similarity (basic check)
+        
+        const accountMatch = manual.account_id === plaidTx.account_id || manual.account === plaidTx.account_id;
+        const amountMatch = Math.abs(manual.amount - plaidTx.amount) < 0.01;
+        
+        const manualDate = new Date(manual.date);
+        const plaidDate = new Date(plaidTx.date);
+        const daysDiff = Math.abs((manualDate - plaidDate) / (1000 * 60 * 60 * 24));
+        const dateMatch = daysDiff <= 3;
+        
+        const manualName = (manual.merchant_name || manual.name || manual.description || '').toLowerCase();
+        const plaidName = (plaidTx.merchant_name || plaidTx.name || '').toLowerCase();
+        const nameMatch = manualName.includes(plaidName) || plaidName.includes(manualName) || 
+                         (manualName.length > 3 && plaidName.length > 3 && 
+                          (manualName.substring(0, Math.min(5, manualName.length)) === plaidName.substring(0, Math.min(5, plaidName.length))));
+        
+        return accountMatch && amountMatch && dateMatch && nameMatch;
+      });
+
+      if (matchingManualCharge) {
+        // Found a duplicate - delete the manual pending charge
+        const manualDocRef = transactionsRef.doc(matchingManualCharge.id);
+        batch.delete(manualDocRef);
+        deduplicatedCount++;
+        
+        logDiagnostic.info('SYNC_TRANSACTIONS', `Deduplicating: Manual charge "${matchingManualCharge.merchant_name}" matches Plaid transaction "${plaidTx.name}"`);
+        
+        // Remove from the list so we don't match it again
+        const index = manualPendingCharges.indexOf(matchingManualCharge);
+        if (index > -1) {
+          manualPendingCharges.splice(index, 1);
+        }
       }
 
       if (!txDoc.exists) {
@@ -613,12 +668,13 @@ app.post("/api/plaid/sync_transactions", async (req, res) => {
     // Commit the batch
     await batch.commit();
 
-    logDiagnostic.info('SYNC_TRANSACTIONS', `Synced ${addedCount} new, ${updatedCount} updated, ${pendingCount} pending transactions`);
+    logDiagnostic.info('SYNC_TRANSACTIONS', `Synced ${addedCount} new, ${updatedCount} updated, ${pendingCount} pending, ${deduplicatedCount} deduplicated transactions`);
     logDiagnostic.response(endpoint, 200, { 
       success: true, 
       added: addedCount,
       updated: updatedCount,
-      pending: pendingCount
+      pending: pendingCount,
+      deduplicated: deduplicatedCount
     });
 
     res.json({
@@ -626,8 +682,9 @@ app.post("/api/plaid/sync_transactions", async (req, res) => {
       added: addedCount,
       updated: updatedCount,
       pending: pendingCount,
+      deduplicated: deduplicatedCount,
       total: txCount,
-      message: `Synced ${addedCount} new transactions (${pendingCount} pending)`
+      message: `Synced ${addedCount} new transactions (${pendingCount} pending${deduplicatedCount > 0 ? `, ${deduplicatedCount} deduplicated` : ''})`
     });
   } catch (error) {
     logDiagnostic.error('SYNC_TRANSACTIONS', 'Failed to sync transactions', error);
