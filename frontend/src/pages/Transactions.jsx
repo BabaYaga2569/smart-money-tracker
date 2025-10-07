@@ -17,6 +17,7 @@ const Transactions = () => {
   const [transactions, setTransactions] = useState([]);
   const [filteredTransactions, setFilteredTransactions] = useState([]);
   const [showAddForm, setShowAddForm] = useState(false);
+  const [showPendingForm, setShowPendingForm] = useState(false);
   const [editingTransaction, setEditingTransaction] = useState(null);
   const [notification, setNotification] = useState({ message: '', type: '' });
   const [plaidStatus, setPlaidStatus] = useState({
@@ -44,6 +45,13 @@ const Transactions = () => {
     account: '',
     date: formatDateForInput(new Date()),
     type: 'expense'
+  });
+
+  const [pendingCharge, setPendingCharge] = useState({
+    amount: '',
+    description: '',
+    account: '',
+    date: formatDateForInput(new Date())
   });
 
   const [categoryManuallySelected, setCategoryManuallySelected] = useState(false);
@@ -345,11 +353,12 @@ const Transactions = () => {
       // Reload transactions from Firebase
       await loadTransactions();
       
-      const { added, pending, total } = data;
+      const { added, pending, deduplicated, total } = data;
       const pendingText = pending > 0 ? ` (${pending} pending)` : '';
+      const dedupeText = deduplicated > 0 ? `, ${deduplicated} merged` : '';
       
       showNotification(
-        `Successfully synced ${added} new transaction${added !== 1 ? 's' : ''} from Plaid${pendingText}.`,
+        `Successfully synced ${added} new transaction${added !== 1 ? 's' : ''} from Plaid${pendingText}${dedupeText}.`,
         'success'
       );
     } catch (error) {
@@ -442,6 +451,64 @@ const Transactions = () => {
     } catch (error) {
       console.error('Error adding transaction:', error);
       showNotification('Error adding transaction', 'error');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const addPendingCharge = async () => {
+    if (!pendingCharge.amount || !pendingCharge.description || !pendingCharge.account) {
+      showNotification('Please fill in all required fields', 'error');
+      return;
+    }
+
+    const amount = parseFloat(pendingCharge.amount);
+    if (isNaN(amount) || amount <= 0) {
+      showNotification('Please enter a valid amount', 'error');
+      return;
+    }
+
+    try {
+      setSaving(true);
+      
+      // Pending charges are always expenses (negative)
+      const finalAmount = -Math.abs(amount);
+      
+      const transaction = {
+        amount: finalAmount,
+        name: pendingCharge.description.trim(),
+        merchant_name: pendingCharge.description.trim(),
+        description: pendingCharge.description.trim(),
+        account_id: pendingCharge.account,
+        account: pendingCharge.account,
+        date: pendingCharge.date,
+        pending: true,
+        source: 'manual',
+        timestamp: Date.now(),
+        type: 'expense'
+      };
+
+      // Add to Firebase
+      const transactionsRef = collection(db, 'users', currentUser.uid, 'transactions');
+      const docRef = await addDoc(transactionsRef, transaction);
+      
+      // Add to local state
+      const newTransactionWithId = { id: docRef.id, ...transaction };
+      setTransactions(prev => [newTransactionWithId, ...prev]);
+      
+      // Reset form
+      setPendingCharge({
+        amount: '',
+        description: '',
+        account: '',
+        date: formatDateForInput(new Date())
+      });
+      setShowPendingForm(false);
+      
+      showNotification('Pending charge added! Will auto-deduplicate when Plaid syncs.', 'success');
+    } catch (error) {
+      console.error('Error adding pending charge:', error);
+      showNotification('Error adding pending charge', 'error');
     } finally {
       setSaving(false);
     }
@@ -790,10 +857,29 @@ const Transactions = () => {
         <div className="add-transaction-actions">
           <button 
             className="btn-primary add-transaction-btn"
-            onClick={() => setShowAddForm(!showAddForm)}
+            onClick={() => {
+              setShowAddForm(!showAddForm);
+              if (showPendingForm) setShowPendingForm(false);
+            }}
             disabled={saving || syncingPlaid}
           >
             {showAddForm ? '✕ Cancel' : '+ Add Transaction'}
+          </button>
+
+          <button 
+            className="btn-primary"
+            onClick={() => {
+              setShowPendingForm(!showPendingForm);
+              if (showAddForm) setShowAddForm(false);
+            }}
+            disabled={saving || syncingPlaid}
+            style={{
+              background: '#ff9800',
+              border: 'none'
+            }}
+            title="Add a pending charge that hasn't shown up in your bank yet. Will auto-deduplicate when Plaid syncs."
+          >
+            {showPendingForm ? '✕ Cancel' : '⏳ Quick Add Pending Charge'}
           </button>
           
           <button 
@@ -952,6 +1038,75 @@ const Transactions = () => {
                 disabled={saving}
               >
                 {saving ? 'Adding...' : 'Add Transaction'}
+              </button>
+            </div>
+          </div>
+        )}
+
+        {showPendingForm && (
+          <div className="add-transaction-form" style={{ background: '#fff8e1', borderLeft: '4px solid #ff9800' }}>
+            <div style={{ marginBottom: '12px', color: '#e65100', fontWeight: '600', display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <span>⏳</span>
+              <span>Quick Add Pending Charge</span>
+            </div>
+            <div style={{ fontSize: '13px', color: '#666', marginBottom: '16px' }}>
+              Add a charge that hasn't shown up yet. It will auto-merge when Plaid syncs the matching transaction.
+            </div>
+            <div className="form-row">
+              <div className="form-group">
+                <label>Amount *</label>
+                <input
+                  type="number"
+                  step="0.01"
+                  value={pendingCharge.amount}
+                  onChange={(e) => setPendingCharge({ ...pendingCharge, amount: e.target.value })}
+                  placeholder="0.00"
+                />
+              </div>
+              <div className="form-group">
+                <label>Merchant/Description *</label>
+                <input
+                  type="text"
+                  value={pendingCharge.description}
+                  onChange={(e) => setPendingCharge({ ...pendingCharge, description: e.target.value })}
+                  placeholder="e.g., Amazon, Starbucks, Gas Station"
+                />
+              </div>
+            </div>
+            <div className="form-row">
+              <div className="form-group">
+                <label>Account *</label>
+                <select
+                  value={pendingCharge.account}
+                  onChange={(e) => setPendingCharge({ ...pendingCharge, account: e.target.value })}
+                >
+                  <option value="">Select Account</option>
+                  {Object.entries(accounts).map(([key, account]) => (
+                    <option key={key} value={key}>
+                      {account.name}
+                      {account.mask ? ` (...${account.mask})` : ''}
+                      {account.balance ? ` - $${parseFloat(account.balance).toFixed(2)}` : ''}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div className="form-group">
+                <label>Date</label>
+                <input
+                  type="date"
+                  value={pendingCharge.date}
+                  onChange={(e) => setPendingCharge({ ...pendingCharge, date: e.target.value })}
+                />
+              </div>
+            </div>
+            <div className="form-actions">
+              <button 
+                className="btn-primary"
+                onClick={addPendingCharge}
+                disabled={saving}
+                style={{ background: '#ff9800' }}
+              >
+                {saving ? 'Adding...' : 'Add Pending Charge'}
               </button>
             </div>
           </div>
