@@ -62,7 +62,7 @@ console.log('NODE_ENV:', process.env.NODE_ENV || 'development');
 console.log('========================================\n');
 
 const configuration = new Configuration({
-  basePath: PlaidEnvironments.sandbox, // Use sandbox for development
+  basePath: PlaidEnvironments[PLAID_ENV], // Dynamic based on environment variable
   baseOptions: {
     headers: {
       "PLAID-CLIENT-ID": PLAID_CLIENT_ID,
