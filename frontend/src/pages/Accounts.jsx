@@ -53,6 +53,18 @@ const Accounts = () => {
   
   return () => unsubscribe();
 }, []);
+
+  // Recalculate projected balance when transactions change
+  useEffect(() => {
+    if (plaidAccounts.length > 0) {
+      const projectedTotal = calculateTotalProjectedBalance(plaidAccounts, transactions);
+      setTotalProjectedBalance(projectedTotal);
+    } else if (Object.keys(accounts).length > 0) {
+      const projectedTotal = calculateTotalProjectedBalance(accounts, transactions);
+      setTotalProjectedBalance(projectedTotal);
+    }
+  }, [transactions, plaidAccounts, accounts]);
+
   const checkPlaidConnection = async () => {
     try {
       const status = await PlaidConnectionManager.checkConnection();

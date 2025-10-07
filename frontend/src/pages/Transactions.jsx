@@ -51,7 +51,8 @@ const Transactions = () => {
     amount: '',
     description: '',
     account: '',
-    date: formatDateForInput(new Date())
+    date: formatDateForInput(new Date()),
+    type: 'expense'
   });
 
   const [categoryManuallySelected, setCategoryManuallySelected] = useState(false);
@@ -471,8 +472,10 @@ const Transactions = () => {
     try {
       setSaving(true);
       
-      // Pending charges are always expenses (negative)
-      const finalAmount = -Math.abs(amount);
+      // If expense: negative. If income: positive.
+      const finalAmount = pendingCharge.type === 'expense' 
+        ? -Math.abs(amount)   // Expense: -$32.50
+        : Math.abs(amount);   // Income: +$100.00
       
       const transaction = {
         amount: finalAmount,
@@ -485,7 +488,7 @@ const Transactions = () => {
         pending: true,
         source: 'manual',
         timestamp: Date.now(),
-        type: 'expense'
+        type: pendingCharge.type
       };
 
       // Add to Firebase
@@ -501,7 +504,8 @@ const Transactions = () => {
         amount: '',
         description: '',
         account: '',
-        date: formatDateForInput(new Date())
+        date: formatDateForInput(new Date()),
+        type: 'expense'
       });
       setShowPendingForm(false);
       
@@ -1051,6 +1055,40 @@ const Transactions = () => {
             </div>
             <div style={{ fontSize: '13px', color: '#666', marginBottom: '16px' }}>
               Add a charge that hasn't shown up yet. It will auto-merge when Plaid syncs the matching transaction.
+            </div>
+            <div className="form-group transaction-type-group">
+              <label>Transaction Type *</label>
+              <div className="type-selector">
+                <label className={`type-option expense ${pendingCharge.type === 'expense' ? 'selected' : ''}`}>
+                  <input
+                    type="radio"
+                    name="transactionType"
+                    value="expense"
+                    checked={pendingCharge.type === 'expense'}
+                    onChange={(e) => setPendingCharge({ ...pendingCharge, type: e.target.value })}
+                  />
+                  <span className="type-icon">💸</span>
+                  <div className="type-text">
+                    <span className="type-label">Expense</span>
+                    <span className="type-hint">Charge, purchase, bill</span>
+                  </div>
+                </label>
+                
+                <label className={`type-option income ${pendingCharge.type === 'income' ? 'selected' : ''}`}>
+                  <input
+                    type="radio"
+                    name="transactionType"
+                    value="income"
+                    checked={pendingCharge.type === 'income'}
+                    onChange={(e) => setPendingCharge({ ...pendingCharge, type: e.target.value })}
+                  />
+                  <span className="type-icon">💰</span>
+                  <div className="type-text">
+                    <span className="type-label">Income</span>
+                    <span className="type-hint">Deposit, Zelle, cash</span>
+                  </div>
+                </label>
+              </div>
             </div>
             <div className="form-row">
               <div className="form-group">
