@@ -3,14 +3,14 @@
  * Utility functions for calculating Live and Projected balances
  * 
  * Live Balance: Current balance from Plaid (read-only from bank)
- * Projected Balance: Live balance adjusted by manual transactions tracked in the app
+ * Projected Balance: Live balance adjusted for pending transactions
  */
 
 /**
  * Calculate projected balance for a specific account
  * @param {string} accountId - The account ID or key
  * @param {number} liveBalance - Current balance from Plaid or manual entry
- * @param {Array} transactions - Array of manual transactions
+ * @param {Array} transactions - Array of all transactions (including pending)
  * @returns {number} - Projected balance
  */
 export const calculateProjectedBalance = (accountId, liveBalance, transactions) => {
@@ -20,17 +20,22 @@ export const calculateProjectedBalance = (accountId, liveBalance, transactions) 
 
   // Filter transactions for this account
   const accountTransactions = transactions.filter(
-    (t) => t.account === accountId
+    (t) => t.account === accountId || t.account_id === accountId
   );
 
-  // Calculate the sum of manual transaction adjustments
-  // Expenses are negative, income is positive
-  const transactionAdjustments = accountTransactions.reduce((sum, transaction) => {
-    const amount = parseFloat(transaction.amount) || 0;
-    return sum + amount;
+  // Calculate the sum of pending transaction adjustments
+  // Pending transactions affect the projected balance
+  const pendingAdjustments = accountTransactions.reduce((sum, transaction) => {
+    // Only include pending transactions in the adjustment
+    if (transaction.pending === true) {
+      const amount = parseFloat(transaction.amount) || 0;
+      // Plaid uses positive amounts for debits/expenses, so we need to negate them
+      return sum - amount;
+    }
+    return sum;
   }, 0);
 
-  return liveBalance + transactionAdjustments;
+  return liveBalance + pendingAdjustments;
 };
 
 /**

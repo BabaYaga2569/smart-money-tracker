@@ -382,6 +382,22 @@
   border-radius: 4px;
 }
 
+.transaction-pending {
+  background: #ff9800;
+  color: #000;
+  padding: 2px 8px;
+  border-radius: 4px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  cursor: help;
+  animation: pulse 2s ease-in-out infinite;
+}
+
+@keyframes pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.7; }
+}
+
 .transaction-source {
   background: #444;
   padding: 2px 6px;

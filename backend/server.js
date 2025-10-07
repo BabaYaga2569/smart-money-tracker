@@ -450,6 +450,7 @@ app.post("/api/plaid/get_transactions", async (req, res) => {
       options: {
         count: 100,
         offset: 0,
+        include_personal_finance_category: true
       }
     });
 
@@ -481,6 +482,165 @@ app.post("/api/plaid/get_transactions", async (req, res) => {
       statusCode = error.response.status;
       
       logDiagnostic.error('GET_TRANSACTIONS', `Plaid API error: ${plaidError.error_code}`, {
+        error_code: plaidError.error_code,
+        error_type: plaidError.error_type,
+        error_message: plaidError.error_message
+      });
+      
+      if (plaidError.error_code === 'ITEM_LOGIN_REQUIRED') {
+        errorMessage = "Your bank connection has expired. Please reconnect your account.";
+        statusCode = 401;
+      } else if (plaidError.error_code === 'INVALID_ACCESS_TOKEN') {
+        errorMessage = "Invalid access token. Please reconnect your bank account.";
+        statusCode = 401;
+      } else if (plaidError.error_code === 'PRODUCT_NOT_READY') {
+        errorMessage = "Transaction data is not yet available. Please try again in a few moments.";
+        statusCode = 503;
+      } else if (plaidError.error_message) {
+        errorMessage = `Bank error: ${plaidError.error_message}`;
+      }
+    } else if (error.message) {
+      errorMessage = error.message;
+    }
+    
+    logDiagnostic.response(endpoint, statusCode, { error: errorMessage });
+    
+    res.status(statusCode).json({ 
+      success: false,
+      error: errorMessage,
+      error_code: error.response?.data?.error_code,
+      error_type: error.response?.data?.error_type
+    });
+  }
+});
+
+// Sync transactions to Firebase (includes pending transactions)
+app.post("/api/plaid/sync_transactions", async (req, res) => {
+  const endpoint = "/api/plaid/sync_transactions";
+  logDiagnostic.request(endpoint, req.body);
+  
+  try {
+    const { userId, start_date, end_date } = req.body;
+
+    if (!userId) {
+      logDiagnostic.error('SYNC_TRANSACTIONS', 'Missing userId in request');
+      return res.status(400).json({ 
+        success: false,
+        error: "userId is required. Please authenticate." 
+      });
+    }
+
+    // Retrieve access token from Firestore
+    const credentials = await getPlaidCredentials(userId);
+    if (!credentials) {
+      logDiagnostic.error('SYNC_TRANSACTIONS', 'No Plaid credentials found for user');
+      return res.status(404).json({ 
+        success: false,
+        error: "No Plaid connection found. Please connect your bank account first.",
+        error_code: "NO_CREDENTIALS"
+      });
+    }
+
+    // Default to last 30 days if no dates provided
+    const endDate = end_date || new Date().toISOString().split('T')[0];
+    const startDate = start_date || new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
+
+    logDiagnostic.info('SYNC_TRANSACTIONS', `Syncing transactions from ${startDate} to ${endDate}`);
+
+    // Fetch transactions from Plaid (including pending)
+    const transactionsResponse = await plaidClient.transactionsGet({
+      access_token: credentials.accessToken,
+      start_date: startDate,
+      end_date: endDate,
+      options: {
+        count: 500,
+        offset: 0,
+        include_personal_finance_category: true
+      }
+    });
+
+    const plaidTransactions = transactionsResponse.data.transactions;
+    const txCount = plaidTransactions.length;
+    const totalTx = transactionsResponse.data.total_transactions;
+    
+    logDiagnostic.info('SYNC_TRANSACTIONS', `Fetched ${txCount} of ${totalTx} transactions from Plaid`);
+
+    // Sync transactions to Firebase
+    let addedCount = 0;
+    let updatedCount = 0;
+    let pendingCount = 0;
+
+    const batch = db.batch();
+    const transactionsRef = db.collection('users').doc(userId).collection('transactions');
+
+    for (const plaidTx of plaidTransactions) {
+      const txDocRef = transactionsRef.doc(plaidTx.transaction_id);
+      
+      // Check if transaction exists
+      const txDoc = await txDocRef.get();
+      
+      // Prepare transaction data in our format
+      const transactionData = {
+        transaction_id: plaidTx.transaction_id,
+        account_id: plaidTx.account_id,
+        amount: plaidTx.amount,
+        date: plaidTx.date,
+        name: plaidTx.name,
+        merchant_name: plaidTx.merchant_name || plaidTx.name,
+        category: plaidTx.category || [],
+        pending: plaidTx.pending || false,  // ← KEY FIELD!
+        payment_channel: plaidTx.payment_channel || 'other',
+        timestamp: admin.firestore.FieldValue.serverTimestamp(),
+        lastSyncedAt: admin.firestore.FieldValue.serverTimestamp()
+      };
+
+      if (plaidTx.pending) {
+        pendingCount++;
+      }
+
+      if (!txDoc.exists) {
+        // New transaction - add to batch
+        batch.set(txDocRef, transactionData);
+        addedCount++;
+      } else {
+        // Existing transaction - update it (in case pending status changed)
+        batch.update(txDocRef, transactionData);
+        updatedCount++;
+      }
+    }
+
+    // Commit the batch
+    await batch.commit();
+
+    logDiagnostic.info('SYNC_TRANSACTIONS', `Synced ${addedCount} new, ${updatedCount} updated, ${pendingCount} pending transactions`);
+    logDiagnostic.response(endpoint, 200, { 
+      success: true, 
+      added: addedCount,
+      updated: updatedCount,
+      pending: pendingCount
+    });
+
+    res.json({
+      success: true,
+      added: addedCount,
+      updated: updatedCount,
+      pending: pendingCount,
+      total: txCount,
+      message: `Synced ${addedCount} new transactions (${pendingCount} pending)`
+    });
+  } catch (error) {
+    logDiagnostic.error('SYNC_TRANSACTIONS', 'Failed to sync transactions', error);
+    
+    // Provide more detailed error information
+    let errorMessage = "Failed to sync transactions from your bank";
+    let statusCode = 500;
+    
+    if (error.response) {
+      // Plaid API error
+      const plaidError = error.response.data;
+      statusCode = error.response.status;
+      
+      logDiagnostic.error('SYNC_TRANSACTIONS', `Plaid API error: ${plaidError.error_code}`, {
         error_code: plaidError.error_code,
         error_type: plaidError.error_type,
         error_message: plaidError.error_message
