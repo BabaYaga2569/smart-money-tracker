@@ -116,19 +116,35 @@ const Dashboard = () => {
         // Load current month transaction count
         const transactionCount = await loadCurrentMonthTransactionCount();
 
-        // Update with real Firebase data
-        setDashboardData({
-          totalBalance: totalBalance || 1530.07,
-          totalProjectedBalance: totalProjectedBalance || totalBalance || 1530.07,
-          accountCount: accountCount || 4,
-          safeToSpend: data.safeToSpend || 1247.50,
-          billsDueSoon: 2,
-          recurringCount: 8,
-          daysUntilPayday: 5,
-          monthlyIncome: 5500,
-          monthlyExpenses: 4957,
-          transactionCount: transactionCount
-        });
+       // Calculate bills data from Firebase
+const bills = data.bills || [];
+const billsDueSoon = bills.filter(b => b.status !== 'paid').length;
+const recurringCount = bills.filter(b => b.recurrence && b.recurrence !== 'one-time').length;
+
+// Load goals count
+const goalsRef = collection(db, 'users', currentUser.uid, 'goals');
+const goalsSnapshot = await getDocs(goalsRef);
+const goalsCount = goalsSnapshot.size;
+
+// Calculate categories count
+const uniqueCategories = new Set(transactions.map(t => t.category).filter(Boolean));
+const categoriesCount = uniqueCategories.size;
+
+// Update with real Firebase data - NO FALLBACKS!
+setDashboardData({
+  totalBalance: totalBalance,                    // ✅ Real data only
+  totalProjectedBalance: totalProjectedBalance || totalBalance,
+  accountCount: accountCount,                    // ✅ Real data only
+  safeToSpend: data.safeToSpend || 0,           // ✅ 0 fallback, not 1247.50
+  billsDueSoon: billsDueSoon,                    // ✅ Calculated from Firebase
+  recurringCount: recurringCount,                // ✅ Calculated from Firebase
+  daysUntilPayday: data.daysUntilPayday || 0,   // ✅ From Firebase or 0
+  monthlyIncome: data.monthlyIncome || 0,       // ✅ From Firebase or 0
+  monthlyExpenses: data.monthlyExpenses || 0,   // ✅ From Firebase or 0
+  transactionCount: transactionCount,
+  goalsCount: goalsCount,                        // ✅ Add this for Goals tile
+  categoriesCount: categoriesCount               // ✅ Add this for Categories tile
+});
       } else {
         // Firebase connected but no data - use defaults
         setFirebaseConnected(true);
@@ -242,7 +258,7 @@ const Dashboard = () => {
     {
       title: 'Goals',
       icon: '🎯',
-      value: '3 in progress',
+      value: `${dashboardData.goalsCount || 0} in progress`,  // ✅ Real data
       subtitle: 'Financial targets',
       path: '/goals',
       color: 'orange'
@@ -250,7 +266,7 @@ const Dashboard = () => {
     {
       title: 'Categories',
       icon: '🏷️',
-      value: '12 categories',
+      value: `${dashboardData.categoriesCount || 0} categories`,
       subtitle: 'Spending breakdown',
       path: '/categories',
       color: 'pink'
