@@ -255,17 +255,11 @@ const Categories = () => {
         transactionsData.push({ id: doc.id, ...doc.data() });
       });
       
-      // If no transactions from Firebase, add demo data
-      if (transactionsData.length === 0) {
-        const demoTransactions = generateDemoTransactions();
-        setTransactions(demoTransactions);
-      } else {
-        setTransactions(transactionsData);
-      }
+      // Use real transactions from Firebase, or empty array if none exist
+      setTransactions(transactionsData);
     } catch (error) {
       console.error('Error loading transactions:', error);
-      // Fallback to demo data
-      setTransactions(generateDemoTransactions());
+      setTransactions([]);
     }
   };
 
@@ -283,30 +277,11 @@ const Categories = () => {
         budgetsData[data.category] = { id: doc.id, ...data };
       });
       
-      // If no budgets from Firebase, add demo budgets
-      if (Object.keys(budgetsData).length === 0) {
-        const demoBudgets = {
-          'Groceries': { amount: 400, spent: 320, period: 'monthly', rollover: false },
-          'Food & Dining': { amount: 200, spent: 180, period: 'monthly', rollover: false },
-          'Gas & Fuel': { amount: 150, spent: 120, period: 'monthly', rollover: false },
-          'Entertainment': { amount: 100, spent: 85, period: 'monthly', rollover: true },
-          'Shopping': { amount: 250, spent: 310, period: 'monthly', rollover: false }
-        };
-        setBudgets(demoBudgets);
-      } else {
-        setBudgets(budgetsData);
-      }
+      // Use real budgets from Firebase, or empty object if none exist
+      setBudgets(budgetsData);
     } catch (error) {
       console.error('Error loading budgets:', error);
-      // Set demo budgets as fallback
-      const demoBudgets = {
-        'Groceries': { amount: 400, spent: 320, period: 'monthly', rollover: false },
-        'Food & Dining': { amount: 200, spent: 180, period: 'monthly', rollover: false },
-        'Gas & Fuel': { amount: 150, spent: 120, period: 'monthly', rollover: false },
-        'Entertainment': { amount: 100, spent: 85, period: 'monthly', rollover: true },
-        'Shopping': { amount: 250, spent: 310, period: 'monthly', rollover: false }
-      };
-      setBudgets(demoBudgets);
+      setBudgets({});
     }
   };
 
@@ -331,62 +306,7 @@ const Categories = () => {
     return [...TRANSACTION_CATEGORIES, ...customCategories.map(cat => cat.name)];
   };
 
-  const generateDemoTransactions = () => {
-    const currentDate = new Date();
-    const demoTransactions = [];
-    
-    // Generate transactions for the past 3 months
-    for (let monthsBack = 0; monthsBack < 3; monthsBack++) {
-      const month = new Date(currentDate.getFullYear(), currentDate.getMonth() - monthsBack, 1);
-      
-      // Groceries transactions
-      for (let i = 0; i < 8; i++) {
-        demoTransactions.push({
-          id: `demo-grocery-${monthsBack}-${i}`,
-          amount: -(Math.random() * 80 + 20), // -$20 to -$100
-          description: ['Safeway', 'Target', 'Costco', 'Walmart'][Math.floor(Math.random() * 4)],
-          category: 'Groceries',
-          date: new Date(month.getTime() + Math.random() * 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
-          account: 'checking'
-        });
-      }
-      
-      // Food & Dining transactions
-      for (let i = 0; i < 6; i++) {
-        demoTransactions.push({
-          id: `demo-dining-${monthsBack}-${i}`,
-          amount: -(Math.random() * 40 + 10), // -$10 to -$50
-          description: ['McDonald\'s', 'Starbucks', 'Chipotle', 'Pizza Hut'][Math.floor(Math.random() * 4)],
-          category: 'Food & Dining',
-          date: new Date(month.getTime() + Math.random() * 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
-          account: 'checking'
-        });
-      }
-      
-      // Other categories
-      const otherCategories = [
-        { category: 'Gas & Fuel', merchants: ['Shell', 'Chevron', 'Exxon'], avgAmount: 45 },
-        { category: 'Entertainment', merchants: ['Netflix', 'Movie Theater', 'Concert'], avgAmount: 25 },
-        { category: 'Shopping', merchants: ['Amazon', 'Best Buy', 'Target'], avgAmount: 75 },
-        { category: 'Bills & Utilities', merchants: ['Electric Bill', 'Internet', 'Phone'], avgAmount: 120 }
-      ];
-      
-      otherCategories.forEach(({ category, merchants, avgAmount }) => {
-        for (let i = 0; i < 3; i++) {
-          demoTransactions.push({
-            id: `demo-${category.toLowerCase().replace(/\s+/g, '-')}-${monthsBack}-${i}`,
-            amount: -(Math.random() * avgAmount + avgAmount * 0.5),
-            description: merchants[Math.floor(Math.random() * merchants.length)],
-            category,
-            date: new Date(month.getTime() + Math.random() * 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
-            account: 'checking'
-          });
-        }
-      });
-    }
-    
-    return demoTransactions;
-  };
+
 
 
 
