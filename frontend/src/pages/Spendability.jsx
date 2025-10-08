@@ -141,16 +141,16 @@ if (settingsData.nextPaydayOverride) {
     lastPaydate: settingsData.paySchedules?.yours?.lastPaydate
   });
   
-  const result = PayCycleCalculator.calculateNextPayday(
-    { 
-      lastPaydate: settingsData.paySchedules?.yours?.lastPaydate, 
-      amount: settingsData.paySchedules?.yours?.amount || 0 
-    },
-    { 
-      type: settingsData.paySchedules?.spouse?.type,
-      amount: settingsData.paySchedules?.spouse?.amount || 0 
-    }
-  );
+ const result = PayCycleCalculator.calculateNextPayday(
+  { 
+    lastPaydate: settingsData.paySchedules?.yours?.lastPaydate, 
+    amount: settingsData.paySchedules?.yours?.amount || 0 
+  },
+  { 
+    type: 'bi-monthly',  // ✅ FORCE IT!
+    amount: settingsData.paySchedules?.spouse?.amount || 0 
+  }
+);
   
   console.log('Spendability: Payday calculation result', result);
   nextPayday = result.date;
