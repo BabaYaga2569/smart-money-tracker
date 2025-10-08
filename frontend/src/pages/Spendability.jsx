@@ -147,6 +147,7 @@ if (settingsData.nextPaydayOverride) {
       amount: settingsData.paySchedules?.yours?.amount || 0 
     },
     { 
+      type: settingsData.paySchedules?.spouse?.type,
       amount: settingsData.paySchedules?.spouse?.amount || 0 
     }
   );
@@ -162,6 +163,7 @@ if (settingsData.nextPaydayOverride) {
       amount: settingsData.paySchedules?.yours?.amount
     },
     spouseSchedule: {
+      type: settingsData.paySchedules?.spouse?.type,
       amount: settingsData.paySchedules?.spouse?.amount
     },
     nextPayday: nextPayday,
