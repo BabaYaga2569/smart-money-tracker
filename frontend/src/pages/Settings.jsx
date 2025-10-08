@@ -91,6 +91,7 @@ const Settings = () => {
 
       console.log('🔵 SAVE SETTINGS CLICKED');
       console.log('🔵 paySchedules.yours:', paySchedules.yours);
+      console.log('🔵 paySchedules.spouse:', paySchedules.spouse);
       console.log('🔵 nextPaydayOverride:', nextPaydayOverride);
 
       const settingsDocRef = doc(db, 'users', currentUser.uid, 'settings', 'personal');
@@ -111,11 +112,15 @@ const Settings = () => {
         lastUpdated: new Date().toISOString()
       };
 
-      console.log('🔵 Settings data prepared:', settingsData);
+      console.log('💾 SAVING SETTINGS:', {
+        personalInfo: settingsData.personalInfo,
+        paySchedules: settingsData.paySchedules,
+        preferences: settingsData.preferences
+      });
 
       await setDoc(settingsDocRef, settingsData);
 
-      console.log('🔵 Settings saved to Firebase');
+      console.log('✅ Settings saved successfully to Firebase');
       console.log('🔵 Now calculating payday...');
 
       // Use override date if provided, otherwise calculate next payday
