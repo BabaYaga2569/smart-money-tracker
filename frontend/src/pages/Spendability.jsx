@@ -117,10 +117,23 @@ if (settingsData.nextPaydayOverride) {
   nextPayday = payCycleData.date;
   daysUntilPayday = payCycleData.daysUntil || getDaysUntilDateInPacific(nextPayday);
 } else {
+  console.log('Spendability: Calculating payday from schedules', {
+    yoursAmount: settingsData.paySchedules?.yours?.amount,
+    spouseAmount: settingsData.paySchedules?.spouse?.amount,
+    lastPaydate: settingsData.paySchedules?.yours?.lastPaydate
+  });
+  
   const result = PayCycleCalculator.calculateNextPayday(
-    { lastPaydate: settingsData.paySchedules?.yours?.lastPaydate, amount: 0 },
-    { amount: 0 }
+    { 
+      lastPaydate: settingsData.paySchedules?.yours?.lastPaydate, 
+      amount: settingsData.paySchedules?.yours?.amount || 0 
+    },
+    { 
+      amount: settingsData.paySchedules?.spouse?.amount || 0 
+    }
   );
+  
+  console.log('Spendability: Payday calculation result', result);
   nextPayday = result.date;
   daysUntilPayday = result.daysUntil;
 }      
