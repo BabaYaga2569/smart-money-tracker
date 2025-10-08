@@ -210,13 +210,15 @@ if (settingsData.nextPaydayOverride) {
         // Include if:
         // 1. Subtype explicitly says "checking"
         // 2. Name contains "checking"
-        // 3. Type is "depository" AND name doesn't contain "savings"
+        // 3. Type is "checking" (main account type)
+        // 4. Type is "depository" AND name doesn't contain "savings"
         const isChecking = 
           subtype === 'checking' ||
-          subtype.includes('checking') ||
+          subtype?.includes('checking') ||
           name.includes('checking') ||
           name.includes('chk') ||
-          (accountType === 'depository' && !name.includes('savings') && !subtype.includes('savings'));
+          accountType === 'checking' ||
+          (accountType === 'depository' && !name.includes('savings') && !subtype?.includes('savings'));
         
         console.log(`Account "${a.name}": isChecking=${isChecking} (subtype=${a.subtype}, type=${a.type})`);
         
