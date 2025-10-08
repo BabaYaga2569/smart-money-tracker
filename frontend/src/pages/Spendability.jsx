@@ -147,8 +147,9 @@ if (settingsData.nextPaydayOverride) {
     amount: settingsData.paySchedules?.yours?.amount || 0 
   },
   { 
-    type: 'bi-monthly',  // ✅ FORCE IT!
-    amount: settingsData.paySchedules?.spouse?.amount || 0 
+    type: settingsData.paySchedules?.spouse?.type || 'bi-monthly',
+    amount: settingsData.paySchedules?.spouse?.amount || 0,
+    dates: settingsData.paySchedules?.spouse?.dates || [15, 30]  // 🔥 THIS IS WHAT'S MISSING!
   }
 );
   
