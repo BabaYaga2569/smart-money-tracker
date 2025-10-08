@@ -90,9 +90,6 @@ const Settings = () => {
       setMessage('');
 
       console.log('🔵 SAVE SETTINGS CLICKED');
-      console.log('🔵 paySchedules.yours:', paySchedules.yours);
-      console.log('🔵 paySchedules.spouse:', paySchedules.spouse);
-      console.log('🔵 nextPaydayOverride:', nextPaydayOverride);
 
       const settingsDocRef = doc(db, 'users', currentUser.uid, 'settings', 'personal');
       
@@ -100,11 +97,23 @@ const Settings = () => {
       const currentDoc = await getDoc(settingsDocRef);
       const currentData = currentDoc.exists() ? currentDoc.data() : {};
 
+      // 🔥 ENSURE spouse schedule always has dates array - THIS IS THE KEY FIX!
+      const spouseSchedule = {
+        ...paySchedules.spouse,
+        dates: paySchedules.spouse.dates || [15, 30],
+        type: paySchedules.spouse.type || 'bi-monthly'
+      };
+
+      console.log('🔵 Enhanced spouse schedule:', spouseSchedule);
+
       // MERGE WITH EXISTING DATA
       const settingsData = {
-        ...currentData, // ← CRITICAL: Preserves plaidAccounts, transactions, etc.
+        ...currentData,
         personalInfo,
-        paySchedules,
+        paySchedules: {
+          ...paySchedules,
+          spouse: spouseSchedule  // Use enhanced version with dates guaranteed
+        },
         bankAccounts,
         bills: bills.filter(bill => bill.name && bill.amount),
         preferences,
@@ -112,15 +121,11 @@ const Settings = () => {
         lastUpdated: new Date().toISOString()
       };
 
-      console.log('💾 SAVING SETTINGS:', {
-        personalInfo: settingsData.personalInfo,
-        paySchedules: settingsData.paySchedules,
-        preferences: settingsData.preferences
-      });
+      console.log('🔵 Settings data prepared:', settingsData);
 
       await setDoc(settingsDocRef, settingsData);
 
-      console.log('✅ Settings saved successfully to Firebase');
+      console.log('🔵 Settings saved to Firebase');
       console.log('🔵 Now calculating payday...');
 
       // Use override date if provided, otherwise calculate next payday
@@ -139,12 +144,12 @@ const Settings = () => {
         console.log('🔵 Calculating from paySchedules...');
         console.log('🔵 Input to calculator:', {
           yours: paySchedules.yours,
-          spouse: paySchedules.spouse
+          spouse: spouseSchedule  // 🔥 Use enhanced version!
         });
         
         nextPaydayInfo = PayCycleCalculator.calculateNextPayday(
           paySchedules.yours,
-          paySchedules.spouse
+          spouseSchedule  // 🔥 Pass enhanced spouse schedule with dates!
         );
         
         console.log('🔵 Calculated payday result:', nextPaydayInfo);
