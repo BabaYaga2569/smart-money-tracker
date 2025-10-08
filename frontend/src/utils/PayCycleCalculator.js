@@ -48,7 +48,9 @@ export class PayCycleCalculator {
             let spouseNextPay = null;
             let spouseAmount = 0;
             
-            if (spouseSchedule.amount) {
+            // Calculate spouse payday if spouse schedule exists
+            // Check for schedule existence rather than just amount
+            if (spouseSchedule && (spouseSchedule.type === 'bi-monthly' || spouseSchedule.amount)) {
                 spouseNextPay = this.getWifeNextPayday();
                 spouseAmount = parseFloat(spouseSchedule.amount) || 0;
             }

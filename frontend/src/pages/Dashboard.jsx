@@ -130,12 +130,53 @@ const goalsCount = goalsSnapshot.size;
 const uniqueCategories = new Set(transactions.map(t => t.category).filter(Boolean));
 const categoriesCount = uniqueCategories.size;
 
+// Calculate spendability (same logic as Spendability page)
+let calculatedSafeToSpend = 0;
+try {
+  // Get pay cycle data for bills filtering
+  const payCycleDocRef = doc(db, 'users', currentUser.uid, 'financial', 'payCycle');
+  const payCycleDocSnap = await getDoc(payCycleDocRef);
+  
+  let nextPaydayDate = new Date();
+  if (payCycleDocSnap.exists()) {
+    const payCycleData = payCycleDocSnap.data();
+    nextPaydayDate = new Date(payCycleData.date || new Date());
+  }
+  
+  // Calculate bills due before next payday
+  const RecurringBillManager = (await import('../utils/RecurringBillManager')).RecurringBillManager;
+  const billsWithRecurrence = bills.map(bill => ({
+    ...bill,
+    recurrence: bill.recurrence || 'monthly'
+  }));
+  const processedBills = RecurringBillManager.processBills(billsWithRecurrence);
+  const billsDueBeforePayday = RecurringBillManager.getBillsDueBefore(processedBills, nextPaydayDate);
+  const totalBillsDue = billsDueBeforePayday.reduce((sum, bill) => sum + (parseFloat(bill.amount) || 0), 0);
+  
+  // Get preferences for weekly essentials and safety buffer
+  const preferences = data.preferences || {};
+  const weeklyEssentials = preferences.weeklyEssentials || 0;
+  const safetyBuffer = preferences.safetyBuffer || 0;
+  
+  // Calculate weeks until payday
+  const payCycleData = payCycleDocSnap.exists() ? payCycleDocSnap.data() : {};
+  const daysUntilPayday = payCycleData.daysUntil || 0;
+  const weeksUntilPayday = Math.ceil(daysUntilPayday / 7);
+  const essentialsNeeded = weeklyEssentials * weeksUntilPayday;
+  
+  // Calculate safe to spend: Total Available - Bills - Essentials - Safety Buffer
+  calculatedSafeToSpend = totalProjectedBalance - totalBillsDue - essentialsNeeded - safetyBuffer;
+} catch (error) {
+  console.error('Error calculating spendability:', error);
+  calculatedSafeToSpend = 0;
+}
+
 // Update with real Firebase data - NO FALLBACKS!
 setDashboardData({
   totalBalance: totalBalance,                    // ✅ Real data only
   totalProjectedBalance: totalProjectedBalance || totalBalance,
   accountCount: accountCount,                    // ✅ Real data only
-  safeToSpend: data.safeToSpend || 0,           // ✅ 0 fallback, not 1247.50
+  safeToSpend: calculatedSafeToSpend,           // ✅ Calculated, not from Firebase
   billsDueSoon: billsDueSoon,                    // ✅ Calculated from Firebase
   recurringCount: recurringCount,                // ✅ Calculated from Firebase
   daysUntilPayday: data.daysUntilPayday || 0,   // ✅ From Firebase or 0
