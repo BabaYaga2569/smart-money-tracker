@@ -106,6 +106,24 @@ if (wasUpdated) {
         liveBalance: plaidAccounts.reduce((sum, a) => sum + parseFloat(a.balance || 0), 0),
         projectedBalance: totalAvailable,
         difference: totalAvailable - plaidAccounts.reduce((sum, a) => sum + parseFloat(a.balance || 0), 0)
+      });
+
+      // 🔍 COMPREHENSIVE DEBUG LOGGING
+      console.log('🔍 SPENDABILITY DEBUG:', {
+        timestamp: new Date().toISOString(),
+        plaidAccountsCount: plaidAccounts.length,
+        plaidAccounts: plaidAccounts.map(a => ({
+          name: a.name,
+          subtype: a.subtype,
+          type: a.type,
+          account_id: a.account_id,
+          liveBalance: a.balance,
+          projectedBalance: calculateProjectedBalance(a.account_id, parseFloat(a.balance) || 0, transactions)
+        })),
+        transactionsCount: transactions.length,
+        pendingTransactionsCount: transactions.filter(t => t.pending).length,
+        totalLiveBalance: plaidAccounts.reduce((sum, a) => sum + parseFloat(a.balance || 0), 0),
+        totalProjectedBalance: totalAvailable
       }); 
      // Get pay cycle data
 let nextPayday, daysUntilPayday;
@@ -136,6 +154,20 @@ if (settingsData.nextPaydayOverride) {
   console.log('Spendability: Payday calculation result', result);
   nextPayday = result.date;
   daysUntilPayday = result.daysUntil;
+
+  // 📅 PAYDAY CALCULATION DEBUG
+  console.log('📅 PAYDAY CALCULATION DEBUG:', {
+    yourSchedule: {
+      lastPaydate: settingsData.paySchedules?.yours?.lastPaydate,
+      amount: settingsData.paySchedules?.yours?.amount
+    },
+    spouseSchedule: {
+      amount: settingsData.paySchedules?.spouse?.amount
+    },
+    nextPayday: nextPayday,
+    daysUntilPayday: daysUntilPayday,
+    source: result.source || 'Check what PayCycleCalculator returned'
+  });
 }      
  
       const bills = settingsData.bills || [];
@@ -170,11 +202,26 @@ if (settingsData.nextPaydayOverride) {
       });
 
       // Sum ALL checking accounts with projected balances
-      const checkingAccounts = plaidAccounts.filter(a => 
-        a.subtype === 'checking' || 
-        a.name?.toLowerCase().includes('checking') ||
-        (a.type === 'depository' && !a.name?.toLowerCase().includes('savings'))
-      );
+      const checkingAccounts = plaidAccounts.filter(a => {
+        const name = (a.name || '').toLowerCase();
+        const subtype = (a.subtype || '').toLowerCase();
+        const accountType = (a.type || '').toLowerCase();
+        
+        // Include if:
+        // 1. Subtype explicitly says "checking"
+        // 2. Name contains "checking"
+        // 3. Type is "depository" AND name doesn't contain "savings"
+        const isChecking = 
+          subtype === 'checking' ||
+          subtype.includes('checking') ||
+          name.includes('checking') ||
+          name.includes('chk') ||
+          (accountType === 'depository' && !name.includes('savings') && !subtype.includes('savings'));
+        
+        console.log(`Account "${a.name}": isChecking=${isChecking} (subtype=${a.subtype}, type=${a.type})`);
+        
+        return isChecking;
+      });
 
       const checkingTotal = checkingAccounts.reduce((sum, account) => {
         const projectedBalance = calculateProjectedBalance(
@@ -182,8 +229,11 @@ if (settingsData.nextPaydayOverride) {
           parseFloat(account.balance) || 0, 
           transactions
         );
+        console.log(`  ${account.name}: projected=${projectedBalance.toFixed(2)}`);
         return sum + projectedBalance;
       }, 0);
+
+      console.log(`Total Checking: ${checkingTotal.toFixed(2)}`);
 
       // Sum ALL savings accounts with projected balances
       const savingsAccounts = plaidAccounts.filter(a => 
@@ -209,6 +259,24 @@ if (settingsData.nextPaydayOverride) {
           accounts: savingsAccounts.map(a => a.name),
           total: savingsTotal
         }
+      });
+
+      // 🏦 CHECKING ACCOUNTS DEBUG
+      console.log('🏦 CHECKING ACCOUNTS DEBUG:', {
+        checkingAccountsFound: checkingAccounts.map(a => ({
+          name: a.name,
+          subtype: a.subtype,
+          liveBalance: a.balance,
+          projectedBalance: calculateProjectedBalance(a.account_id, parseFloat(a.balance) || 0, transactions)
+        })),
+        checkingTotal: checkingTotal,
+        savingsAccountsFound: savingsAccounts.map(a => ({
+          name: a.name,
+          subtype: a.subtype,
+          liveBalance: a.balance,
+          projectedBalance: calculateProjectedBalance(a.account_id, parseFloat(a.balance) || 0, transactions)
+        })),
+        savingsTotal: savingsTotal
       });
 
       setFinancialData({
