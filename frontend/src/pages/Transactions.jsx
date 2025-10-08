@@ -358,7 +358,7 @@ const Transactions = () => {
       // Reload transactions from Firebase
       await loadTransactions();
       
-      const { added, pending, deduplicated, total } = data;
+      const { added, pending, deduplicated } = data;
       const pendingText = pending > 0 ? ` (${pending} pending)` : '';
       const dedupeText = deduplicated > 0 ? `, ${deduplicated} merged` : '';
       
@@ -660,6 +660,9 @@ const Transactions = () => {
     if (filters.dateTo) {
       filtered = filtered.filter(t => t.date <= filters.dateTo);
     }
+    
+    // Sort by date in descending order (most recent first)
+    filtered.sort((a, b) => new Date(b.date) - new Date(a.date));
     
     setFilteredTransactions(filtered);
   };
@@ -1272,18 +1275,28 @@ const Transactions = () => {
                       />
                     </div>
                   ) : (
-                    <div 
-                      className="transaction-description"
-                      onClick={() => setEditingTransaction(transaction.id)}
-                      title="Click to edit"
-                    >
-                      {transaction.description}
-                    </div>
+                    <>
+                      <div className="transaction-date-header">
+                        {formatDateForDisplay(transaction.date)}
+                      </div>
+                      <div className="transaction-main-row">
+                        <div 
+                          className="transaction-description"
+                          onClick={() => setEditingTransaction(transaction.id)}
+                          title="Click to edit"
+                        >
+                          {transaction.merchant_name || transaction.name || transaction.description}
+                          {transaction.category && (
+                            <span className="transaction-category-inline"> - {transaction.category}</span>
+                          )}
+                        </div>
+                        <div className={`transaction-amount ${transaction.amount >= 0 ? 'income' : 'expense'}`}>
+                          {formatCurrency(transaction.amount)}
+                        </div>
+                      </div>
+                    </>
                   )}
                   <div className="transaction-meta">
-                    <span className="transaction-date">
-                      {formatDateForDisplay(transaction.date)}
-                    </span>
                     <span className="transaction-account">
                       {accounts[transaction.account]?.name || transaction.account}
                     </span>
@@ -1299,31 +1312,23 @@ const Transactions = () => {
                     )}
                   </div>
                 </div>
-                <div className="transaction-details">
-                  <div className={`transaction-amount ${transaction.amount >= 0 ? 'income' : 'expense'}`}>
-                    {formatCurrency(transaction.amount)}
-                  </div>
-                  {transaction.category && (
-                    <div className="transaction-category">{transaction.category}</div>
-                  )}
-                  <div className="transaction-actions">
-                    <button 
-                      className="edit-btn"
-                      onClick={() => setEditingTransaction(editingTransaction === transaction.id ? null : transaction.id)}
-                      disabled={saving}
-                      title="Edit transaction"
-                    >
-                      ✏️
-                    </button>
-                    <button 
-                      className="delete-btn"
-                      onClick={() => deleteTransaction(transaction.id, transaction)}
-                      disabled={saving}
-                      title="Delete transaction"
-                    >
-                      🗑️
-                    </button>
-                  </div>
+                <div className="transaction-actions">
+                  <button 
+                    className="edit-btn"
+                    onClick={() => setEditingTransaction(editingTransaction === transaction.id ? null : transaction.id)}
+                    disabled={saving}
+                    title="Edit transaction"
+                  >
+                    ✏️
+                  </button>
+                  <button 
+                    className="delete-btn"
+                    onClick={() => deleteTransaction(transaction.id, transaction)}
+                    disabled={saving}
+                    title="Delete transaction"
+                  >
+                    🗑️
+                  </button>
                 </div>
               </div>
             ))}

@@ -304,12 +304,13 @@
   display: flex;
   flex-direction: column;
   gap: 10px;
+  min-height: 600px; /* Allow at least 8-10 transactions to be visible */
 }
 
 .transaction-item {
   display: flex;
   justify-content: space-between;
-  align-items: center;
+  align-items: flex-start;
   background: #1a1a1a;
   border: 1px solid #333;
   border-radius: 8px;
@@ -329,6 +330,21 @@
   flex: 1;
 }
 
+.transaction-date-header {
+  color: #00ff88;
+  font-size: 0.85rem;
+  font-weight: 600;
+  margin-bottom: 5px;
+}
+
+.transaction-main-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 15px;
+  margin-bottom: 5px;
+}
+
 .transaction-description {
   color: #fff;
   font-weight: 500;
@@ -337,10 +353,16 @@
   padding: 2px 4px;
   border-radius: 4px;
   transition: background 0.3s ease;
+  flex: 1;
 }
 
 .transaction-description:hover {
   background: #333;
+}
+
+.transaction-category-inline {
+  color: #00ff88;
+  font-weight: 400;
 }
 
 .transaction-edit-form {
@@ -425,7 +447,8 @@
 
 .transaction-amount {
   font-weight: bold;
-  font-size: 1.2rem;
+  font-size: 1.1rem;
+  white-space: nowrap;
 }
 
 .transaction-amount.income {
@@ -447,7 +470,7 @@
 .transaction-actions {
   display: flex;
   gap: 5px;
-  margin-top: 5px;
+  margin-left: 10px;
 }
 
 .edit-btn,
@@ -554,6 +577,12 @@
     gap: 10px;
   }
   
+  .transaction-main-row {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 5px;
+  }
+  
   .transaction-details {
     align-items: flex-start;
     width: 100%;
@@ -561,6 +590,11 @@
   
   .transaction-meta {
     flex-wrap: wrap;
+  }
+
+  .transaction-actions {
+    margin-left: 0;
+    margin-top: 10px;
   }
 
   .categories-list {
