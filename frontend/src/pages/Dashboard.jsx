@@ -137,10 +137,34 @@ try {
   const payCycleDocRef = doc(db, 'users', currentUser.uid, 'financial', 'payCycle');
   const payCycleDocSnap = await getDoc(payCycleDocRef);
   
+  // Calculate next payday and days until payday
   let nextPaydayDate = new Date();
-  if (payCycleDocSnap.exists()) {
+  let daysUntilPayday = 0;
+  
+  // Check for override or cached payCycle data
+  if (data.nextPaydayOverride) {
+    nextPaydayDate = new Date(data.nextPaydayOverride);
+    const { getDaysUntilDateInPacific } = await import('../utils/DateUtils');
+    daysUntilPayday = getDaysUntilDateInPacific(nextPaydayDate);
+  } else if (payCycleDocSnap.exists() && payCycleDocSnap.data().date) {
     const payCycleData = payCycleDocSnap.data();
-    nextPaydayDate = new Date(payCycleData.date || new Date());
+    nextPaydayDate = new Date(payCycleData.date);
+    daysUntilPayday = payCycleData.daysUntil || 0;
+  } else if (data.paySchedules) {
+    // Fallback: Calculate from pay schedules if no cached data
+    const { PayCycleCalculator } = await import('../utils/PayCycleCalculator');
+    const result = PayCycleCalculator.calculateNextPayday(
+      { 
+        lastPaydate: data.paySchedules?.yours?.lastPaydate, 
+        amount: data.paySchedules?.yours?.amount || 0 
+      },
+      { 
+        type: data.paySchedules?.spouse?.type,
+        amount: data.paySchedules?.spouse?.amount || 0 
+      }
+    );
+    nextPaydayDate = new Date(result.date);
+    daysUntilPayday = result.daysUntil;
   }
   
   // Calculate bills due before next payday
@@ -159,8 +183,6 @@ try {
   const safetyBuffer = preferences.safetyBuffer || 0;
   
   // Calculate weeks until payday
-  const payCycleData = payCycleDocSnap.exists() ? payCycleDocSnap.data() : {};
-  const daysUntilPayday = payCycleData.daysUntil || 0;
   const weeksUntilPayday = Math.ceil(daysUntilPayday / 7);
   const essentialsNeeded = weeklyEssentials * weeksUntilPayday;
   
