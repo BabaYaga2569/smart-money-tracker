@@ -10,6 +10,10 @@ const PlaidLink = ({ onSuccess, onExit, userId, buttonText = "Connect Bank" }) =
   const [retryCount, setRetryCount] = useState(0);
 
   useEffect(() => {
+    // Calculate timeout with exponential backoff for retries (moved outside to be accessible in catch)
+    const baseTimeout = 30000; // 30 seconds (increased from 10s to handle backend cold starts)
+    const timeout = baseTimeout + (retryCount * 5000); // Add 5s per retry
+    
     const createLinkToken = async () => {
       try {
         setLoading(true);
@@ -17,10 +21,6 @@ const PlaidLink = ({ onSuccess, onExit, userId, buttonText = "Connect Bank" }) =
         setErrorType(null);
         
         console.log('[PlaidLink] Creating link token for user:', userId || 'steve-colburn');
-        
-        // Calculate timeout with exponential backoff for retries
-        const baseTimeout = 10000; // 10 seconds
-        const timeout = baseTimeout + (retryCount * 5000); // Add 5s per retry
         
         // Add timeout to prevent infinite loading
         const controller = new AbortController();
@@ -77,19 +77,26 @@ const PlaidLink = ({ onSuccess, onExit, userId, buttonText = "Connect Bank" }) =
       } catch (error) {
         console.error('[PlaidLink] Error creating link token:', error);
         
+        // Automatic retry logic for timeout errors (retry once)
+        if (error.name === 'AbortError' && retryCount < 1) {
+          console.log('[PlaidLink] Timeout, retrying automatically...');
+          setRetryCount(prev => prev + 1);
+          return; // Exit early, useEffect will re-run with new retryCount
+        }
+        
         let errorMessage = 'Unable to connect to Plaid. ';
         let type = 'unknown';
         
         if (error.name === 'AbortError') {
-          errorMessage += 'Connection timeout. The backend server may be slow or unreachable.';
+          errorMessage += 'Connection is taking longer than expected. Please try again.';
           type = 'timeout';
-          console.error('[PlaidLink] Request timed out after 10 seconds');
+          console.error('[PlaidLink] Request timed out after', timeout / 1000, 'seconds');
         } else if (error.message.includes('CORS')) {
           errorMessage += 'CORS configuration issue. This typically indicates a server configuration problem.';
           type = 'cors';
           console.error('[PlaidLink] CORS error detected');
         } else if (error.message.includes('Failed to fetch') || error.message.includes('NetworkError')) {
-          errorMessage += 'Network error. Please check your internet connection or the backend may be down.';
+          errorMessage += 'Unable to connect to bank. Please check your connection.';
           type = 'network';
           console.error('[PlaidLink] Network error - backend may be unreachable');
         } else {
@@ -139,9 +146,10 @@ const PlaidLink = ({ onSuccess, onExit, userId, buttonText = "Connect Bank" }) =
     switch (errorType) {
       case 'timeout':
         return [
+          'The server may be experiencing a cold start - try again',
           'Check if the backend server is running',
           'Verify VITE_API_URL is set correctly',
-          'The server may be slow to respond - try again in a moment'
+          'Wait a moment and retry - the first request may wake up the server'
         ];
       case 'cors':
         return [
@@ -175,9 +183,34 @@ const PlaidLink = ({ onSuccess, onExit, userId, buttonText = "Connect Bank" }) =
 
   if (loading) {
     return (
-      <button className="btn-primary" disabled>
-        Loading...
-      </button>
+      <div style={{
+        display: 'flex',
+        alignItems: 'center',
+        gap: '10px',
+        padding: '10px 16px',
+        background: '#f3f4f6',
+        borderRadius: '8px',
+        color: '#6b7280',
+        fontSize: '14px'
+      }}>
+        <div style={{
+          width: '16px',
+          height: '16px',
+          border: '2px solid #e5e7eb',
+          borderTop: '2px solid #3b82f6',
+          borderRadius: '50%',
+          animation: 'spin 1s linear infinite'
+        }}></div>
+        <span>Connecting to Plaid...</span>
+        <style>
+          {`
+            @keyframes spin {
+              0% { transform: rotate(0deg); }
+              100% { transform: rotate(360deg); }
+            }
+          `}
+        </style>
+      </div>
     );
   }
 
