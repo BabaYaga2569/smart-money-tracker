@@ -263,6 +263,8 @@
 /* Transactions List */
 .transactions-list {
   margin-top: 30px;
+  max-height: 1000px; /* Increased from 400px to show 8-10 transactions without scrolling */
+  overflow-y: auto;
 }
 
 .transactions-header {
