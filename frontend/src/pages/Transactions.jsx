@@ -1286,6 +1286,16 @@ const Transactions = () => {
                           title="Click to edit"
                         >
                           {transaction.merchant_name || transaction.name || transaction.description}
+                          {(transaction.account_id || transaction.account) && (
+                            <span className="transaction-account-inline">
+                              {' | '}
+                              {accounts[transaction.account_id]?.name || 
+                               accounts[transaction.account]?.name || 
+                               transaction.account_id || 
+                               transaction.account || 
+                               'Unknown Account'}
+                            </span>
+                          )}
                           {transaction.category && (
                             <span className="transaction-category-inline"> - {transaction.category}</span>
                           )}
