@@ -320,16 +320,20 @@ const Transactions = () => {
       }
 
       // Determine backend URL
-      const backendUrl = window.location.hostname === 'localhost' 
-        ? 'http://localhost:5000' 
-        : 'https://smart-money-tracker-09ks.onrender.com';
+      const backendUrl = import.meta.env.VITE_API_URL || 
+        (window.location.hostname === 'localhost' 
+          ? 'http://localhost:5000' 
+          : 'https://smart-money-tracker-09ks.onrender.com');
 
       // Fetch last 30 days of transactions
       const endDate = new Date().toISOString().split('T')[0];
       const startDate = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
 
       // Call the new sync_transactions endpoint which saves directly to Firebase
-      const response = await fetch(`${backendUrl}/api/plaid/sync_transactions`, {
+      const apiUrl = `${backendUrl}/api/plaid/sync_transactions`;
+      console.log('Syncing from:', apiUrl); // Debug log
+
+      const response = await fetch(apiUrl, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
