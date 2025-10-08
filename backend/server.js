@@ -555,8 +555,7 @@ app.post("/api/plaid/sync_transactions", async (req, res) => {
       options: {
         count: 500,
         offset: 0,
-        include_personal_finance_category: true,
-        include_pending_transactions: true
+        include_personal_finance_category: true
       }
     });
 
