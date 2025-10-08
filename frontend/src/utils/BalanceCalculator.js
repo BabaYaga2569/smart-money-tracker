@@ -29,8 +29,16 @@ export const calculateProjectedBalance = (accountId, liveBalance, transactions) 
     // Only include pending transactions in the adjustment
     if (transaction.pending === true) {
       const amount = parseFloat(transaction.amount) || 0;
-      // Amount is already signed: negative for expenses, positive for income
-      return sum + amount;
+      // Plaid uses positive amounts for debits/expenses, manual uses negative
+      // Check source to determine sign convention
+      if (transaction.source === 'manual') {
+        // Manual: amount is already signed (negative for expense), so add it
+        return sum + amount;
+      } else {
+        // Plaid (or no source): positive = expense, so subtract it
+        // Default to Plaid behavior when source is not specified
+        return sum - amount;
+      }
     }
     return sum;
   }, 0);

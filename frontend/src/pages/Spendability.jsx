@@ -1,9 +1,10 @@
 import React, { useState, useEffect } from 'react';
-import { doc, getDoc, updateDoc, collection, addDoc } from 'firebase/firestore';
+import { doc, getDoc, updateDoc, collection, addDoc, getDocs } from 'firebase/firestore';
 import { db } from '../firebase';
 import { PayCycleCalculator } from '../utils/PayCycleCalculator';
 import { RecurringBillManager } from '../utils/RecurringBillManager';
 import { formatDateForDisplay, formatDateForInput, getDaysUntilDateInPacific, getPacificTime, getManualPacificDaysUntilPayday } from '../utils/DateUtils';
+import { calculateProjectedBalance, calculateTotalProjectedBalance } from '../utils/BalanceCalculator';
 import './Spendability.css';
 import { useAuth } from '../contexts/AuthContext';
 
@@ -84,9 +85,28 @@ if (wasUpdated) {
 }
 
   const plaidAccounts = settingsData.plaidAccounts || [];
-const totalAvailable = plaidAccounts.reduce((sum, account) => {
-  return sum + (parseFloat(account.balance) || 0);
-}, 0); 
+
+      // Load transactions to calculate projected balances
+      const transactionsRef = collection(db, 'users', currentUser.uid, 'transactions');
+      const transactionsSnapshot = await getDocs(transactionsRef);
+      const transactions = transactionsSnapshot.docs.map(doc => ({
+        id: doc.id,
+        ...doc.data()
+      }));
+
+      console.log('Spendability: Loaded transactions', {
+        count: transactions.length,
+        pendingCount: transactions.filter(t => t.pending).length
+      });
+
+      // Use PROJECTED balance (includes pending transactions)
+      const totalAvailable = calculateTotalProjectedBalance(plaidAccounts, transactions);
+
+      console.log('Spendability: Balance calculation', {
+        liveBalance: plaidAccounts.reduce((sum, a) => sum + parseFloat(a.balance || 0), 0),
+        projectedBalance: totalAvailable,
+        difference: totalAvailable - plaidAccounts.reduce((sum, a) => sum + parseFloat(a.balance || 0), 0)
+      }); 
      // Get pay cycle data
 let nextPayday, daysUntilPayday;
 
@@ -136,10 +156,52 @@ if (settingsData.nextPaydayOverride) {
         willDisplayAs: finalDaysUntilPayday > 0 ? `${finalDaysUntilPayday} days` : 'Today!'
       });
 
+      // Sum ALL checking accounts with projected balances
+      const checkingAccounts = plaidAccounts.filter(a => 
+        a.subtype === 'checking' || 
+        a.name?.toLowerCase().includes('checking') ||
+        (a.type === 'depository' && !a.name?.toLowerCase().includes('savings'))
+      );
+
+      const checkingTotal = checkingAccounts.reduce((sum, account) => {
+        const projectedBalance = calculateProjectedBalance(
+          account.account_id, 
+          parseFloat(account.balance) || 0, 
+          transactions
+        );
+        return sum + projectedBalance;
+      }, 0);
+
+      // Sum ALL savings accounts with projected balances
+      const savingsAccounts = plaidAccounts.filter(a => 
+        a.subtype === 'savings' || 
+        a.name?.toLowerCase().includes('savings')
+      );
+
+      const savingsTotal = savingsAccounts.reduce((sum, account) => {
+        const projectedBalance = calculateProjectedBalance(
+          account.account_id, 
+          parseFloat(account.balance) || 0, 
+          transactions
+        );
+        return sum + projectedBalance;
+      }, 0);
+
+      console.log('Spendability: Account breakdowns', {
+        checking: {
+          accounts: checkingAccounts.map(a => a.name),
+          total: checkingTotal
+        },
+        savings: {
+          accounts: savingsAccounts.map(a => a.name),
+          total: savingsTotal
+        }
+      });
+
       setFinancialData({
-        totalAvailable,
-        checking: plaidAccounts.find(a => a.account_id?.includes('checking') || a.type === 'depository')?.balance || 0,
-        savings: plaidAccounts.find(a => a.account_id?.includes('savings') || a.subtype === 'savings')?.balance || 0,
+        totalAvailable,  // Now uses PROJECTED balance
+        checking: checkingTotal,  // Sum of all checking accounts
+        savings: savingsTotal,    // Sum of all savings accounts
         billsBeforePayday: billsDueBeforePayday,
         totalBillsDue,
         safeToSpend,
