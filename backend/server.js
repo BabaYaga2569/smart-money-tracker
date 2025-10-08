@@ -187,6 +187,15 @@ app.get("/api/hello", (req, res) => {
   res.json({ message: "Backend is working!" });
 });
 
+// Health check endpoint
+app.get('/api/health', (req, res) => {
+  res.json({ 
+    status: 'ok',
+    timestamp: new Date().toISOString(),
+    uptime: process.uptime()
+  });
+});
+
 // ============================================================================
 // PLAID ENDPOINTS WITH DIAGNOSTIC LOGGING
 // ============================================================================
