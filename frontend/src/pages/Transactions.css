@@ -304,13 +304,13 @@
   display: flex;
   flex-direction: column;
   gap: 10px;
-  min-height: 600px; /* Allow at least 8-10 transactions to be visible */
+  min-height: 800px; /* Increased to show 8-10 transactions without scrolling */
 }
 
 .transaction-item {
   display: flex;
   justify-content: space-between;
-  align-items: flex-start;
+  align-items: center;
   background: #1a1a1a;
   border: 1px solid #333;
   border-radius: 8px;
@@ -363,6 +363,12 @@
 .transaction-category-inline {
   color: #00ff88;
   font-weight: 400;
+}
+
+.transaction-account-inline {
+  color: #888;
+  font-weight: 400;
+  font-size: 0.9rem;
 }
 
 .transaction-edit-form {
@@ -470,7 +476,8 @@
 .transaction-actions {
   display: flex;
   gap: 5px;
-  margin-left: 10px;
+  margin-left: auto;
+  flex-shrink: 0;
 }
 
 .edit-btn,
