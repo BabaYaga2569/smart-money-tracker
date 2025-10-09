@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { doc, getDoc, collection, addDoc, updateDoc, deleteDoc, query, orderBy, limit, getDocs } from 'firebase/firestore';
+import { doc, getDoc, collection, addDoc, deleteDoc, query, orderBy, limit, getDocs } from 'firebase/firestore';
 import { db } from '../firebase';
 import { formatDateForDisplay, formatDateForInput } from '../utils/DateUtils';
 import { CATEGORY_KEYWORDS } from '../constants/categories';
