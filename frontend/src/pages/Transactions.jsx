@@ -1277,53 +1277,63 @@ const Transactions = () => {
                   </div>
                 ) : (
                   <>
-                    <div className="transaction-info">
-                      <span className="transaction-date-header">
-                        {formatDateForDisplay(transaction.date)}
-                      </span>
-                      <span 
-                        className="transaction-description"
-                        onClick={() => setEditingTransaction(transaction.id)}
-                        title="Click to edit"
-                      >
-                        {transaction.merchant_name || transaction.name || transaction.description}
-                        {(transaction.account_id || transaction.account) && (
-                          <span className="transaction-account-inline">
-                            {' | '}
-                            {accounts[transaction.account_id]?.name || 
+                    <div className="transaction-date-header">
+                      {formatDateForDisplay(transaction.date)}
+                    </div>
+                    
+                    <div className="transaction-main-content">
+                      <div className="transaction-info">
+                        <span 
+                          className="transaction-merchant"
+                          onClick={() => setEditingTransaction(transaction.id)}
+                          title="Click to edit"
+                        >
+                          {transaction.merchant_name || transaction.name || transaction.description || 'Unknown'}
+                        </span>
+                        
+                        {transaction.category && (
+                          <span className="transaction-category-inline">
+                            {transaction.category}
+                          </span>
+                        )}
+                        
+                        <span className="transaction-account-inline">
+                          | {accounts[transaction.account_id]?.name || 
                              accounts[transaction.account]?.name || 
                              transaction.account_id || 
                              transaction.account || 
                              'Unknown Account'}
+                        </span>
+                        
+                        {transaction.pending && (
+                          <span className="transaction-pending" title="Pending transaction - not yet cleared">
+                            ⏳ Pending
                           </span>
                         )}
+                      </div>
+                      
+                      <span className={`transaction-amount ${transaction.amount >= 0 ? 'income' : 'expense'}`}>
+                        {formatCurrency(transaction.amount)}
                       </span>
-                      {transaction.pending && (
-                        <span className="transaction-pending" title="Pending transaction - not yet cleared">
-                          ⏳ Pending
-                        </span>
-                      )}
-                    </div>
-                    <span className={`transaction-amount ${transaction.amount >= 0 ? 'income' : 'expense'}`}>
-                      {formatCurrency(transaction.amount)}
-                    </span>
-                    <div className="transaction-actions">
-                      <button 
-                        className="edit-btn"
-                        onClick={() => setEditingTransaction(editingTransaction === transaction.id ? null : transaction.id)}
-                        disabled={saving}
-                        title="Edit transaction"
-                      >
-                        ✏️
-                      </button>
-                      <button 
-                        className="delete-btn"
-                        onClick={() => deleteTransaction(transaction.id, transaction)}
-                        disabled={saving}
-                        title="Delete transaction"
-                      >
-                        🗑️
-                      </button>
+                      
+                      <div className="transaction-actions">
+                        <button 
+                          className="edit-btn"
+                          onClick={() => setEditingTransaction(editingTransaction === transaction.id ? null : transaction.id)}
+                          disabled={saving}
+                          title="Edit transaction"
+                        >
+                          ✏️
+                        </button>
+                        <button 
+                          className="delete-btn"
+                          onClick={() => deleteTransaction(transaction.id, transaction)}
+                          disabled={saving}
+                          title="Delete transaction"
+                        >
+                          🗑️
+                        </button>
+                      </div>
                     </div>
                   </>
                 )}
