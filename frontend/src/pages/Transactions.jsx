@@ -21,6 +21,7 @@ const Transactions = () => {
   const [showAddForm, setShowAddForm] = useState(false);
   const [showPendingForm, setShowPendingForm] = useState(false);
   const [editingTransaction, setEditingTransaction] = useState(null);
+  const [editFormData, setEditFormData] = useState({});
   const [notification, setNotification] = useState({ message: '', type: '' });
   const [plaidStatus, setPlaidStatus] = useState({
     isConnected: false,
@@ -641,26 +642,90 @@ const Transactions = () => {
     }
   };
 
-  const updateTransaction = async (transactionId, updatedFields) => {
+  const updateTransaction = async (transactionId, updates) => {
     try {
       setSaving(true);
+      setNotification({ message: '', type: '' });
       
-      // Update Firebase
-      await updateDoc(doc(db, 'users', currentUser.uid, 'transactions', transactionId), updatedFields);
+      const API_URL = import.meta.env.VITE_API_URL || 
+        (window.location.hostname === 'localhost' 
+          ? 'http://localhost:5000' 
+          : 'https://smart-money-tracker-backend.onrender.com');
+      
+      const response = await fetch(`${API_URL}/api/transactions/${transactionId}`, {
+        method: 'PUT',
+        headers: {
+          'Authorization': `Bearer ${await currentUser.getIdToken()}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          userId: currentUser.uid,
+          ...updates
+        })
+      });
+      
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.error || 'Failed to update transaction');
+      }
       
       // Update local state
       setTransactions(prev => prev.map(t => 
-        t.id === transactionId ? { ...t, ...updatedFields } : t
+        t.id === transactionId ? { ...t, ...updates } : t
       ));
       
+      showNotification('✅ Transaction updated successfully!', 'success');
       setEditingTransaction(null);
-      showNotification('Transaction updated successfully!', 'success');
+      setEditFormData({});
+      
     } catch (error) {
-      console.error('Error updating transaction:', error);
-      showNotification('Error updating transaction', 'error');
+      console.error('Failed to update transaction:', error);
+      showNotification(`❌ Update failed: ${error.message}`, 'error');
     } finally {
       setSaving(false);
     }
+  };
+
+  const handleEditTransaction = (transaction) => {
+    if (transaction.source === 'plaid') {
+      showNotification('❌ Cannot edit Plaid transactions. They sync from your bank.', 'error');
+      return;
+    }
+    
+    setEditingTransaction(transaction.id);
+    setEditFormData({
+      merchant_name: transaction.merchant_name || transaction.name || transaction.description || '',
+      amount: Math.abs(transaction.amount || 0),
+      date: transaction.date || '',
+      category: transaction.category || '',
+      notes: transaction.notes || ''
+    });
+  };
+
+  const handleSaveEdit = async () => {
+    if (!editingTransaction) return;
+    
+    // Find the transaction to determine its type
+    const transaction = transactions.find(t => t.id === editingTransaction);
+    if (!transaction) return;
+    
+    // Preserve the sign of the amount based on transaction type
+    const finalAmount = transaction.amount < 0 
+      ? -Math.abs(editFormData.amount)
+      : Math.abs(editFormData.amount);
+    
+    await updateTransaction(editingTransaction, {
+      merchant_name: editFormData.merchant_name,
+      amount: finalAmount,
+      date: editFormData.date,
+      category: editFormData.category,
+      notes: editFormData.notes
+    });
+  };
+
+  const handleCancelEdit = () => {
+    setEditingTransaction(null);
+    setEditFormData({});
   };
 
   const deleteTransaction = async (transactionId, transaction) => {
@@ -730,9 +795,29 @@ const Transactions = () => {
     let filtered = [...transactions];
     
     if (filters.search) {
-      filtered = filtered.filter(t => 
-        t.description.toLowerCase().includes(filters.search.toLowerCase())
-      );
+      const searchLower = filters.search.toLowerCase();
+      filtered = filtered.filter(t => {
+        // Safe null checks with fallbacks
+        const merchantName = (t.merchant_name || '').toLowerCase();
+        const name = (t.name || '').toLowerCase();
+        const description = (t.description || '').toLowerCase();
+        const category = Array.isArray(t.category) 
+          ? t.category.join(' ').toLowerCase() 
+          : (t.category || '').toLowerCase();
+        const amount = (t.amount || 0).toString();
+        const accountName = (accounts[t.account_id]?.name || accounts[t.account]?.name || '').toLowerCase();
+        const notes = (t.notes || '').toLowerCase();
+        
+        return (
+          merchantName.includes(searchLower) ||
+          name.includes(searchLower) ||
+          description.includes(searchLower) ||
+          category.includes(searchLower) ||
+          amount.includes(filters.search) ||
+          accountName.includes(searchLower) ||
+          notes.includes(searchLower)
+        );
+      });
     }
     
     if (filters.category) {
@@ -1393,23 +1478,67 @@ const Transactions = () => {
             {filteredTransactions.map((transaction) => (
               <div key={transaction.id} className="transaction-item">
                 {editingTransaction === transaction.id ? (
-                  <div className="transaction-info">
+                  <div className="transaction-edit-mode">
                     <div className="transaction-edit-form">
-                      <input
-                        type="text"
-                        defaultValue={transaction.description}
-                        onKeyPress={(e) => {
-                          if (e.key === 'Enter') {
-                            updateTransaction(transaction.id, { description: e.target.value });
-                          }
-                          if (e.key === 'Escape') {
-                            setEditingTransaction(null);
-                          }
-                        }}
-                        onBlur={(e) => updateTransaction(transaction.id, { description: e.target.value })}
-                        autoFocus
-                        className="edit-description"
-                      />
+                      <div className="edit-form-row">
+                        <label>Merchant/Description:</label>
+                        <input
+                          type="text"
+                          value={editFormData.merchant_name}
+                          onChange={(e) => setEditFormData({...editFormData, merchant_name: e.target.value})}
+                          onKeyPress={(e) => e.key === 'Enter' && handleSaveEdit()}
+                          placeholder="Merchant name"
+                          autoFocus
+                        />
+                      </div>
+                      <div className="edit-form-row">
+                        <label>Amount:</label>
+                        <input
+                          type="number"
+                          step="0.01"
+                          value={editFormData.amount}
+                          onChange={(e) => setEditFormData({...editFormData, amount: parseFloat(e.target.value)})}
+                          onKeyPress={(e) => e.key === 'Enter' && handleSaveEdit()}
+                        />
+                      </div>
+                      <div className="edit-form-row">
+                        <label>Date:</label>
+                        <input
+                          type="date"
+                          value={editFormData.date}
+                          onChange={(e) => setEditFormData({...editFormData, date: e.target.value})}
+                        />
+                      </div>
+                      <div className="edit-form-row">
+                        <label>Category:</label>
+                        <select
+                          value={editFormData.category}
+                          onChange={(e) => setEditFormData({...editFormData, category: e.target.value})}
+                        >
+                          <option value="">Select Category</option>
+                          {Object.keys(categories).map(cat => (
+                            <option key={cat} value={cat}>{cat}</option>
+                          ))}
+                        </select>
+                      </div>
+                      <div className="edit-form-row">
+                        <label>Notes:</label>
+                        <input
+                          type="text"
+                          value={editFormData.notes}
+                          onChange={(e) => setEditFormData({...editFormData, notes: e.target.value})}
+                          onKeyPress={(e) => e.key === 'Enter' && handleSaveEdit()}
+                          placeholder="Optional notes"
+                        />
+                      </div>
+                      <div className="edit-form-actions">
+                        <button onClick={handleSaveEdit} className="save-button" disabled={saving}>
+                          ✅ Save
+                        </button>
+                        <button onClick={handleCancelEdit} className="cancel-button" disabled={saving}>
+                          ❌ Cancel
+                        </button>
+                      </div>
                     </div>
                   </div>
                 ) : (
@@ -1456,7 +1585,7 @@ const Transactions = () => {
                       <div className="transaction-actions">
                         <button 
                           className="edit-btn"
-                          onClick={() => setEditingTransaction(editingTransaction === transaction.id ? null : transaction.id)}
+                          onClick={() => handleEditTransaction(transaction)}
                           disabled={saving}
                           title="Edit transaction"
                         >

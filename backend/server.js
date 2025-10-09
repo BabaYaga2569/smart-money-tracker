@@ -182,6 +182,62 @@ async function deletePlaidCredentials(userId) {
   logDiagnostic.info('DELETE_CREDENTIALS', 'Credentials deleted successfully');
 }
 
+// ============================================================================
+// FUZZY MATCHING HELPERS FOR DEDUPLICATION
+// ============================================================================
+
+/**
+ * Calculate string similarity using Levenshtein distance
+ * @param {string} str1 - First string
+ * @param {string} str2 - Second string
+ * @returns {number} Similarity score between 0 and 1
+ */
+function calculateSimilarity(str1, str2) {
+  if (!str1 || !str2) return 0;
+  
+  const longer = str1.length > str2.length ? str1 : str2;
+  const shorter = str1.length > str2.length ? str2 : str1;
+  
+  if (longer.length === 0) return 1.0;
+  
+  const editDistance = levenshteinDistance(longer, shorter);
+  return (longer.length - editDistance) / longer.length;
+}
+
+/**
+ * Calculate Levenshtein distance between two strings
+ * @param {string} str1 - First string
+ * @param {string} str2 - Second string
+ * @returns {number} Edit distance
+ */
+function levenshteinDistance(str1, str2) {
+  const matrix = [];
+  
+  for (let i = 0; i <= str2.length; i++) {
+    matrix[i] = [i];
+  }
+  
+  for (let j = 0; j <= str1.length; j++) {
+    matrix[0][j] = j;
+  }
+  
+  for (let i = 1; i <= str2.length; i++) {
+    for (let j = 1; j <= str1.length; j++) {
+      if (str2.charAt(i - 1) === str1.charAt(j - 1)) {
+        matrix[i][j] = matrix[i - 1][j - 1];
+      } else {
+        matrix[i][j] = Math.min(
+          matrix[i - 1][j - 1] + 1, // substitution
+          matrix[i][j - 1] + 1,     // insertion
+          matrix[i - 1][j] + 1      // deletion
+        );
+      }
+    }
+  }
+  
+  return matrix[str2.length][str1.length];
+}
+
 // Test route
 app.get("/api/hello", (req, res) => {
   res.json({ message: "Backend is working!" });
@@ -658,12 +714,18 @@ app.post("/api/plaid/sync_transactions", async (req, res) => {
       }
 
       // Check for duplicate manual pending charges
+      // KEY FIX: Only match with POSTED Plaid transactions (not pending ones)
       const matchingManualCharge = manualPendingCharges.find(manual => {
+        // Skip if Plaid transaction is still pending
+        if (plaidTx.pending) {
+          return false; // KEY FIX: Only match with POSTED transactions
+        }
+        
         // Match criteria:
         // 1. Same account
         // 2. Same amount (within $0.01 tolerance for floating point)
         // 3. Date within 3 days
-        // 4. Merchant name similarity (basic check)
+        // 4. Merchant name similarity (enhanced with fuzzy matching)
         
         const accountMatch = manual.account_id === plaidTx.account_id || manual.account === plaidTx.account_id;
         const amountMatch = Math.abs(manual.amount - plaidTx.amount) < 0.01;
@@ -673,11 +735,21 @@ app.post("/api/plaid/sync_transactions", async (req, res) => {
         const daysDiff = Math.abs((manualDate - plaidDate) / (1000 * 60 * 60 * 24));
         const dateMatch = daysDiff <= 3;
         
-        const manualName = (manual.merchant_name || manual.name || manual.description || '').toLowerCase();
-        const plaidName = (plaidTx.merchant_name || plaidTx.name || '').toLowerCase();
-        const nameMatch = manualName.includes(plaidName) || plaidName.includes(manualName) || 
-                         (manualName.length > 3 && plaidName.length > 3 && 
-                          (manualName.substring(0, Math.min(5, manualName.length)) === plaidName.substring(0, Math.min(5, plaidName.length))));
+        // Enhanced name matching with fuzzy similarity
+        const manualName = (manual.merchant_name || manual.name || manual.description || '').toLowerCase().trim();
+        const plaidName = (plaidTx.merchant_name || plaidTx.name || '').toLowerCase().trim();
+        
+        // Multiple matching strategies
+        const exactMatch = manualName === plaidName;
+        const containsMatch = manualName.includes(plaidName) || plaidName.includes(manualName);
+        const prefixMatch = manualName.length > 5 && plaidName.length > 5 && 
+                            manualName.substring(0, 5) === plaidName.substring(0, 5);
+        
+        // Fuzzy similarity (Levenshtein distance)
+        const similarity = calculateSimilarity(manualName, plaidName);
+        const fuzzyMatch = similarity > 0.6; // 60% similar
+        
+        const nameMatch = exactMatch || containsMatch || prefixMatch || fuzzyMatch;
         
         return accountMatch && amountMatch && dateMatch && nameMatch;
       });
@@ -688,7 +760,10 @@ app.post("/api/plaid/sync_transactions", async (req, res) => {
         batch.delete(manualDocRef);
         deduplicatedCount++;
         
-        logDiagnostic.info('SYNC_TRANSACTIONS', `Deduplicating: Manual charge "${matchingManualCharge.merchant_name}" matches Plaid transaction "${plaidTx.name}"`);
+        logDiagnostic.info('DEDUPE', 
+          `✅ Deleting manual pending: "${matchingManualCharge.merchant_name}" (${matchingManualCharge.amount}) ` +
+          `matched with Plaid posted: "${plaidTx.merchant_name || plaidTx.name}" (${plaidTx.amount})`
+        );
         
         // Remove from the list so we don't match it again
         const index = manualPendingCharges.indexOf(matchingManualCharge);
@@ -718,6 +793,15 @@ app.post("/api/plaid/sync_transactions", async (req, res) => {
         batch.delete(removedDocRef);
         logDiagnostic.info('SYNC_TRANSACTIONS', `Removing transaction: ${removedTx.transaction_id}`);
       }
+    }
+
+    // Log manual pending transactions that were kept (no match found)
+    if (manualPendingCharges.length > 0) {
+      manualPendingCharges.forEach(manual => {
+        logDiagnostic.info('DEDUPE', 
+          `⏸️  Keeping manual pending: "${manual.merchant_name}" (${manual.amount}) - no posted Plaid match found`
+        );
+      });
     }
 
     // Commit the batch
@@ -960,6 +1044,70 @@ app.get("/api/plaid/health", async (req, res) => {
 
   // Return 200 with health status (don't use 503 to avoid confusion with server downtime)
   res.json(healthStatus);
+});
+
+// ============================================================================
+// UPDATE TRANSACTION ENDPOINT
+// ============================================================================
+
+app.put("/api/transactions/:transactionId", async (req, res) => {
+  const endpoint = `/api/transactions/${req.params.transactionId}`;
+  logDiagnostic.request(endpoint, req.body);
+  
+  try {
+    const { transactionId } = req.params;
+    const { userId, merchant_name, amount, date, category, notes } = req.body;
+    
+    if (!userId) {
+      return res.status(400).json({ error: "userId is required" });
+    }
+    
+    const transactionRef = db
+      .collection('users')
+      .doc(userId)
+      .collection('transactions')
+      .doc(transactionId);
+    
+    const transactionDoc = await transactionRef.get();
+    
+    if (!transactionDoc.exists) {
+      return res.status(404).json({ error: "Transaction not found" });
+    }
+    
+    const existingTransaction = transactionDoc.data();
+    
+    // Only allow editing manual transactions
+    if (existingTransaction.source === 'plaid') {
+      return res.status(403).json({ 
+        error: "Cannot edit Plaid transactions",
+        error_code: "PLAID_READ_ONLY"
+      });
+    }
+    
+    const updates = {
+      updated_at: admin.firestore.FieldValue.serverTimestamp()
+    };
+    
+    if (merchant_name !== undefined) updates.merchant_name = merchant_name;
+    if (amount !== undefined) updates.amount = amount;
+    if (date !== undefined) updates.date = date;
+    if (category !== undefined) updates.category = category;
+    if (notes !== undefined) updates.notes = notes;
+    
+    await transactionRef.update(updates);
+    
+    logDiagnostic.info('UPDATE_TRANSACTION', `Updated transaction ${transactionId}`);
+    logDiagnostic.response(endpoint, 200, { success: true });
+    
+    res.json({
+      success: true,
+      message: "Transaction updated successfully"
+    });
+    
+  } catch (error) {
+    logDiagnostic.error('UPDATE_TRANSACTION', 'Update failed', error);
+    res.status(500).json({ error: error.message });
+  }
 });
 
 // Health check
