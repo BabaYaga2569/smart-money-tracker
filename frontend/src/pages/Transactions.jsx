@@ -13,6 +13,7 @@ const Transactions = () => {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [syncingPlaid, setSyncingPlaid] = useState(false);
+  const [forceRefreshing, setForceRefreshing] = useState(false);
   const [accounts, setAccounts] = useState({});
   const [transactions, setTransactions] = useState([]);
   const [filteredTransactions, setFilteredTransactions] = useState([]);
@@ -374,6 +375,59 @@ const Transactions = () => {
       );
     } finally {
       setSyncingPlaid(false);
+    }
+  };
+
+  // Force Plaid to check bank immediately
+  const forceRefresh = async () => {
+    try {
+      setForceRefreshing(true);
+      
+      // Check if user has Plaid accounts configured
+      if (!hasPlaidAccounts) {
+        showNotification('Plaid not connected. Please connect your bank account first.', 'warning');
+        return;
+      }
+
+      // Determine backend URL
+      const backendUrl = import.meta.env.VITE_API_URL || 
+        (window.location.hostname === 'localhost' 
+          ? 'http://localhost:5000' 
+          : 'https://smart-money-tracker-09ks.onrender.com');
+      
+      console.log('🔄 Telling Plaid to check bank RIGHT NOW...');
+      
+      // Tell Plaid to refresh from bank
+      const refreshResponse = await fetch(`${backendUrl}/api/plaid/refresh_transactions`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ userId: currentUser.uid })
+      });
+      
+      const refreshData = await refreshResponse.json();
+      
+      if (!refreshResponse.ok) {
+        throw new Error(refreshData.error || 'Failed to request bank refresh');
+      }
+      
+      console.log('✅ Plaid is checking bank now!');
+      showNotification('Plaid is checking your bank now. Waiting 3 seconds then syncing...', 'info');
+      
+      // Wait 3 seconds for Plaid to check the bank
+      await new Promise(resolve => setTimeout(resolve, 3000));
+      
+      console.log('🔄 Now syncing new transactions...');
+      
+      // Now sync to get the new data
+      await syncPlaidTransactions();
+      
+      console.log('✅ Force refresh complete!');
+      
+    } catch (error) {
+      console.error('❌ Force refresh failed:', error);
+      showNotification(`Force refresh failed: ${error.message}`, 'error');
+    } finally {
+      setForceRefreshing(false);
     }
   };
 
@@ -872,7 +926,7 @@ const Transactions = () => {
               setShowAddForm(!showAddForm);
               if (showPendingForm) setShowPendingForm(false);
             }}
-            disabled={saving || syncingPlaid}
+            disabled={saving || syncingPlaid || forceRefreshing}
           >
             {showAddForm ? '✕ Cancel' : '+ Add Transaction'}
           </button>
@@ -883,7 +937,7 @@ const Transactions = () => {
               setShowPendingForm(!showPendingForm);
               if (showAddForm) setShowAddForm(false);
             }}
-            disabled={saving || syncingPlaid}
+            disabled={saving || syncingPlaid || forceRefreshing}
             style={{
               background: '#ff9800',
               border: 'none'
@@ -896,7 +950,7 @@ const Transactions = () => {
           <button 
             className="btn-secondary"
             onClick={syncPlaidTransactions}
-            disabled={saving || syncingPlaid || (!plaidStatus.isConnected && !hasPlaidAccounts)}
+            disabled={saving || syncingPlaid || forceRefreshing || (!plaidStatus.isConnected && !hasPlaidAccounts)}
             title={
               plaidStatus.hasError 
                 ? 'Plaid connection error - see banner above' 
@@ -908,17 +962,39 @@ const Transactions = () => {
               background: syncingPlaid ? '#999' : ((!plaidStatus.isConnected && !hasPlaidAccounts) ? '#6b7280' : '#007bff'),
               color: '#fff',
               border: 'none',
-              cursor: ((!plaidStatus.isConnected && !hasPlaidAccounts) || syncingPlaid || saving) ? 'not-allowed' : 'pointer',
-              opacity: ((!plaidStatus.isConnected && !hasPlaidAccounts) || syncingPlaid) ? 0.6 : 1
+              cursor: ((!plaidStatus.isConnected && !hasPlaidAccounts) || syncingPlaid || forceRefreshing || saving) ? 'not-allowed' : 'pointer',
+              opacity: ((!plaidStatus.isConnected && !hasPlaidAccounts) || syncingPlaid || forceRefreshing) ? 0.6 : 1
             }}
           >
             {syncingPlaid ? '🔄 Syncing...' : ((!plaidStatus.isConnected && !hasPlaidAccounts) ? '🔒 Sync Plaid (Not Connected)' : '🔄 Sync Plaid Transactions')}
+          </button>
+
+          <button 
+            className="btn-secondary force-refresh-button"
+            onClick={forceRefresh}
+            disabled={saving || syncingPlaid || forceRefreshing || (!plaidStatus.isConnected && !hasPlaidAccounts)}
+            title={
+              plaidStatus.hasError 
+                ? 'Plaid connection error - see banner above' 
+                : (!plaidStatus.isConnected && !hasPlaidAccounts)
+                  ? 'Please connect Plaid to use this feature' 
+                  : 'Tell Plaid to check your bank RIGHT NOW for new transactions'
+            }
+            style={{
+              background: forceRefreshing ? '#999' : ((!plaidStatus.isConnected && !hasPlaidAccounts) ? '#6b7280' : '#28a745'),
+              color: '#fff',
+              border: 'none',
+              cursor: ((!plaidStatus.isConnected && !hasPlaidAccounts) || syncingPlaid || forceRefreshing || saving) ? 'not-allowed' : 'pointer',
+              opacity: ((!plaidStatus.isConnected && !hasPlaidAccounts) || syncingPlaid || forceRefreshing) ? 0.6 : 1
+            }}
+          >
+            {forceRefreshing ? '⏳ Checking Bank...' : ((!plaidStatus.isConnected && !hasPlaidAccounts) ? '🔒 Force Bank Check (Not Connected)' : '🔄 Force Bank Check')}
           </button>
           
           <button 
             className="btn-secondary"
             onClick={() => setShowTemplates(!showTemplates)}
-            disabled={saving || syncingPlaid}
+            disabled={saving || syncingPlaid || forceRefreshing}
           >
             📋 Templates
           </button>
@@ -927,7 +1003,7 @@ const Transactions = () => {
             <button 
               className="btn-secondary"
               onClick={exportTransactions}
-              disabled={saving || syncingPlaid}
+              disabled={saving || syncingPlaid || forceRefreshing}
             >
               📥 Export CSV
             </button>

@@ -788,6 +788,70 @@ app.post("/api/plaid/sync_transactions", async (req, res) => {
   }
 });
 
+// Force Plaid to check the bank immediately
+app.post("/api/plaid/refresh_transactions", async (req, res) => {
+  const endpoint = "/api/plaid/refresh_transactions";
+  logDiagnostic.request(endpoint, req.body);
+  
+  try {
+    const { userId } = req.body;
+
+    if (!userId) {
+      logDiagnostic.error('REFRESH_TRANSACTIONS', 'Missing userId in request');
+      return res.status(400).json({ error: "userId is required" });
+    }
+
+    // Retrieve access token from Firestore
+    const credentials = await getPlaidCredentials(userId);
+    if (!credentials) {
+      logDiagnostic.error('REFRESH_TRANSACTIONS', 'No Plaid credentials found for user');
+      return res.status(404).json({ 
+        error: "No Plaid connection found. Please connect your bank account first.",
+        error_code: "NO_CREDENTIALS"
+      });
+    }
+
+    logDiagnostic.info('REFRESH_TRANSACTIONS', `Requesting Plaid to refresh transactions for user ${userId}`);
+
+    // Tell Plaid to go check the bank RIGHT NOW
+    const response = await plaidClient.transactionsRefresh({
+      access_token: credentials.accessToken
+    });
+
+    logDiagnostic.info('REFRESH_TRANSACTIONS', 'Refresh request sent to Plaid successfully', {
+      request_id: response.data.request_id
+    });
+    
+    logDiagnostic.response(endpoint, 200, { 
+      success: true,
+      request_id: response.data.request_id
+    });
+
+    res.json({
+      success: true,
+      message: "Plaid is checking your bank now. New transactions should appear in 1-5 minutes. Try syncing again shortly!",
+      request_id: response.data.request_id
+    });
+  } catch (error) {
+    logDiagnostic.error('REFRESH_TRANSACTIONS', 'Failed to refresh transactions', error);
+    
+    const statusCode = error.response?.status || 500;
+    const errorCode = error.response?.data?.error_code;
+    const errorMessage = error.response?.data?.error_message || error.message;
+    
+    logDiagnostic.response(endpoint, statusCode, { 
+      error: errorMessage,
+      error_code: errorCode
+    });
+    
+    res.status(statusCode).json({ 
+      error: errorMessage,
+      error_code: errorCode,
+      error_type: error.response?.data?.error_type
+    });
+  }
+});
+
 // ============================================================================
 // PLAID HEALTH CHECK ENDPOINT
 // ============================================================================
