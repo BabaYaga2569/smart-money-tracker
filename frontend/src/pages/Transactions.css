@@ -722,3 +722,104 @@
   font-size: 11px;
   color: #666;
 }
+
+/* Transaction Edit Form Styles */
+.transaction-edit-mode {
+  width: 100%;
+  padding: 15px;
+  background: #2a2a2a;
+  border-radius: 8px;
+  border: 2px solid #00ff88;
+}
+
+.transaction-edit-form {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.edit-form-row {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.edit-form-row label {
+  font-size: 0.85rem;
+  color: #999;
+  font-weight: 500;
+}
+
+.edit-form-row input,
+.edit-form-row select {
+  padding: 8px 12px;
+  background: #1a1a1a;
+  border: 1px solid #333;
+  border-radius: 6px;
+  color: #fff;
+  font-size: 0.95rem;
+  transition: border-color 0.2s;
+}
+
+.edit-form-row input:focus,
+.edit-form-row select:focus {
+  outline: none;
+  border-color: #00ff88;
+}
+
+.edit-form-row input[type="number"] {
+  -moz-appearance: textfield;
+}
+
+.edit-form-row input[type="number"]::-webkit-outer-spin-button,
+.edit-form-row input[type="number"]::-webkit-inner-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+
+.edit-form-actions {
+  display: flex;
+  gap: 10px;
+  margin-top: 8px;
+}
+
+.edit-form-actions button {
+  flex: 1;
+  padding: 10px 16px;
+  border: none;
+  border-radius: 6px;
+  font-size: 0.95rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.save-button {
+  background: #00ff88;
+  color: #000;
+}
+
+.save-button:hover:not(:disabled) {
+  background: #00dd77;
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(0, 255, 136, 0.3);
+}
+
+.save-button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.cancel-button {
+  background: #333;
+  color: #fff;
+}
+
+.cancel-button:hover:not(:disabled) {
+  background: #444;
+}
+
+.cancel-button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
