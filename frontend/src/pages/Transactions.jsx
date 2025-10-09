@@ -1255,8 +1255,8 @@ const Transactions = () => {
           <div className="transactions-grid">
             {filteredTransactions.map((transaction) => (
               <div key={transaction.id} className="transaction-item">
-                <div className="transaction-info">
-                  {editingTransaction === transaction.id ? (
+                {editingTransaction === transaction.id ? (
+                  <div className="transaction-info">
                     <div className="transaction-edit-form">
                       <input
                         type="text"
@@ -1274,72 +1274,59 @@ const Transactions = () => {
                         className="edit-description"
                       />
                     </div>
-                  ) : (
-                    <>
-                      <div className="transaction-date-header">
-                        {formatDateForDisplay(transaction.date)}
-                      </div>
-                      <div className="transaction-main-row">
-                        <div 
-                          className="transaction-description"
-                          onClick={() => setEditingTransaction(transaction.id)}
-                          title="Click to edit"
-                        >
-                          {transaction.merchant_name || transaction.name || transaction.description}
-                          {(transaction.account_id || transaction.account) && (
-                            <span className="transaction-account-inline">
-                              {' | '}
-                              {accounts[transaction.account_id]?.name || 
-                               accounts[transaction.account]?.name || 
-                               transaction.account_id || 
-                               transaction.account || 
-                               'Unknown Account'}
-                            </span>
-                          )}
-                          {transaction.category && (
-                            <span className="transaction-category-inline"> - {transaction.category}</span>
-                          )}
-                        </div>
-                        <div className={`transaction-amount ${transaction.amount >= 0 ? 'income' : 'expense'}`}>
-                          {formatCurrency(transaction.amount)}
-                        </div>
-                      </div>
-                    </>
-                  )}
-                  <div className="transaction-meta">
-                    <span className="transaction-account">
-                      {accounts[transaction.account]?.name || transaction.account}
-                    </span>
-                    {transaction.pending && (
-                      <span className="transaction-pending" title="Pending transaction - not yet cleared">
-                        ⏳ Pending
-                      </span>
-                    )}
-                    {transaction.source && (
-                      <span className={`transaction-source ${transaction.source}`} title={`Source: ${transaction.source === 'plaid' ? 'Auto-detected (Plaid)' : 'Manual entry'}`}>
-                        {transaction.source === 'plaid' ? '🔄' : '✋'}
-                      </span>
-                    )}
                   </div>
-                </div>
-                <div className="transaction-actions">
-                  <button 
-                    className="edit-btn"
-                    onClick={() => setEditingTransaction(editingTransaction === transaction.id ? null : transaction.id)}
-                    disabled={saving}
-                    title="Edit transaction"
-                  >
-                    ✏️
-                  </button>
-                  <button 
-                    className="delete-btn"
-                    onClick={() => deleteTransaction(transaction.id, transaction)}
-                    disabled={saving}
-                    title="Delete transaction"
-                  >
-                    🗑️
-                  </button>
-                </div>
+                ) : (
+                  <>
+                    <div className="transaction-info">
+                      <span className="transaction-date-header">
+                        {formatDateForDisplay(transaction.date)}
+                      </span>
+                      <span 
+                        className="transaction-description"
+                        onClick={() => setEditingTransaction(transaction.id)}
+                        title="Click to edit"
+                      >
+                        {transaction.merchant_name || transaction.name || transaction.description}
+                        {(transaction.account_id || transaction.account) && (
+                          <span className="transaction-account-inline">
+                            {' | '}
+                            {accounts[transaction.account_id]?.name || 
+                             accounts[transaction.account]?.name || 
+                             transaction.account_id || 
+                             transaction.account || 
+                             'Unknown Account'}
+                          </span>
+                        )}
+                      </span>
+                      {transaction.pending && (
+                        <span className="transaction-pending" title="Pending transaction - not yet cleared">
+                          ⏳ Pending
+                        </span>
+                      )}
+                    </div>
+                    <span className={`transaction-amount ${transaction.amount >= 0 ? 'income' : 'expense'}`}>
+                      {formatCurrency(transaction.amount)}
+                    </span>
+                    <div className="transaction-actions">
+                      <button 
+                        className="edit-btn"
+                        onClick={() => setEditingTransaction(editingTransaction === transaction.id ? null : transaction.id)}
+                        disabled={saving}
+                        title="Edit transaction"
+                      >
+                        ✏️
+                      </button>
+                      <button 
+                        className="delete-btn"
+                        onClick={() => deleteTransaction(transaction.id, transaction)}
+                        disabled={saving}
+                        title="Delete transaction"
+                      >
+                        🗑️
+                      </button>
+                    </div>
+                  </>
+                )}
               </div>
             ))}
           </div>
