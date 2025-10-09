@@ -176,12 +176,19 @@ const Transactions = () => {
       const token = localStorage.getItem('token');
       const apiUrl = import.meta.env.VITE_API_URL || 'https://smart-money-tracker-09ks.onrender.com';
       
+      // Add timeout to prevent slow API from blocking page load
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 3000); // 3 second timeout
+      
       const response = await fetch(`${apiUrl}/api/accounts`, {
         headers: {
           'Authorization': `Bearer ${token}`,
           'Content-Type': 'application/json'
-        }
+        },
+        signal: controller.signal
       });
+      
+      clearTimeout(timeoutId);
       
       if (response.ok) {
         let data;
@@ -251,8 +258,10 @@ const Transactions = () => {
         await loadFirebaseAccounts();
       }
     } catch (error) {
-      // Network error or API unavailable - fallback silently
-      if (error.name !== 'TypeError') {
+      // Network error, timeout, or API unavailable - fallback silently
+      if (error.name === 'AbortError') {
+        console.warn('API request timed out after 3s, using Firebase');
+      } else if (error.name !== 'TypeError') {
         console.warn('API unavailable, using Firebase:', error.message);
       }
       await loadFirebaseAccounts();
