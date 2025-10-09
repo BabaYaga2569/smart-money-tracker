@@ -450,23 +450,30 @@ app.post("/api/plaid/get_transactions", async (req, res) => {
     const endDate = end_date || new Date().toISOString().split('T')[0];
     const startDate = start_date || new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
 
-    logDiagnostic.info('GET_TRANSACTIONS', `Fetching transactions from ${startDate} to ${endDate}`);
+    logDiagnostic.info('GET_TRANSACTIONS', `Fetching transactions using transactionsSync API`);
 
-    const transactionsResponse = await plaidClient.transactionsGet({
+    // Use transactionsSync instead of transactionsGet for better pending transaction support
+    const transactionsResponse = await plaidClient.transactionsSync({
       access_token: credentials.accessToken,
-      start_date: startDate,
-      end_date: endDate,
       options: {
-        count: 100,
-        offset: 0,
-        include_personal_finance_category: true,
-        include_pending_transactions: true  // ← Enable pending transactions
+        include_personal_finance_category: true
       }
     });
 
-    const txCount = transactionsResponse.data.transactions.length;
-    const totalTx = transactionsResponse.data.total_transactions;
-    logDiagnostic.info('GET_TRANSACTIONS', `Successfully fetched ${txCount} of ${totalTx} transactions`);
+    // transactionsSync returns different structure:
+    // - added: [] (new transactions)
+    // - modified: [] (updated transactions)
+    // - removed: [] (deleted transaction IDs)
+    // - next_cursor: "..." (save for next sync)
+    // Combine added + modified for response
+    const allTransactions = [
+      ...transactionsResponse.data.added,
+      ...transactionsResponse.data.modified
+    ];
+
+    const txCount = allTransactions.length;
+    const totalTx = allTransactions.length;
+    logDiagnostic.info('GET_TRANSACTIONS', `Successfully fetched ${txCount} transactions via transactionsSync`);
     logDiagnostic.response(endpoint, 200, { 
       success: true, 
       transaction_count: txCount,
@@ -475,9 +482,9 @@ app.post("/api/plaid/get_transactions", async (req, res) => {
 
     res.json({
       success: true,
-      transactions: transactionsResponse.data.transactions,
-      accounts: transactionsResponse.data.accounts,
-      total_transactions: transactionsResponse.data.total_transactions
+      transactions: allTransactions,
+      accounts: transactionsResponse.data.accounts || [],
+      total_transactions: totalTx
     });
   } catch (error) {
     logDiagnostic.error('GET_TRANSACTIONS', 'Failed to fetch transactions', error);
@@ -555,26 +562,52 @@ app.post("/api/plaid/sync_transactions", async (req, res) => {
     const endDate = end_date || new Date().toISOString().split('T')[0];
     const startDate = start_date || new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
 
-    logDiagnostic.info('SYNC_TRANSACTIONS', `Syncing transactions from ${startDate} to ${endDate}`);
+    logDiagnostic.info('SYNC_TRANSACTIONS', `Syncing transactions using transactionsSync API`);
 
-    // Fetch transactions from Plaid (including pending)
-    const transactionsResponse = await plaidClient.transactionsGet({
-      access_token: credentials.accessToken,
-      start_date: startDate,
-      end_date: endDate,
-      options: {
-        count: 500,
-        offset: 0,
-        include_personal_finance_category: true,
-        include_pending_transactions: true  // ← Enable pending transactions
-      }
-    });
+    // Get last cursor from Firestore for incremental sync
+    const userPlaidRef = db.collection('users').doc(userId).collection('plaid').doc('sync_status');
+    const syncDoc = await userPlaidRef.get();
+    const lastCursor = syncDoc.exists ? syncDoc.data().cursor : null;
 
-    const plaidTransactions = transactionsResponse.data.transactions;
+    logDiagnostic.info('SYNC_TRANSACTIONS', lastCursor ? `Using cursor for incremental sync` : `Initial sync (no cursor)`);
+
+    // Fetch all transaction changes using transactionsSync with pagination
+    let allAdded = [];
+    let allModified = [];
+    let allRemoved = [];
+    let hasMore = true;
+    let cursor = lastCursor;
+
+    while (hasMore) {
+      const response = await plaidClient.transactionsSync({
+        access_token: credentials.accessToken,
+        cursor: cursor,
+        options: {
+          include_personal_finance_category: true
+        }
+      });
+      
+      allAdded.push(...response.data.added);
+      allModified.push(...response.data.modified);
+      allRemoved.push(...response.data.removed);
+      
+      cursor = response.data.next_cursor;
+      hasMore = response.data.has_more;
+      
+      logDiagnostic.info('SYNC_TRANSACTIONS', `Fetched batch: ${response.data.added.length} added, ${response.data.modified.length} modified, ${response.data.removed.length} removed, hasMore: ${hasMore}`);
+    }
+
+    // Save new cursor for next sync
+    await userPlaidRef.set({
+      cursor: cursor,
+      lastSyncedAt: admin.firestore.FieldValue.serverTimestamp()
+    }, { merge: true });
+
+    const plaidTransactions = [...allAdded, ...allModified];
     const txCount = plaidTransactions.length;
-    const totalTx = transactionsResponse.data.total_transactions;
+    const totalTx = plaidTransactions.length;
     
-    logDiagnostic.info('SYNC_TRANSACTIONS', `Fetched ${txCount} of ${totalTx} transactions from Plaid`);
+    logDiagnostic.info('SYNC_TRANSACTIONS', `Fetched total: ${allAdded.length} new, ${allModified.length} modified, ${allRemoved.length} removed transactions from Plaid`);
 
     // Load existing manual pending charges for deduplication
     const transactionsRef = db.collection('users').doc(userId).collection('transactions');
@@ -675,16 +708,29 @@ app.post("/api/plaid/sync_transactions", async (req, res) => {
       }
     }
 
+    // Handle removed transactions from Plaid
+    for (const removedTx of allRemoved) {
+      const removedDocRef = transactionsRef.doc(removedTx.transaction_id);
+      const removedDoc = await removedDocRef.get();
+      
+      // Only delete if it's a Plaid transaction (not manual)
+      if (removedDoc.exists && removedDoc.data().source === 'plaid') {
+        batch.delete(removedDocRef);
+        logDiagnostic.info('SYNC_TRANSACTIONS', `Removing transaction: ${removedTx.transaction_id}`);
+      }
+    }
+
     // Commit the batch
     await batch.commit();
 
-    logDiagnostic.info('SYNC_TRANSACTIONS', `Synced ${addedCount} new, ${updatedCount} updated, ${pendingCount} pending, ${deduplicatedCount} deduplicated transactions`);
+    logDiagnostic.info('SYNC_TRANSACTIONS', `Synced ${addedCount} new, ${updatedCount} updated, ${pendingCount} pending, ${deduplicatedCount} deduplicated, ${allRemoved.length} removed transactions`);
     logDiagnostic.response(endpoint, 200, { 
       success: true, 
       added: addedCount,
       updated: updatedCount,
       pending: pendingCount,
-      deduplicated: deduplicatedCount
+      deduplicated: deduplicatedCount,
+      removed: allRemoved.length
     });
 
     res.json({
@@ -693,8 +739,9 @@ app.post("/api/plaid/sync_transactions", async (req, res) => {
       updated: updatedCount,
       pending: pendingCount,
       deduplicated: deduplicatedCount,
+      removed: allRemoved.length,
       total: txCount,
-      message: `Synced ${addedCount} new transactions (${pendingCount} pending${deduplicatedCount > 0 ? `, ${deduplicatedCount} deduplicated` : ''})`
+      message: `Synced ${addedCount} new transactions (${pendingCount} pending${deduplicatedCount > 0 ? `, ${deduplicatedCount} deduplicated` : ''}${allRemoved.length > 0 ? `, ${allRemoved.length} removed` : ''})`
     });
   } catch (error) {
     logDiagnostic.error('SYNC_TRANSACTIONS', 'Failed to sync transactions', error);
