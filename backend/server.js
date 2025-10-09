@@ -459,7 +459,8 @@ app.post("/api/plaid/get_transactions", async (req, res) => {
       options: {
         count: 100,
         offset: 0,
-        include_personal_finance_category: true
+        include_personal_finance_category: true,
+        include_pending_transactions: true  // ← Enable pending transactions
       }
     });
 
@@ -564,7 +565,8 @@ app.post("/api/plaid/sync_transactions", async (req, res) => {
       options: {
         count: 500,
         offset: 0,
-        include_personal_finance_category: true
+        include_personal_finance_category: true,
+        include_pending_transactions: true  // ← Enable pending transactions
       }
     });
 
