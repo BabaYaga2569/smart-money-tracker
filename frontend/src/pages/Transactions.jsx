@@ -13,6 +13,7 @@ const Transactions = () => {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [syncingPlaid, setSyncingPlaid] = useState(false);
+  const [autoSyncing, setAutoSyncing] = useState(false);
   const [accounts, setAccounts] = useState({});
   const [transactions, setTransactions] = useState([]);
   const [filteredTransactions, setFilteredTransactions] = useState([]);
@@ -113,6 +114,47 @@ const Transactions = () => {
   useEffect(() => {
     calculateAnalytics();
   }, [transactions]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Auto-sync effect - runs when user changes (login/logout)
+  useEffect(() => {
+    const autoSyncIfNeeded = async () => {
+      if (!currentUser) return;
+      
+      try {
+        // Check last sync timestamp from localStorage
+        const lastSyncKey = `plaidLastSync_${currentUser.uid}`;
+        const lastSyncTime = localStorage.getItem(lastSyncKey);
+        const now = Date.now();
+        const sixHours = 6 * 60 * 60 * 1000; // 6 hours in milliseconds
+        
+        // Determine if we should auto-sync
+        const shouldSync = !lastSyncTime || (now - parseInt(lastSyncTime)) > sixHours;
+        
+        if (shouldSync) {
+          console.log('🔄 Auto-syncing Plaid transactions (data is stale)...');
+          setAutoSyncing(true);
+          
+          // Call existing sync function
+          await syncPlaidTransactions();
+          
+          console.log('✅ Auto-sync complete!');
+        } else {
+          const hoursAgo = Math.floor((now - parseInt(lastSyncTime)) / (60 * 60 * 1000));
+          console.log(`ℹ️ Plaid data is fresh (synced ${hoursAgo}h ago), skipping auto-sync`);
+        }
+      } catch (error) {
+        console.error('❌ Auto-sync failed:', error);
+        // Don't block page load if sync fails
+      } finally {
+        setAutoSyncing(false);
+      }
+    };
+    
+    // Run auto-sync when user is authenticated and component mounts
+    if (currentUser) {
+      autoSyncIfNeeded();
+    }
+  }, [currentUser]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const loadInitialData = async () => {
     try {
@@ -357,6 +399,10 @@ const Transactions = () => {
 
       // Reload transactions from Firebase
       await loadTransactions();
+      
+      // Update last sync timestamp
+      const lastSyncKey = `plaidLastSync_${currentUser.uid}`;
+      localStorage.setItem(lastSyncKey, Date.now().toString());
       
       const { added, pending, deduplicated } = data;
       const pendingText = pending > 0 ? ` (${pending} pending)` : '';
@@ -896,23 +942,25 @@ const Transactions = () => {
           <button 
             className="btn-secondary"
             onClick={syncPlaidTransactions}
-            disabled={saving || syncingPlaid || (!plaidStatus.isConnected && !hasPlaidAccounts)}
+            disabled={saving || syncingPlaid || autoSyncing || (!plaidStatus.isConnected && !hasPlaidAccounts)}
             title={
-              plaidStatus.hasError 
-                ? 'Plaid connection error - see banner above' 
-                : (!plaidStatus.isConnected && !hasPlaidAccounts)
-                  ? 'Please connect Plaid to use this feature' 
-                  : 'Sync transactions from your bank accounts'
+              autoSyncing
+                ? 'Auto-sync in progress...'
+                : plaidStatus.hasError 
+                  ? 'Plaid connection error - see banner above' 
+                  : (!plaidStatus.isConnected && !hasPlaidAccounts)
+                    ? 'Please connect Plaid to use this feature' 
+                    : 'Sync transactions from your bank accounts'
             }
             style={{
-              background: syncingPlaid ? '#999' : ((!plaidStatus.isConnected && !hasPlaidAccounts) ? '#6b7280' : '#007bff'),
+              background: (syncingPlaid || autoSyncing) ? '#999' : ((!plaidStatus.isConnected && !hasPlaidAccounts) ? '#6b7280' : '#007bff'),
               color: '#fff',
               border: 'none',
-              cursor: ((!plaidStatus.isConnected && !hasPlaidAccounts) || syncingPlaid || saving) ? 'not-allowed' : 'pointer',
-              opacity: ((!plaidStatus.isConnected && !hasPlaidAccounts) || syncingPlaid) ? 0.6 : 1
+              cursor: ((!plaidStatus.isConnected && !hasPlaidAccounts) || syncingPlaid || autoSyncing || saving) ? 'not-allowed' : 'pointer',
+              opacity: ((!plaidStatus.isConnected && !hasPlaidAccounts) || syncingPlaid || autoSyncing) ? 0.6 : 1
             }}
           >
-            {syncingPlaid ? '🔄 Syncing...' : ((!plaidStatus.isConnected && !hasPlaidAccounts) ? '🔒 Sync Plaid (Not Connected)' : '🔄 Sync Plaid Transactions')}
+            {autoSyncing ? '🔄 Auto-syncing...' : syncingPlaid ? '🔄 Syncing...' : ((!plaidStatus.isConnected && !hasPlaidAccounts) ? '🔒 Sync Plaid (Not Connected)' : '🔄 Sync Plaid Transactions')}
           </button>
           
           <button 
@@ -933,6 +981,26 @@ const Transactions = () => {
             </button>
           )}
         </div>
+        
+        {autoSyncing && (
+          <div style={{
+            background: 'linear-gradient(135deg, #4f46e5 0%, #6366f1 100%)',
+            color: '#fff',
+            padding: '12px 20px',
+            borderRadius: '8px',
+            marginTop: '15px',
+            marginBottom: '15px',
+            display: 'flex',
+            alignItems: 'center',
+            gap: '10px',
+            boxShadow: '0 2px 4px rgba(0,0,0,0.1)',
+            fontSize: '14px',
+            fontWeight: '500'
+          }}>
+            <span style={{ fontSize: '18px' }}>⏳</span>
+            <span>Auto-syncing transactions from your bank accounts...</span>
+          </div>
+        )}
         
         {showTemplates && (
           <div className="templates-section">
