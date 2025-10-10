@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { doc, getDoc, collection, addDoc, deleteDoc, query, orderBy, limit, getDocs } from 'firebase/firestore';
+import { doc, getDoc, collection, addDoc, deleteDoc, query, orderBy, limit, getDocs, writeBatch } from 'firebase/firestore';
 import { db } from '../firebase';
 import { formatDateForDisplay, formatDateForInput } from '../utils/DateUtils';
 import { CATEGORY_KEYWORDS } from '../constants/categories';
@@ -800,6 +800,108 @@ const Transactions = () => {
     showNotification('Transactions exported successfully!', 'success');
   };
 
+  const handleDeleteAllTransactions = async () => {
+    // First confirmation
+    const confirmed = window.confirm(
+      '⚠️ WARNING: This will delete ALL transactions permanently!\n\n' +
+      'This action cannot be undone.\n\n' +
+      'Are you absolutely sure you want to delete all transactions?'
+    );
+    
+    if (!confirmed) {
+      return;
+    }
+
+    // Second confirmation for safety
+    const doubleConfirm = window.confirm(
+      '🚨 FINAL WARNING: Are you REALLY sure?\n\n' +
+      'All transaction history will be permanently deleted.'
+    );
+    
+    if (!doubleConfirm) {
+      return;
+    }
+
+    try {
+      setSaving(true);
+      let totalDeleted = 0;
+      
+      // Location 1: Root level transactions collection
+      try {
+        const rootTransactionsRef = collection(db, 'transactions');
+        const rootSnapshot = await getDocs(rootTransactionsRef);
+        
+        if (rootSnapshot.size > 0) {
+          const batch = writeBatch(db);
+          rootSnapshot.docs.forEach(doc => {
+            batch.delete(doc.ref);
+          });
+          
+          await batch.commit();
+          totalDeleted += rootSnapshot.size;
+          console.log(`Deleted ${rootSnapshot.size} transactions from root collection`);
+        }
+      } catch (e) {
+        console.log('No transactions in root collection or error:', e.message);
+      }
+      
+      // Location 2: User's transactions subcollection
+      try {
+        const userTransactionsRef = collection(db, 'users', currentUser.uid, 'transactions');
+        const userSnapshot = await getDocs(userTransactionsRef);
+        
+        if (userSnapshot.size > 0) {
+          const batch = writeBatch(db);
+          userSnapshot.docs.forEach(doc => {
+            batch.delete(doc.ref);
+          });
+          
+          await batch.commit();
+          totalDeleted += userSnapshot.size;
+          console.log(`Deleted ${userSnapshot.size} transactions from user subcollection`);
+        }
+      } catch (e) {
+        console.log('No transactions in user subcollection or error:', e.message);
+      }
+      
+      // Location 3: Manual transactions
+      try {
+        const manualTransactionsRef = collection(db, 'users', currentUser.uid, 'manual_transactions');
+        const manualSnapshot = await getDocs(manualTransactionsRef);
+        
+        if (manualSnapshot.size > 0) {
+          const batch = writeBatch(db);
+          manualSnapshot.docs.forEach(doc => {
+            batch.delete(doc.ref);
+          });
+          
+          await batch.commit();
+          totalDeleted += manualSnapshot.size;
+          console.log(`Deleted ${manualSnapshot.size} manual transactions`);
+        }
+      } catch (e) {
+        console.log('No manual transactions or error:', e.message);
+      }
+      
+      // Clear local state
+      setTransactions([]);
+      
+      // Refresh from Firebase to ensure sync
+      await loadTransactions();
+      
+      // Show success message
+      alert(`✅ Success! Deleted ${totalDeleted} transaction(s).`);
+      showNotification('All transactions have been deleted successfully!', 'success');
+      
+    } catch (error) {
+      console.error('Error deleting transactions:', error);
+      alert('❌ Failed to delete transactions. Please try again or check console for details.');
+      showNotification('Error deleting transactions', 'error');
+    } finally {
+      setSaving(false);
+    }
+  };
+
   const applyFilters = () => {
     let filtered = [...transactions];
     
@@ -1141,6 +1243,18 @@ const Transactions = () => {
               disabled={saving || syncingPlaid || forceRefreshing}
             >
               📥 Export CSV
+            </button>
+          )}
+          
+          {transactions.length > 0 && (
+            <button 
+              className="delete-all-transactions-btn"
+              onClick={handleDeleteAllTransactions}
+              disabled={saving || syncingPlaid || forceRefreshing}
+              aria-label="Delete all transactions"
+              title="Delete all transactions permanently"
+            >
+              🗑️ Delete All Transactions
             </button>
           )}
         </div>
