@@ -325,7 +325,7 @@ const Transactions = () => {
   const loadTransactions = async () => {
     try {
       const transactionsRef = collection(db, 'users', currentUser.uid, 'transactions');
-      const q = query(transactionsRef, orderBy('timestamp', 'desc'), limit(200));
+      const q = query(transactionsRef, orderBy('timestamp', 'desc'), limit(1000));
       const querySnapshot = await getDocs(q);
       
       const transactionsList = [];
