@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { doc, getDoc, updateDoc, collection, query, orderBy, limit, getDocs } from 'firebase/firestore';
+import { doc, getDoc, updateDoc, collection, query, orderBy, limit, getDocs, deleteDoc } from 'firebase/firestore';
 import { db } from '../firebase';
 import PlaidLink from '../components/PlaidLink';
 import PlaidErrorModal from '../components/PlaidErrorModal';
@@ -236,11 +236,84 @@ const Accounts = () => {
   };
 
   const deleteAccount = async (accountKey) => {
-    const updatedAccounts = { ...accounts };
-    delete updatedAccounts[accountKey];
-    
-    await saveAccountsToFirebase(updatedAccounts);
-    setShowDeleteModal(null);
+    try {
+      setSaving(true);
+      const userId = currentUser.uid;
+
+      // Check if this is a Plaid account
+      const isPlaidAccount = plaidAccounts.find(acc => acc.account_id === accountKey);
+      
+      if (isPlaidAccount) {
+        // For Plaid accounts, remove from plaidAccounts array in settings
+        const settingsDocRef = doc(db, 'users', userId, 'settings', 'personal');
+        const currentDoc = await getDoc(settingsDocRef);
+        const currentData = currentDoc.exists() ? currentDoc.data() : {};
+        
+        const updatedPlaidAccounts = (currentData.plaidAccounts || []).filter(
+          acc => acc.account_id !== accountKey
+        );
+        
+        await updateDoc(settingsDocRef, {
+          ...currentData,
+          plaidAccounts: updatedPlaidAccounts,
+          lastUpdated: new Date().toISOString()
+        });
+        
+        // Update local state
+        setPlaidAccounts(updatedPlaidAccounts);
+        PlaidConnectionManager.setPlaidAccounts(updatedPlaidAccounts);
+        
+        // Recalculate total balance
+        const plaidTotal = updatedPlaidAccounts.reduce((sum, acc) => sum + parseFloat(acc.balance || 0), 0);
+        setTotalBalance(plaidTotal);
+        
+        showNotification('Account deleted successfully', 'success');
+      } else {
+        // For manual accounts, remove from bankAccounts object in settings
+        const updatedAccounts = { ...accounts };
+        delete updatedAccounts[accountKey];
+        
+        await saveAccountsToFirebase(updatedAccounts);
+      }
+
+      // Try deleting from multiple possible Firebase locations (for old/stale data)
+      // Location 1: Root level accounts collection
+      try {
+        const rootAccountRef = doc(db, 'accounts', accountKey);
+        await deleteDoc(rootAccountRef);
+        console.log('Deleted from root accounts collection');
+      } catch (e) {
+        // Not in root accounts collection or doesn't exist
+        console.log('Not in root accounts collection:', e.message);
+      }
+
+      // Location 2: User's financial subcollection
+      try {
+        const financialRef = doc(db, 'users', userId, 'financial', accountKey);
+        await deleteDoc(financialRef);
+        console.log('Deleted from financial subcollection');
+      } catch (e) {
+        // Not in financial subcollection or doesn't exist
+        console.log('Not in financial subcollection:', e.message);
+      }
+
+      // Location 3: User's accounts subcollection (if exists)
+      try {
+        const userAccountRef = doc(db, 'users', userId, 'accounts', accountKey);
+        await deleteDoc(userAccountRef);
+        console.log('Deleted from accounts subcollection');
+      } catch (e) {
+        // Not in accounts subcollection or doesn't exist
+        console.log('Not in accounts subcollection:', e.message);
+      }
+
+      setShowDeleteModal(null);
+    } catch (error) {
+      console.error('Error deleting account:', error);
+      showNotification('Failed to delete account. Please try again.', 'error');
+    } finally {
+      setSaving(false);
+    }
   };
 
   const handlePlaidSuccess = async (publicToken) => {
@@ -658,6 +731,14 @@ const Accounts = () => {
                     ⏸️ Sync Paused
                   </button>
                 )}
+                <button 
+                  className="action-btn delete-btn"
+                  onClick={() => setShowDeleteModal(account.account_id)}
+                  disabled={saving}
+                  title="Remove this account from the app"
+                >
+                  🗑️ Delete
+                </button>
               </div>
             </div>
           );
@@ -778,8 +859,17 @@ const Accounts = () => {
               </button>
             </div>
             <div className="modal-body">
-              <p>Are you sure you want to delete <strong>{accounts[showDeleteModal]?.name}</strong>?</p>
+              <p>Are you sure you want to delete <strong>
+                {accounts[showDeleteModal]?.name || 
+                 plaidAccounts.find(acc => acc.account_id === showDeleteModal)?.official_name || 
+                 'this account'}
+              </strong>?</p>
               <p className="warning">This action cannot be undone.</p>
+              {plaidAccounts.find(acc => acc.account_id === showDeleteModal) && (
+                <p style={{ color: '#ccc', fontSize: '0.9rem', marginTop: '10px' }}>
+                  Note: This will remove the account from your app but won't close your actual bank account.
+                </p>
+              )}
             </div>
             <div className="modal-footer">
               <button 
