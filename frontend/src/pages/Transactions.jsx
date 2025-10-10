@@ -245,6 +245,7 @@ const Transactions = () => {
           });
           
           setAccounts(accountsMap);
+          setHasPlaidAccounts(Object.keys(accountsMap).length > 0);
         } else {
           // No accounts from API, try Firebase
           await loadFirebaseAccounts();
