@@ -16,11 +16,13 @@ This document summarizes the implementation of secure server-side storage for Pl
 ## Solution
 
 **New Architecture:**
-- All access tokens stored in Firestore: `users/{userId}/plaid/credentials`
+- All access tokens stored in Firestore: `users/{userId}/plaid_items/{itemId}`
+- **Supports multiple bank connections per user** using itemId as document ID
 - Frontend never receives or stores access tokens
 - Backend retrieves tokens from Firestore using userId
-- Per-user isolation ensures multi-user safety
+- Per-user and per-item isolation ensures multi-user safety
 - Tokens encrypted at rest by Firestore
+- Each bank connection maintains its own sync cursor
 
 ## Changes Made
 
@@ -39,26 +41,63 @@ admin.initializeApp({
 const db = admin.firestore();
 ```
 
-#### 2. Helper Functions
+#### 2. Helper Functions (Updated for Multiple Items)
 ```javascript
-// Store credentials securely
-async function storePlaidCredentials(userId, accessToken, itemId) {
+// Store credentials securely - supports multiple bank connections
+async function storePlaidCredentials(userId, accessToken, itemId, institutionId, institutionName) {
   await db.collection('users').doc(userId)
-    .collection('plaid').doc('credentials')
-    .set({ accessToken, itemId, updatedAt: timestamp });
+    .collection('plaid_items').doc(itemId)  // Use itemId as doc ID
+    .set({ 
+      accessToken, 
+      itemId, 
+      institutionId,
+      institutionName,
+      cursor: null,
+      status: 'active',
+      createdAt: timestamp,
+      updatedAt: timestamp 
+    });
 }
 
-// Retrieve credentials
-async function getPlaidCredentials(userId) {
-  const doc = await db.collection('users').doc(userId)
-    .collection('plaid').doc('credentials').get();
-  return doc.exists ? doc.data() : null;
+// Retrieve credentials for a specific item or first active item
+async function getPlaidCredentials(userId, itemId = null) {
+  if (itemId) {
+    const doc = await db.collection('users').doc(userId)
+      .collection('plaid_items').doc(itemId).get();
+    return doc.exists ? doc.data() : null;
+  } else {
+    // Get first active item for backward compatibility
+    const snapshot = await db.collection('users').doc(userId)
+      .collection('plaid_items')
+      .where('status', '==', 'active')
+      .limit(1)
+      .get();
+    return snapshot.empty ? null : snapshot.docs[0].data();
+  }
 }
 
-// Delete credentials
-async function deletePlaidCredentials(userId) {
-  await db.collection('users').doc(userId)
-    .collection('plaid').doc('credentials').delete();
+// Get all Plaid items for a user
+async function getAllPlaidItems(userId) {
+  const snapshot = await db.collection('users').doc(userId)
+    .collection('plaid_items')
+    .where('status', '==', 'active')
+    .get();
+  return snapshot.docs.map(doc => doc.data());
+}
+
+// Delete credentials for specific item or all items
+async function deletePlaidCredentials(userId, itemId = null) {
+  if (itemId) {
+    await db.collection('users').doc(userId)
+      .collection('plaid_items').doc(itemId).delete();
+  } else {
+    // Delete all items
+    const snapshot = await db.collection('users').doc(userId)
+      .collection('plaid_items').get();
+    const batch = db.batch();
+    snapshot.docs.forEach(doc => batch.delete(doc.ref));
+    await batch.commit();
+  }
 }
 ```
 

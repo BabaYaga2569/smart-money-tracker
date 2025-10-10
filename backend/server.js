@@ -112,23 +112,32 @@ const db = admin.firestore();
 
 /**
  * Store Plaid credentials securely in Firestore
+ * Supports multiple bank connections per user
  * @param {string} userId - User's UID
  * @param {string} accessToken - Plaid access token
  * @param {string} itemId - Plaid item ID
+ * @param {string} institutionId - Plaid institution ID (optional)
+ * @param {string} institutionName - Institution name (optional)
  * @returns {Promise<void>}
  */
-async function storePlaidCredentials(userId, accessToken, itemId) {
+async function storePlaidCredentials(userId, accessToken, itemId, institutionId = null, institutionName = null) {
   if (!userId || !accessToken || !itemId) {
     throw new Error('Missing required parameters for storing Plaid credentials');
   }
 
-  logDiagnostic.info('STORE_CREDENTIALS', `Storing credentials for user: ${userId}, item: ${itemId}`);
+  logDiagnostic.info('STORE_CREDENTIALS', `Storing credentials for user: ${userId}, item: ${itemId}, institution: ${institutionName || 'unknown'}`);
 
-  const userPlaidRef = db.collection('users').doc(userId).collection('plaid').doc('credentials');
+  // Use itemId as document ID to support multiple bank connections
+  const userPlaidRef = db.collection('users').doc(userId).collection('plaid_items').doc(itemId);
   
   await userPlaidRef.set({
     accessToken,
     itemId,
+    institutionId,
+    institutionName,
+    cursor: null,
+    status: 'active',
+    createdAt: admin.firestore.FieldValue.serverTimestamp(),
     updatedAt: admin.firestore.FieldValue.serverTimestamp()
   }, { merge: true });
 
@@ -136,50 +145,116 @@ async function storePlaidCredentials(userId, accessToken, itemId) {
 }
 
 /**
- * Retrieve Plaid access token from Firestore
+ * Retrieve Plaid access token from Firestore for a specific item
  * @param {string} userId - User's UID
- * @returns {Promise<{accessToken: string, itemId: string}|null>}
+ * @param {string} itemId - Optional Plaid item ID. If not provided, returns first active item
+ * @returns {Promise<{accessToken: string, itemId: string, institutionId: string, institutionName: string}|null>}
  */
-async function getPlaidCredentials(userId) {
+async function getPlaidCredentials(userId, itemId = null) {
   if (!userId) {
     throw new Error('userId is required to retrieve Plaid credentials');
   }
 
-  logDiagnostic.info('GET_CREDENTIALS', `Retrieving credentials for user: ${userId}`);
+  logDiagnostic.info('GET_CREDENTIALS', `Retrieving credentials for user: ${userId}${itemId ? `, item: ${itemId}` : ''}`);
 
-  const userPlaidRef = db.collection('users').doc(userId).collection('plaid').doc('credentials');
-  const doc = await userPlaidRef.get();
+  if (itemId) {
+    // Get specific item
+    const userPlaidRef = db.collection('users').doc(userId).collection('plaid_items').doc(itemId);
+    const doc = await userPlaidRef.get();
 
-  if (!doc.exists) {
-    logDiagnostic.info('GET_CREDENTIALS', 'No credentials found for user');
-    return null;
+    if (!doc.exists) {
+      logDiagnostic.info('GET_CREDENTIALS', `No credentials found for item: ${itemId}`);
+      return null;
+    }
+
+    const data = doc.data();
+    logDiagnostic.info('GET_CREDENTIALS', `Credentials retrieved for item: ${data.itemId}`);
+    
+    return {
+      accessToken: data.accessToken,
+      itemId: data.itemId,
+      institutionId: data.institutionId,
+      institutionName: data.institutionName,
+      cursor: data.cursor
+    };
+  } else {
+    // Get first active item (for backward compatibility)
+    const itemsSnapshot = await db.collection('users').doc(userId).collection('plaid_items')
+      .where('status', '==', 'active')
+      .limit(1)
+      .get();
+
+    if (itemsSnapshot.empty) {
+      logDiagnostic.info('GET_CREDENTIALS', 'No credentials found for user');
+      return null;
+    }
+
+    const data = itemsSnapshot.docs[0].data();
+    logDiagnostic.info('GET_CREDENTIALS', `Credentials retrieved for item: ${data.itemId}`);
+    
+    return {
+      accessToken: data.accessToken,
+      itemId: data.itemId,
+      institutionId: data.institutionId,
+      institutionName: data.institutionName,
+      cursor: data.cursor
+    };
+  }
+}
+
+/**
+ * Get all Plaid items for a user
+ * @param {string} userId - User's UID
+ * @returns {Promise<Array>} Array of Plaid item credentials
+ */
+async function getAllPlaidItems(userId) {
+  if (!userId) {
+    throw new Error('userId is required to retrieve Plaid items');
   }
 
-  const data = doc.data();
-  logDiagnostic.info('GET_CREDENTIALS', `Credentials retrieved for item: ${data.itemId}`);
+  logDiagnostic.info('GET_ALL_ITEMS', `Retrieving all items for user: ${userId}`);
+
+  const itemsSnapshot = await db
+    .collection('users')
+    .doc(userId)
+    .collection('plaid_items')
+    .where('status', '==', 'active')
+    .get();
   
-  return {
-    accessToken: data.accessToken,
-    itemId: data.itemId
-  };
+  const items = itemsSnapshot.docs.map(doc => doc.data());
+  logDiagnostic.info('GET_ALL_ITEMS', `Retrieved ${items.length} active items`);
+  
+  return items;
 }
 
 /**
  * Delete Plaid credentials from Firestore
  * @param {string} userId - User's UID
+ * @param {string} itemId - Optional Plaid item ID. If not provided, deletes all items
  * @returns {Promise<void>}
  */
-async function deletePlaidCredentials(userId) {
+async function deletePlaidCredentials(userId, itemId = null) {
   if (!userId) {
     throw new Error('userId is required to delete Plaid credentials');
   }
 
-  logDiagnostic.info('DELETE_CREDENTIALS', `Deleting credentials for user: ${userId}`);
-
-  const userPlaidRef = db.collection('users').doc(userId).collection('plaid').doc('credentials');
-  await userPlaidRef.delete();
-
-  logDiagnostic.info('DELETE_CREDENTIALS', 'Credentials deleted successfully');
+  if (itemId) {
+    // Delete specific item
+    logDiagnostic.info('DELETE_CREDENTIALS', `Deleting credentials for user: ${userId}, item: ${itemId}`);
+    const userPlaidRef = db.collection('users').doc(userId).collection('plaid_items').doc(itemId);
+    await userPlaidRef.delete();
+    logDiagnostic.info('DELETE_CREDENTIALS', 'Credentials deleted successfully');
+  } else {
+    // Delete all items
+    logDiagnostic.info('DELETE_CREDENTIALS', `Deleting all credentials for user: ${userId}`);
+    const itemsSnapshot = await db.collection('users').doc(userId).collection('plaid_items').get();
+    const batch = db.batch();
+    itemsSnapshot.docs.forEach(doc => {
+      batch.delete(doc.ref);
+    });
+    await batch.commit();
+    logDiagnostic.info('DELETE_CREDENTIALS', `Deleted ${itemsSnapshot.docs.length} items successfully`);
+  }
 }
 
 // ============================================================================
@@ -336,8 +411,22 @@ app.post("/api/plaid/exchange_token", async (req, res) => {
     
     logDiagnostic.info('EXCHANGE_TOKEN', `Successfully exchanged token, item_id: ${itemId}`);
 
+    // Get institution info
+    const itemResponse = await plaidClient.itemGet({ access_token: accessToken });
+    const institutionId = itemResponse.data.item.institution_id;
+    
+    logDiagnostic.info('EXCHANGE_TOKEN', `Fetching institution info for: ${institutionId}`);
+
+    const institutionResponse = await plaidClient.institutionsGetById({
+      institution_id: institutionId,
+      country_codes: ['US']
+    });
+    const institutionName = institutionResponse.data.institution.name;
+    
+    logDiagnostic.info('EXCHANGE_TOKEN', `Institution: ${institutionName}`);
+
     // Store credentials securely in Firestore (server-side only)
-    await storePlaidCredentials(userId, accessToken, itemId);
+    await storePlaidCredentials(userId, accessToken, itemId, institutionId, institutionName);
 
     // Get account information
     logDiagnostic.info('EXCHANGE_TOKEN', 'Fetching account information');
@@ -392,9 +481,9 @@ app.post("/api/plaid/get_balances", async (req, res) => {
       return res.status(400).json({ error: "userId is required" });
     }
 
-    // Retrieve access token from Firestore
-    const credentials = await getPlaidCredentials(userId);
-    if (!credentials) {
+    // Retrieve all Plaid items for the user
+    const items = await getAllPlaidItems(userId);
+    if (!items || items.length === 0) {
       logDiagnostic.error('GET_BALANCES', 'No Plaid credentials found for user');
       return res.status(404).json({ 
         error: "No Plaid connection found. Please connect your bank account first.",
@@ -402,19 +491,38 @@ app.post("/api/plaid/get_balances", async (req, res) => {
       });
     }
 
-    logDiagnostic.info('GET_BALANCES', 'Fetching account balances');
+    logDiagnostic.info('GET_BALANCES', `Fetching account balances for ${items.length} bank connections`);
 
-    const balanceResponse = await plaidClient.accountsBalanceGet({
-      access_token: credentials.accessToken,
-    });
+    // Fetch balances from all items
+    let allAccounts = [];
+    for (const item of items) {
+      try {
+        const balanceResponse = await plaidClient.accountsBalanceGet({
+          access_token: item.accessToken,
+        });
+        
+        // Add institution info to each account
+        const accountsWithInstitution = balanceResponse.data.accounts.map(account => ({
+          ...account,
+          institution_name: item.institutionName,
+          institution_id: item.institutionId,
+          item_id: item.itemId
+        }));
+        
+        allAccounts.push(...accountsWithInstitution);
+      } catch (itemError) {
+        logDiagnostic.error('GET_BALANCES', `Failed to fetch balances for item ${item.itemId}`, itemError);
+        // Continue with other items even if one fails
+      }
+    }
 
-    const accountCount = balanceResponse.data.accounts.length;
-    logDiagnostic.info('GET_BALANCES', `Successfully fetched balances for ${accountCount} accounts`);
-    logDiagnostic.response(endpoint, 200, { success: true, account_count: accountCount });
+    const accountCount = allAccounts.length;
+    logDiagnostic.info('GET_BALANCES', `Successfully fetched balances for ${accountCount} accounts from ${items.length} banks`);
+    logDiagnostic.response(endpoint, 200, { success: true, account_count: accountCount, item_count: items.length });
 
     res.json({
       success: true,
-      accounts: balanceResponse.data.accounts,
+      accounts: allAccounts,
     });
   } catch (error) {
     logDiagnostic.error('GET_BALANCES', 'Failed to fetch balances', error);
@@ -444,9 +552,9 @@ app.get("/api/accounts", async (req, res) => {
       });
     }
 
-    // Retrieve access token from Firestore
-    const credentials = await getPlaidCredentials(userId);
-    if (!credentials) {
+    // Retrieve all Plaid items for the user
+    const items = await getAllPlaidItems(userId);
+    if (!items || items.length === 0) {
       return res.status(200).json({ 
         success: false,
         accounts: [],
@@ -454,13 +562,32 @@ app.get("/api/accounts", async (req, res) => {
       });
     }
 
-    const balanceResponse = await plaidClient.accountsBalanceGet({
-      access_token: credentials.accessToken,
-    });
+    // Fetch accounts from all items
+    let allAccounts = [];
+    for (const item of items) {
+      try {
+        const balanceResponse = await plaidClient.accountsBalanceGet({
+          access_token: item.accessToken,
+        });
+        
+        // Add institution info to each account
+        const accountsWithInstitution = balanceResponse.data.accounts.map(account => ({
+          ...account,
+          institution_name: item.institutionName,
+          institution_id: item.institutionId,
+          item_id: item.itemId
+        }));
+        
+        allAccounts.push(...accountsWithInstitution);
+      } catch (itemError) {
+        console.error(`Error getting accounts for item ${item.itemId}:`, itemError);
+        // Continue with other items even if one fails
+      }
+    }
 
     res.json({
       success: true,
-      accounts: balanceResponse.data.accounts,
+      accounts: allAccounts,
     });
   } catch (error) {
     console.error("Error getting accounts:", error);
@@ -491,9 +618,9 @@ app.post("/api/plaid/get_transactions", async (req, res) => {
       });
     }
 
-    // Retrieve access token from Firestore
-    const credentials = await getPlaidCredentials(userId);
-    if (!credentials) {
+    // Retrieve all Plaid items for the user
+    const items = await getAllPlaidItems(userId);
+    if (!items || items.length === 0) {
       logDiagnostic.error('GET_TRANSACTIONS', 'No Plaid credentials found for user');
       return res.status(404).json({ 
         success: false,
@@ -506,30 +633,61 @@ app.post("/api/plaid/get_transactions", async (req, res) => {
     const endDate = end_date || new Date().toISOString().split('T')[0];
     const startDate = start_date || new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
 
-    logDiagnostic.info('GET_TRANSACTIONS', `Fetching transactions using transactionsSync API`);
+    logDiagnostic.info('GET_TRANSACTIONS', `Fetching transactions from ${items.length} bank connections using transactionsSync API`);
 
-    // Use transactionsSync instead of transactionsGet for better pending transaction support
-    const transactionsResponse = await plaidClient.transactionsSync({
-      access_token: credentials.accessToken,
-      options: {
-        include_personal_finance_category: true
+    // Fetch transactions from all items
+    let allTransactions = [];
+    let allAccounts = [];
+    
+    for (const item of items) {
+      try {
+        // Use transactionsSync instead of transactionsGet for better pending transaction support
+        const transactionsResponse = await plaidClient.transactionsSync({
+          access_token: item.accessToken,
+          options: {
+            include_personal_finance_category: true
+          }
+        });
+
+        // transactionsSync returns different structure:
+        // - added: [] (new transactions)
+        // - modified: [] (updated transactions)
+        // - removed: [] (deleted transaction IDs)
+        // - next_cursor: "..." (save for next sync)
+        // Combine added + modified for response
+        const itemTransactions = [
+          ...transactionsResponse.data.added,
+          ...transactionsResponse.data.modified
+        ];
+        
+        // Add institution info to each transaction
+        const transactionsWithInstitution = itemTransactions.map(tx => ({
+          ...tx,
+          institution_name: item.institutionName,
+          institution_id: item.institutionId,
+          item_id: item.itemId
+        }));
+        
+        allTransactions.push(...transactionsWithInstitution);
+        
+        if (transactionsResponse.data.accounts) {
+          const accountsWithInstitution = transactionsResponse.data.accounts.map(account => ({
+            ...account,
+            institution_name: item.institutionName,
+            institution_id: item.institutionId,
+            item_id: item.itemId
+          }));
+          allAccounts.push(...accountsWithInstitution);
+        }
+      } catch (itemError) {
+        logDiagnostic.error('GET_TRANSACTIONS', `Failed to fetch transactions for item ${item.itemId}`, itemError);
+        // Continue with other items even if one fails
       }
-    });
-
-    // transactionsSync returns different structure:
-    // - added: [] (new transactions)
-    // - modified: [] (updated transactions)
-    // - removed: [] (deleted transaction IDs)
-    // - next_cursor: "..." (save for next sync)
-    // Combine added + modified for response
-    const allTransactions = [
-      ...transactionsResponse.data.added,
-      ...transactionsResponse.data.modified
-    ];
+    }
 
     const txCount = allTransactions.length;
     const totalTx = allTransactions.length;
-    logDiagnostic.info('GET_TRANSACTIONS', `Successfully fetched ${txCount} transactions via transactionsSync`);
+    logDiagnostic.info('GET_TRANSACTIONS', `Successfully fetched ${txCount} transactions from ${items.length} banks via transactionsSync`);
     logDiagnostic.response(endpoint, 200, { 
       success: true, 
       transaction_count: txCount,
@@ -539,7 +697,7 @@ app.post("/api/plaid/get_transactions", async (req, res) => {
     res.json({
       success: true,
       transactions: allTransactions,
-      accounts: transactionsResponse.data.accounts || [],
+      accounts: allAccounts,
       total_transactions: totalTx
     });
   } catch (error) {
@@ -603,9 +761,9 @@ app.post("/api/plaid/sync_transactions", async (req, res) => {
       });
     }
 
-    // Retrieve access token from Firestore
-    const credentials = await getPlaidCredentials(userId);
-    if (!credentials) {
+    // Retrieve all Plaid items for the user
+    const items = await getAllPlaidItems(userId);
+    if (!items || items.length === 0) {
       logDiagnostic.error('SYNC_TRANSACTIONS', 'No Plaid credentials found for user');
       return res.status(404).json({ 
         success: false,
@@ -618,46 +776,78 @@ app.post("/api/plaid/sync_transactions", async (req, res) => {
     const endDate = end_date || new Date().toISOString().split('T')[0];
     const startDate = start_date || new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
 
-    logDiagnostic.info('SYNC_TRANSACTIONS', `Syncing transactions using transactionsSync API`);
+    logDiagnostic.info('SYNC_TRANSACTIONS', `Syncing transactions from ${items.length} bank connections using transactionsSync API`);
 
-    // Get last cursor from Firestore for incremental sync
-    const userPlaidRef = db.collection('users').doc(userId).collection('plaid').doc('sync_status');
-    const syncDoc = await userPlaidRef.get();
-    const lastCursor = syncDoc.exists ? syncDoc.data().cursor : null;
-
-    logDiagnostic.info('SYNC_TRANSACTIONS', lastCursor ? `Using cursor for incremental sync` : `Initial sync (no cursor)`);
-
-    // Fetch all transaction changes using transactionsSync with pagination
+    // Fetch all transaction changes from all items
     let allAdded = [];
     let allModified = [];
     let allRemoved = [];
-    let hasMore = true;
-    let cursor = lastCursor;
+    
+    for (const item of items) {
+      try {
+        // Get last cursor from the item document for incremental sync
+        const lastCursor = item.cursor || null;
 
-    while (hasMore) {
-      const response = await plaidClient.transactionsSync({
-        access_token: credentials.accessToken,
-        cursor: cursor,
-        options: {
-          include_personal_finance_category: true
+        logDiagnostic.info('SYNC_TRANSACTIONS', `Syncing item ${item.itemId} (${item.institutionName}), cursor: ${lastCursor ? 'exists' : 'none'}`);
+
+        // Fetch all transaction changes using transactionsSync with pagination
+        let itemAdded = [];
+        let itemModified = [];
+        let itemRemoved = [];
+        let hasMore = true;
+        let cursor = lastCursor;
+
+        while (hasMore) {
+          const response = await plaidClient.transactionsSync({
+            access_token: item.accessToken,
+            cursor: cursor,
+            options: {
+              include_personal_finance_category: true
+            }
+          });
+          
+          // Add institution info to transactions
+          const addedWithInstitution = response.data.added.map(tx => ({
+            ...tx,
+            institution_name: item.institutionName,
+            institution_id: item.institutionId,
+            item_id: item.itemId
+          }));
+          
+          const modifiedWithInstitution = response.data.modified.map(tx => ({
+            ...tx,
+            institution_name: item.institutionName,
+            institution_id: item.institutionId,
+            item_id: item.itemId
+          }));
+          
+          itemAdded.push(...addedWithInstitution);
+          itemModified.push(...modifiedWithInstitution);
+          itemRemoved.push(...response.data.removed);
+          
+          cursor = response.data.next_cursor;
+          hasMore = response.data.has_more;
+          
+          logDiagnostic.info('SYNC_TRANSACTIONS', `Item ${item.itemId}: ${response.data.added.length} added, ${response.data.modified.length} modified, ${response.data.removed.length} removed, hasMore: ${hasMore}`);
         }
-      });
-      
-      allAdded.push(...response.data.added);
-      allModified.push(...response.data.modified);
-      allRemoved.push(...response.data.removed);
-      
-      cursor = response.data.next_cursor;
-      hasMore = response.data.has_more;
-      
-      logDiagnostic.info('SYNC_TRANSACTIONS', `Fetched batch: ${response.data.added.length} added, ${response.data.modified.length} modified, ${response.data.removed.length} removed, hasMore: ${hasMore}`);
-    }
 
-    // Save new cursor for next sync
-    await userPlaidRef.set({
-      cursor: cursor,
-      lastSyncedAt: admin.firestore.FieldValue.serverTimestamp()
-    }, { merge: true });
+        // Save new cursor for this item
+        const itemRef = db.collection('users').doc(userId).collection('plaid_items').doc(item.itemId);
+        await itemRef.update({
+          cursor: cursor,
+          lastSyncedAt: admin.firestore.FieldValue.serverTimestamp()
+        });
+
+        allAdded.push(...itemAdded);
+        allModified.push(...itemModified);
+        allRemoved.push(...itemRemoved);
+        
+        logDiagnostic.info('SYNC_TRANSACTIONS', `Item ${item.itemId} sync complete: ${itemAdded.length} added, ${itemModified.length} modified, ${itemRemoved.length} removed`);
+      } catch (itemError) {
+        logDiagnostic.error('SYNC_TRANSACTIONS', `Failed to sync item ${item.itemId}`, itemError);
+        // Continue with other items even if one fails
+      }
+    }
 
     const plaidTransactions = [...allAdded, ...allModified];
     const txCount = plaidTransactions.length;
@@ -889,9 +1079,9 @@ app.post("/api/plaid/refresh_transactions", async (req, res) => {
       return res.status(400).json({ error: "userId is required" });
     }
 
-    // Retrieve access token from Firestore
-    const credentials = await getPlaidCredentials(userId);
-    if (!credentials) {
+    // Retrieve all Plaid items for the user
+    const items = await getAllPlaidItems(userId);
+    if (!items || items.length === 0) {
       logDiagnostic.error('REFRESH_TRANSACTIONS', 'No Plaid credentials found for user');
       return res.status(404).json({ 
         error: "No Plaid connection found. Please connect your bank account first.",
@@ -899,26 +1089,49 @@ app.post("/api/plaid/refresh_transactions", async (req, res) => {
       });
     }
 
-    logDiagnostic.info('REFRESH_TRANSACTIONS', `Requesting Plaid to refresh transactions for user ${userId}`);
+    logDiagnostic.info('REFRESH_TRANSACTIONS', `Requesting Plaid to refresh transactions for ${items.length} bank connections`);
 
-    // Tell Plaid to go check the bank RIGHT NOW
-    const response = await plaidClient.transactionsRefresh({
-      access_token: credentials.accessToken
-    });
+    // Tell Plaid to go check all banks RIGHT NOW
+    const refreshResults = [];
+    for (const item of items) {
+      try {
+        const response = await plaidClient.transactionsRefresh({
+          access_token: item.accessToken
+        });
 
-    logDiagnostic.info('REFRESH_TRANSACTIONS', 'Refresh request sent to Plaid successfully', {
-      request_id: response.data.request_id
-    });
+        refreshResults.push({
+          item_id: item.itemId,
+          institution_name: item.institutionName,
+          request_id: response.data.request_id,
+          success: true
+        });
+        
+        logDiagnostic.info('REFRESH_TRANSACTIONS', `Refresh request sent for ${item.institutionName} (${item.itemId})`, {
+          request_id: response.data.request_id
+        });
+      } catch (itemError) {
+        logDiagnostic.error('REFRESH_TRANSACTIONS', `Failed to refresh item ${item.itemId}`, itemError);
+        refreshResults.push({
+          item_id: item.itemId,
+          institution_name: item.institutionName,
+          success: false,
+          error: itemError.message
+        });
+      }
+    }
+
+    const successCount = refreshResults.filter(r => r.success).length;
     
     logDiagnostic.response(endpoint, 200, { 
       success: true,
-      request_id: response.data.request_id
+      refreshed_count: successCount,
+      total_count: items.length
     });
 
     res.json({
       success: true,
-      message: "Plaid is checking your bank now. New transactions should appear in 1-5 minutes.",
-      request_id: response.data.request_id
+      message: `Plaid is checking ${successCount} of ${items.length} banks now. New transactions should appear in 1-5 minutes.`,
+      results: refreshResults
     });
   } catch (error) {
     logDiagnostic.error('REFRESH_TRANSACTIONS', 'Failed to refresh transactions', error);

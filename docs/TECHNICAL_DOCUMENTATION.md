@@ -558,19 +558,19 @@ users/
       - createdAt: timestamp
       - lastLogin: timestamp
     
-    plaid/
-      credentials:
+    plaid_items/
+      {itemId}:
         - accessToken: string (encrypted)
         - itemId: string
+        - institutionId: string
+        - institutionName: string
+        - cursor: string (for transactionsSync)
+        - status: string ("active" | "inactive")
+        - createdAt: timestamp
         - updatedAt: timestamp
+        - lastSyncedAt: timestamp
       
-      lastSync:
-        - timestamp: timestamp
-        - cursor: string
-        - transactionCount: number
-        - added: number
-        - modified: number
-        - removed: number
+      # Multiple items supported per user for multiple bank connections
     
     transactions/
       {transactionId}:
@@ -686,7 +686,7 @@ service cloud.firestore {
     }
     
     // Plaid credentials - read only, write by backend
-    match /users/{userId}/plaid/{document=**} {
+    match /users/{userId}/plaid_items/{document=**} {
       allow read: if request.auth.uid == userId;
       allow write: if false; // Backend only
     }
@@ -1323,42 +1323,72 @@ app.use((err, req, res, next) => {
 
 ### 8.2 Helper Functions
 
-**Credential Storage:**
+**Credential Storage (Multi-Item Support):**
 ```javascript
-async function storePlaidCredentials(userId, accessToken, itemId) {
+// Store credentials - supports multiple bank connections per user
+async function storePlaidCredentials(userId, accessToken, itemId, institutionId, institutionName) {
   if (!userId || !accessToken || !itemId) {
     throw new Error('Missing required parameters');
   }
 
-  logDiagnostic.info('STORE_CREDENTIALS', `User: ${userId}, Item: ${itemId}`);
+  logDiagnostic.info('STORE_CREDENTIALS', `User: ${userId}, Item: ${itemId}, Institution: ${institutionName}`);
 
+  // Use itemId as document ID to support multiple banks
   await db.collection('users').doc(userId)
-    .collection('plaid').doc('credentials')
+    .collection('plaid_items').doc(itemId)
     .set({
       accessToken,
       itemId,
+      institutionId,
+      institutionName,
+      cursor: null,
+      status: 'active',
+      createdAt: admin.firestore.FieldValue.serverTimestamp(),
       updatedAt: admin.firestore.FieldValue.serverTimestamp()
     }, { merge: true });
 }
 
-async function getPlaidCredentials(userId) {
+// Get credentials for specific item or first active item
+async function getPlaidCredentials(userId, itemId = null) {
   if (!userId) {
     throw new Error('userId is required');
   }
 
-  const doc = await db.collection('users').doc(userId)
-    .collection('plaid').doc('credentials').get();
-
-  if (!doc.exists) {
-    return null;
+  if (itemId) {
+    const doc = await db.collection('users').doc(userId)
+      .collection('plaid_items').doc(itemId).get();
+    return doc.exists ? doc.data() : null;
+  } else {
+    const snapshot = await db.collection('users').doc(userId)
+      .collection('plaid_items')
+      .where('status', '==', 'active')
+      .limit(1)
+      .get();
+    return snapshot.empty ? null : snapshot.docs[0].data();
   }
-
-  return doc.data();
 }
 
-async function deletePlaidCredentials(userId) {
-  await db.collection('users').doc(userId)
-    .collection('plaid').doc('credentials').delete();
+// Get all Plaid items for a user
+async function getAllPlaidItems(userId) {
+  const snapshot = await db.collection('users').doc(userId)
+    .collection('plaid_items')
+    .where('status', '==', 'active')
+    .get();
+  return snapshot.docs.map(doc => doc.data());
+}
+
+// Delete specific item or all items
+async function deletePlaidCredentials(userId, itemId = null) {
+  if (itemId) {
+    await db.collection('users').doc(userId)
+      .collection('plaid_items').doc(itemId).delete();
+  } else {
+    const snapshot = await db.collection('users').doc(userId)
+      .collection('plaid_items').get();
+    const batch = db.batch();
+    snapshot.docs.forEach(doc => batch.delete(doc.ref));
+    await batch.commit();
+  }
 }
 ```
 
@@ -1858,10 +1888,19 @@ const db = admin.firestore();
 
 **Server-Side Operations:**
 ```javascript
-// Store credentials (bypasses security rules)
+// Store credentials (bypasses security rules) - supports multiple items
 await db.collection('users').doc(userId)
-  .collection('plaid').doc('credentials')
-  .set({ accessToken, itemId });
+  .collection('plaid_items').doc(itemId)
+  .set({ 
+    accessToken, 
+    itemId, 
+    institutionId,
+    institutionName,
+    cursor: null,
+    status: 'active',
+    createdAt: admin.firestore.FieldValue.serverTimestamp(),
+    updatedAt: admin.firestore.FieldValue.serverTimestamp()
+  });
 
 // Batch operations
 const batch = db.batch();
@@ -2265,7 +2304,7 @@ service cloud.firestore {
       }
 
       // Plaid credentials - read only by user, write only by backend
-      match /plaid/{document=**} {
+      match /plaid_items/{document=**} {
         allow read: if isOwner(userId);
         allow write: if false; // Backend only via Admin SDK
       }
@@ -2970,7 +3009,7 @@ service cloud.firestore {
       allow read, write: if request.auth.uid == userId;
     }
     
-    match /users/{userId}/plaid/{document=**} {
+    match /users/{userId}/plaid_items/{document=**} {
       allow read: if request.auth.uid == userId;
       allow write: if false;
     }
