@@ -348,6 +348,7 @@ app.post("/api/plaid/create_link_token", async (req, res) => {
       products: ["auth", "transactions"],
       country_codes: ["US"],
       language: "en",
+      webhook: "https://smart-money-tracker-09ks.onrender.com/api/plaid/webhook",
     };
 
     const createTokenResponse = await plaidClient.linkTokenCreate(request);
