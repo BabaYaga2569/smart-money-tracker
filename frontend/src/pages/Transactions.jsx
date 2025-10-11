@@ -236,10 +236,12 @@ const Transactions = () => {
             }
             
             accountsMap[accountId] = {
-              name: account?.name || account?.official_name || 'Unknown Account',
+              name: account?.name,
+              official_name: account?.official_name,
               type: account?.subtype || account?.type || 'checking',
               balance: balance.toString(),
               mask: account?.mask || '',
+              institution_name: account?.institution_name || '',
               institution: account?.institution_name || ''
             };
           });
