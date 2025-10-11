@@ -33,7 +33,13 @@ const Accounts = () => {
     // Check if user has dismissed the banner before
     return localStorage.getItem('plaidBannerDismissed') === 'true';
   });
+  
+  // Auto-refresh state
+  const [lastRefresh, setLastRefresh] = useState(null);
+  const [isRefreshing, setIsRefreshing] = useState(false);
+  const [refreshInterval, setRefreshInterval] = useState(null);
 
+ // eslint-disable-next-line react-hooks/exhaustive-deps
  useEffect(() => {
   // Load immediately - don't wait for Plaid
   loadAccountsAndTransactions();
@@ -51,7 +57,33 @@ const Accounts = () => {
     });
   });
   
-  return () => unsubscribe();
+  // Set up auto-refresh polling
+  let attempts = 0;
+  const maxAggressiveAttempts = 10; // 10 * 30 sec = 5 minutes
+  
+  const interval = setInterval(() => {
+    attempts++;
+    console.log(`Auto-refresh attempt ${attempts} (${attempts <= maxAggressiveAttempts ? '30s' : '60s'} interval)`);
+    loadAccountsAndTransactions();
+    
+    // Switch to maintenance polling after 5 minutes
+    if (attempts === maxAggressiveAttempts) {
+      clearInterval(interval);
+      const maintenanceInterval = setInterval(() => {
+        console.log('Maintenance auto-refresh (60s interval)');
+        loadAccountsAndTransactions();
+      }, 60000);
+      setRefreshInterval(maintenanceInterval);
+    }
+  }, 30000);
+  
+  setRefreshInterval(interval);
+  
+  return () => {
+    unsubscribe();
+    if (interval) clearInterval(interval);
+    if (refreshInterval) clearInterval(refreshInterval);
+  };
 }, []);
 
   // Recalculate projected balance when transactions change
@@ -107,7 +139,14 @@ const Accounts = () => {
   };
 
   const loadAccounts = async () => {
+    // Prevent concurrent requests
+    if (isRefreshing) {
+      console.log('Already refreshing, skipping...');
+      return;
+    }
+    
     try {
+      setIsRefreshing(true);
       const settingsDocRef = doc(db, 'users', currentUser.uid, 'settings', 'personal');
       const settingsDocSnap = await getDoc(settingsDocRef);
       
@@ -167,6 +206,8 @@ const Accounts = () => {
       setTotalProjectedBalance(total); // Same as live when no transactions
     } finally {
       setLoading(false);
+      setIsRefreshing(false);
+      setLastRefresh(Date.now());
     }
   };
 
@@ -421,6 +462,24 @@ const Accounts = () => {
       currency: 'USD'
     }).format(amount);
   };
+  
+  // Helper function to calculate time since last refresh
+  const getTimeSince = (timestamp) => {
+    if (!timestamp) return 'never';
+    const seconds = Math.floor((Date.now() - timestamp) / 1000);
+    if (seconds < 60) return 'just now';
+    const minutes = Math.floor(seconds / 60);
+    if (minutes < 60) return `${minutes} min ago`;
+    const hours = Math.floor(minutes / 60);
+    return `${hours} hour${hours > 1 ? 's' : ''} ago`;
+  };
+  
+  // Helper function to check if data is stale (>10 minutes old)
+  const isDataStale = (timestamp) => {
+    if (!timestamp) return false;
+    const minutes = Math.floor((Date.now() - timestamp) / 1000 / 60);
+    return minutes > 10;
+  };
 
   if (loading) {
     return (
@@ -667,6 +726,25 @@ const Accounts = () => {
           </div>
           <small>Across {plaidAccounts.length > 0 ? plaidAccounts.length : Object.keys(accounts).filter(k => !accounts[k].isPlaid).length} accounts</small>
         </div>
+      </div>
+
+      {/* Auto-refresh Status */}
+      <div className="refresh-status">
+        {isRefreshing && (
+          <span className="refresh-spinner" title="Refreshing balances...">
+            🔄 Refreshing...
+          </span>
+        )}
+        {lastRefresh && (
+          <span className="last-updated">
+            Last updated: {getTimeSince(lastRefresh)}
+          </span>
+        )}
+        {isDataStale(lastRefresh) && (
+          <span className="stale-warning" title="Data may be outdated - refreshing automatically">
+            ⚠️ Data may be outdated
+          </span>
+        )}
       </div>
 
       <div className="accounts-grid">

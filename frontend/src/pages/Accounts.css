@@ -509,6 +509,47 @@
   }
 }
 
+/* Auto-refresh Status */
+.refresh-status {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 15px;
+  padding: 12px 20px;
+  margin: 20px 0;
+  background: rgba(0, 255, 136, 0.05);
+  border: 1px solid rgba(0, 255, 136, 0.2);
+  border-radius: 8px;
+  font-size: 0.9rem;
+}
+
+.refresh-spinner {
+  color: #00ff88;
+  font-weight: 500;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  animation: pulse 1.5s ease-in-out infinite;
+}
+
+@keyframes pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.5; }
+}
+
+.last-updated {
+  color: #ccc;
+  font-weight: 400;
+}
+
+.stale-warning {
+  color: #f59e0b;
+  font-weight: 500;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
 /* Responsive Design */
 @media (max-width: 768px) {
   .accounts-grid {
