@@ -502,8 +502,7 @@ app.post("/api/plaid/get_balances", async (req, res) => {
         const syncResponse = await plaidClient.transactionsSync({
           access_token: item.accessToken,
           options: {
-            include_personal_finance_category: true,
-            count: 1 // We only need account balance, not all transactions
+            include_personal_finance_category: true
           }
         });
         
@@ -587,8 +586,7 @@ app.get("/api/accounts", async (req, res) => {
         const syncResponse = await plaidClient.transactionsSync({
           access_token: item.accessToken,
           options: {
-            include_personal_finance_category: true,
-            count: 1 // We only need account balance, not all transactions
+            include_personal_finance_category: true
           }
         });
         
@@ -1178,6 +1176,115 @@ app.post("/api/plaid/refresh_transactions", async (req, res) => {
       error: errorMessage,
       error_code: errorCode,
       error_type: error.response?.data?.error_type
+    });
+  }
+});
+
+// ============================================================================
+// PLAID WEBHOOK HANDLER FOR REAL-TIME UPDATES
+// ============================================================================
+
+/**
+ * Webhook endpoint for Plaid to send real-time updates
+ * Handles balance changes, transaction updates, and connection issues
+ * This is how professional apps (Rocket Money, Mint, YNAB) get fresh data
+ */
+app.post("/api/plaid/webhook", async (req, res) => {
+  const endpoint = "/api/plaid/webhook";
+  logDiagnostic.request(endpoint, req.body);
+  
+  try {
+    const { webhook_type, webhook_code, item_id, error } = req.body;
+    
+    logDiagnostic.info('WEBHOOK', `Received webhook: ${webhook_type} - ${webhook_code}`, {
+      item_id,
+      has_error: !!error
+    });
+    
+    // Handle transaction/balance updates
+    if (webhook_type === 'TRANSACTIONS') {
+      if (webhook_code === 'DEFAULT_UPDATE' || 
+          webhook_code === 'INITIAL_UPDATE' ||
+          webhook_code === 'HISTORICAL_UPDATE') {
+        
+        logDiagnostic.info('WEBHOOK', 'Processing transaction update webhook', { item_id });
+        
+        // Find which user owns this Plaid item
+        const itemsSnapshot = await db.collectionGroup('plaid_items')
+          .where('itemId', '==', item_id)
+          .limit(1)
+          .get();
+        
+        if (!itemsSnapshot.empty) {
+          const itemDoc = itemsSnapshot.docs[0];
+          const itemData = itemDoc.data();
+          const userId = itemDoc.ref.parent.parent.id;
+          
+          logDiagnostic.info('WEBHOOK', `Found item for user ${userId}`, {
+            institution: itemData.institutionName
+          });
+          
+          // Fetch fresh data from Plaid using transactionsSync
+          const syncResponse = await plaidClient.transactionsSync({
+            access_token: itemData.accessToken,
+            cursor: itemData.cursor || undefined,
+            options: {
+              include_personal_finance_category: true
+            }
+          });
+          
+          // Update cursor for next sync
+          await itemDoc.ref.update({
+            cursor: syncResponse.data.next_cursor,
+            lastWebhookUpdate: admin.firestore.FieldValue.serverTimestamp()
+          });
+          
+          logDiagnostic.info('WEBHOOK', 'Successfully processed webhook update', {
+            accounts: syncResponse.data.accounts.length,
+            added: syncResponse.data.added.length,
+            modified: syncResponse.data.modified.length,
+            removed: syncResponse.data.removed.length
+          });
+        } else {
+          logDiagnostic.info('WEBHOOK', 'No user found for item_id', { item_id });
+        }
+      }
+    }
+    
+    // Handle connection issues
+    if (webhook_type === 'ITEM' && webhook_code === 'ERROR') {
+      logDiagnostic.error('WEBHOOK', 'Item error reported by Plaid', {
+        item_id,
+        error
+      });
+      
+      // Find item and mark as needing reconnection
+      const itemsSnapshot = await db.collectionGroup('plaid_items')
+        .where('itemId', '==', item_id)
+        .limit(1)
+        .get();
+      
+      if (!itemsSnapshot.empty) {
+        await itemsSnapshot.docs[0].ref.update({
+          status: 'error',
+          error: error,
+          updatedAt: admin.firestore.FieldValue.serverTimestamp()
+        });
+      }
+    }
+    
+    // Always return 200 OK to Plaid (prevents webhook retries)
+    logDiagnostic.response(endpoint, 200, { success: true });
+    res.json({ success: true });
+    
+  } catch (error) {
+    logDiagnostic.error('WEBHOOK', 'Error processing webhook', error);
+    
+    // Still return 200 to prevent Plaid from retrying
+    // (we don't want failed webhooks to be retried repeatedly)
+    res.status(200).json({ 
+      success: false, 
+      error: 'Internal error processing webhook' 
     });
   }
 });
