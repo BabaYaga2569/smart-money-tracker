@@ -110,7 +110,7 @@ const Transactions = () => {
   };
 
   useEffect(() => {
-    applyFilters();
+    applyFilters(accounts);  // ← Pass accounts explicitly to avoid stale closure!
   }, [transactions, filters, accounts]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
@@ -936,11 +936,11 @@ const Transactions = () => {
     }
   };
 
-  const applyFilters = () => {
+  const applyFilters = (currentAccounts = accounts) => {
     console.log('🔍 [applyFilters] Running with:', {
       transactionsCount: transactions.length,
-      accountsCount: Object.keys(accounts).length,
-      accountIds: Object.keys(accounts)
+      accountsCount: Object.keys(currentAccounts).length,
+      accountIds: Object.keys(currentAccounts)
     });
     
     let filtered = [...transactions];
@@ -956,7 +956,7 @@ const Transactions = () => {
           ? t.category.join(' ').toLowerCase() 
           : (t.category || '').toLowerCase();
         const amount = (t.amount || 0).toString();
-        const accountName = getAccountDisplayName(accounts[t.account_id] || accounts[t.account] || {}).toLowerCase();
+        const accountName = getAccountDisplayName(currentAccounts[t.account_id] || currentAccounts[t.account] || {}).toLowerCase();
         const notes = (t.notes || '').toLowerCase();
         
         // Add debug logging for first transaction
@@ -965,8 +965,8 @@ const Transactions = () => {
             transactionId: t.id,
             transaction_account_id: t.account_id,
             transaction_account: t.account,
-            availableAccountKeys: Object.keys(accounts),
-            foundAccount: accounts[t.account_id] || accounts[t.account] || null,
+            availableAccountKeys: Object.keys(currentAccounts),
+            foundAccount: currentAccounts[t.account_id] || currentAccounts[t.account] || null,
             displayName: accountName
           });
         }
