@@ -37,13 +37,13 @@ const getAccountDisplayName = (account) => {
   return `${institutionName} ${accountType} ${mask}`.trim() || 'Account';
 };
 
-// Simulate the applyFilters function behavior
+// Simulate the applyFilters function behavior (matches actual implementation)
 const simulateApplyFilters = (transactions, accounts) => {
   const filtered = transactions.map(t => {
     const account = accounts[t.account_id] || accounts[t.account] || {};
     return {
       ...t,
-      displayAccountName: getAccountDisplayName(account)
+      _accountDisplayName: getAccountDisplayName(account)
     };
   });
   return filtered;
@@ -66,10 +66,10 @@ export const runTransactionAccountNameRaceConditionTests = () => {
         
         const result = simulateApplyFilters(transactions, accounts);
         
-        assert(result[0].displayAccountName === 'Account', 
-            `Expected "Account", got "${result[0].displayAccountName}"`);
-        assert(result[1].displayAccountName === 'Account', 
-            `Expected "Account", got "${result[1].displayAccountName}"`);
+        assert(result[0]._accountDisplayName === 'Account', 
+            `Expected "Account", got "${result[0]._accountDisplayName}"`);
+        assert(result[1]._accountDisplayName === 'Account', 
+            `Expected "Account", got "${result[1]._accountDisplayName}"`);
     })) passedTests++;
 
     // Test 2: After accounts load from API
@@ -96,10 +96,10 @@ export const runTransactionAccountNameRaceConditionTests = () => {
         
         const result = simulateApplyFilters(transactions, accounts);
         
-        assert(result[0].displayAccountName === 'USAA CLASSIC CHECKING', 
-            `Expected "USAA CLASSIC CHECKING", got "${result[0].displayAccountName}"`);
-        assert(result[1].displayAccountName === 'SoFi Checking', 
-            `Expected "SoFi Checking", got "${result[1].displayAccountName}"`);
+        assert(result[0]._accountDisplayName === 'USAA CLASSIC CHECKING', 
+            `Expected "USAA CLASSIC CHECKING", got "${result[0]._accountDisplayName}"`);
+        assert(result[1]._accountDisplayName === 'SoFi Checking', 
+            `Expected "SoFi Checking", got "${result[1]._accountDisplayName}"`);
     })) passedTests++;
 
     // Test 3: Race condition scenario - accounts update should trigger re-filter
@@ -112,7 +112,7 @@ export const runTransactionAccountNameRaceConditionTests = () => {
         // Phase 1: Initial load with empty accounts
         let accounts = {};
         let result = simulateApplyFilters(transactions, accounts);
-        const initialDisplay = result[0].displayAccountName;
+        const initialDisplay = result[0]._accountDisplayName;
         
         // Phase 2: Accounts load from API (after 3 seconds)
         accounts = {
@@ -124,7 +124,7 @@ export const runTransactionAccountNameRaceConditionTests = () => {
             }
         };
         result = simulateApplyFilters(transactions, accounts);
-        const updatedDisplay = result[0].displayAccountName;
+        const updatedDisplay = result[0]._accountDisplayName;
         
         // Verify the display name changed
         assert(initialDisplay !== updatedDisplay, 
@@ -151,14 +151,14 @@ export const runTransactionAccountNameRaceConditionTests = () => {
         
         const result = simulateApplyFilters(transactions, accounts);
         
-        assert(result[0].displayAccountName === 'USAA CLASSIC CHECKING', 
-            `Transaction 1: Expected "USAA CLASSIC CHECKING", got "${result[0].displayAccountName}"`);
-        assert(result[1].displayAccountName === 'SoFi Checking', 
-            `Transaction 2: Expected "SoFi Checking", got "${result[1].displayAccountName}"`);
-        assert(result[2].displayAccountName === '360 Checking', 
-            `Transaction 3: Expected "360 Checking", got "${result[2].displayAccountName}"`);
-        assert(result[3].displayAccountName === 'Adv Plus Banking', 
-            `Transaction 4: Expected "Adv Plus Banking", got "${result[3].displayAccountName}"`);
+        assert(result[0]._accountDisplayName === 'USAA CLASSIC CHECKING', 
+            `Transaction 1: Expected "USAA CLASSIC CHECKING", got "${result[0]._accountDisplayName}"`);
+        assert(result[1]._accountDisplayName === 'SoFi Checking', 
+            `Transaction 2: Expected "SoFi Checking", got "${result[1]._accountDisplayName}"`);
+        assert(result[2]._accountDisplayName === '360 Checking', 
+            `Transaction 3: Expected "360 Checking", got "${result[2]._accountDisplayName}"`);
+        assert(result[3]._accountDisplayName === 'Adv Plus Banking', 
+            `Transaction 4: Expected "Adv Plus Banking", got "${result[3]._accountDisplayName}"`);
     })) passedTests++;
 
     // Test 5: Partial account data - some accounts loaded, some not
@@ -175,10 +175,10 @@ export const runTransactionAccountNameRaceConditionTests = () => {
         
         const result = simulateApplyFilters(transactions, accounts);
         
-        assert(result[0].displayAccountName === 'USAA CLASSIC CHECKING', 
-            `Transaction 1: Expected "USAA CLASSIC CHECKING", got "${result[0].displayAccountName}"`);
-        assert(result[1].displayAccountName === 'Account', 
-            `Transaction 2: Expected "Account", got "${result[1].displayAccountName}"`);
+        assert(result[0]._accountDisplayName === 'USAA CLASSIC CHECKING', 
+            `Transaction 1: Expected "USAA CLASSIC CHECKING", got "${result[0]._accountDisplayName}"`);
+        assert(result[1]._accountDisplayName === 'Account', 
+            `Transaction 2: Expected "Account", got "${result[1]._accountDisplayName}"`);
     })) passedTests++;
 
     console.log(`\n📊 Test Results: ${passedTests}/${totalTests} tests passed`);

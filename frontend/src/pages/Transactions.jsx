@@ -1006,6 +1006,16 @@ const Transactions = () => {
     // Sort by date in descending order (most recent first)
     filtered.sort((a, b) => new Date(b.date) - new Date(a.date));
     
+    // ✅ Attach account display names to transactions so JSX doesn't need closure lookup
+    filtered = filtered.map(t => ({
+      ...t,
+      _accountDisplayName: getAccountDisplayName(
+        currentAccounts[t.account_id] || 
+        currentAccounts[t.account] || 
+        {}
+      )
+    }));
+    
     setFilteredTransactions(filtered);
   };
 
@@ -1759,11 +1769,7 @@ const Transactions = () => {
                         )}
                         
                         <span className="transaction-account-inline">
-                          | {getAccountDisplayName(
-                              accounts[transaction.account_id] || 
-                              accounts[transaction.account] || 
-                              {}
-                            )}
+                          | {transaction._accountDisplayName || 'Account'}
                         </span>
                         
                         {transaction.pending && (
