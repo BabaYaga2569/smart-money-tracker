@@ -172,6 +172,7 @@ const Transactions = () => {
 
   // Updated loadAccounts function to fetch from Plaid API
   const loadAccounts = async () => {
+    console.log('🔄 [loadAccounts] Starting account load...');
     try {
       const token = localStorage.getItem('token');
       const apiUrl = import.meta.env.VITE_API_URL || 'https://smart-money-tracker-09ks.onrender.com';
@@ -189,13 +190,14 @@ const Transactions = () => {
       });
       
       clearTimeout(timeoutId);
+      console.log('✅ [loadAccounts] API responded successfully');
       
       if (response.ok) {
         let data;
         try {
           data = await response.json();
         } catch (parseError) {
-          console.warn('Failed to parse API response, falling back to Firebase:', parseError);
+          console.warn('❌ [loadAccounts] Failed to parse API response, falling back to Firebase:', parseError);
           await loadFirebaseAccounts();
           return;
         }
@@ -203,6 +205,7 @@ const Transactions = () => {
         // Check if API returned success flag
         if (data?.success === false) {
           // Expected behavior when Plaid not configured - use Firebase
+          console.log('ℹ️ [loadAccounts] API returned success=false, falling back to Firebase');
           await loadFirebaseAccounts();
           return;
         }
@@ -247,25 +250,32 @@ const Transactions = () => {
           });
           
           setAccounts(accountsMap);
+          console.log('✅ [loadAccounts] Set accounts from API:', {
+            count: Object.keys(accountsMap).length,
+            accountIds: Object.keys(accountsMap),
+            firstAccount: Object.values(accountsMap)[0]
+          });
           setHasPlaidAccounts(Object.keys(accountsMap).length > 0);
         } else {
           // No accounts from API, try Firebase
+          console.log('⚠️ [loadAccounts] No accounts from API, falling back to Firebase');
           await loadFirebaseAccounts();
         }
       } else if (response.status === 404) {
         // Expected when API endpoint not available - use Firebase
+        console.log('ℹ️ [loadAccounts] API endpoint not available (404), falling back to Firebase');
         await loadFirebaseAccounts();
       } else {
         // Unexpected error - log and fallback
-        console.warn(`API returned ${response.status}, falling back to Firebase`);
+        console.warn(`⚠️ [loadAccounts] API returned ${response.status}, falling back to Firebase`);
         await loadFirebaseAccounts();
       }
     } catch (error) {
       // Network error, timeout, or API unavailable - fallback silently
       if (error.name === 'AbortError') {
-        console.warn('API request timed out after 3s, using Firebase');
+        console.warn('⏰ [loadAccounts] API request timed out after 3s, using Firebase');
       } else if (error.name !== 'TypeError') {
-        console.warn('API unavailable, using Firebase:', error.message);
+        console.warn('⚠️ [loadAccounts] API unavailable, using Firebase:', error.message);
       }
       await loadFirebaseAccounts();
     }
@@ -273,6 +283,7 @@ const Transactions = () => {
 
   // Fallback function to load from Firebase
   const loadFirebaseAccounts = async () => {
+    console.log('🔄 [loadFirebaseAccounts] Starting Firebase account load...');
     try {
       const settingsDocRef = doc(db, 'users', currentUser.uid, 'settings', 'personal');
       const settingsDocSnap = await getDoc(settingsDocRef);
@@ -282,8 +293,15 @@ const Transactions = () => {
         const plaidAccountsList = data.plaidAccounts || [];
         const bankAccounts = data.bankAccounts || {};
         
+        console.log('📊 [loadFirebaseAccounts] Firebase data retrieved:', {
+          plaidAccountsCount: plaidAccountsList.length,
+          bankAccountsCount: Object.keys(bankAccounts).length,
+          plaidAccountIds: plaidAccountsList.map(a => a.account_id)
+        });
+        
         // Update PlaidConnectionManager with account info
         PlaidConnectionManager.setPlaidAccounts(plaidAccountsList);
+        console.log('✅ [loadFirebaseAccounts] Updated PlaidConnectionManager with', plaidAccountsList.length, 'accounts');
         setHasPlaidAccounts(plaidAccountsList.length > 0);
         
         // Prioritize Plaid accounts if they exist (fully automated flow)
@@ -303,21 +321,32 @@ const Transactions = () => {
             };
           });
           setAccounts(accountsMap);
+          console.log('✅ [loadFirebaseAccounts] Set accounts state from Firebase Plaid:', {
+            count: Object.keys(accountsMap).length,
+            accountIds: Object.keys(accountsMap),
+            firstAccount: Object.values(accountsMap)[0]
+          });
         } else {
           // Fall back to manual accounts
           setAccounts(bankAccounts);
+          console.log('✅ [loadFirebaseAccounts] Set accounts state from Firebase manual accounts:', {
+            count: Object.keys(bankAccounts).length,
+            accountIds: Object.keys(bankAccounts)
+          });
         }
       } else {
+        console.warn('⚠️ [loadFirebaseAccounts] No Firebase settings document found, using demo accounts');
         setDefaultDemoAccounts();
       }
     } catch (error) {
-      console.error('Error loading Firebase accounts:', error);
+      console.error('❌ [loadFirebaseAccounts] Error loading Firebase accounts:', error);
       setDefaultDemoAccounts();
     }
   };
 
   // Set default demo accounts
   const setDefaultDemoAccounts = () => {
+    console.log('ℹ️ [setDefaultDemoAccounts] Setting demo accounts');
     const demoAccounts = {
       bofa: { name: "Bank of America", type: "checking", balance: "1361.97" },
       capone: { name: "Capital One", type: "checking", balance: "24.74" },
@@ -908,6 +937,12 @@ const Transactions = () => {
   };
 
   const applyFilters = () => {
+    console.log('🔍 [applyFilters] Running with:', {
+      transactionsCount: transactions.length,
+      accountsCount: Object.keys(accounts).length,
+      accountIds: Object.keys(accounts)
+    });
+    
     let filtered = [...transactions];
     
     if (filters.search) {
@@ -923,6 +958,18 @@ const Transactions = () => {
         const amount = (t.amount || 0).toString();
         const accountName = getAccountDisplayName(accounts[t.account_id] || accounts[t.account] || {}).toLowerCase();
         const notes = (t.notes || '').toLowerCase();
+        
+        // Add debug logging for first transaction
+        if (filtered.indexOf(t) === 0) {
+          console.log('🔍 [applyFilters] First transaction account lookup:', {
+            transactionId: t.id,
+            transaction_account_id: t.account_id,
+            transaction_account: t.account,
+            availableAccountKeys: Object.keys(accounts),
+            foundAccount: accounts[t.account_id] || accounts[t.account] || null,
+            displayName: accountName
+          });
+        }
         
         return (
           merchantName.includes(searchLower) ||
