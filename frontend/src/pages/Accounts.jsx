@@ -598,6 +598,26 @@ const Accounts = () => {
   }
 };
 
+  // Helper function to get account display name with fallback priority
+  const getAccountDisplayName = (account) => {
+    // Priority 1: official_name from Plaid (most reliable)
+    if (account.official_name && account.official_name.trim()) {
+      return account.official_name;
+    }
+    
+    // Priority 2: name from Plaid
+    if (account.name && account.name.trim()) {
+      return account.name;
+    }
+    
+    // Priority 3: Construct from institution_name (fallback only)
+    const institutionName = account.institution_name || '';
+    const accountType = account.type || 'Account';
+    const mask = account.mask ? `••${account.mask}` : '';
+    
+    return `${institutionName} ${accountType} ${mask}`.trim() || 'Account';
+  };
+
   const formatCurrency = (amount) => {
     return new Intl.NumberFormat('en-US', {
       style: 'currency',
@@ -901,7 +921,7 @@ const Accounts = () => {
               <div className="account-header">
                 <div className="account-title">
                   <span className="account-icon">{getAccountTypeIcon(account.type)}</span>
-                  <h3>{account.official_name}</h3>
+                  <h3>{getAccountDisplayName(account)}</h3>
                 </div>
                 <span className="account-type">{account.type} {account.mask ? `••${account.mask}` : ''}</span>
               </div>
@@ -977,7 +997,7 @@ const Accounts = () => {
                 <div className="account-header">
                   <div className="account-title">
                     <span className="account-icon">{getAccountTypeIcon(account.type)}</span>
-                    <h3>{account.name}</h3>
+                    <h3>{getAccountDisplayName(account)}</h3>
                   </div>
                   <span className="account-type">{account.type}</span>
                 </div>
@@ -1080,9 +1100,13 @@ const Accounts = () => {
             </div>
             <div className="modal-body">
               <p>Are you sure you want to delete <strong>
-                {accounts[showDeleteModal]?.name || 
-                 plaidAccounts.find(acc => acc.account_id === showDeleteModal)?.official_name || 
-                 'this account'}
+                {showDeleteModal ? 
+                  getAccountDisplayName(
+                    accounts[showDeleteModal] || 
+                    plaidAccounts.find(acc => acc.account_id === showDeleteModal) || 
+                    {}
+                  ) : 
+                  'this account'}
               </strong>?</p>
               <p className="warning">This action cannot be undone.</p>
               {plaidAccounts.find(acc => acc.account_id === showDeleteModal) && (
