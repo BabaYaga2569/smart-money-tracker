@@ -236,10 +236,12 @@ const Transactions = () => {
             }
             
             accountsMap[accountId] = {
-              name: account?.name || account?.official_name || 'Unknown Account',
+              name: account?.name,
+              official_name: account?.official_name,
               type: account?.subtype || account?.type || 'checking',
               balance: balance.toString(),
               mask: account?.mask || '',
+              institution_name: account?.institution_name || '',
               institution: account?.institution_name || ''
             };
           });
@@ -291,11 +293,13 @@ const Transactions = () => {
           plaidAccountsList.forEach(account => {
             const accountId = account.account_id;
             accountsMap[accountId] = {
-              name: account.official_name || account.name,
+              name: account.name,
+              official_name: account.official_name,
               type: account.type,
               balance: account.balance,
               mask: account.mask || '',
-              institution: ''
+              institution_name: account.institution_name || '',
+              institution: account.institution_name || ''
             };
           });
           setAccounts(accountsMap);
