@@ -111,7 +111,7 @@ const Transactions = () => {
 
   useEffect(() => {
     applyFilters();
-  }, [transactions, filters]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [transactions, filters, accounts]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     calculateAnalytics();
