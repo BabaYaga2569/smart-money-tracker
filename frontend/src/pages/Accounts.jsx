@@ -352,22 +352,64 @@ const Accounts = () => {
           return;
         }
 
-        // 1. Load current settings
+        console.log('[DELETE] Starting account deletion:', accountKey);
+        console.log('[DELETE] Account to delete:', accountToDelete);
+
+        // 1. Load current settings from Firebase
         const settingsDocRef = doc(db, 'users', userId, 'settings', 'personal');
         const currentDoc = await getDoc(settingsDocRef);
         const currentData = currentDoc.exists() ? currentDoc.data() : {};
+        
+        console.log('[DELETE] Current Firebase plaidAccounts:', currentData.plaidAccounts);
         
         // 2. Remove ONLY this specific account from plaidAccounts array
         const updatedPlaidAccounts = (currentData.plaidAccounts || []).filter(
           acc => acc.account_id !== accountKey
         );
         
-        // 3. Check if any OTHER accounts from this bank still exist
-        const remainingAccountsFromBank = updatedPlaidAccounts.filter(
+        // 3. Ensure all remaining accounts have complete data by enriching from local state
+        // This prevents losing fields like institution_name if Firebase data is stale
+        const enrichedPlaidAccounts = updatedPlaidAccounts.map(firebaseAcc => {
+          // Find corresponding account in local state which has fresh data from backend API
+          const localAcc = plaidAccounts.find(acc => acc.account_id === firebaseAcc.account_id);
+          
+          if (localAcc) {
+            // Merge Firebase data with local state, preferring local state for display fields
+            return {
+              ...firebaseAcc,
+              // Preserve critical display fields from local state
+              institution_name: localAcc.institution_name || firebaseAcc.institution_name || '',
+              institution_id: localAcc.institution_id || firebaseAcc.institution_id || '',
+              name: localAcc.name || firebaseAcc.name,
+              official_name: localAcc.official_name || firebaseAcc.official_name,
+              mask: localAcc.mask || firebaseAcc.mask,
+              balance: firebaseAcc.balance || localAcc.balance, // Prefer Firebase for consistency
+            };
+          }
+          
+          // If not found in local state, use Firebase data as-is
+          return firebaseAcc;
+        });
+        
+        console.log('[DELETE] Enriched plaidAccounts:', enrichedPlaidAccounts);
+        
+        // 4. Validate that institution_name is preserved
+        enrichedPlaidAccounts.forEach(acc => {
+          if (!acc.institution_name) {
+            console.warn('[DELETE] WARNING: Account missing institution_name after enrichment!', acc);
+          } else {
+            console.log('[DELETE] ✓ Account has institution_name:', acc.account_id, acc.institution_name);
+          }
+        });
+        
+        // 5. Check if any OTHER accounts from this bank still exist
+        const remainingAccountsFromBank = enrichedPlaidAccounts.filter(
           acc => acc.item_id === itemId
         );
+        
+        console.log('[DELETE] Remaining accounts from bank:', remainingAccountsFromBank.length);
 
-        // 4. Only delete plaid_items if NO accounts remain from this bank
+        // 6. Only delete plaid_items if NO accounts remain from this bank
         if (remainingAccountsFromBank.length === 0) {
           // All accounts from this bank deleted - remove plaid_items
           const plaidItemsRef = collection(db, 'users', userId, 'plaid_items');
@@ -380,26 +422,29 @@ const Accounts = () => {
           });
           await batch.commit();
           
-          console.log(`Deleted plaid_items for ${itemId} (no accounts remaining)`);
+          console.log('[DELETE] Deleted plaid_items for', itemId, '(no accounts remaining)');
         } else {
-          console.log(`Kept plaid_items for ${itemId} (${remainingAccountsFromBank.length} accounts remaining)`);
+          console.log('[DELETE] Kept plaid_items for', itemId, `(${remainingAccountsFromBank.length} accounts remaining)`);
         }
 
-        // 5. Update plaidAccounts array in settings/personal
+        // 7. Update plaidAccounts array in settings/personal with enriched data
         await updateDoc(settingsDocRef, {
           ...currentData,
-          plaidAccounts: updatedPlaidAccounts,
+          plaidAccounts: enrichedPlaidAccounts,
           lastUpdated: new Date().toISOString()
         });
         
-        // 6. Update local state
-        setPlaidAccounts(updatedPlaidAccounts);
-        PlaidConnectionManager.setPlaidAccounts(updatedPlaidAccounts);
+        console.log('[DELETE] Updated Firebase settings/personal with enriched accounts');
         
-        // Recalculate total balance
-        const plaidTotal = updatedPlaidAccounts.reduce((sum, acc) => sum + parseFloat(acc.balance || 0), 0);
+        // 8. Update local state with enriched data
+        setPlaidAccounts(enrichedPlaidAccounts);
+        PlaidConnectionManager.setPlaidAccounts(enrichedPlaidAccounts);
+        
+        // 9. Recalculate total balance
+        const plaidTotal = enrichedPlaidAccounts.reduce((sum, acc) => sum + parseFloat(acc.balance || 0), 0);
         setTotalBalance(plaidTotal);
         
+        console.log('[DELETE] Account deletion completed successfully');
         showNotification('Account deleted successfully', 'success');
       } else {
         // For manual accounts, remove from bankAccounts object in settings
