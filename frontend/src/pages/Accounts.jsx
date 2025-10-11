@@ -37,7 +37,6 @@ const Accounts = () => {
   // Auto-refresh state
   const [lastRefresh, setLastRefresh] = useState(null);
   const [isRefreshing, setIsRefreshing] = useState(false);
-  const [refreshInterval, setRefreshInterval] = useState(null);
 
  // eslint-disable-next-line react-hooks/exhaustive-deps
  useEffect(() => {
@@ -57,32 +56,12 @@ const Accounts = () => {
     });
   });
   
-  // Set up auto-refresh polling
-  let attempts = 0;
-  const maxAggressiveAttempts = 10; // 10 * 30 sec = 5 minutes
-  
-  const interval = setInterval(() => {
-    attempts++;
-    console.log(`Auto-refresh attempt ${attempts} (${attempts <= maxAggressiveAttempts ? '30s' : '60s'} interval)`);
-    loadAccountsAndTransactions();
-    
-    // Switch to maintenance polling after 5 minutes
-    if (attempts === maxAggressiveAttempts) {
-      clearInterval(interval);
-      const maintenanceInterval = setInterval(() => {
-        console.log('Maintenance auto-refresh (60s interval)');
-        loadAccountsAndTransactions();
-      }, 60000);
-      setRefreshInterval(maintenanceInterval);
-    }
-  }, 30000);
-  
-  setRefreshInterval(interval);
+  // Auto-refresh removed - webhooks now handle real-time updates
+  // Users can manually refresh via button if needed
+  // This saves ~1,400 API calls per day and ~$400/month in Plaid costs
   
   return () => {
     unsubscribe();
-    if (interval) clearInterval(interval);
-    if (refreshInterval) clearInterval(refreshInterval);
   };
 }, []);
 
