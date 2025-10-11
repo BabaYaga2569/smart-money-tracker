@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
 import Sidebar from './components/Sidebar';
@@ -14,6 +14,7 @@ import Cashflow from './pages/Cashflow';
 import Paycycle from './pages/Paycycle';
 import Settings from './pages/Settings';
 import Login from './pages/Login';
+import DebugButton from './components/DebugButton';
 import './App.css';
 
 // Protected Route wrapper
@@ -23,18 +24,51 @@ const PrivateRoute = ({ children }) => {
 };
 
 // Main app layout with sidebar
-const AppLayout = ({ children }) => {
+const AppLayout = ({ children, showDebugButton }) => {
   return (
     <div className="app">
       <Sidebar />
       <main className="main-content">
         {children}
       </main>
+      {showDebugButton && <DebugButton />}
     </div>
   );
 };
 
 function App() {
+  const [debugModeEnabled, setDebugModeEnabled] = useState(false);
+
+  useEffect(() => {
+    // Check localStorage for debug mode
+    const debugMode = localStorage.getItem('debugMode') === 'true';
+    setDebugModeEnabled(debugMode);
+
+    // Listen for debug mode changes
+    const handleDebugModeChange = (event) => {
+      setDebugModeEnabled(event.detail.enabled);
+    };
+    window.addEventListener('debugModeChanged', handleDebugModeChange);
+
+    // Add keyboard shortcut: Ctrl+Shift+D
+    const handleKeyDown = (event) => {
+      if (event.ctrlKey && event.shiftKey && event.key === 'D') {
+        event.preventDefault();
+        // Trigger debug modal open
+        const debugButton = document.querySelector('.debug-button');
+        if (debugButton) {
+          debugButton.click();
+        }
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+
+    return () => {
+      window.removeEventListener('debugModeChanged', handleDebugModeChange);
+      window.removeEventListener('keydown', handleKeyDown);
+    };
+  }, []);
+
   return (
     <Router>
       <AuthProvider>
@@ -45,7 +79,7 @@ function App() {
           {/* Protected routes - require authentication */}
           <Route path="/" element={
             <PrivateRoute>
-              <AppLayout>
+              <AppLayout showDebugButton={debugModeEnabled}>
                 <Dashboard />
               </AppLayout>
             </PrivateRoute>
@@ -53,7 +87,7 @@ function App() {
           
           <Route path="/accounts" element={
             <PrivateRoute>
-              <AppLayout>
+              <AppLayout showDebugButton={debugModeEnabled}>
                 <Accounts />
               </AppLayout>
             </PrivateRoute>
@@ -61,7 +95,7 @@ function App() {
           
           <Route path="/transactions" element={
             <PrivateRoute>
-              <AppLayout>
+              <AppLayout showDebugButton={debugModeEnabled}>
                 <Transactions />
               </AppLayout>
             </PrivateRoute>
@@ -69,7 +103,7 @@ function App() {
           
           <Route path="/spendability" element={
             <PrivateRoute>
-              <AppLayout>
+              <AppLayout showDebugButton={debugModeEnabled}>
                 <Spendability />
               </AppLayout>
             </PrivateRoute>
@@ -77,7 +111,7 @@ function App() {
           
           <Route path="/bills" element={
             <PrivateRoute>
-              <AppLayout>
+              <AppLayout showDebugButton={debugModeEnabled}>
                 <Bills />
               </AppLayout>
             </PrivateRoute>
@@ -85,7 +119,7 @@ function App() {
           
           <Route path="/recurring" element={
             <PrivateRoute>
-              <AppLayout>
+              <AppLayout showDebugButton={debugModeEnabled}>
                 <Recurring />
               </AppLayout>
             </PrivateRoute>
@@ -93,7 +127,7 @@ function App() {
           
           <Route path="/goals" element={
             <PrivateRoute>
-              <AppLayout>
+              <AppLayout showDebugButton={debugModeEnabled}>
                 <Goals />
               </AppLayout>
             </PrivateRoute>
@@ -101,7 +135,7 @@ function App() {
           
           <Route path="/categories" element={
             <PrivateRoute>
-              <AppLayout>
+              <AppLayout showDebugButton={debugModeEnabled}>
                 <Categories />
               </AppLayout>
             </PrivateRoute>
@@ -109,7 +143,7 @@ function App() {
           
           <Route path="/cashflow" element={
             <PrivateRoute>
-              <AppLayout>
+              <AppLayout showDebugButton={debugModeEnabled}>
                 <Cashflow />
               </AppLayout>
             </PrivateRoute>
@@ -117,7 +151,7 @@ function App() {
           
           <Route path="/paycycle" element={
             <PrivateRoute>
-              <AppLayout>
+              <AppLayout showDebugButton={debugModeEnabled}>
                 <Paycycle />
               </AppLayout>
             </PrivateRoute>
@@ -125,7 +159,7 @@ function App() {
           
           <Route path="/settings" element={
             <PrivateRoute>
-              <AppLayout>
+              <AppLayout showDebugButton={debugModeEnabled}>
                 <Settings />
               </AppLayout>
             </PrivateRoute>

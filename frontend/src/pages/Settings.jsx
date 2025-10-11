@@ -50,13 +50,17 @@ const Settings = () => {
     billSortOrder: 'dueDate',
     urgentDays: 7,
     warningDays: 14,
-    dueDateAlerts: true
+    dueDateAlerts: true,
+    debugMode: false
   });
 
   const [nextPaydayOverride, setNextPaydayOverride] = useState('');
 
   useEffect(() => {
     loadSettings();
+    // Load debug mode from localStorage
+    const debugModeEnabled = localStorage.getItem('debugMode') === 'true';
+    setPreferences(prev => ({ ...prev, debugMode: debugModeEnabled }));
   }, []);
 
   const loadSettings = async () => {
@@ -194,6 +198,15 @@ const Settings = () => {
 
   const removeBill = (index) => {
     setBills(prevBills => prevBills.filter((_, i) => i !== index));
+  };
+
+  const handleDebugModeToggle = (enabled) => {
+    setPreferences({ ...preferences, debugMode: enabled });
+    localStorage.setItem('debugMode', enabled.toString());
+    setMessage(enabled ? '🛠️ Debug mode enabled! Floating debug button will appear.' : '✅ Debug mode disabled.');
+    
+    // Dispatch custom event to notify App.jsx
+    window.dispatchEvent(new CustomEvent('debugModeChanged', { detail: { enabled } }));
   };
 
   if (loading) {
@@ -428,6 +441,22 @@ const Settings = () => {
                   />
                   <small>Show 🟡 warning when due in X days</small>
                 </div>
+              </div>
+            </div>
+            
+            {/* Debug Mode Toggle */}
+            <div className="preferences-section" style={{ marginTop: '20px' }}>
+              <h4>🛠️ Developer Tools</h4>
+              <div className="form-group">
+                <label>
+                  <input
+                    type="checkbox"
+                    checked={preferences.debugMode}
+                    onChange={(e) => handleDebugModeToggle(e.target.checked)}
+                  />
+                  Enable Debug Mode
+                </label>
+                <small>Shows floating debug button on all pages with Ctrl+Shift+D shortcut</small>
               </div>
             </div>
             
