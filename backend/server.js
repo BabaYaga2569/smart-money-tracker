@@ -497,13 +497,25 @@ app.post("/api/plaid/get_balances", async (req, res) => {
     let allAccounts = [];
     for (const item of items) {
       try {
-        const balanceResponse = await plaidClient.accountsBalanceGet({
+        // Use transactionsSync for fresher balance data (same approach as Rocket Money)
+        // transactionsSync provides more up-to-date balance data than accountsBalanceGet
+        const syncResponse = await plaidClient.transactionsSync({
           access_token: item.accessToken,
+          options: {
+            include_personal_finance_category: true,
+            count: 1 // We only need account balance, not all transactions
+          }
         });
         
-        // Add institution info to each account
-        const accountsWithInstitution = balanceResponse.data.accounts.map(account => ({
-          ...account,
+        // Extract accounts with fresh balance from sync response
+        const accountsWithInstitution = syncResponse.data.accounts.map(account => ({
+          account_id: account.account_id,
+          name: account.name,
+          official_name: account.official_name,
+          type: account.type,
+          subtype: account.subtype,
+          mask: account.mask,
+          balances: account.balances,
           institution_name: item.institutionName,
           institution_id: item.institutionId,
           item_id: item.itemId
