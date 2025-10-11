@@ -781,7 +781,7 @@ const Transactions = () => {
       Date: t.date,
       Description: t.description,
       Category: t.category,
-      Account: accounts[t.account]?.name || t.account,
+      Account: getAccountDisplayName(accounts[t.account] || {}),
       Amount: t.amount,
       Type: t.type
     }));
@@ -917,7 +917,7 @@ const Transactions = () => {
           ? t.category.join(' ').toLowerCase() 
           : (t.category || '').toLowerCase();
         const amount = (t.amount || 0).toString();
-        const accountName = (accounts[t.account_id]?.name || accounts[t.account]?.name || '').toLowerCase();
+        const accountName = getAccountDisplayName(accounts[t.account_id] || accounts[t.account] || {}).toLowerCase();
         const notes = (t.notes || '').toLowerCase();
         
         return (
@@ -1002,6 +1002,26 @@ const Transactions = () => {
       style: 'currency',
       currency: 'USD'
     }).format(amount);
+  };
+
+  // Helper function to get display name for account (same as Accounts.jsx)
+  const getAccountDisplayName = (account) => {
+    // Priority 1: official_name from Plaid (most reliable)
+    if (account?.official_name && account.official_name.trim()) {
+      return account.official_name;
+    }
+    
+    // Priority 2: name from Plaid
+    if (account?.name && account.name.trim()) {
+      return account.name;
+    }
+    
+    // Priority 3: Construct from institution_name (fallback only)
+    const institutionName = account?.institution_name || account?.institution || '';
+    const accountType = account?.type || 'Account';
+    const mask = account?.mask ? `••${account.mask}` : '';
+    
+    return `${institutionName} ${accountType} ${mask}`.trim() || 'Unknown Account';
   };
 
   const showNotification = (message, type) => {
@@ -1688,11 +1708,11 @@ const Transactions = () => {
                         )}
                         
                         <span className="transaction-account-inline">
-                          | {accounts[transaction.account_id]?.name || 
-                             accounts[transaction.account]?.name || 
-                             transaction.account_id || 
-                             transaction.account || 
-                             'Unknown Account'}
+                          | {getAccountDisplayName(
+                              accounts[transaction.account_id] || 
+                              accounts[transaction.account] || 
+                              {}
+                            )}
                         </span>
                         
                         {transaction.pending && (
