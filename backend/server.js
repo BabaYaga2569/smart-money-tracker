@@ -481,17 +481,24 @@ app.post("/api/plaid/exchange_token", async (req, res) => {
 
     logDiagnostic.info('EXCHANGE_TOKEN', `Updated settings/personal with ${accountsToAdd.length} accounts for frontend display`);
 
+    // Enhance accounts with institution name for frontend display
+    const accountsWithInstitution = balanceResponse.data.accounts.map(account => ({
+      ...account,
+      institution_name: institutionName
+    }));
+
     logDiagnostic.response(endpoint, 200, { 
       success: true, 
       item_id: itemId,
-      account_count: balanceResponse.data.accounts.length 
+      account_count: accountsWithInstitution.length 
     });
 
     // IMPORTANT: Do NOT send access_token to frontend
     res.json({
       success: true,
       item_id: itemId,
-      accounts: balanceResponse.data.accounts,
+      institution_name: institutionName,
+      accounts: accountsWithInstitution,
     });
   } catch (error) {
     logDiagnostic.error('EXCHANGE_TOKEN', 'Failed to exchange token', error);
