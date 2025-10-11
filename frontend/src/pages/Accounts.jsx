@@ -342,7 +342,7 @@ const Accounts = () => {
       const accountToDelete = plaidAccounts.find(acc => acc.account_id === accountKey);
       
       if (accountToDelete) {
-        // For Plaid accounts, delete from both plaid_items collection and settings
+        // For Plaid accounts, delete ONLY this specific account
         const itemId = accountToDelete.item_id;
 
         if (!itemId) {
@@ -352,33 +352,47 @@ const Accounts = () => {
           return;
         }
 
-        // 1. Delete from plaid_items collection
-        const plaidItemsRef = collection(db, 'users', userId, 'plaid_items');
-        const plaidItemsQuery = query(plaidItemsRef, where('itemId', '==', itemId));
-        const plaidItemsSnapshot = await getDocs(plaidItemsQuery);
-        
-        const batch = writeBatch(db);
-        plaidItemsSnapshot.forEach(doc => {
-          batch.delete(doc.ref);
-        });
-        await batch.commit();
-
-        // 2. Remove from settings/personal plaidAccounts array
+        // 1. Load current settings
         const settingsDocRef = doc(db, 'users', userId, 'settings', 'personal');
         const currentDoc = await getDoc(settingsDocRef);
         const currentData = currentDoc.exists() ? currentDoc.data() : {};
         
+        // 2. Remove ONLY this specific account from plaidAccounts array
         const updatedPlaidAccounts = (currentData.plaidAccounts || []).filter(
-          acc => acc.item_id !== itemId
+          acc => acc.account_id !== accountKey
         );
         
+        // 3. Check if any OTHER accounts from this bank still exist
+        const remainingAccountsFromBank = updatedPlaidAccounts.filter(
+          acc => acc.item_id === itemId
+        );
+
+        // 4. Only delete plaid_items if NO accounts remain from this bank
+        if (remainingAccountsFromBank.length === 0) {
+          // All accounts from this bank deleted - remove plaid_items
+          const plaidItemsRef = collection(db, 'users', userId, 'plaid_items');
+          const plaidItemsQuery = query(plaidItemsRef, where('itemId', '==', itemId));
+          const plaidItemsSnapshot = await getDocs(plaidItemsQuery);
+          
+          const batch = writeBatch(db);
+          plaidItemsSnapshot.forEach(doc => {
+            batch.delete(doc.ref);
+          });
+          await batch.commit();
+          
+          console.log(`Deleted plaid_items for ${itemId} (no accounts remaining)`);
+        } else {
+          console.log(`Kept plaid_items for ${itemId} (${remainingAccountsFromBank.length} accounts remaining)`);
+        }
+
+        // 5. Update plaidAccounts array in settings/personal
         await updateDoc(settingsDocRef, {
           ...currentData,
           plaidAccounts: updatedPlaidAccounts,
           lastUpdated: new Date().toISOString()
         });
         
-        // 3. Update local state
+        // 6. Update local state
         setPlaidAccounts(updatedPlaidAccounts);
         PlaidConnectionManager.setPlaidAccounts(updatedPlaidAccounts);
         
@@ -386,7 +400,7 @@ const Accounts = () => {
         const plaidTotal = updatedPlaidAccounts.reduce((sum, acc) => sum + parseFloat(acc.balance || 0), 0);
         setTotalBalance(plaidTotal);
         
-        showNotification('Bank disconnected successfully', 'success');
+        showNotification('Account deleted successfully', 'success');
       } else {
         // For manual accounts, remove from bankAccounts object in settings
         const updatedAccounts = { ...accounts };
