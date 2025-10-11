@@ -497,13 +497,25 @@ app.post("/api/plaid/get_balances", async (req, res) => {
     let allAccounts = [];
     for (const item of items) {
       try {
-        const balanceResponse = await plaidClient.accountsBalanceGet({
+        // Use transactionsSync for fresher balance data (same approach as Rocket Money)
+        // transactionsSync provides more up-to-date balance data than accountsBalanceGet
+        const syncResponse = await plaidClient.transactionsSync({
           access_token: item.accessToken,
+          options: {
+            include_personal_finance_category: true,
+            count: 1 // We only need account balance, not all transactions
+          }
         });
         
-        // Add institution info to each account
-        const accountsWithInstitution = balanceResponse.data.accounts.map(account => ({
-          ...account,
+        // Extract accounts with fresh balance from sync response
+        const accountsWithInstitution = syncResponse.data.accounts.map(account => ({
+          account_id: account.account_id,
+          name: account.name,
+          official_name: account.official_name,
+          type: account.type,
+          subtype: account.subtype,
+          mask: account.mask,
+          balances: account.balances,
           institution_name: item.institutionName,
           institution_id: item.institutionId,
           item_id: item.itemId
@@ -566,17 +578,30 @@ app.get("/api/accounts", async (req, res) => {
     let allAccounts = [];
     for (const item of items) {
       try {
-        const balanceResponse = await plaidClient.accountsBalanceGet({
-  access_token: item.accessToken,
-  options: {
-    // Force fresh balance if data is older than 5 minutes
-    min_last_updated_datetime: new Date(Date.now() - 5 * 60 * 1000).toISOString()
-  }
-});
+        // Use transactionsSync for fresher balance data (same approach as Rocket Money)
+        // Why transactionsSync instead of accountsBalanceGet:
+        // - Plaid prioritizes transaction sync endpoints (called more frequently by apps)
+        // - Transaction sync has less aggressive caching (updates more often)
+        // - Returns both transactions AND current balance in one call
+        // - Balance data comes from transaction stream (more up-to-date)
+        const syncResponse = await plaidClient.transactionsSync({
+          access_token: item.accessToken,
+          options: {
+            include_personal_finance_category: true,
+            count: 1 // We only need account balance, not all transactions
+          }
+        });
         
-        // Add institution info to each account
-        const accountsWithInstitution = balanceResponse.data.accounts.map(account => ({
-          ...account,
+        // Extract accounts with fresh balance from sync response
+        // transactionsSync returns more up-to-date balance data than accountsBalanceGet
+        const accountsWithInstitution = syncResponse.data.accounts.map(account => ({
+          account_id: account.account_id,
+          name: account.name,
+          official_name: account.official_name,
+          type: account.type,
+          subtype: account.subtype,
+          mask: account.mask,
+          balances: account.balances, // This balance is FRESH from transaction sync!
           institution_name: item.institutionName,
           institution_id: item.institutionId,
           item_id: item.itemId
