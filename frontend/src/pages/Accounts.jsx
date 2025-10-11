@@ -495,8 +495,8 @@ const Accounts = () => {
           lastUpdated: new Date().toISOString(),
         });
 
-        // Update state
-        const updatedPlaidAccounts = [...plaidAccounts, ...formattedPlaidAccounts];
+        // Update state (use filteredAccounts to avoid duplicates in state as well)
+        const updatedPlaidAccounts = [...filteredAccounts, ...formattedPlaidAccounts];
         setPlaidAccounts(updatedPlaidAccounts);
         PlaidConnectionManager.setPlaidAccounts(updatedPlaidAccounts);
 
