@@ -798,7 +798,7 @@ const Accounts = () => {
           </span>
         )}
         {isDataStale(lastRefresh) && (
-          <span className="stale-warning" title="Data may be outdated - refreshing automatically">
+          <span className="stale-warning" title="Data may be outdated - click refresh button to update">
             ⚠️ Data may be outdated
           </span>
         )}
