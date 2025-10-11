@@ -147,63 +147,141 @@ const Accounts = () => {
     
     try {
       setIsRefreshing(true);
-      const settingsDocRef = doc(db, 'users', currentUser.uid, 'settings', 'personal');
-      const settingsDocSnap = await getDoc(settingsDocRef);
       
-      if (settingsDocSnap.exists()) {
-        const data = settingsDocSnap.data();
-        const bankAccounts = data.bankAccounts || {};
-        const plaidAccountsList = data.plaidAccounts || [];
+      // Call backend API to get FRESH balances (uses transactionsSync from PR #130)
+      const apiUrl = import.meta.env.VITE_API_URL || 'https://smart-money-tracker-09ks.onrender.com';
+      const response = await fetch(`${apiUrl}/api/accounts?userId=${currentUser.uid}&_t=${Date.now()}`);
+      const data = await response.json();
+
+      if (data.success && data.accounts && data.accounts.length > 0) {
+        // Format backend accounts for frontend display
+        const formattedPlaidAccounts = data.accounts.map(account => ({
+          account_id: account.account_id,
+          name: account.name,
+          official_name: account.official_name,
+          type: account.subtype || account.type,
+          balance: account.balances.current.toString(),
+          available: account.balances.available?.toString() || '0',
+          mask: account.mask,
+          isPlaid: true,
+          item_id: account.item_id,
+          institution_name: account.institution_name,
+          institution_id: account.institution_id
+        }));
         
-        setAccounts(bankAccounts);
-        setPlaidAccounts(plaidAccountsList);
+        setPlaidAccounts(formattedPlaidAccounts);
         
         // Update PlaidConnectionManager with account info
-        PlaidConnectionManager.setPlaidAccounts(plaidAccountsList);
+        PlaidConnectionManager.setPlaidAccounts(formattedPlaidAccounts);
         
-        // If Plaid accounts exist, only use their balances (fully automated flow)
-        // Otherwise, use manual account balances
-        if (plaidAccountsList.length > 0) {
-          const plaidTotal = plaidAccountsList.reduce((sum, account) => {
-            return sum + (parseFloat(account.balance) || 0);
-          }, 0);
-          setTotalBalance(plaidTotal);
+        // Calculate fresh total from backend data
+        const plaidTotal = formattedPlaidAccounts.reduce((sum, account) => {
+          return sum + (parseFloat(account.balance) || 0);
+        }, 0);
+        setTotalBalance(plaidTotal);
+        
+        // Calculate projected balance
+        const projectedTotal = calculateTotalProjectedBalance(formattedPlaidAccounts, transactions);
+        setTotalProjectedBalance(projectedTotal);
+        
+        console.log('✅ Loaded fresh balances from backend API:', formattedPlaidAccounts.length, 'accounts');
+      } else {
+        // Fallback to Firebase if API fails or returns no accounts
+        console.warn('⚠️ Backend returned no accounts, falling back to Firebase');
+        const settingsDocRef = doc(db, 'users', currentUser.uid, 'settings', 'personal');
+        const settingsDocSnap = await getDoc(settingsDocRef);
+        
+        if (settingsDocSnap.exists()) {
+          const firebaseData = settingsDocSnap.data();
+          const bankAccounts = firebaseData.bankAccounts || {};
+          const plaidAccountsList = firebaseData.plaidAccounts || [];
           
-          // Calculate projected balance
-          const projectedTotal = calculateTotalProjectedBalance(plaidAccountsList, transactions);
-          setTotalProjectedBalance(projectedTotal);
-        } else {
-          const manualTotal = Object.values(bankAccounts).reduce((sum, account) => {
-            if (!account.isPlaid) {
+          setAccounts(bankAccounts);
+          setPlaidAccounts(plaidAccountsList);
+          
+          // Update PlaidConnectionManager with account info
+          PlaidConnectionManager.setPlaidAccounts(plaidAccountsList);
+          
+          // If Plaid accounts exist, only use their balances (fully automated flow)
+          // Otherwise, use manual account balances
+          if (plaidAccountsList.length > 0) {
+            const plaidTotal = plaidAccountsList.reduce((sum, account) => {
               return sum + (parseFloat(account.balance) || 0);
-            }
-            return sum;
-          }, 0);
-          setTotalBalance(manualTotal);
-          
-          // Calculate projected balance for manual accounts
-          const projectedTotal = calculateTotalProjectedBalance(bankAccounts, transactions);
-          setTotalProjectedBalance(projectedTotal);
+            }, 0);
+            setTotalBalance(plaidTotal);
+            
+            // Calculate projected balance
+            const projectedTotal = calculateTotalProjectedBalance(plaidAccountsList, transactions);
+            setTotalProjectedBalance(projectedTotal);
+          } else {
+            const manualTotal = Object.values(bankAccounts).reduce((sum, account) => {
+              if (!account.isPlaid) {
+                return sum + (parseFloat(account.balance) || 0);
+              }
+              return sum;
+            }, 0);
+            setTotalBalance(manualTotal);
+            
+            // Calculate projected balance for manual accounts
+            const projectedTotal = calculateTotalProjectedBalance(bankAccounts, transactions);
+            setTotalProjectedBalance(projectedTotal);
+          }
         }
       }
     } catch (error) {
       console.error('Error loading accounts:', error);
-      showNotification('Firebase is offline, using demo data', 'error');
       
-      // Use demo data when Firebase is offline
-      const demoAccounts = {
-        bofa: { name: "Bank of America", type: "checking", balance: "1127.68" },
-        sofi: { name: "SoFi", type: "savings", balance: "234.29" },
-        capone: { name: "Capital One", type: "checking", balance: "24.74" },
-        usaa: { name: "USAA", type: "checking", balance: "143.36" }
-      };
-      
-      setAccounts(demoAccounts);
-      const total = Object.values(demoAccounts).reduce((sum, account) => {
-        return sum + (parseFloat(account.balance) || 0);
-      }, 0);
-      setTotalBalance(total);
-      setTotalProjectedBalance(total); // Same as live when no transactions
+      // Fallback to Firebase on error
+      try {
+        const settingsDocRef = doc(db, 'users', currentUser.uid, 'settings', 'personal');
+        const settingsDocSnap = await getDoc(settingsDocRef);
+        
+        if (settingsDocSnap.exists()) {
+          const data = settingsDocSnap.data();
+          const bankAccounts = data.bankAccounts || {};
+          const plaidAccountsList = data.plaidAccounts || [];
+          
+          setAccounts(bankAccounts);
+          setPlaidAccounts(plaidAccountsList);
+          
+          // Update PlaidConnectionManager with account info
+          PlaidConnectionManager.setPlaidAccounts(plaidAccountsList);
+          
+          if (plaidAccountsList.length > 0) {
+            const plaidTotal = plaidAccountsList.reduce((sum, account) => {
+              return sum + (parseFloat(account.balance) || 0);
+            }, 0);
+            setTotalBalance(plaidTotal);
+          } else {
+            const manualTotal = Object.values(bankAccounts).reduce((sum, account) => {
+              if (!account.isPlaid) {
+                return sum + (parseFloat(account.balance) || 0);
+              }
+              return sum;
+            }, 0);
+            setTotalBalance(manualTotal);
+          }
+        } else {
+          // Use demo data when both API and Firebase fail
+          showNotification('Unable to load accounts, using demo data', 'error');
+          const demoAccounts = {
+            bofa: { name: "Bank of America", type: "checking", balance: "1127.68" },
+            sofi: { name: "SoFi", type: "savings", balance: "234.29" },
+            capone: { name: "Capital One", type: "checking", balance: "24.74" },
+            usaa: { name: "USAA", type: "checking", balance: "143.36" }
+          };
+          
+          setAccounts(demoAccounts);
+          const total = Object.values(demoAccounts).reduce((sum, account) => {
+            return sum + (parseFloat(account.balance) || 0);
+          }, 0);
+          setTotalBalance(total);
+          setTotalProjectedBalance(total); // Same as live when no transactions
+        }
+      } catch (fallbackError) {
+        console.error('Fallback to Firebase also failed:', fallbackError);
+        showNotification('Unable to load accounts', 'error');
+      }
     } finally {
       setLoading(false);
       setIsRefreshing(false);
