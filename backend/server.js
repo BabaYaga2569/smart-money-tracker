@@ -443,6 +443,44 @@ app.post("/api/plaid/exchange_token", async (req, res) => {
       access_token: accessToken,
     });
 
+    // ALSO update settings/personal with display-friendly account data
+    logDiagnostic.info('EXCHANGE_TOKEN', 'Updating settings/personal with account display data');
+    const settingsRef = db.collection('users').doc(userId)
+      .collection('settings').doc('personal');
+
+    // Get current settings to preserve other data
+    const settingsDoc = await settingsRef.get();
+    const currentSettings = settingsDoc.exists ? settingsDoc.data() : {};
+    const existingPlaidAccounts = currentSettings.plaidAccounts || [];
+
+    // Format accounts for frontend display
+    const accountsToAdd = balanceResponse.data.accounts.map(account => ({
+      account_id: account.account_id,
+      name: account.name,
+      official_name: account.official_name,
+      mask: account.mask,
+      type: account.type,
+      subtype: account.subtype,
+      balance: account.balances.current || account.balances.available || 0,
+      institution_name: institutionName,
+      item_id: itemId
+    }));
+
+    // Remove any existing accounts for this item_id (in case of reconnection)
+    const filteredAccounts = existingPlaidAccounts.filter(acc => acc.item_id !== itemId);
+
+    // Add new accounts
+    const updatedPlaidAccounts = [...filteredAccounts, ...accountsToAdd];
+
+    // Update settings/personal
+    await settingsRef.set({
+      ...currentSettings,
+      plaidAccounts: updatedPlaidAccounts,
+      lastUpdated: admin.firestore.FieldValue.serverTimestamp()
+    }, { merge: true });
+
+    logDiagnostic.info('EXCHANGE_TOKEN', `Updated settings/personal with ${accountsToAdd.length} accounts for frontend display`);
+
     logDiagnostic.response(endpoint, 200, { 
       success: true, 
       item_id: itemId,
