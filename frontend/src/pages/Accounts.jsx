@@ -454,6 +454,7 @@ const Accounts = () => {
           balance: account?.balances?.current?.toString() || '0',
           available: account?.balances?.available?.toString() || '0',
           mask: account?.mask || '',
+          institution_name: account?.institution_name || data?.institution_name || '',
           isPlaid: true,
           item_id: data.item_id || '',
         }));
@@ -463,14 +464,18 @@ const Accounts = () => {
         const currentDoc = await getDoc(settingsDocRef);
         const currentData = currentDoc.exists() ? currentDoc.data() : {};
 
+        // Remove any existing accounts for this item_id to avoid duplicates (backend also does this, but this ensures consistency)
+        const existingAccounts = currentData.plaidAccounts || [];
+        const filteredAccounts = existingAccounts.filter(acc => acc.item_id !== data.item_id);
+
         await updateDoc(settingsDocRef, {
           ...currentData,
-          plaidAccounts: [...(currentData.plaidAccounts || []), ...formattedPlaidAccounts],
+          plaidAccounts: [...filteredAccounts, ...formattedPlaidAccounts],
           lastUpdated: new Date().toISOString(),
         });
 
-        // Update state
-        const updatedPlaidAccounts = [...plaidAccounts, ...formattedPlaidAccounts];
+        // Update state (use filteredAccounts to avoid duplicates in state as well)
+        const updatedPlaidAccounts = [...filteredAccounts, ...formattedPlaidAccounts];
         setPlaidAccounts(updatedPlaidAccounts);
         PlaidConnectionManager.setPlaidAccounts(updatedPlaidAccounts);
 
