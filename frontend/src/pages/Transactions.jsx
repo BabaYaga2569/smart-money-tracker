@@ -158,6 +158,27 @@ const Transactions = () => {
     }
   }, [currentUser]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  // Expose state for debugging
+  useEffect(() => {
+    window.__DEBUG_STATE__ = {
+      transactions,
+      filteredTransactions,
+      accounts,
+      filters,
+      analytics,
+      plaidStatus,
+      hasPlaidAccounts,
+      loading,
+      syncingPlaid,
+      autoSyncing,
+      forceRefreshing
+    };
+
+    return () => {
+      delete window.__DEBUG_STATE__;
+    };
+  }, [transactions, filteredTransactions, accounts, filters, analytics, plaidStatus, hasPlaidAccounts, loading, syncingPlaid, autoSyncing, forceRefreshing]);
+
   const loadInitialData = async () => {
     try {
       setLoading(true);
