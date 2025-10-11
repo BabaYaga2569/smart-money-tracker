@@ -567,8 +567,12 @@ app.get("/api/accounts", async (req, res) => {
     for (const item of items) {
       try {
         const balanceResponse = await plaidClient.accountsBalanceGet({
-          access_token: item.accessToken,
-        });
+  access_token: item.accessToken,
+  options: {
+    // Force fresh balance if data is older than 5 minutes
+    min_last_updated_datetime: new Date(Date.now() - 5 * 60 * 1000).toISOString()
+  }
+});
         
         // Add institution info to each account
         const accountsWithInstitution = balanceResponse.data.accounts.map(account => ({
