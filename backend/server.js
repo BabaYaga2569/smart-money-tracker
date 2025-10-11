@@ -1279,17 +1279,108 @@ app.post("/api/plaid/webhook", async (req, res) => {
             }
           });
           
-          // Update cursor for next sync
+          logDiagnostic.info('WEBHOOK', 'Received transaction data from Plaid', {
+            accounts: syncResponse.data.accounts.length,
+            added: syncResponse.data.added.length,
+            modified: syncResponse.data.modified.length,
+            removed: syncResponse.data.removed.length
+          });
+          
+          // Ensure user document exists before writing transactions
+          const userDocRef = db.collection('users').doc(userId);
+          const userDoc = await userDocRef.get();
+          
+          if (!userDoc.exists) {
+            logDiagnostic.info('WEBHOOK', `Initializing user document for ${userId}`);
+            await userDocRef.set({
+              createdAt: admin.firestore.FieldValue.serverTimestamp(),
+              lastUpdated: admin.firestore.FieldValue.serverTimestamp()
+            }, { merge: true });
+          }
+          
+          // Save transactions to Firebase using batched writes
+          const allTransactions = [
+            ...syncResponse.data.added,
+            ...syncResponse.data.modified
+          ];
+          
+          if (allTransactions.length > 0) {
+            let batch = db.batch();
+            let batchCount = 0;
+            let totalSaved = 0;
+            
+            for (const transaction of allTransactions) {
+              const transactionRef = userDocRef
+                .collection('transactions')
+                .doc(transaction.transaction_id);
+              
+              batch.set(transactionRef, {
+                ...transaction,
+                item_id: item_id,
+                institutionName: itemData.institutionName,
+                synced_at: admin.firestore.FieldValue.serverTimestamp(),
+                webhook_code: webhook_code
+              }, { merge: true });
+              
+              batchCount++;
+              
+              // Firebase batch limit is 500 operations
+              if (batchCount >= 500) {
+                await batch.commit();
+                totalSaved += batchCount;
+                logDiagnostic.info('WEBHOOK', `Committed batch of ${batchCount} transactions`);
+                batch = db.batch();
+                batchCount = 0;
+              }
+            }
+            
+            // Commit remaining transactions
+            if (batchCount > 0) {
+              await batch.commit();
+              totalSaved += batchCount;
+            }
+            
+            logDiagnostic.info('WEBHOOK', `Successfully saved ${totalSaved} transactions to Firebase`);
+          }
+          
+          // Handle removed transactions
+          if (syncResponse.data.removed.length > 0) {
+            let batch = db.batch();
+            let batchCount = 0;
+            
+            for (const removedTx of syncResponse.data.removed) {
+              const transactionRef = userDocRef
+                .collection('transactions')
+                .doc(removedTx.transaction_id);
+              
+              batch.delete(transactionRef);
+              batchCount++;
+              
+              if (batchCount >= 500) {
+                await batch.commit();
+                logDiagnostic.info('WEBHOOK', `Deleted batch of ${batchCount} transactions`);
+                batch = db.batch();
+                batchCount = 0;
+              }
+            }
+            
+            if (batchCount > 0) {
+              await batch.commit();
+            }
+            
+            logDiagnostic.info('WEBHOOK', `Removed ${syncResponse.data.removed.length} transactions from Firebase`);
+          }
+          
+          // Update cursor and sync timestamp
           await itemDoc.ref.update({
             cursor: syncResponse.data.next_cursor,
             lastWebhookUpdate: admin.firestore.FieldValue.serverTimestamp()
           });
           
           logDiagnostic.info('WEBHOOK', 'Successfully processed webhook update', {
-            accounts: syncResponse.data.accounts.length,
-            added: syncResponse.data.added.length,
-            modified: syncResponse.data.modified.length,
-            removed: syncResponse.data.removed.length
+            saved: allTransactions.length,
+            removed: syncResponse.data.removed.length,
+            cursor_updated: true
           });
         } else {
           logDiagnostic.info('WEBHOOK', 'No user found for item_id', { item_id });
@@ -1324,7 +1415,18 @@ app.post("/api/plaid/webhook", async (req, res) => {
     res.json({ success: true });
     
   } catch (error) {
-    logDiagnostic.error('WEBHOOK', 'Error processing webhook', error);
+    // Enhanced error logging with specific handling for FAILED_PRECONDITION
+    if (error.code === 9) {
+      logDiagnostic.error('WEBHOOK', 'FAILED_PRECONDITION error - Document structure may not exist', {
+        message: error.message,
+        code: error.code,
+        item_id: req.body.item_id,
+        webhook_type: req.body.webhook_type,
+        webhook_code: req.body.webhook_code
+      });
+    } else {
+      logDiagnostic.error('WEBHOOK', 'Error processing webhook', error);
+    }
     
     // Still return 200 to prevent Plaid from retrying
     // (we don't want failed webhooks to be retried repeatedly)
