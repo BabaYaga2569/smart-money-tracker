@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { doc, getDoc, collection, addDoc, deleteDoc, query, orderBy, limit, getDocs, writeBatch } from 'firebase/firestore';
+import { doc, getDoc, collection, addDoc, deleteDoc, query, orderBy, limit, getDocs, writeBatch, onSnapshot } from 'firebase/firestore';
 import { db } from '../firebase';
 import { formatDateForDisplay, formatDateForInput } from '../utils/DateUtils';
 import { CATEGORY_KEYWORDS } from '../constants/categories';
@@ -158,6 +158,38 @@ const Transactions = () => {
     }
   }, [currentUser]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  // Real-time transactions listener
+  useEffect(() => {
+    if (!currentUser) return;
+    
+    console.log('📡 [Transactions] Setting up real-time listener...');
+    
+    const transactionsRef = collection(db, 'users', currentUser.uid, 'transactions');
+    const q = query(transactionsRef, orderBy('timestamp', 'desc'), limit(1000));
+    
+    const unsubscribe = onSnapshot(
+      q,
+      (snapshot) => {
+        const txs = snapshot.docs.map(doc => ({
+          id: doc.id,
+          ...doc.data()
+        }));
+        
+        console.log('✅ [Transactions] Real-time update:', txs.length, 'transactions');
+        setTransactions(txs);
+      },
+      (error) => {
+        console.error('❌ [Transactions] Listener error:', error);
+        showNotification('Error loading transactions', 'error');
+      }
+    );
+
+    return () => {
+      console.log('🔌 [Transactions] Cleaning up listener');
+      unsubscribe();
+    };
+  }, [currentUser]);
+
   // Expose state for debugging
   useEffect(() => {
     window.__DEBUG_STATE__ = {
@@ -182,7 +214,7 @@ const Transactions = () => {
   const loadInitialData = async () => {
     try {
       setLoading(true);
-      await Promise.all([loadAccounts(), loadTransactions()]);
+      await loadAccounts();
     } catch (error) {
       console.error('Error loading initial data:', error);
       showNotification('Error loading data', 'error');
@@ -376,46 +408,7 @@ const Transactions = () => {
     setAccounts(demoAccounts);
   };
 
-  const loadTransactions = async () => {
-    try {
-      const transactionsRef = collection(db, 'users', currentUser.uid, 'transactions');
-      const q = query(transactionsRef, orderBy('timestamp', 'desc'), limit(1000));
-      const querySnapshot = await getDocs(q);
-      
-      const transactionsList = [];
-      querySnapshot.forEach((doc) => {
-        transactionsList.push({ id: doc.id, ...doc.data() });
-      });
-      
-      setTransactions(transactionsList);
-    } catch (error) {
-      console.error('Error loading transactions:', error);
-      // For demo purposes, set some sample transactions
-      const sampleTransactions = [
-        {
-          id: 'sample1',
-          amount: -45.67,
-          description: 'Grocery Shopping at Walmart',
-          category: 'Food & Dining',
-          account: Object.keys(accounts)[0] || 'bofa',
-          date: formatDateForInput(new Date()),
-          timestamp: Date.now(),
-          type: 'expense'
-        },
-        {
-          id: 'sample2',
-          amount: 2500.00,
-          description: 'Salary Deposit',
-          category: 'Income',
-          account: Object.keys(accounts)[0] || 'bofa',
-          date: formatDateForInput(new Date(Date.now() - 86400000)),
-          timestamp: Date.now() - 86400000,
-          type: 'income'
-        }
-      ];
-      setTransactions(sampleTransactions);
-    }
-  };
+
 
   const syncPlaidTransactions = async () => {
     try {
@@ -463,8 +456,7 @@ const Transactions = () => {
         throw new Error(data.error || 'Failed to sync transactions');
       }
 
-      // Reload transactions from Firebase
-      await loadTransactions();
+      // Real-time listener will auto-update, no manual reload needed
       
       // Update last sync timestamp
       const lastSyncKey = `plaidLastSync_${currentUser.uid}`;
@@ -938,11 +930,7 @@ const Transactions = () => {
         console.log('No manual transactions or error:', e.message);
       }
       
-      // Clear local state
-      setTransactions([]);
-      
-      // Refresh from Firebase to ensure sync
-      await loadTransactions();
+      // Real-time listener will auto-update, no manual reload needed
       
       // Show success message
       alert(`✅ Success! Deleted ${totalDeleted} transaction(s).`);
