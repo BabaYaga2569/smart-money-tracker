@@ -562,6 +562,37 @@ const Transactions = () => {
     }
   };
 
+  const handleResetCursors = async () => {
+    if (!window.confirm('Reset sync cursors? This will force a full re-sync of all transactions on next sync.')) {
+      return;
+    }
+    
+    try {
+      setSaving(true);
+      console.log('🔄 [ResetCursors] Resetting Plaid sync cursors...');
+      
+      const response = await fetch(`${import.meta.env.VITE_BACKEND_URL}/api/plaid/reset_cursors`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ userId: currentUser.uid })
+      });
+      
+      const data = await response.json();
+      
+      if (data.success) {
+        console.log('✅ [ResetCursors] Success:', data);
+        showNotification(`${data.message}`, 'success');
+      } else {
+        throw new Error(data.error || 'Failed to reset cursors');
+      }
+    } catch (error) {
+      console.error('❌ [ResetCursors] Error:', error);
+      showNotification(`Failed to reset cursors: ${error.message}`, 'error');
+    } finally {
+      setSaving(false);
+    }
+  };
+
   const autoCategorizTransaction = (description) => {
     if (!description) return '';
     
@@ -973,6 +1004,26 @@ const Transactions = () => {
         console.log('No manual transactions or error:', e.message);
       }
       
+      // After deleting all transactions, reset Plaid cursors to force full re-sync
+      console.log('🔄 [DeleteAll] Resetting Plaid sync cursors...');
+      try {
+        const resetResponse = await fetch(`${import.meta.env.VITE_BACKEND_URL}/api/plaid/reset_cursors`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ userId: currentUser.uid })
+        });
+        
+        const resetData = await resetResponse.json();
+        if (resetData.success) {
+          console.log('✅ [DeleteAll] Cursors reset successfully:', resetData);
+        } else {
+          console.warn('⚠️ [DeleteAll] Failed to reset cursors:', resetData.error);
+        }
+      } catch (error) {
+        console.error('❌ [DeleteAll] Error resetting cursors:', error);
+        // Don't fail the whole operation if cursor reset fails
+      }
+      
       // Real-time listener will auto-update, no manual reload needed
       
       // Show success message
@@ -1040,7 +1091,31 @@ const Transactions = () => {
     }
     
     if (filters.account) {
-      filtered = filtered.filter(t => t.account === filters.account);
+      filtered = filtered.filter(t => {
+        // Match by account_id (primary key)
+        if (t.account_id === filters.account || t.account === filters.account) {
+          return true;
+        }
+        
+        // Fallback: Match by institution name
+        const txAccountObj = currentAccounts[t.account_id] || currentAccounts[t.account];
+        const selectedAccountObj = currentAccounts[filters.account];
+        
+        if (txAccountObj && selectedAccountObj) {
+          // Match if same institution
+          if (txAccountObj.institution_name === selectedAccountObj.institution_name) {
+            return true;
+          }
+          
+          // Match if same account mask (last 4 digits)
+          if (txAccountObj.mask && selectedAccountObj.mask && 
+              txAccountObj.mask === selectedAccountObj.mask) {
+            return true;
+          }
+        }
+        
+        return false;
+      });
     }
     
     if (filters.type) {
@@ -1459,6 +1534,18 @@ const Transactions = () => {
             title="Tell Plaid to check your bank RIGHT NOW for new transactions"
           >
             {forceRefreshing ? '⏳ Checking Bank...' : '🔄 Force Bank Check'}
+          </button>
+
+          <button
+            className="btn-secondary"
+            onClick={handleResetCursors}
+            disabled={saving}
+            style={{ 
+              background: '#9c27b0',
+              marginLeft: '10px'
+            }}
+          >
+            🔄 Reset Sync Cursors
           </button>
           
           <button 

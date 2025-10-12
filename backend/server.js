@@ -1684,6 +1684,54 @@ app.post("/api/plaid/health_check", async (req, res) => {
   }
 });
 
+// Reset Plaid sync cursors (force full re-sync on next sync)
+app.post('/api/plaid/reset_cursors', async (req, res) => {
+  try {
+    const { userId } = req.body;
+    
+    if (!userId) {
+      return res.status(400).json({ error: 'userId is required' });
+    }
+    
+    logDiagnostic.info('RESET_CURSORS', `Resetting sync cursors for user: ${userId}`);
+    
+    // Get all plaid_items for user
+    const plaidItemsRef = db.collection('users').doc(userId).collection('plaid_items');
+    const snapshot = await plaidItemsRef.get();
+    
+    if (snapshot.empty) {
+      logDiagnostic.info('RESET_CURSORS', 'No plaid_items found for user');
+      return res.json({ success: true, reset_count: 0, message: 'No items to reset' });
+    }
+    
+    // Reset cursor field for each item
+    const batch = db.batch();
+    let resetCount = 0;
+    
+    snapshot.docs.forEach(doc => {
+      batch.update(doc.ref, { 
+        cursor: admin.firestore.FieldValue.delete() 
+      });
+      resetCount++;
+      logDiagnostic.info('RESET_CURSORS', `Reset cursor for item: ${doc.id}`);
+    });
+    
+    await batch.commit();
+    
+    logDiagnostic.info('RESET_CURSORS', `Successfully reset ${resetCount} cursors`);
+    
+    res.json({ 
+      success: true, 
+      reset_count: resetCount,
+      message: `Reset ${resetCount} sync cursor(s). Next sync will fetch all transactions.`
+    });
+    
+  } catch (error) {
+    logDiagnostic.error('RESET_CURSORS', 'Failed to reset cursors', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
 // ============================================================================
 // UPDATE TRANSACTION ENDPOINT
 // ============================================================================
