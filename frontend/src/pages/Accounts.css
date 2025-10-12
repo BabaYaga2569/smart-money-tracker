@@ -199,6 +199,16 @@
   box-shadow: 0 4px 20px rgba(0, 255, 136, 0.2);
 }
 
+/* Clickable card styling */
+.account-card.clickable-card {
+  transition: all 0.3s ease;
+}
+
+.account-card.clickable-card:hover {
+  transform: translateY(-4px);
+  box-shadow: 0 6px 24px rgba(0, 255, 136, 0.3);
+}
+
 .plaid-badge {
   display: inline-block;
   background: #00ff88;
