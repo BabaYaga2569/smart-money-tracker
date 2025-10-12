@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { doc, getDoc, updateDoc, collection, query, orderBy, limit, getDocs, deleteDoc, where, writeBatch } from 'firebase/firestore';
+import { doc, getDoc, updateDoc, collection, query, orderBy, limit, getDocs, deleteDoc, where, writeBatch, onSnapshot } from 'firebase/firestore';
 import { db } from '../firebase';
 import PlaidLink from '../components/PlaidLink';
 import PlaidErrorModal from '../components/PlaidErrorModal';
@@ -76,6 +76,38 @@ const Accounts = () => {
     }
   }, [transactions, plaidAccounts, accounts]);
 
+  // Real-time transactions listener
+  useEffect(() => {
+    if (!currentUser) return;
+    
+    console.log('📡 [Accounts] Setting up real-time listener...');
+    
+    const transactionsRef = collection(db, 'users', currentUser.uid, 'transactions');
+    const q = query(transactionsRef, orderBy('timestamp', 'desc'), limit(100));
+    
+    const unsubscribe = onSnapshot(
+      q,
+      (snapshot) => {
+        const txs = snapshot.docs.map(doc => ({
+          id: doc.id,
+          ...doc.data()
+        }));
+        
+        console.log('✅ [Accounts] Real-time update:', txs.length, 'transactions');
+        setTransactions(txs);
+      },
+      (error) => {
+        console.error('❌ [Accounts] Listener error:', error);
+        setTransactions([]);
+      }
+    );
+
+    return () => {
+      console.log('🔌 [Accounts] Cleaning up listener');
+      unsubscribe();
+    };
+  }, [currentUser]);
+
   const checkPlaidConnection = async () => {
     try {
       const status = await PlaidConnectionManager.checkConnection();
@@ -96,25 +128,8 @@ const Accounts = () => {
   };
 
   const loadAccountsAndTransactions = async () => {
-    await Promise.all([loadAccounts(), loadTransactions()]);
-  };
-
-  const loadTransactions = async () => {
-    try {
-      const transactionsRef = collection(db, 'users', currentUser.uid, 'transactions');
-      const q = query(transactionsRef, orderBy('timestamp', 'desc'), limit(100));
-      const querySnapshot = await getDocs(q);
-      
-      const transactionsList = [];
-      querySnapshot.forEach((doc) => {
-        transactionsList.push({ id: doc.id, ...doc.data() });
-      });
-      
-      setTransactions(transactionsList);
-    } catch (error) {
-      console.error('Error loading transactions:', error);
-      setTransactions([]);
-    }
+    // Real-time listener handles transactions, just load accounts
+    await loadAccounts();
   };
 
   const loadAccounts = async () => {
