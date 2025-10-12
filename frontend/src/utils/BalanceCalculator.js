@@ -1,9 +1,19 @@
 /**
  * BalanceCalculator.js
+ * Version: 1.0.1 - Force deploy for PR #157 projected balance fix
+ * Last updated: 2025-10-12 16:38:03 UTC
+ * 
  * Utility functions for calculating Live and Projected balances
  * 
  * Live Balance: Current balance from Plaid (read-only from bank)
  * Projected Balance: Live balance adjusted for pending transactions
+ * 
+ * CHANGELOG:
+ * - 1.0.1 (2025-10-12): Fixed pending transaction detection to be inclusive
+ *   - Now recognizes pending: true (boolean), pending: 'true' (string), 
+ *     status: 'pending', and other indicators
+ *   - Fixes bug where some pending transactions (like Starbucks) were missed
+ * - 1.0.0: Initial version
  */
 
 /**
