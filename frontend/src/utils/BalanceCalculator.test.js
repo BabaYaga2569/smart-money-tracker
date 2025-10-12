@@ -136,6 +136,97 @@ const runBalanceCalculatorTests = () => {
         console.log('✅ Projected equals live when no pending transactions');
     });
 
+    // Test 5: Pending as string 'true' should be counted
+    test('Pending field as string "true" is recognized', () => {
+        const accountId = 'bofa_checking_123';
+        const liveBalance = 2000.00;
+        
+        const transactions = [
+            {
+                transaction_id: 'tx_1',
+                account_id: accountId,
+                amount: -12.03,
+                pending: 'true',  // String instead of boolean
+                name: 'Starbucks'
+            }
+        ];
+        
+        const projectedBalance = calculateProjectedBalance(accountId, liveBalance, transactions);
+        
+        // Expected: $2000 + (-$12.03) = $1987.97
+        const expectedBalance = 1987.97;
+        
+        assert(
+            Math.abs(projectedBalance - expectedBalance) < 0.01,
+            `Projected balance should be ${expectedBalance}, got ${projectedBalance}`
+        );
+        
+        console.log('✅ Pending as string "true" correctly recognized');
+    });
+
+    // Test 6: Status field 'pending' should be counted
+    test('Status field "pending" is recognized', () => {
+        const accountId = 'bofa_checking_123';
+        const liveBalance = 2000.00;
+        
+        const transactions = [
+            {
+                transaction_id: 'tx_1',
+                account_id: accountId,
+                amount: -12.03,
+                status: 'pending',  // Using status field instead
+                name: 'Starbucks'
+            }
+        ];
+        
+        const projectedBalance = calculateProjectedBalance(accountId, liveBalance, transactions);
+        
+        // Expected: $2000 + (-$12.03) = $1987.97
+        const expectedBalance = 1987.97;
+        
+        assert(
+            Math.abs(projectedBalance - expectedBalance) < 0.01,
+            `Projected balance should be ${expectedBalance}, got ${projectedBalance}`
+        );
+        
+        console.log('✅ Status field "pending" correctly recognized');
+    });
+
+    // Test 7: Multiple pending indicators in same dataset
+    test('Mixed pending indicators all counted', () => {
+        const accountId = 'bofa_checking_123';
+        const liveBalance = 293.32;
+        
+        const transactions = [
+            {
+                transaction_id: 'tx_1',
+                account_id: accountId,
+                amount: -25.00,
+                pending: true,  // Boolean
+                name: 'Zelle Transfer'
+            },
+            {
+                transaction_id: 'tx_2',
+                account_id: accountId,
+                amount: -12.03,
+                pending: 'true',  // String
+                name: 'Starbucks'
+            }
+        ];
+        
+        const projectedBalance = calculateProjectedBalance(accountId, liveBalance, transactions);
+        
+        // Expected: $293.32 + (-$25.00) + (-$12.03) = $256.29
+        const expectedBalance = 256.29;
+        
+        assert(
+            Math.abs(projectedBalance - expectedBalance) < 0.01,
+            `Projected balance should be ${expectedBalance}, got ${projectedBalance}`
+        );
+        
+        console.log('✅ Mixed pending indicators all counted (matches bank available balance)');
+    });
+
     console.log('\n✅ All Balance Calculator tests passed!');
 };
 
