@@ -37,6 +37,9 @@ const Accounts = () => {
   // Auto-refresh state
   const [lastRefresh, setLastRefresh] = useState(null);
   const [isRefreshing, setIsRefreshing] = useState(false);
+  
+  // Health check state
+  const [healthStatus, setHealthStatus] = useState(null);
 
  // eslint-disable-next-line react-hooks/exhaustive-deps
  useEffect(() => {
@@ -46,6 +49,11 @@ const Accounts = () => {
   // Check Plaid in background (non-blocking)
   checkPlaidConnection().catch(err => {
     console.error('Plaid check failed:', err);
+  });
+  
+  // Check connection health on page load
+  checkConnectionHealth().catch(err => {
+    console.error('Health check failed:', err);
   });
   
   const unsubscribe = PlaidConnectionManager.subscribe((status) => {
@@ -124,6 +132,33 @@ const Accounts = () => {
       }
     } catch (error) {
       console.error('Error checking Plaid connection:', error);
+    }
+  };
+
+  const checkConnectionHealth = async () => {
+    if (!currentUser) return;
+    
+    try {
+      console.log('🏥 [Accounts] Checking Plaid connection health...');
+      const apiUrl = import.meta.env.VITE_API_URL || 'https://smart-money-tracker-09ks.onrender.com';
+      const response = await fetch(`${apiUrl}/api/plaid/health_check`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ userId: currentUser.uid }),
+      });
+
+      if (!response.ok) {
+        throw new Error(`Health check failed: ${response.status}`);
+      }
+
+      const data = await response.json();
+      console.log('✅ [Accounts] Health check result:', data);
+      
+      setHealthStatus(data);
+    } catch (error) {
+      console.error('❌ [Accounts] Error checking connection health:', error);
     }
   };
 
@@ -937,6 +972,23 @@ const Accounts = () => {
                 <div className="account-title">
                   <span className="account-icon">{getAccountTypeIcon(account.type)}</span>
                   <h3>{getAccountDisplayName(account)}</h3>
+                  {/* Show "Reconnection Required" badge if this account's item needs reauth */}
+                  {healthStatus?.items?.find(item => 
+                    item.itemId === account.item_id && item.needsReauth
+                  ) && (
+                    <span style={{
+                      background: 'linear-gradient(135deg, #dc2626 0%, #991b1b 100%)',
+                      color: '#fff',
+                      fontSize: '11px',
+                      padding: '3px 8px',
+                      borderRadius: '4px',
+                      marginLeft: '8px',
+                      fontWeight: '600',
+                      display: 'inline-block'
+                    }}>
+                      ⚠️ Reconnection Required
+                    </span>
+                  )}
                 </div>
                 <span className="account-type">{account.type} {account.mask ? `••${account.mask}` : ''}</span>
               </div>

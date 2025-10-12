@@ -30,6 +30,8 @@ const Transactions = () => {
   });
   const [hasPlaidAccounts, setHasPlaidAccounts] = useState(false);
   const [showErrorModal, setShowErrorModal] = useState(false);
+  const [healthStatus, setHealthStatus] = useState(null);
+  const [showHealthBanner, setShowHealthBanner] = useState(false);
   
   // Analytics state
   const [analytics, setAnalytics] = useState({
@@ -83,6 +85,7 @@ const Transactions = () => {
   useEffect(() => {
     loadInitialData();
     checkPlaidConnection();
+    checkConnectionHealth(); // Auto health check on page load
     
     // Subscribe to Plaid connection changes
     const unsubscribe = PlaidConnectionManager.subscribe((status) => {
@@ -106,6 +109,37 @@ const Transactions = () => {
       });
     } catch (error) {
       console.error('Error checking Plaid connection:', error);
+    }
+  };
+
+  const checkConnectionHealth = async () => {
+    if (!currentUser) return;
+    
+    try {
+      console.log('🏥 Checking Plaid connection health...');
+      const response = await fetch(`${import.meta.env.VITE_API_URL}/api/plaid/health_check`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ userId: currentUser.uid }),
+      });
+
+      if (!response.ok) {
+        throw new Error(`Health check failed: ${response.status}`);
+      }
+
+      const data = await response.json();
+      console.log('✅ Health check result:', data);
+      
+      setHealthStatus(data);
+      
+      // Show banner if any connections need reauth
+      if (data.status === 'needs_reauth' && data.summary.needsReauth > 0) {
+        setShowHealthBanner(true);
+      }
+    } catch (error) {
+      console.error('❌ Error checking connection health:', error);
     }
   };
 
@@ -848,6 +882,11 @@ const Transactions = () => {
   };
 
   const handleDeleteAllTransactions = async () => {
+    // Safety logging: Log the intent before confirmation
+    console.log('⚠️ [DELETE_ALL] User initiated delete all transactions');
+    console.log('[DELETE_ALL] Current user:', currentUser?.uid);
+    console.log('[DELETE_ALL] Current transaction count:', transactions.length);
+    
     // First confirmation
     const confirmed = window.confirm(
       '⚠️ WARNING: This will delete ALL transactions permanently!\n\n' +
@@ -856,6 +895,7 @@ const Transactions = () => {
     );
     
     if (!confirmed) {
+      console.log('[DELETE_ALL] User cancelled at first confirmation');
       return;
     }
 
@@ -866,8 +906,11 @@ const Transactions = () => {
     );
     
     if (!doubleConfirm) {
+      console.log('[DELETE_ALL] User cancelled at second confirmation');
       return;
     }
+
+    console.log('[DELETE_ALL] User confirmed - proceeding with deletion');
 
     try {
       setSaving(true);
@@ -1151,6 +1194,70 @@ const Transactions = () => {
         <h2>💰 Transactions</h2>
         <p>Complete transaction management and financial analytics</p>
       </div>
+
+      {/* Connection Health Warning Banner */}
+      {showHealthBanner && healthStatus?.status === 'needs_reauth' && (
+        <div style={{
+          background: 'linear-gradient(135deg, #f59e0b 0%, #d97706 100%)',
+          color: '#fff',
+          padding: '16px 20px',
+          borderRadius: '8px',
+          marginBottom: '20px',
+          boxShadow: '0 2px 8px rgba(0,0,0,0.15)',
+          fontSize: '14px'
+        }}>
+          <div style={{ display: 'flex', alignItems: 'flex-start', gap: '12px' }}>
+            <span style={{ fontSize: '20px' }}>⚠️</span>
+            <div style={{ flex: 1 }}>
+              <div style={{ fontWeight: 'bold', marginBottom: '8px', fontSize: '15px' }}>
+                Bank Connection Needs Reconnection
+              </div>
+              <div style={{ marginBottom: '12px', opacity: 0.95 }}>
+                {healthStatus.summary.needsReauth === 1 
+                  ? '1 bank connection needs to be reconnected:'
+                  : `${healthStatus.summary.needsReauth} bank connections need to be reconnected:`}
+              </div>
+              <ul style={{ margin: '8px 0', paddingLeft: '20px', opacity: 0.95 }}>
+                {healthStatus.items.filter(item => item.needsReauth).map(item => (
+                  <li key={item.itemId}>{item.institutionName}</li>
+                ))}
+              </ul>
+              <div style={{ display: 'flex', gap: '10px', marginTop: '12px' }}>
+                <button
+                  onClick={() => window.location.href = '/accounts'}
+                  style={{
+                    background: '#fff',
+                    border: 'none',
+                    color: '#d97706',
+                    padding: '8px 16px',
+                    borderRadius: '6px',
+                    cursor: 'pointer',
+                    fontSize: '13px',
+                    fontWeight: '600'
+                  }}
+                >
+                  Reconnect Banks →
+                </button>
+                <button
+                  onClick={() => setShowHealthBanner(false)}
+                  style={{
+                    background: 'rgba(255,255,255,0.2)',
+                    border: '1px solid rgba(255,255,255,0.4)',
+                    color: '#fff',
+                    padding: '8px 16px',
+                    borderRadius: '6px',
+                    cursor: 'pointer',
+                    fontSize: '13px',
+                    fontWeight: '500'
+                  }}
+                >
+                  Dismiss
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Plaid Connection Status Banner - Compact Version */}
       {!plaidStatus.isConnected && !hasPlaidAccounts && !plaidStatus.hasError && (
