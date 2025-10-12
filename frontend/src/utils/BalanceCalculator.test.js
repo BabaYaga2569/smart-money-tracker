@@ -14,14 +14,14 @@ const runBalanceCalculatorTests = () => {
             {
                 transaction_id: 'tx_1',
                 account_id: accountId,
-                amount: 14.36,  // Pending charge (Plaid uses positive for debits)
+                amount: -14.36,  // Pending charge (After PR #154: negative for expenses)
                 pending: true,
                 name: 'Amazon Purchase'
             },
             {
                 transaction_id: 'tx_2',
                 account_id: accountId,
-                amount: 32.50,  // Pending charge
+                amount: -32.50,  // Pending charge (negative for expense)
                 pending: true,
                 name: 'Gas Station'
             }
@@ -29,7 +29,7 @@ const runBalanceCalculatorTests = () => {
         
         const projectedBalance = calculateProjectedBalance(accountId, liveBalance, transactions);
         
-        // Expected: $2000 - $14.36 - $32.50 = $1953.14
+        // Expected: $2000 + (-$14.36) + (-$32.50) = $1953.14
         const expectedBalance = 1953.14;
         
         assert(
@@ -49,14 +49,14 @@ const runBalanceCalculatorTests = () => {
             {
                 transaction_id: 'tx_1',
                 account_id: accountId,
-                amount: 14.36,
+                amount: -14.36,  // Pending expense (negative after PR #154)
                 pending: true,  // This should be included
                 name: 'Amazon Purchase'
             },
             {
                 transaction_id: 'tx_2',
                 account_id: accountId,
-                amount: 50.00,
+                amount: -50.00,  // Cleared expense (negative after PR #154)
                 pending: false,  // This should NOT be included (already in live balance)
                 name: 'Grocery Store'
             }
@@ -64,7 +64,7 @@ const runBalanceCalculatorTests = () => {
         
         const projectedBalance = calculateProjectedBalance(accountId, liveBalance, transactions);
         
-        // Expected: $2000 - $14.36 = $1985.64 (only pending transaction)
+        // Expected: $2000 + (-$14.36) = $1985.64 (only pending transaction)
         const expectedBalance = 1985.64;
         
         assert(
@@ -96,20 +96,20 @@ const runBalanceCalculatorTests = () => {
             {
                 transaction_id: 'tx_1',
                 account_id: 'bofa_checking_123',
-                amount: 14.36,
+                amount: -14.36,  // Pending expense (negative after PR #154)
                 pending: true
             },
             {
                 transaction_id: 'tx_2',
                 account_id: 'bofa_checking_123',
-                amount: 32.50,
+                amount: -32.50,  // Pending expense (negative after PR #154)
                 pending: true
             }
         ];
         
         const totalProjected = calculateTotalProjectedBalance(accounts, transactions);
         
-        // Expected: (1361.97 - 14.36 - 32.50) + 24.74 + 143.36 = 1483.21
+        // Expected: (1361.97 + (-14.36) + (-32.50)) + 24.74 + 143.36 = 1483.21
         const expectedTotal = 1483.21;
         
         assert(
