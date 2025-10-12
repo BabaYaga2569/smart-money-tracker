@@ -105,7 +105,11 @@ const BankDetail = () => {
       filtered = filtered.filter(t => 
         (t.name && t.name.toLowerCase().includes(searchLower)) ||
         (t.merchant_name && t.merchant_name.toLowerCase().includes(searchLower)) ||
-        (t.category && t.category.some(c => c.toLowerCase().includes(searchLower)))
+        (t.category && (
+          Array.isArray(t.category) 
+            ? t.category.some(c => c.toLowerCase().includes(searchLower))
+            : t.category.toLowerCase().includes(searchLower)
+        ))
       );
     }
     
@@ -348,9 +352,13 @@ const BankDetail = () => {
                     </span>
                     <div>
                       <h4>{transaction.merchant_name || transaction.name || 'Transaction'}</h4>
-                      {transaction.category && transaction.category.length > 0 && (
+                      {transaction.category && (
+                        Array.isArray(transaction.category) ? transaction.category.length > 0 : transaction.category
+                      ) && (
                         <span className="transaction-category">
-                          {transaction.category.join(', ')}
+                          {Array.isArray(transaction.category) 
+                            ? transaction.category.join(', ') 
+                            : transaction.category}
                         </span>
                       )}
                     </div>
