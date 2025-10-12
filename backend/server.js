@@ -228,6 +228,79 @@ async function getAllPlaidItems(userId) {
 }
 
 /**
+ * Deduplicate and save accounts to prevent duplicate accounts on reconnection
+ * Matches accounts by institution_name + mask to handle reconnections with new item_ids
+ * @param {string} userId - User's UID
+ * @param {Array} newAccounts - New accounts to add
+ * @param {string} institutionName - Institution name
+ * @param {string} itemId - Plaid item ID
+ * @returns {Promise<Object>} Result with added/deduplicated counts
+ */
+async function deduplicateAndSaveAccounts(userId, newAccounts, institutionName, itemId) {
+  if (!userId || !Array.isArray(newAccounts)) {
+    throw new Error('Invalid parameters for deduplicateAndSaveAccounts');
+  }
+
+  logDiagnostic.info('DEDUPLICATE_ACCOUNTS', `Deduplicating ${newAccounts.length} accounts for user: ${userId}`);
+
+  const settingsRef = db.collection('users').doc(userId)
+    .collection('settings').doc('personal');
+
+  // Get current settings to preserve other data
+  const settingsDoc = await settingsRef.get();
+  const currentSettings = settingsDoc.exists ? settingsDoc.data() : {};
+  const existingPlaidAccounts = currentSettings.plaidAccounts || [];
+
+  // Format accounts for frontend display
+  const accountsToAdd = newAccounts.map(account => ({
+    account_id: account.account_id,
+    name: account.name,
+    official_name: account.official_name,
+    mask: account.mask,
+    type: account.type,
+    subtype: account.subtype,
+    balance: account.balances.current || account.balances.available || 0,
+    institution_name: institutionName,
+    item_id: itemId
+  }));
+
+  // Deduplicate by institution + mask
+  // This handles reconnection scenarios where the same account gets a new item_id
+  let deduplicatedCount = 0;
+  const filteredExistingAccounts = existingPlaidAccounts.filter(existingAcc => {
+    const isDuplicate = accountsToAdd.some(newAcc => 
+      existingAcc.institution_name === newAcc.institution_name &&
+      existingAcc.mask === newAcc.mask
+    );
+    
+    if (isDuplicate) {
+      deduplicatedCount++;
+      logDiagnostic.info('DEDUPLICATE_ACCOUNTS', `Removing duplicate account: ${existingAcc.institution_name} ...${existingAcc.mask}`);
+    }
+    
+    return !isDuplicate;
+  });
+
+  // Add new accounts
+  const updatedPlaidAccounts = [...filteredExistingAccounts, ...accountsToAdd];
+
+  // Update settings/personal
+  await settingsRef.set({
+    ...currentSettings,
+    plaidAccounts: updatedPlaidAccounts,
+    lastUpdated: admin.firestore.FieldValue.serverTimestamp()
+  }, { merge: true });
+
+  logDiagnostic.info('DEDUPLICATE_ACCOUNTS', `Saved ${accountsToAdd.length} accounts, deduplicated ${deduplicatedCount}`);
+
+  return {
+    added: accountsToAdd.length,
+    deduplicated: deduplicatedCount,
+    total: updatedPlaidAccounts.length
+  };
+}
+
+/**
  * Delete Plaid credentials from Firestore
  * @param {string} userId - User's UID
  * @param {string} itemId - Optional Plaid item ID. If not provided, deletes all items
@@ -443,43 +516,16 @@ app.post("/api/plaid/exchange_token", async (req, res) => {
       access_token: accessToken,
     });
 
-    // ALSO update settings/personal with display-friendly account data
+    // Use deduplicateAndSaveAccounts to prevent duplicates on reconnection
     logDiagnostic.info('EXCHANGE_TOKEN', 'Updating settings/personal with account display data');
-    const settingsRef = db.collection('users').doc(userId)
-      .collection('settings').doc('personal');
+    const deduplicationResult = await deduplicateAndSaveAccounts(
+      userId, 
+      balanceResponse.data.accounts, 
+      institutionName, 
+      itemId
+    );
 
-    // Get current settings to preserve other data
-    const settingsDoc = await settingsRef.get();
-    const currentSettings = settingsDoc.exists ? settingsDoc.data() : {};
-    const existingPlaidAccounts = currentSettings.plaidAccounts || [];
-
-    // Format accounts for frontend display
-    const accountsToAdd = balanceResponse.data.accounts.map(account => ({
-      account_id: account.account_id,
-      name: account.name,
-      official_name: account.official_name,
-      mask: account.mask,
-      type: account.type,
-      subtype: account.subtype,
-      balance: account.balances.current || account.balances.available || 0,
-      institution_name: institutionName,
-      item_id: itemId
-    }));
-
-    // Remove any existing accounts for this item_id (in case of reconnection)
-    const filteredAccounts = existingPlaidAccounts.filter(acc => acc.item_id !== itemId);
-
-    // Add new accounts
-    const updatedPlaidAccounts = [...filteredAccounts, ...accountsToAdd];
-
-    // Update settings/personal
-    await settingsRef.set({
-      ...currentSettings,
-      plaidAccounts: updatedPlaidAccounts,
-      lastUpdated: admin.firestore.FieldValue.serverTimestamp()
-    }, { merge: true });
-
-    logDiagnostic.info('EXCHANGE_TOKEN', `Updated settings/personal with ${accountsToAdd.length} accounts for frontend display`);
+    logDiagnostic.info('EXCHANGE_TOKEN', `Account deduplication complete:`, deduplicationResult);
 
     // Enhance accounts with institution name for frontend display
     const accountsWithInstitution = balanceResponse.data.accounts.map(account => ({
@@ -1402,10 +1448,22 @@ app.post("/api/plaid/webhook", async (req, res) => {
         .get();
       
       if (!itemsSnapshot.empty) {
+        // Check if error is related to token expiration
+        const errorCode = error?.error_code;
+        const needsReauth = errorCode === 'ITEM_LOGIN_REQUIRED' || 
+                           errorCode === 'INVALID_CREDENTIALS' ||
+                           errorCode === 'ITEM_LOCKED' ||
+                           errorCode === 'ITEM_NO_LONGER_AVAILABLE';
+        
         await itemsSnapshot.docs[0].ref.update({
-          status: 'error',
+          status: needsReauth ? 'NEEDS_REAUTH' : 'error',
           error: error,
           updatedAt: admin.firestore.FieldValue.serverTimestamp()
+        });
+        
+        logDiagnostic.info('WEBHOOK', `Item marked as ${needsReauth ? 'NEEDS_REAUTH' : 'error'}`, {
+          item_id,
+          error_code: errorCode
         });
       }
     }
@@ -1541,6 +1599,89 @@ app.get("/api/plaid/health", async (req, res) => {
 
   // Return 200 with health status (don't use 503 to avoid confusion with server downtime)
   res.json(healthStatus);
+});
+
+// Per-user connection health check
+app.post("/api/plaid/health_check", async (req, res) => {
+  const endpoint = "/api/plaid/health_check";
+  logDiagnostic.request(endpoint, req.body);
+  
+  try {
+    const { userId } = req.body;
+
+    if (!userId) {
+      logDiagnostic.error('HEALTH_CHECK_USER', 'Missing userId in request');
+      return res.status(400).json({ error: "userId is required" });
+    }
+
+    logDiagnostic.info('HEALTH_CHECK_USER', `Checking connection health for user: ${userId}`);
+
+    // Retrieve all Plaid items for the user
+    const itemsSnapshot = await db
+      .collection('users')
+      .doc(userId)
+      .collection('plaid_items')
+      .get();
+
+    if (itemsSnapshot.empty) {
+      logDiagnostic.info('HEALTH_CHECK_USER', 'No Plaid items found for user');
+      return res.json({
+        status: 'no_connections',
+        message: 'No bank connections found',
+        items: []
+      });
+    }
+
+    const items = itemsSnapshot.docs.map(doc => ({
+      itemId: doc.id,
+      ...doc.data()
+    }));
+
+    logDiagnostic.info('HEALTH_CHECK_USER', `Found ${items.length} Plaid items`);
+
+    // Check status of each item
+    const itemStatuses = items.map(item => ({
+      itemId: item.itemId,
+      institutionName: item.institutionName || 'Unknown Bank',
+      status: item.status || 'active',
+      needsReauth: item.status === 'NEEDS_REAUTH' || item.status === 'error',
+      error: item.error || null,
+      lastUpdated: item.updatedAt || item.createdAt
+    }));
+
+    const needsReauthCount = itemStatuses.filter(item => item.needsReauth).length;
+    const healthyCount = itemStatuses.filter(item => !item.needsReauth).length;
+
+    const overallStatus = needsReauthCount > 0 ? 'needs_reauth' : 'healthy';
+
+    const response = {
+      status: overallStatus,
+      message: needsReauthCount > 0 
+        ? `${needsReauthCount} bank connection(s) need reconnection`
+        : 'All bank connections are healthy',
+      items: itemStatuses,
+      summary: {
+        total: items.length,
+        healthy: healthyCount,
+        needsReauth: needsReauthCount
+      }
+    };
+
+    logDiagnostic.info('HEALTH_CHECK_USER', `Health check complete:`, response.summary);
+    logDiagnostic.response(endpoint, 200, { status: overallStatus });
+
+    res.json(response);
+  } catch (error) {
+    logDiagnostic.error('HEALTH_CHECK_USER', 'Health check failed', error);
+    
+    const statusCode = error.response?.status || 500;
+    logDiagnostic.response(endpoint, statusCode, { error: error.message });
+    
+    res.status(statusCode).json({ 
+      error: error.message,
+      status: 'error'
+    });
+  }
 });
 
 // ============================================================================
