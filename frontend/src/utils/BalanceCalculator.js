@@ -11,9 +11,10 @@
  * @param {string} accountId - The account ID or key
  * @param {number} liveBalance - Current balance from Plaid or manual entry
  * @param {Array} transactions - Array of all transactions (including pending)
+ * @param {boolean} debug - Enable debug logging (optional)
  * @returns {number} - Projected balance
  */
-export const calculateProjectedBalance = (accountId, liveBalance, transactions) => {
+export const calculateProjectedBalance = (accountId, liveBalance, transactions, debug = false) => {
   if (!transactions || transactions.length === 0) {
     return liveBalance;
   }
@@ -23,12 +24,32 @@ export const calculateProjectedBalance = (accountId, liveBalance, transactions) 
     (t) => t.account === accountId || t.account_id === accountId
   );
 
+  if (debug) {
+    console.log(`[ProjectedBalance] Account ${accountId}: ${accountTransactions.length} total transactions`);
+  }
+
   // Calculate the sum of pending transaction adjustments
   // Pending transactions affect the projected balance
+  const pendingTransactions = [];
   const pendingAdjustments = accountTransactions.reduce((sum, transaction) => {
-    // Only include pending transactions in the adjustment
-    if (transaction.pending === true) {
+    // Check multiple pending indicators to be inclusive
+    // Some transactions may have pending as string 'true', or use status field
+    const isPending = (
+      transaction.pending === true ||
+      transaction.pending === 'true' ||
+      transaction.status === 'pending' ||
+      transaction.authorized === true ||
+      (transaction.pending_transaction_id && transaction.pending_transaction_id !== null)
+    );
+    
+    if (isPending) {
       const amount = parseFloat(transaction.amount) || 0;
+      pendingTransactions.push({
+        name: transaction.merchant_name || transaction.name || 'Unknown',
+        amount: amount,
+        date: transaction.date
+      });
+      
       // After PR #154, all transactions use accounting convention:
       // - Negative amount = Expense (decreases balance)
       // - Positive amount = Income (increases balance)
@@ -37,6 +58,15 @@ export const calculateProjectedBalance = (accountId, liveBalance, transactions) 
     }
     return sum;
   }, 0);
+
+  if (debug) {
+    console.log(`[ProjectedBalance] Found ${pendingTransactions.length} pending transactions:`);
+    pendingTransactions.forEach(tx => {
+      console.log(`  - ${tx.name}: $${tx.amount.toFixed(2)} (${tx.date})`);
+    });
+    console.log(`[ProjectedBalance] Pending total: $${pendingAdjustments.toFixed(2)}`);
+    console.log(`[ProjectedBalance] Live: $${liveBalance.toFixed(2)}, Projected: $${(liveBalance + pendingAdjustments).toFixed(2)}`);
+  }
 
   return liveBalance + pendingAdjustments;
 };
