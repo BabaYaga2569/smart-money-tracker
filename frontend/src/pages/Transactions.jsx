@@ -977,7 +977,7 @@ const Transactions = () => {
           ? t.category.join(' ').toLowerCase() 
           : (t.category || '').toLowerCase();
         const amount = (t.amount || 0).toString();
-        const accountName = getAccountDisplayName(currentAccounts[t.account_id] || currentAccounts[t.account] || {}).toLowerCase();
+        const accountName = getTransactionAccountName(t, currentAccounts).toLowerCase();
         const notes = (t.notes || '').toLowerCase();
         
         // Add debug logging for first transaction
@@ -1030,11 +1030,7 @@ const Transactions = () => {
     // ✅ Attach account display names to transactions so JSX doesn't need closure lookup
     filtered = filtered.map(t => ({
       ...t,
-      _accountDisplayName: getAccountDisplayName(
-        currentAccounts[t.account_id] || 
-        currentAccounts[t.account] || 
-        {}
-      )
+      _accountDisplayName: getTransactionAccountName(t, currentAccounts)
     }));
     
     setFilteredTransactions(filtered);
@@ -1104,6 +1100,45 @@ const Transactions = () => {
     const mask = account?.mask ? `••${account.mask}` : '';
     
     return `${institutionName} ${accountType} ${mask}`.trim() || 'Unknown Account';
+  };
+
+  // Smart fallback logic to match transaction to account display name
+  const getTransactionAccountName = (transaction, currentAccounts) => {
+    // Strategy 1: Direct account_id lookup
+    if (transaction.account_id && currentAccounts[transaction.account_id]) {
+      return getAccountDisplayName(currentAccounts[transaction.account_id]);
+    }
+    
+    // Strategy 2: Alternative account field lookup
+    if (transaction.account && currentAccounts[transaction.account]) {
+      return getAccountDisplayName(currentAccounts[transaction.account]);
+    }
+    
+    // Strategy 3: Match by institution_name from transaction (KEY FIX for reconnected banks)
+    const txInstitution = transaction.institution_name || transaction.institutionName;
+    if (txInstitution) {
+      // Find any account with matching institution_name
+      const matchingAccount = Object.values(currentAccounts).find(account => 
+        account.institution_name === txInstitution || account.institution === txInstitution
+      );
+      if (matchingAccount) {
+        return getAccountDisplayName(matchingAccount);
+      }
+    }
+    
+    // Strategy 4: Single account assumption (if only 1 account exists)
+    const accountKeys = Object.keys(currentAccounts);
+    if (accountKeys.length === 1) {
+      return getAccountDisplayName(currentAccounts[accountKeys[0]]);
+    }
+    
+    // Strategy 5: Display institution from transaction if available
+    if (txInstitution) {
+      return txInstitution;
+    }
+    
+    // Strategy 6: Fallback to generic "Account"
+    return 'Account';
   };
 
   const showNotification = (message, type) => {
