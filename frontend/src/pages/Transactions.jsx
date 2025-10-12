@@ -571,7 +571,7 @@ const Transactions = () => {
       setSaving(true);
       console.log('🔄 [ResetCursors] Resetting Plaid sync cursors...');
       
-      const response = await fetch(`${import.meta.env.VITE_BACKEND_URL}/api/plaid/reset_cursors`, {
+      const response = await fetch(`${import.meta.env.VITE_API_URL}/api/plaid/reset_cursors`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ userId: currentUser.uid })
@@ -1007,7 +1007,7 @@ const Transactions = () => {
       // After deleting all transactions, reset Plaid cursors to force full re-sync
       console.log('🔄 [DeleteAll] Resetting Plaid sync cursors...');
       try {
-        const resetResponse = await fetch(`${import.meta.env.VITE_BACKEND_URL}/api/plaid/reset_cursors`, {
+        const resetResponse = await fetch(`${import.meta.env.VITE_API_URL}/api/plaid/reset_cursors`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ userId: currentUser.uid })
