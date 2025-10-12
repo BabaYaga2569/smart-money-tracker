@@ -1057,7 +1057,7 @@ app.post("/api/plaid/sync_transactions", async (req, res) => {
       const transactionData = {
         transaction_id: plaidTx.transaction_id,
         account_id: plaidTx.account_id,
-        amount: plaidTx.amount,
+        amount: -plaidTx.amount,  // ← FLIP SIGN: Plaid positive=expense, we need negative=expense
         date: plaidTx.date,
         name: plaidTx.name,
         merchant_name: plaidTx.merchant_name || plaidTx.name,
@@ -1088,7 +1088,8 @@ app.post("/api/plaid/sync_transactions", async (req, res) => {
         // 4. Merchant name similarity (enhanced with fuzzy matching)
         
         const accountMatch = manual.account_id === plaidTx.account_id || manual.account === plaidTx.account_id;
-        const amountMatch = Math.abs(manual.amount - plaidTx.amount) < 0.01;
+        // Manual uses negative for expense, Plaid uses positive for expense, so negate Plaid amount for comparison
+        const amountMatch = Math.abs(manual.amount - (-plaidTx.amount)) < 0.01;
         
         const manualDate = new Date(manual.date);
         const plaidDate = new Date(plaidTx.date);
@@ -1413,6 +1414,7 @@ app.post("/api/plaid/webhook", async (req, res) => {
               
               batch.set(transactionRef, {
                 ...transaction,
+                amount: -transaction.amount,  // ← FLIP SIGN: Plaid positive=expense, we need negative=expense
                 category: autoCategorizTransaction(transaction.merchant_name || transaction.name),
                 item_id: item_id,
                 institutionName: itemData.institutionName,
