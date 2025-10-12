@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { doc, getDoc, updateDoc, collection, query, orderBy, limit, getDocs, deleteDoc, where, writeBatch, onSnapshot } from 'firebase/firestore';
 import { db } from '../firebase';
+import { useNavigate } from 'react-router-dom';
 import PlaidLink from '../components/PlaidLink';
 import PlaidErrorModal from '../components/PlaidErrorModal';
 import { calculateProjectedBalance, calculateTotalProjectedBalance, getBalanceDifference, formatBalanceDifference } from '../utils/BalanceCalculator';
@@ -10,6 +11,7 @@ import { useAuth } from '../contexts/AuthContext';
 
 const Accounts = () => {
   const { currentUser } = useAuth();
+  const navigate = useNavigate();
   const [loading, setLoading] = useState(true);
   const [accounts, setAccounts] = useState({});
   const [totalBalance, setTotalBalance] = useState(0);
@@ -967,7 +969,12 @@ const Accounts = () => {
           const hasDifference = projectedBalance !== liveBalance;
           
           return (
-            <div key={account.account_id} className="account-card plaid-account">
+            <div 
+              key={account.account_id} 
+              className="account-card plaid-account clickable-card"
+              onClick={() => navigate(`/bank/${account.account_id}`)}
+              style={{ cursor: 'pointer' }}
+            >
               <div className="account-header">
                 <div className="account-title">
                   <span className="account-icon">{getAccountTypeIcon(account.type)}</span>
@@ -1040,7 +1047,10 @@ const Accounts = () => {
                 )}
                 <button 
                   className="action-btn delete-btn"
-                  onClick={() => setShowDeleteModal(account.account_id)}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setShowDeleteModal(account.account_id);
+                  }}
                   disabled={saving}
                   title="Remove this account from the app"
                 >

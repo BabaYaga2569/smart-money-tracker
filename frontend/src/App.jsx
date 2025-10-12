@@ -13,6 +13,7 @@ import Categories from './pages/Categories';
 import Cashflow from './pages/Cashflow';
 import Paycycle from './pages/Paycycle';
 import Settings from './pages/Settings';
+import BankDetail from './pages/BankDetail';
 import Login from './pages/Login';
 import DebugButton from './components/DebugButton';
 import './App.css';
@@ -89,6 +90,14 @@ function App() {
             <PrivateRoute>
               <AppLayout showDebugButton={debugModeEnabled}>
                 <Accounts />
+              </AppLayout>
+            </PrivateRoute>
+          } />
+          
+          <Route path="/bank/:accountId" element={
+            <PrivateRoute>
+              <AppLayout showDebugButton={debugModeEnabled}>
+                <BankDetail />
               </AppLayout>
             </PrivateRoute>
           } />
