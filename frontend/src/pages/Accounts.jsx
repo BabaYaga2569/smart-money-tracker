@@ -134,28 +134,68 @@ const Accounts = () => {
     console.log('📡 [Accounts] Setting up real-time listener...');
     
     const transactionsRef = collection(db, 'users', currentUser.uid, 'transactions');
-    const q = query(transactionsRef, orderBy('timestamp', 'desc'), limit(100));
     
-    const unsubscribe = onSnapshot(
-      q,
+    // Query 1: Get recent transactions (for display/general use)
+    const recentQuery = query(transactionsRef, orderBy('timestamp', 'desc'), limit(100));
+    
+    // Query 2: Get ALL pending transactions (critical for projected balance accuracy)
+    // This ensures we never miss pending transactions regardless of date
+    const pendingQuery = query(
+      transactionsRef, 
+      where('pending', '==', true)
+    );
+    
+    // Combined transaction map to merge results and deduplicate
+    const transactionMap = new Map();
+    
+    // Subscribe to recent transactions
+    const unsubscribeRecent = onSnapshot(
+      recentQuery,
       (snapshot) => {
-        const txs = snapshot.docs.map(doc => ({
-          id: doc.id,
-          ...doc.data()
-        }));
+        snapshot.docs.forEach(doc => {
+          transactionMap.set(doc.id, {
+            id: doc.id,
+            ...doc.data()
+          });
+        });
         
-        console.log('✅ [Accounts] Real-time update:', txs.length, 'transactions');
-        setTransactions(txs);
+        // Update state with merged transactions
+        const mergedTxs = Array.from(transactionMap.values());
+        console.log('✅ [Accounts] Recent transactions update:', snapshot.docs.length, 'transactions');
+        console.log('✅ [Accounts] Total unique transactions:', mergedTxs.length);
+        setTransactions(mergedTxs);
       },
       (error) => {
-        console.error('❌ [Accounts] Listener error:', error);
-        setTransactions([]);
+        console.error('❌ [Accounts] Recent listener error:', error);
+      }
+    );
+    
+    // Subscribe to pending transactions
+    const unsubscribePending = onSnapshot(
+      pendingQuery,
+      (snapshot) => {
+        snapshot.docs.forEach(doc => {
+          transactionMap.set(doc.id, {
+            id: doc.id,
+            ...doc.data()
+          });
+        });
+        
+        // Update state with merged transactions
+        const mergedTxs = Array.from(transactionMap.values());
+        console.log('✅ [Accounts] Pending transactions update:', snapshot.docs.length, 'pending');
+        console.log('✅ [Accounts] Total unique transactions:', mergedTxs.length);
+        setTransactions(mergedTxs);
+      },
+      (error) => {
+        console.error('❌ [Accounts] Pending listener error:', error);
       }
     );
 
     return () => {
-      console.log('🔌 [Accounts] Cleaning up listener');
-      unsubscribe();
+      console.log('🔌 [Accounts] Cleaning up listeners');
+      unsubscribeRecent();
+      unsubscribePending();
     };
   }, [currentUser]);
 
