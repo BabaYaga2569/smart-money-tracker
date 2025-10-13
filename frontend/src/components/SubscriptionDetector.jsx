@@ -19,21 +19,7 @@ const SubscriptionDetector = ({ onClose, onSubscriptionAdded }) => {
     setError(null);
     
     try {
-      // Try to load from storage first
-      const storedDetections = getAllDetections();
-      const dismissed = getDismissedIds();
-      
-      if (storedDetections.length > 0) {
-        // Use stored detections (excluding dismissed ones)
-        const pending = storedDetections.filter(d => !dismissed.includes(d.detectionId));
-        setDetected(pending);
-        setScannedCount(0); // Not available from storage
-        setLoading(false);
-        return;
-      }
-
-      // If no stored detections, run fresh detection
-      const response = await fetch(`${import.meta.env.VITE_API_URL || 'http://localhost:5000'}/api/subscriptions/detect`, {
+      const response = await fetch(`${import.meta.env.VITE_API_URL || 'https://smart-money-tracker-09ks.onrender.com'}/api/subscriptions/detect`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',

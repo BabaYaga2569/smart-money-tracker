@@ -109,3 +109,46 @@
 .toggle-mode:hover {
   background: rgba(0, 255, 136, 0.1);
 }
+
+/* Mobile optimizations */
+@media (max-width: 768px) {
+  .login-container {
+    padding: 20px;
+  }
+
+  .login-card {
+    padding: 30px 20px;
+    max-width: 100%;
+    border-radius: 8px;
+  }
+
+  .login-card h2 {
+    font-size: 28px;
+  }
+
+  .login-card h3 {
+    font-size: 16px;
+    margin-bottom: 20px;
+  }
+
+  .form-group input {
+    font-size: 16px !important; /* Prevent iOS zoom */
+    padding: 14px;
+  }
+
+  .login-card button[type="submit"],
+  .toggle-mode {
+    min-height: 48px;
+    font-size: 16px;
+  }
+}
+
+@media (max-width: 480px) {
+  .login-card {
+    padding: 25px 15px;
+  }
+
+  .login-card h2 {
+    font-size: 24px;
+  }
+}
