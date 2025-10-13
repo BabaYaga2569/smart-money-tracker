@@ -19,6 +19,30 @@
   font-size: 2rem;
 }
 
+.header-actions {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+}
+
+.btn-auto-detect {
+  padding: 12px 24px;
+  font-size: 1rem;
+  font-weight: 500;
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  color: white;
+  border: none;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: all 0.3s ease;
+  box-shadow: 0 4px 15px rgba(102, 126, 234, 0.3);
+}
+
+.btn-auto-detect:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 6px 20px rgba(102, 126, 234, 0.4);
+}
+
 .add-subscription-btn {
   padding: 12px 24px;
   font-size: 1rem;
@@ -418,6 +442,16 @@
   }
 
   .action-btn {
+    width: 100%;
+  }
+
+  .header-actions {
+    flex-direction: column;
+    width: 100%;
+  }
+
+  .btn-auto-detect,
+  .add-subscription-btn {
     width: 100%;
   }
 }

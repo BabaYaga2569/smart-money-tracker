@@ -2025,6 +2025,67 @@ app.post("/api/subscriptions/:id/cancel", async (req, res) => {
   }
 });
 
+/**
+ * Auto-detect subscription patterns from transactions
+ */
+app.post("/api/subscriptions/detect", async (req, res) => {
+  const endpoint = "/api/subscriptions/detect";
+  logDiagnostic.request(endpoint, req.body);
+  
+  try {
+    const { userId } = req.body;
+    
+    if (!userId) {
+      return res.status(400).json({ error: "userId is required" });
+    }
+    
+    // Import detection algorithm
+    const { detectSubscriptions } = require('./utils/subscriptionDetector');
+    
+    // Fetch all transactions
+    const transactionsRef = db.collection('users').doc(userId).collection('transactions');
+    const transactionsSnapshot = await transactionsRef.get();
+    
+    const transactions = [];
+    transactionsSnapshot.forEach(doc => {
+      transactions.push({
+        id: doc.id,
+        ...doc.data()
+      });
+    });
+    
+    // Fetch existing subscriptions
+    const subscriptionsRef = db.collection('users').doc(userId).collection('subscriptions');
+    const subscriptionsSnapshot = await subscriptionsRef.get();
+    
+    const existingSubscriptions = [];
+    subscriptionsSnapshot.forEach(doc => {
+      existingSubscriptions.push({
+        id: doc.id,
+        ...doc.data()
+      });
+    });
+    
+    // Run detection algorithm
+    const detected = detectSubscriptions(transactions, existingSubscriptions);
+    
+    logDiagnostic.response(endpoint, 200, { 
+      count: detected.length,
+      scannedTransactions: transactions.length
+    });
+    
+    res.json({ 
+      detected,
+      count: detected.length,
+      scannedTransactions: transactions.length
+    });
+    
+  } catch (error) {
+    logDiagnostic.error('DETECT_SUBSCRIPTIONS', 'Failed to detect subscriptions', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
 // Health check
 app.get("/healthz", (req, res) => res.send("ok"));
 
