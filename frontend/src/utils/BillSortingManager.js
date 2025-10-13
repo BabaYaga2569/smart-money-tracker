@@ -100,11 +100,38 @@ export class BillSortingManager {
             case 'dueDate':
             default:
                 return billsCopy.sort((a, b) => {
-                    // Sort by urgency - overdue first, then by days until due
+                    // CRITICAL FIX: Separate paid bills from unpaid bills
+                    const aPaid = a.status === 'paid' || a.isPaid;
+                    const bPaid = b.status === 'paid' || b.isPaid;
+                    
+                    // Paid bills always go to bottom
+                    if (aPaid && !bPaid) return 1;
+                    if (!aPaid && bPaid) return -1;
+                    
+                    // If both paid, sort by last paid date (most recent first)
+                    if (aPaid && bPaid) {
+                        const aDate = new Date(a.lastPaidDate || 0);
+                        const bDate = new Date(b.lastPaidDate || 0);
+                        return bDate - aDate;
+                    }
+                    
+                    // For unpaid bills: Calculate days until due
                     const aDays = this.calculateDaysUntilDue(a.nextOccurrence || a.nextDueDate || a.dueDate);
                     const bDays = this.calculateDaysUntilDue(b.nextOccurrence || b.nextDueDate || b.dueDate);
                     
-                    // Primary sort: by days until due (overdue bills first)
+                    const aOverdue = aDays < 0;
+                    const bOverdue = bDays < 0;
+                    
+                    // Priority 1: OVERDUE bills ALWAYS at top
+                    if (aOverdue && !bOverdue) return -1;
+                    if (!aOverdue && bOverdue) return 1;
+                    
+                    // Priority 2: If both overdue, most overdue first (most negative days)
+                    if (aOverdue && bOverdue) {
+                        return aDays - bDays; // More negative = more overdue = higher priority
+                    }
+                    
+                    // Priority 3: For upcoming bills, sort by due date (closest first)
                     if (aDays !== bDays) {
                         return aDays - bDays;
                     }
