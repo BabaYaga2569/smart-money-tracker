@@ -287,4 +287,4 @@ function isAlreadyTracked(merchantName, existingSubscriptions) {
   });
 }
 
-module.exports = { detectSubscriptions };
+export { detectSubscriptions };

@@ -2040,7 +2040,7 @@ app.post("/api/subscriptions/detect", async (req, res) => {
     }
     
     // Import detection algorithm
-    const { detectSubscriptions } = require('./utils/subscriptionDetector');
+    const { detectSubscriptions } = await import('./utils/subscriptionDetector.js');
     
     // Fetch all transactions
     const transactionsRef = db.collection('users').doc(userId).collection('transactions');
