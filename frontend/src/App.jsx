@@ -18,6 +18,11 @@ import Login from './pages/Login';
 import DebugButton from './components/DebugButton';
 import './App.css';
 
+// Force bundle hash change to deploy pending fixes
+export const APP_VERSION = '2.0.1-' + Date.now();
+console.log('[App] Smart Money Tracker v' + APP_VERSION);
+console.log('[App] Initialized at:', new Date().toISOString());
+
 // Protected Route wrapper
 const PrivateRoute = ({ children }) => {
   const { currentUser } = useAuth();
