@@ -121,3 +121,10 @@
   overflow: hidden;
   text-overflow: ellipsis;
 }
+
+/* Hide desktop sidebar on mobile and tablet */
+@media (max-width: 1024px) {
+  .sidebar {
+    display: none;
+  }
+}

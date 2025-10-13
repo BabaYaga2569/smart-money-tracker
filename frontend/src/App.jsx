@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
 import Sidebar from './components/Sidebar';
+import MobileNav from './components/MobileNav';
 import Dashboard from './pages/Dashboard';
 import Accounts from './pages/Accounts';
 import Transactions from './pages/Transactions';
@@ -17,6 +18,7 @@ import Settings from './pages/Settings';
 import BankDetail from './pages/BankDetail';
 import Login from './pages/Login';
 import DebugButton from './components/DebugButton';
+import { useWindowSize } from './hooks/useWindowSize';
 import './App.css';
 
 // Force bundle hash change to deploy pending fixes
@@ -32,9 +34,29 @@ const PrivateRoute = ({ children }) => {
 
 // Main app layout with sidebar
 const AppLayout = ({ children, showDebugButton }) => {
+  const { isMobile, isTablet } = useWindowSize();
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+
+  const handleToggleMenu = () => {
+    setMobileMenuOpen(!mobileMenuOpen);
+  };
+
+  const handleCloseMenu = () => {
+    setMobileMenuOpen(false);
+  };
+
   return (
     <div className="app">
-      <Sidebar />
+      {/* Show mobile nav on mobile/tablet, desktop sidebar on desktop */}
+      {(isMobile || isTablet) ? (
+        <MobileNav 
+          isOpen={mobileMenuOpen} 
+          onToggle={handleToggleMenu} 
+          onClose={handleCloseMenu} 
+        />
+      ) : (
+        <Sidebar />
+      )}
       <main className="main-content">
         {children}
       </main>
