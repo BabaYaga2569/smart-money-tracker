@@ -16,6 +16,7 @@ const Sidebar = () => {
     { name: "Spendability", path: "/spendability" },
     { name: "Bills", path: "/bills" },
     { name: "Recurring", path: "/recurring" },
+    { name: "Subscriptions", path: "/subscriptions" },
     { name: "Goals", path: "/goals" },
     { name: "Categories", path: "/categories" },
     { name: "Cash Flow", path: "/cashflow" },

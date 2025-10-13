@@ -1850,6 +1850,181 @@ app.put("/api/transactions/:transactionId", async (req, res) => {
   }
 });
 
+// ============================================================================
+// SUBSCRIPTIONS API ENDPOINTS
+// ============================================================================
+
+/**
+ * Get all subscriptions for a user
+ */
+app.get("/api/subscriptions", async (req, res) => {
+  const endpoint = "/api/subscriptions";
+  logDiagnostic.request(endpoint, req.query);
+  
+  try {
+    const { userId } = req.query;
+    
+    if (!userId) {
+      return res.status(400).json({ error: "userId is required" });
+    }
+    
+    const subscriptionsRef = db.collection('users').doc(userId).collection('subscriptions');
+    const snapshot = await subscriptionsRef.get();
+    
+    const subscriptions = [];
+    snapshot.forEach(doc => {
+      subscriptions.push({
+        id: doc.id,
+        ...doc.data()
+      });
+    });
+    
+    logDiagnostic.response(endpoint, 200, { count: subscriptions.length });
+    res.json({ subscriptions });
+    
+  } catch (error) {
+    logDiagnostic.error('GET_SUBSCRIPTIONS', 'Failed to get subscriptions', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+/**
+ * Create a new subscription
+ */
+app.post("/api/subscriptions", async (req, res) => {
+  const endpoint = "/api/subscriptions";
+  logDiagnostic.request(endpoint, req.body);
+  
+  try {
+    const { userId, subscription } = req.body;
+    
+    if (!userId || !subscription) {
+      return res.status(400).json({ error: "userId and subscription data are required" });
+    }
+    
+    // Add timestamps
+    const newSubscription = {
+      ...subscription,
+      createdAt: admin.firestore.FieldValue.serverTimestamp(),
+      updatedAt: admin.firestore.FieldValue.serverTimestamp()
+    };
+    
+    const subscriptionsRef = db.collection('users').doc(userId).collection('subscriptions');
+    const docRef = await subscriptionsRef.add(newSubscription);
+    
+    logDiagnostic.response(endpoint, 201, { id: docRef.id });
+    res.status(201).json({ 
+      success: true,
+      id: docRef.id,
+      message: "Subscription created successfully"
+    });
+    
+  } catch (error) {
+    logDiagnostic.error('CREATE_SUBSCRIPTION', 'Failed to create subscription', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+/**
+ * Update a subscription
+ */
+app.put("/api/subscriptions/:id", async (req, res) => {
+  const endpoint = "/api/subscriptions/:id";
+  logDiagnostic.request(endpoint, req.body);
+  
+  try {
+    const { id } = req.params;
+    const { userId, subscription } = req.body;
+    
+    if (!userId || !subscription) {
+      return res.status(400).json({ error: "userId and subscription data are required" });
+    }
+    
+    // Update timestamp
+    const updatedSubscription = {
+      ...subscription,
+      updatedAt: admin.firestore.FieldValue.serverTimestamp()
+    };
+    
+    const docRef = db.collection('users').doc(userId).collection('subscriptions').doc(id);
+    await docRef.update(updatedSubscription);
+    
+    logDiagnostic.response(endpoint, 200, { id });
+    res.json({ 
+      success: true,
+      message: "Subscription updated successfully"
+    });
+    
+  } catch (error) {
+    logDiagnostic.error('UPDATE_SUBSCRIPTION', 'Failed to update subscription', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+/**
+ * Delete a subscription
+ */
+app.delete("/api/subscriptions/:id", async (req, res) => {
+  const endpoint = "/api/subscriptions/:id";
+  logDiagnostic.request(endpoint, req.params);
+  
+  try {
+    const { id } = req.params;
+    const { userId } = req.query;
+    
+    if (!userId) {
+      return res.status(400).json({ error: "userId is required" });
+    }
+    
+    const docRef = db.collection('users').doc(userId).collection('subscriptions').doc(id);
+    await docRef.delete();
+    
+    logDiagnostic.response(endpoint, 200, { id });
+    res.json({ 
+      success: true,
+      message: "Subscription deleted successfully"
+    });
+    
+  } catch (error) {
+    logDiagnostic.error('DELETE_SUBSCRIPTION', 'Failed to delete subscription', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+/**
+ * Mark a subscription as cancelled (soft delete)
+ */
+app.post("/api/subscriptions/:id/cancel", async (req, res) => {
+  const endpoint = "/api/subscriptions/:id/cancel";
+  logDiagnostic.request(endpoint, req.params);
+  
+  try {
+    const { id } = req.params;
+    const { userId } = req.body;
+    
+    if (!userId) {
+      return res.status(400).json({ error: "userId is required" });
+    }
+    
+    const docRef = db.collection('users').doc(userId).collection('subscriptions').doc(id);
+    await docRef.update({
+      status: 'cancelled',
+      cancelledDate: admin.firestore.FieldValue.serverTimestamp(),
+      updatedAt: admin.firestore.FieldValue.serverTimestamp()
+    });
+    
+    logDiagnostic.response(endpoint, 200, { id });
+    res.json({ 
+      success: true,
+      message: "Subscription cancelled successfully"
+    });
+    
+  } catch (error) {
+    logDiagnostic.error('CANCEL_SUBSCRIPTION', 'Failed to cancel subscription', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
 // Health check
 app.get("/healthz", (req, res) => res.send("ok"));
 
