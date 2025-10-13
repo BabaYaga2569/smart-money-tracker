@@ -1376,3 +1376,13 @@ html body .layout .main-content .bills-container button[class*="delete"] {
 .overview-card.clickable {
   transition: all 0.3s ease;
 }
+
+/* Pulse animation for overdue warning text */
+@keyframes pulse {
+  0%, 100% { 
+    opacity: 1;
+  }
+  50% { 
+    opacity: 0.6;
+  }
+}

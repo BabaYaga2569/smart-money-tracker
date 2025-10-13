@@ -1400,10 +1400,29 @@ const Bills = () => {
             <div className="overview-value upcoming">{formatCurrency(metrics.upcomingBills)}</div>
             <div className="overview-label">{metrics.upcomingCount} bills due</div>
           </div>
-          <div className="overview-card">
-            <h3>Overdue Bills</h3>
+          <div 
+            className="overview-card"
+            style={{
+              border: metrics.overdueCount > 0 ? '2px solid #ff073a' : '1px solid #333',
+              background: metrics.overdueCount > 0 ? 'rgba(255, 7, 58, 0.1)' : '#1a1a1a'
+            }}
+          >
+            <h3>🚨 Overdue Bills</h3>
             <div className="overview-value overdue">{formatCurrency(metrics.overdueBills)}</div>
-            <div className="overview-label">{metrics.overdueCount} bills overdue</div>
+            <div className="overview-label">
+              {metrics.overdueCount} bill{metrics.overdueCount !== 1 ? 's' : ''} overdue
+            </div>
+            {metrics.overdueCount > 0 && (
+              <div style={{ 
+                marginTop: '8px', 
+                fontSize: '12px', 
+                color: '#ff073a',
+                fontWeight: 'bold',
+                animation: 'pulse 2s infinite'
+              }}>
+                ⚠️ Pay now to avoid late fees!
+              </div>
+            )}
           </div>
           <div className="overview-card">
             <h3>Next Bill Due</h3>
@@ -1631,6 +1650,22 @@ const Bills = () => {
                     {bill.formattedDueDate || `Due: ${formatDate(bill.nextDueDate || bill.dueDate)}`}
                   </div>
                   
+                  {bill.status === 'overdue' && (
+                    <div className="overdue-warning" style={{
+                      marginTop: '8px',
+                      padding: '6px 10px',
+                      background: 'rgba(255, 7, 58, 0.2)',
+                      borderRadius: '6px',
+                      border: '1px solid #ff073a',
+                      fontSize: '11px',
+                      color: '#ff073a',
+                      fontWeight: 'bold',
+                      textAlign: 'center'
+                    }}>
+                      ⚠️ LATE FEES MAY APPLY!
+                    </div>
+                  )}
+                  
                   {bill.lastPayment && bill.lastPayment.source === 'plaid' && bill.lastPayment.transactionId && (
                     <div className="matched-transaction-info" style={{
                       marginTop: '8px',
@@ -1649,6 +1684,22 @@ const Bills = () => {
                       <div style={{ opacity: 0.7, fontSize: '10px' }}>
                         {formatDate(bill.lastPayment.paidDate)}
                       </div>
+                    </div>
+                  )}
+                  
+                  {bill.status === 'paid' && bill.lastPaidDate && (
+                    <div className="paid-info" style={{
+                      marginTop: '8px',
+                      padding: '6px 10px',
+                      background: 'rgba(0, 255, 136, 0.1)',
+                      borderRadius: '6px',
+                      border: '1px solid #00ff88',
+                      fontSize: '11px',
+                      color: '#00ff88',
+                      fontWeight: 'bold',
+                      textAlign: 'center'
+                    }}>
+                      ✅ PAID {formatDate(bill.lastPaidDate)}
                     </div>
                   )}
                 </div>
