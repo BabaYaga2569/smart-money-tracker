@@ -341,15 +341,14 @@
 }
 
 .pending-badge {
-  position: absolute;
-  top: 10px;
-  right: 10px;
+  display: inline-block;
   background: #ffaa00;
   color: #000;
   padding: 4px 10px;
   border-radius: 12px;
   font-size: 0.75rem;
   font-weight: 700;
+  margin-top: 6px;
 }
 
 /* Responsive Design */
@@ -395,8 +394,8 @@
 
   .transaction-details {
     align-items: flex-start;
-    flex-direction: row;
-    justify-content: space-between;
+    flex-direction: column;
+    justify-content: flex-start;
     width: 100%;
   }
 

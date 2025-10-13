@@ -368,11 +368,11 @@ const BankDetail = () => {
                       {isIncome ? '+' : '-'}{formatCurrency(Math.abs(amount))}
                     </span>
                     <span className="transaction-date">{formatDate(transaction.date)}</span>
+                    {transaction.pending && (
+                      <span className="pending-badge">Pending</span>
+                    )}
                   </div>
                 </div>
-                {transaction.pending && (
-                  <span className="pending-badge">Pending</span>
-                )}
               </div>
             );
           })
