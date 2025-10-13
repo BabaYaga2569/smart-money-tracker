@@ -5,6 +5,7 @@ import { useAuth } from '../contexts/AuthContext';
 import SubscriptionCard from '../components/SubscriptionCard';
 import AddSubscriptionForm from '../components/AddSubscriptionForm';
 import SubscriptionDetector from '../components/SubscriptionDetector';
+import SubscriptionDetectionBanner from '../components/SubscriptionDetectionBanner';
 import {
   calculateMonthlyTotal,
   calculateAnnualTotal,
@@ -92,6 +93,10 @@ const Subscriptions = () => {
 
   const handleSubscriptionAdded = () => {
     showNotification('Subscription added successfully');
+  };
+
+  const handleReviewSuggestions = () => {
+    setShowDetector(true);
   };
 
   const handleEditSubscription = (subscription) => {
@@ -246,6 +251,9 @@ const Subscriptions = () => {
           </button>
         </div>
       </div>
+
+      {/* Detection Banner */}
+      <SubscriptionDetectionBanner onReviewClick={handleReviewSuggestions} />
 
       {/* Summary Section */}
       <div className="subscription-summary">

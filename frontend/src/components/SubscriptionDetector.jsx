@@ -2,9 +2,10 @@ import React, { useState } from 'react';
 import { collection, addDoc } from 'firebase/firestore';
 import { db } from '../firebase';
 import { useAuth } from '../contexts/AuthContext';
+import { removeDetection, getAllDetections, getDismissedIds } from '../utils/detectionStorage';
 import './SubscriptionDetector.css';
 
-const SubscriptionDetector = ({ onClose, onSubscriptionAdded, accounts }) => {
+const SubscriptionDetector = ({ onClose, onSubscriptionAdded }) => {
   const { currentUser } = useAuth();
   const [loading, setLoading] = useState(false);
   const [detected, setDetected] = useState([]);
@@ -13,16 +14,25 @@ const SubscriptionDetector = ({ onClose, onSubscriptionAdded, accounts }) => {
   const [editingIndex, setEditingIndex] = useState(null);
   const [editedData, setEditedData] = useState({});
 
-  // Run detection when component mounts
-  React.useEffect(() => {
-    detectSubscriptions();
-  }, []);
-
-  const detectSubscriptions = async () => {
+  const detectSubscriptions = React.useCallback(async () => {
     setLoading(true);
     setError(null);
     
     try {
+      // Try to load from storage first
+      const storedDetections = getAllDetections();
+      const dismissed = getDismissedIds();
+      
+      if (storedDetections.length > 0) {
+        // Use stored detections (excluding dismissed ones)
+        const pending = storedDetections.filter(d => !dismissed.includes(d.detectionId));
+        setDetected(pending);
+        setScannedCount(0); // Not available from storage
+        setLoading(false);
+        return;
+      }
+
+      // If no stored detections, run fresh detection
       const response = await fetch(`${import.meta.env.VITE_API_URL || 'http://localhost:5000'}/api/subscriptions/detect`, {
         method: 'POST',
         headers: {
@@ -44,7 +54,12 @@ const SubscriptionDetector = ({ onClose, onSubscriptionAdded, accounts }) => {
     } finally {
       setLoading(false);
     }
-  };
+  }, [currentUser.uid]);
+
+  // Run detection when component mounts
+  React.useEffect(() => {
+    detectSubscriptions();
+  }, [detectSubscriptions]);
 
   const handleEdit = (index) => {
     setEditingIndex(index);
@@ -88,6 +103,11 @@ const SubscriptionDetector = ({ onClose, onSubscriptionAdded, accounts }) => {
       // Remove from detected list
       setDetected(prev => prev.filter((_, i) => i !== index));
       setEditingIndex(null);
+
+      // Remove from storage if it has an ID
+      if (detectedSub.detectionId) {
+        removeDetection(detectedSub.detectionId);
+      }
       
       if (onSubscriptionAdded) {
         onSubscriptionAdded();

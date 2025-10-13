@@ -1,13 +1,44 @@
-import React from "react";
+import React, { useState, useEffect } from "react";
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import { auth } from '../firebase';
 import { Link, useLocation } from "react-router-dom";
+import { getPendingCount } from '../utils/detectionStorage';
+import './Sidebar.css';
 
 const Sidebar = () => {
   const location = useLocation();
   const navigate = useNavigate();
   const { currentUser } = useAuth();
+  const [detectionCount, setDetectionCount] = useState(0);
+
+  useEffect(() => {
+    updateDetectionCount();
+    
+    // Listen for detection updates
+    const handleUpdate = () => {
+      updateDetectionCount();
+    };
+    
+    window.addEventListener('detectionUpdate', handleUpdate);
+    window.addEventListener('detectionDismissed', handleUpdate);
+    window.addEventListener('detectionRemoved', handleUpdate);
+    window.addEventListener('detectionsCleared', handleUpdate);
+    window.addEventListener('detectionsReset', handleUpdate);
+    
+    return () => {
+      window.removeEventListener('detectionUpdate', handleUpdate);
+      window.removeEventListener('detectionDismissed', handleUpdate);
+      window.removeEventListener('detectionRemoved', handleUpdate);
+      window.removeEventListener('detectionsCleared', handleUpdate);
+      window.removeEventListener('detectionsReset', handleUpdate);
+    };
+  }, []);
+
+  const updateDetectionCount = () => {
+    const count = getPendingCount();
+    setDetectionCount(count);
+  };
 
   const menuItems = [
     { name: "Dashboard", path: "/" },
@@ -16,7 +47,7 @@ const Sidebar = () => {
     { name: "Spendability", path: "/spendability" },
     { name: "Bills", path: "/bills" },
     { name: "Recurring", path: "/recurring" },
-    { name: "Subscriptions", path: "/subscriptions" },
+    { name: "Subscriptions", path: "/subscriptions", badge: detectionCount },
     { name: "Goals", path: "/goals" },
     { name: "Categories", path: "/categories" },
     { name: "Cash Flow", path: "/cashflow" },
@@ -51,6 +82,9 @@ const Sidebar = () => {
                 className={location.pathname === item.path ? "active" : ""}
               >
                 {item.name}
+                {item.badge > 0 && (
+                  <span className="sidebar-badge">{item.badge}</span>
+                )}
               </Link>
             </li>
           ))}
