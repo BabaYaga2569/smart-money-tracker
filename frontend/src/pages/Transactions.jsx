@@ -7,6 +7,7 @@ import PlaidConnectionManager from '../utils/PlaidConnectionManager';
 import PlaidErrorModal from '../components/PlaidErrorModal';
 import './Transactions.css';
 import { useAuth } from '../contexts/AuthContext';
+import { shouldRunDetection, updateLastRun, saveDetections } from '../utils/detectionStorage';
 
 const Transactions = () => {
   const { currentUser } = useAuth();
@@ -502,6 +503,11 @@ const Transactions = () => {
         `Successfully synced ${added} new transaction${added !== 1 ? 's' : ''} from Plaid${pendingText}${dedupeText}.`,
         'success'
       );
+
+      // Trigger background subscription detection if new transactions were added
+      if (added > 0) {
+        runBackgroundDetection();
+      }
     } catch (error) {
       console.error('Error syncing Plaid transactions:', error);
       showNotification(
@@ -510,6 +516,57 @@ const Transactions = () => {
       );
     } finally {
       setSyncingPlaid(false);
+    }
+  };
+
+  const runBackgroundDetection = async () => {
+    try {
+      console.log('[Background Detection] Checking if should run...');
+      
+      // Check timing rules
+      if (!shouldRunDetection()) {
+        console.log('[Background Detection] Skipped due to timing rules');
+        return;
+      }
+
+      console.log('[Background Detection] Running detection...');
+      
+      // Call the detection API
+      const response = await fetch(`${import.meta.env.VITE_API_URL || 'http://localhost:5000'}/api/subscriptions/detect`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ userId: currentUser.uid }),
+      });
+
+      if (!response.ok) {
+        throw new Error('Failed to detect subscriptions');
+      }
+
+      const data = await response.json();
+      const detected = data.detected || [];
+
+      console.log('[Background Detection] Found', detected.length, 'detections');
+
+      if (detected.length > 0) {
+        // Save detections and update last run timestamp
+        const detectionsWithIds = saveDetections(detected);
+        updateLastRun();
+
+        // Dispatch event to update UI (badge and banner)
+        window.dispatchEvent(new CustomEvent('detectionUpdate', { 
+          detail: { count: detectionsWithIds.length } 
+        }));
+
+        console.log('[Background Detection] Saved and notified UI');
+      } else {
+        // Still update last run even if nothing found
+        updateLastRun();
+      }
+    } catch (error) {
+      console.error('[Background Detection] Error:', error);
+      // Silently fail - don't interrupt user experience
     }
   };
 

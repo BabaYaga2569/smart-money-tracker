@@ -2,9 +2,10 @@ import React, { useState } from 'react';
 import { collection, addDoc } from 'firebase/firestore';
 import { db } from '../firebase';
 import { useAuth } from '../contexts/AuthContext';
+import { removeDetection, getAllDetections, getDismissedIds } from '../utils/detectionStorage';
 import './SubscriptionDetector.css';
 
-const SubscriptionDetector = ({ onClose, onSubscriptionAdded, accounts }) => {
+const SubscriptionDetector = ({ onClose, onSubscriptionAdded }) => {
   const { currentUser } = useAuth();
   const [loading, setLoading] = useState(false);
   const [detected, setDetected] = useState([]);
@@ -13,12 +14,7 @@ const SubscriptionDetector = ({ onClose, onSubscriptionAdded, accounts }) => {
   const [editingIndex, setEditingIndex] = useState(null);
   const [editedData, setEditedData] = useState({});
 
-  // Run detection when component mounts
-  React.useEffect(() => {
-    detectSubscriptions();
-  }, []);
-
-  const detectSubscriptions = async () => {
+  const detectSubscriptions = React.useCallback(async () => {
     setLoading(true);
     setError(null);
     
@@ -44,7 +40,12 @@ const SubscriptionDetector = ({ onClose, onSubscriptionAdded, accounts }) => {
     } finally {
       setLoading(false);
     }
-  };
+  }, [currentUser.uid]);
+
+  // Run detection when component mounts
+  React.useEffect(() => {
+    detectSubscriptions();
+  }, [detectSubscriptions]);
 
   const handleEdit = (index) => {
     setEditingIndex(index);
@@ -88,6 +89,11 @@ const SubscriptionDetector = ({ onClose, onSubscriptionAdded, accounts }) => {
       // Remove from detected list
       setDetected(prev => prev.filter((_, i) => i !== index));
       setEditingIndex(null);
+
+      // Remove from storage if it has an ID
+      if (detectedSub.detectionId) {
+        removeDetection(detectedSub.detectionId);
+      }
       
       if (onSubscriptionAdded) {
         onSubscriptionAdded();
