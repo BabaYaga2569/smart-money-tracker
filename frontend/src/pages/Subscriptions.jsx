@@ -4,6 +4,7 @@ import { db } from '../firebase';
 import { useAuth } from '../contexts/AuthContext';
 import SubscriptionCard from '../components/SubscriptionCard';
 import AddSubscriptionForm from '../components/AddSubscriptionForm';
+import SubscriptionDetector from '../components/SubscriptionDetector';
 import {
   calculateMonthlyTotal,
   calculateAnnualTotal,
@@ -18,6 +19,7 @@ const Subscriptions = () => {
   const [subscriptions, setSubscriptions] = useState([]);
   const [accounts, setAccounts] = useState([]);
   const [showForm, setShowForm] = useState(false);
+  const [showDetector, setShowDetector] = useState(false);
   const [editingSubscription, setEditingSubscription] = useState(null);
   const [notification, setNotification] = useState(null);
   
@@ -78,6 +80,18 @@ const Subscriptions = () => {
   const handleAddSubscription = () => {
     setEditingSubscription(null);
     setShowForm(true);
+  };
+
+  const handleAutoDetect = () => {
+    setShowDetector(true);
+  };
+
+  const handleDetectorClose = () => {
+    setShowDetector(false);
+  };
+
+  const handleSubscriptionAdded = () => {
+    showNotification('Subscription added successfully');
   };
 
   const handleEditSubscription = (subscription) => {
@@ -223,9 +237,14 @@ const Subscriptions = () => {
       {/* Header */}
       <div className="page-header">
         <h1>💳 Subscriptions</h1>
-        <button className="btn-primary add-subscription-btn" onClick={handleAddSubscription}>
-          + Add Subscription
-        </button>
+        <div className="header-actions">
+          <button className="btn-auto-detect" onClick={handleAutoDetect}>
+            🤖 Auto-Detect
+          </button>
+          <button className="btn-primary add-subscription-btn" onClick={handleAddSubscription}>
+            + Add Subscription
+          </button>
+        </div>
       </div>
 
       {/* Summary Section */}
@@ -348,6 +367,15 @@ const Subscriptions = () => {
             setShowForm(false);
             setEditingSubscription(null);
           }}
+        />
+      )}
+
+      {/* Auto-Detect Modal */}
+      {showDetector && (
+        <SubscriptionDetector
+          onClose={handleDetectorClose}
+          onSubscriptionAdded={handleSubscriptionAdded}
+          accounts={accounts}
         />
       )}
 
