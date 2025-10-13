@@ -8,6 +8,7 @@ import Transactions from './pages/Transactions';
 import Spendability from './pages/Spendability';
 import Bills from './pages/Bills';
 import Recurring from './pages/Recurring';
+import Subscriptions from './pages/Subscriptions';
 import Goals from './pages/Goals';
 import Categories from './pages/Categories';
 import Cashflow from './pages/Cashflow';
@@ -135,6 +136,14 @@ function App() {
             <PrivateRoute>
               <AppLayout showDebugButton={debugModeEnabled}>
                 <Recurring />
+              </AppLayout>
+            </PrivateRoute>
+          } />
+          
+          <Route path="/subscriptions" element={
+            <PrivateRoute>
+              <AppLayout showDebugButton={debugModeEnabled}>
+                <Subscriptions />
               </AppLayout>
             </PrivateRoute>
           } />

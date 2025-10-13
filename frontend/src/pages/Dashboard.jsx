@@ -25,6 +25,8 @@ const Dashboard = () => {
   safeToSpend: 0,
   billsDueSoon: 0,
   recurringCount: 0,
+  subscriptionsCount: 0,
+  subscriptionsBurn: 0,
   daysUntilPayday: 0,
   monthlyIncome: 0,
   monthlyExpenses: 0,
@@ -130,6 +132,36 @@ const goalsCount = goalsSnapshot.size;
 const uniqueCategories = new Set(transactions.map(t => t.category).filter(Boolean));
 const categoriesCount = uniqueCategories.size;
 
+// Load subscription data
+let subscriptionsCount = 0;
+let subscriptionsBurn = 0;
+try {
+  const subscriptionsRef = collection(db, 'users', currentUser.uid, 'subscriptions');
+  const subscriptionsSnapshot = await getDocs(subscriptionsRef);
+  const subscriptions = subscriptionsSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+  
+  // Calculate active subscriptions count and monthly burn
+  const activeSubscriptions = subscriptions.filter(sub => sub.status === 'active');
+  subscriptionsCount = activeSubscriptions.length;
+  
+  // Calculate monthly burn
+  subscriptionsBurn = activeSubscriptions.reduce((sum, sub) => {
+    const cost = parseFloat(sub.cost) || 0;
+    switch (sub.billingCycle) {
+      case 'Monthly':
+        return sum + cost;
+      case 'Annual':
+        return sum + (cost / 12);
+      case 'Quarterly':
+        return sum + (cost / 3);
+      default:
+        return sum + cost;
+    }
+  }, 0);
+} catch (error) {
+  console.error('Error loading subscriptions:', error);
+}
+
 // Calculate spendability (same logic as Spendability page)
 let calculatedSafeToSpend = 0;
 try {
@@ -201,6 +233,8 @@ setDashboardData({
   safeToSpend: calculatedSafeToSpend,           // ✅ Calculated, not from Firebase
   billsDueSoon: billsDueSoon,                    // ✅ Calculated from Firebase
   recurringCount: recurringCount,                // ✅ Calculated from Firebase
+  subscriptionsCount: subscriptionsCount,        // ✅ Calculated from Firebase
+  subscriptionsBurn: subscriptionsBurn,          // ✅ Calculated from Firebase
   daysUntilPayday: data.daysUntilPayday || 0,   // ✅ From Firebase or 0
   monthlyIncome: data.monthlyIncome || 0,       // ✅ From Firebase or 0
   monthlyExpenses: data.monthlyExpenses || 0,   // ✅ From Firebase or 0
@@ -317,6 +351,14 @@ setDashboardData({
       subtitle: 'Auto-payments',
       path: '/recurring',
       color: 'purple'
+    },
+    {
+      title: 'Subscriptions',
+      icon: '💳',
+      value: `${dashboardData.subscriptionsCount || 0} active`,
+      subtitle: `${formatCurrency(dashboardData.subscriptionsBurn || 0)}/mo`,
+      path: '/subscriptions',
+      color: 'cyan'
     },
     {
       title: 'Goals',
