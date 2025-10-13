@@ -157,29 +157,28 @@ const Transactions = () => {
       if (!currentUser) return;
       
       try {
-        // Check last sync timestamp from localStorage
-        const lastSyncKey = `plaidLastSync_${currentUser.uid}`;
-        const lastSyncTime = localStorage.getItem(lastSyncKey);
+        // Check last sync timestamp from localStorage (shared with Accounts.jsx)
+        const lastSync = localStorage.getItem('lastPlaidSync');
         const now = Date.now();
-        const sixHours = 6 * 60 * 60 * 1000; // 6 hours in milliseconds
+        const FIVE_MINUTES = 5 * 60 * 1000; // 5 minutes in milliseconds
         
         // Determine if we should auto-sync
-        const shouldSync = !lastSyncTime || (now - parseInt(lastSyncTime)) > sixHours;
+        const shouldSync = !lastSync || (now - parseInt(lastSync)) > FIVE_MINUTES;
         
         if (shouldSync) {
-          console.log('🔄 Auto-syncing Plaid transactions (data is stale)...');
+          console.log('[AutoSync] Data stale, triggering auto-sync...');
           setAutoSyncing(true);
           
           // Call existing sync function
           await syncPlaidTransactions();
           
-          console.log('✅ Auto-sync complete!');
+          console.log('[AutoSync] Complete');
         } else {
-          const hoursAgo = Math.floor((now - parseInt(lastSyncTime)) / (60 * 60 * 1000));
-          console.log(`ℹ️ Plaid data is fresh (synced ${hoursAgo}h ago), skipping auto-sync`);
+          const minutesAgo = Math.floor((now - parseInt(lastSync)) / (60 * 1000));
+          console.log(`[AutoSync] Data fresh (synced ${minutesAgo} min ago), skipping auto-sync`);
         }
       } catch (error) {
-        console.error('❌ Auto-sync failed:', error);
+        console.error('[AutoSync] Error:', error);
         // Don't block page load if sync fails
       } finally {
         setAutoSyncing(false);
@@ -492,9 +491,8 @@ const Transactions = () => {
 
       // Real-time listener will auto-update, no manual reload needed
       
-      // Update last sync timestamp
-      const lastSyncKey = `plaidLastSync_${currentUser.uid}`;
-      localStorage.setItem(lastSyncKey, Date.now().toString());
+      // Update last sync timestamp (shared with Accounts.jsx)
+      localStorage.setItem('lastPlaidSync', Date.now().toString());
       
       const { added, pending, deduplicated } = data;
       const pendingText = pending > 0 ? ` (${pending} pending)` : '';

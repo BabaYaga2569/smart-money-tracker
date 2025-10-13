@@ -39,6 +39,8 @@ const Accounts = () => {
   // Auto-refresh state
   const [lastRefresh, setLastRefresh] = useState(null);
   const [isRefreshing, setIsRefreshing] = useState(false);
+  const [syncingPlaid, setSyncingPlaid] = useState(false);
+  const [autoSyncing, setAutoSyncing] = useState(false);
   
   // Health check state
   const [healthStatus, setHealthStatus] = useState(null);
@@ -117,6 +119,124 @@ const Accounts = () => {
       unsubscribe();
     };
   }, [currentUser]);
+
+  // Auto-sync effect - runs when user changes (login/logout)
+  useEffect(() => {
+    const autoSyncOnStartup = async () => {
+      if (!currentUser) return;
+      
+      // Check if user has Plaid accounts
+      if (plaidAccounts.length === 0) {
+        console.log('[AutoSync] No Plaid accounts configured, skipping auto-sync');
+        return;
+      }
+      
+      try {
+        const lastSync = localStorage.getItem('lastPlaidSync');
+        const now = Date.now();
+        const FIVE_MINUTES = 5 * 60 * 1000;
+        
+        // Auto-sync if no previous sync or data is stale
+        if (!lastSync || (now - parseInt(lastSync)) > FIVE_MINUTES) {
+          console.log('[AutoSync] Data stale, triggering auto-sync...');
+          setAutoSyncing(true);
+          
+          await syncPlaidTransactions(); // Call sync function
+          
+          localStorage.setItem('lastPlaidSync', now.toString());
+          console.log('[AutoSync] Complete');
+        } else {
+          const minutesAgo = Math.floor((now - parseInt(lastSync)) / (60 * 1000));
+          console.log(`[AutoSync] Data fresh (synced ${minutesAgo} min ago), skipping sync`);
+        }
+      } catch (error) {
+        console.error('[AutoSync] Error:', error);
+        // Don't block page load if sync fails
+      } finally {
+        setAutoSyncing(false);
+      }
+    };
+    
+    // Run auto-sync when user is authenticated and component mounts
+    // Delay slightly to ensure plaidAccounts state is loaded first
+    if (currentUser) {
+      const timer = setTimeout(() => {
+        autoSyncOnStartup();
+      }, 1000); // 1 second delay to let accounts load
+      
+      return () => clearTimeout(timer);
+    }
+  }, [currentUser]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const syncPlaidTransactions = async () => {
+    try {
+      setSyncingPlaid(true);
+      
+      // Check if user has Plaid accounts configured
+      if (plaidAccounts.length === 0) {
+        showNotification('Plaid not connected. Please connect your bank account first.', 'warning');
+        return;
+      }
+
+      // Determine backend URL
+      const backendUrl = import.meta.env.VITE_API_URL || 
+        (window.location.hostname === 'localhost' 
+          ? 'http://localhost:5000' 
+          : 'https://smart-money-tracker-09ks.onrender.com');
+
+      // Fetch last 30 days of transactions
+      const endDate = new Date().toISOString().split('T')[0];
+      const startDate = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
+
+      // Call the sync_transactions endpoint which saves directly to Firebase
+      const apiUrl = `${backendUrl}/api/plaid/sync_transactions`;
+      console.log('[Accounts] Syncing from:', apiUrl);
+
+      const response = await fetch(apiUrl, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          userId: currentUser.uid,
+          start_date: startDate,
+          end_date: endDate
+        })
+      });
+
+      if (!response.ok) {
+        throw new Error(`Failed to sync transactions: ${response.statusText}`);
+      }
+
+      const data = await response.json();
+      
+      if (!data.success) {
+        throw new Error(data.error || 'Failed to sync transactions');
+      }
+
+      // Real-time listener will auto-update, no manual reload needed
+      
+      // Update last sync timestamp
+      localStorage.setItem('lastPlaidSync', Date.now().toString());
+      
+      const { added, pending, deduplicated } = data;
+      const pendingText = pending > 0 ? ` (${pending} pending)` : '';
+      const dedupeText = deduplicated > 0 ? `, ${deduplicated} merged` : '';
+      
+      showNotification(
+        `Successfully synced ${added} new transaction${added !== 1 ? 's' : ''} from Plaid${pendingText}${dedupeText}.`,
+        'success'
+      );
+    } catch (error) {
+      console.error('[Accounts] Error syncing Plaid transactions:', error);
+      showNotification(
+        `Error syncing transactions: ${error.message}`,
+        'error'
+      );
+    } finally {
+      setSyncingPlaid(false);
+    }
+  };
 
   const checkPlaidConnection = async () => {
     try {
@@ -944,17 +1064,27 @@ const Accounts = () => {
 
       {/* Auto-refresh Status */}
       <div className="refresh-status">
-        {isRefreshing && (
-          <span className="refresh-spinner" title="Refreshing balances...">
-            🔄 Refreshing...
+        {autoSyncing && (
+          <span className="refresh-spinner" title="Auto-syncing transactions...">
+            🔄 Auto-syncing transactions...
           </span>
         )}
-        {lastRefresh && (
+        {syncingPlaid && !autoSyncing && (
+          <span className="refresh-spinner" title="Syncing transactions...">
+            🔄 Syncing transactions...
+          </span>
+        )}
+        {isRefreshing && !autoSyncing && !syncingPlaid && (
+          <span className="refresh-spinner" title="Refreshing balances...">
+            🔄 Refreshing balances...
+          </span>
+        )}
+        {lastRefresh && !autoSyncing && !syncingPlaid && !isRefreshing && (
           <span className="last-updated">
             Last updated: {getTimeSince(lastRefresh)}
           </span>
         )}
-        {isDataStale(lastRefresh) && (
+        {isDataStale(lastRefresh) && !autoSyncing && !syncingPlaid && !isRefreshing && (
           <span className="stale-warning" title="Data may be outdated - click refresh button to update">
             ⚠️ Data may be outdated
           </span>
