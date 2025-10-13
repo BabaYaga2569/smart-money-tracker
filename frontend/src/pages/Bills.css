@@ -1245,10 +1245,13 @@ html body .layout .main-content .bills-container button[class*="delete"] {
   text-decoration-thickness: 2px;
 }
 
-/* High priority for urgent bills */
-.bill-item[data-status="overdue"] {
+/* High priority for overdue bills - CRITICAL FIX */
+.bill-item[data-status="overdue"],
+.bill-item.overdue {
   order: 1;
-  animation: pulse-urgent 2s infinite;
+  border: 3px solid #ff073a !important;
+  background: rgba(255, 7, 58, 0.1) !important;
+  animation: pulse-red 2s infinite;
   border-color: #ff073a !important;
   box-shadow: 0 0 16px rgba(255, 7, 58, 0.3) !important;
 }
@@ -1315,4 +1318,71 @@ html body .layout .main-content .bills-container button[class*="delete"] {
 
 .bill-item * {
   transition: color 0.3s ease, background 0.3s ease, transform 0.2s ease;
+}
+/* Overdue Bill Pulse Animation - CRITICAL FIX */
+@keyframes pulse-red {
+  0%, 100% { 
+    box-shadow: 0 0 20px rgba(255, 7, 58, 0.4);
+    border-color: #ff073a;
+  }
+  50% { 
+    box-shadow: 0 0 40px rgba(255, 7, 58, 0.6);
+    border-color: #ff3355;
+  }
+}
+
+/* Overdue badge with shake animation */
+.status-badge.status-overdue {
+  background: #ff073a;
+  color: #fff;
+  font-weight: bold;
+  animation: shake 0.5s ease-in-out infinite;
+  padding: 8px 12px;
+  border-radius: 6px;
+}
+
+@keyframes shake {
+  0%, 100% { transform: translateX(0); }
+  25% { transform: translateX(-2px); }
+  75% { transform: translateX(2px); }
+}
+
+/* Paid bill styling with green badge */
+.bill-item[data-status="paid"],
+.bill-item.paid {
+  border: 2px solid #00ff88 !important;
+  background: rgba(0, 255, 136, 0.05) !important;
+  opacity: 0.9;
+  order: 999;
+}
+
+.status-badge.status-paid {
+  background: #00ff88;
+  color: #000;
+  font-weight: bold;
+  padding: 6px 10px;
+  border-radius: 6px;
+}
+
+/* Clickable overview card hover effect */
+.overview-card.clickable:hover {
+  border-color: #00d4ff !important;
+  box-shadow: 0 4px 12px rgba(0, 212, 255, 0.3);
+  transform: translateY(-2px);
+  cursor: pointer;
+  transition: all 0.3s ease;
+}
+
+.overview-card.clickable {
+  transition: all 0.3s ease;
+}
+
+/* Pulse animation for overdue warning text */
+@keyframes pulse {
+  0%, 100% { 
+    opacity: 1;
+  }
+  50% { 
+    opacity: 0.6;
+  }
 }

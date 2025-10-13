@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { doc, getDoc, updateDoc, collection, addDoc } from 'firebase/firestore';
+import { doc, getDoc, updateDoc, collection, addDoc, query, where, getDocs } from 'firebase/firestore';
 import { db } from '../firebase';
 import { RecurringBillManager } from '../utils/RecurringBillManager';
 import { BillSortingManager } from '../utils/BillSortingManager';
@@ -9,6 +9,7 @@ import { PlaidIntegrationManager } from '../utils/PlaidIntegrationManager';
 import PlaidConnectionManager from '../utils/PlaidConnectionManager';
 import PlaidErrorModal from '../components/PlaidErrorModal';
 import BillCSVImportModal from '../components/BillCSVImportModal';
+import PaymentHistoryModal from '../components/PaymentHistoryModal';
 import { formatDateForDisplay, formatDateForInput, getPacificTime } from '../utils/DateUtils';
 import { TRANSACTION_CATEGORIES, CATEGORY_ICONS, getCategoryIcon, migrateLegacyCategory } from '../constants/categories';
 import NotificationSystem from '../components/NotificationSystem';
@@ -51,6 +52,11 @@ const Bills = () => {
   const [showHelpModal, setShowHelpModal] = useState(false);
   
   const [deduplicating, setDeduplicating] = useState(false);
+  
+  // Payment history state
+  const [showPaymentHistory, setShowPaymentHistory] = useState(false);
+  const [paidThisMonth, setPaidThisMonth] = useState(0);
+  const [paidBillsCount, setPaidBillsCount] = useState(0);
 
   const BILL_CATEGORIES = CATEGORY_ICONS;
 
@@ -59,6 +65,7 @@ const Bills = () => {
     // Load data immediately - don't wait
     loadBills();
     loadAccounts();
+    loadPaidThisMonth();
     
     // Initialize Plaid in background (non-blocking)
     initializePlaidIntegration().catch(err => {
@@ -100,6 +107,27 @@ const Bills = () => {
       });
     } catch (error) {
       console.error('Error checking Plaid connection:', error);
+    }
+  };
+
+  const loadPaidThisMonth = async () => {
+    try {
+      const currentMonth = new Date().toISOString().slice(0, 7);
+      const paymentsRef = collection(db, 'users', currentUser.uid, 'bill_payments');
+      const q = query(paymentsRef, where('paymentMonth', '==', currentMonth));
+      
+      const querySnapshot = await getDocs(q);
+      let total = 0;
+      querySnapshot.forEach((doc) => {
+        total += doc.data().amount || 0;
+      });
+      
+      setPaidThisMonth(total);
+      setPaidBillsCount(querySnapshot.size);
+    } catch (error) {
+      console.error('Error loading paid this month:', error);
+      setPaidThisMonth(0);
+      setPaidBillsCount(0);
     }
   };
 
@@ -394,13 +422,6 @@ const Bills = () => {
     
     const totalMonthlyBills = processedBills.reduce((sum, bill) => sum + (parseFloat(bill.amount) || 0), 0);
     
-    const paidThisMonth = processedBills
-      .filter(bill => {
-        const lastPaidDate = bill.lastPaidDate ? new Date(bill.lastPaidDate) : null;
-        return lastPaidDate && lastPaidDate >= currentMonth && lastPaidDate <= nextMonth;
-      })
-      .reduce((sum, bill) => sum + (parseFloat(bill.amount) || 0), 0);
-    
     const upcomingBills = processedBills.filter(bill => {
       if (bill.status === 'skipped') return false;
       const dueDate = new Date(bill.nextDueDate || bill.dueDate);
@@ -424,6 +445,7 @@ const Bills = () => {
     return {
       totalMonthlyBills,
       paidThisMonth,
+      paidBillsCount,
       upcomingBills: upcomingBills.reduce((sum, bill) => sum + (parseFloat(bill.amount) || 0), 0),
       upcomingCount: upcomingBills.length,
       overdueBills: overdueBills.reduce((sum, bill) => sum + (parseFloat(bill.amount) || 0), 0),
@@ -569,12 +591,15 @@ const Bills = () => {
     }
   };
   const processBillPaymentInternal = async (bill, paymentData = {}) => {
+    const paidDate = paymentData.paidDate || getPacificTime();
+    const paidDateStr = formatDateForInput(paidDate);
+    
     const transaction = {
       amount: -Math.abs(parseFloat(bill.amount)),
       description: `${bill.name} Payment`,
       category: 'Bills & Utilities',
       account: 'bofa',
-      date: formatDateForInput(paymentData.paidDate || getPacificTime()),
+      date: paidDateStr,
       timestamp: Date.now(),
       type: 'expense',
       source: paymentData.source || 'manual',
@@ -586,7 +611,29 @@ const Bills = () => {
 
     await updateAccountBalance('bofa', transaction.amount);
 
-    await updateBillAsPaid(bill, paymentData.paidDate, {
+    // Calculate if payment is overdue
+    const now = new Date(paidDate);
+    const dueDate = new Date(bill.nextDueDate || bill.dueDate);
+    const daysPastDue = Math.max(0, Math.floor((now - dueDate) / (1000 * 60 * 60 * 24)));
+    
+    // Record payment in bill_payments collection
+    const paymentsRef = collection(db, 'users', currentUser.uid, 'bill_payments');
+    await addDoc(paymentsRef, {
+      billId: bill.id,
+      billName: bill.name,
+      amount: Math.abs(parseFloat(bill.amount)),
+      dueDate: bill.nextDueDate || bill.dueDate,
+      paidDate: paidDateStr,
+      paymentMonth: paidDateStr.slice(0, 7),
+      paymentMethod: paymentData.method || paymentData.source || 'Manual',
+      category: bill.category || 'Bills & Utilities',
+      linkedTransactionId: paymentData.transactionId || null,
+      isOverdue: daysPastDue > 0,
+      daysPastDue: daysPastDue,
+      createdAt: new Date()
+    });
+
+    await updateBillAsPaid(bill, paidDate, {
       method: paymentData.method || 'manual',
       source: paymentData.source || 'manual',
       transactionId: paymentData.transactionId,
@@ -594,6 +641,9 @@ const Bills = () => {
       merchantName: paymentData.merchantName || bill.name,
       amount: Math.abs(parseFloat(bill.amount))
     });
+    
+    // Reload paid this month after recording payment
+    await loadPaidThisMonth();
   };
 
   const updateAccountBalance = async (accountKey, amount) => {
@@ -1330,20 +1380,49 @@ const Bills = () => {
             <div className="overview-value">{formatCurrency(metrics.totalMonthlyBills)}</div>
             <div className="overview-label">{processedBills.length} bills</div>
           </div>
-          <div className="overview-card">
-            <h3>Paid This Month</h3>
+          <div 
+            className="overview-card clickable" 
+            onClick={() => setShowPaymentHistory(true)}
+            style={{ cursor: 'pointer' }}
+            title="Click to view payment history"
+          >
+            <h3>💵 Paid This Month</h3>
             <div className="overview-value paid">{formatCurrency(metrics.paidThisMonth)}</div>
-            <div className="overview-label">Successfully paid</div>
+            <div className="overview-label">
+              {metrics.paidBillsCount} bill{metrics.paidBillsCount !== 1 ? 's' : ''} successfully paid
+            </div>
+            <div style={{ marginTop: '8px', fontSize: '12px', color: '#00ff88' }}>
+              📊 Click to view history →
+            </div>
           </div>
           <div className="overview-card">
             <h3>Upcoming Bills</h3>
             <div className="overview-value upcoming">{formatCurrency(metrics.upcomingBills)}</div>
             <div className="overview-label">{metrics.upcomingCount} bills due</div>
           </div>
-          <div className="overview-card">
-            <h3>Overdue Bills</h3>
+          <div 
+            className="overview-card"
+            style={{
+              border: metrics.overdueCount > 0 ? '2px solid #ff073a' : '1px solid #333',
+              background: metrics.overdueCount > 0 ? 'rgba(255, 7, 58, 0.1)' : '#1a1a1a'
+            }}
+          >
+            <h3>🚨 Overdue Bills</h3>
             <div className="overview-value overdue">{formatCurrency(metrics.overdueBills)}</div>
-            <div className="overview-label">{metrics.overdueCount} bills overdue</div>
+            <div className="overview-label">
+              {metrics.overdueCount} bill{metrics.overdueCount !== 1 ? 's' : ''} overdue
+            </div>
+            {metrics.overdueCount > 0 && (
+              <div style={{ 
+                marginTop: '8px', 
+                fontSize: '12px', 
+                color: '#ff073a',
+                fontWeight: 'bold',
+                animation: 'pulse 2s infinite'
+              }}>
+                ⚠️ Pay now to avoid late fees!
+              </div>
+            )}
           </div>
           <div className="overview-card">
             <h3>Next Bill Due</h3>
@@ -1571,6 +1650,22 @@ const Bills = () => {
                     {bill.formattedDueDate || `Due: ${formatDate(bill.nextDueDate || bill.dueDate)}`}
                   </div>
                   
+                  {bill.status === 'overdue' && (
+                    <div className="overdue-warning" style={{
+                      marginTop: '8px',
+                      padding: '6px 10px',
+                      background: 'rgba(255, 7, 58, 0.2)',
+                      borderRadius: '6px',
+                      border: '1px solid #ff073a',
+                      fontSize: '11px',
+                      color: '#ff073a',
+                      fontWeight: 'bold',
+                      textAlign: 'center'
+                    }}>
+                      ⚠️ LATE FEES MAY APPLY!
+                    </div>
+                  )}
+                  
                   {bill.lastPayment && bill.lastPayment.source === 'plaid' && bill.lastPayment.transactionId && (
                     <div className="matched-transaction-info" style={{
                       marginTop: '8px',
@@ -1589,6 +1684,22 @@ const Bills = () => {
                       <div style={{ opacity: 0.7, fontSize: '10px' }}>
                         {formatDate(bill.lastPayment.paidDate)}
                       </div>
+                    </div>
+                  )}
+                  
+                  {bill.status === 'paid' && bill.lastPaidDate && (
+                    <div className="paid-info" style={{
+                      marginTop: '8px',
+                      padding: '6px 10px',
+                      background: 'rgba(0, 255, 136, 0.1)',
+                      borderRadius: '6px',
+                      border: '1px solid #00ff88',
+                      fontSize: '11px',
+                      color: '#00ff88',
+                      fontWeight: 'bold',
+                      textAlign: 'center'
+                    }}>
+                      ✅ PAID {formatDate(bill.lastPaidDate)}
                     </div>
                   )}
                 </div>
@@ -1967,6 +2078,11 @@ const Bills = () => {
           setShowErrorModal(false);
           checkPlaidConnection();
         }}
+      />
+
+      <PaymentHistoryModal
+        isOpen={showPaymentHistory}
+        onClose={() => setShowPaymentHistory(false)}
       />
     </div>
   );
