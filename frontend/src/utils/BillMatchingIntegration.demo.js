@@ -6,7 +6,7 @@ import { PlaidIntegrationManager } from './PlaidIntegrationManager.js';
  * This shows how the system works with Plaid sandbox data
  */
 
-console.log('🎯 Bill Matching Integration Demo\n');
+console.log('ðŸŽ¯ Bill Matching Integration Demo\n');
 console.log('This demo shows how automated bill detection works with Plaid transactions.\n');
 
 // Step 1: Initialize the integration
@@ -16,7 +16,7 @@ await PlaidIntegrationManager.initialize({
     transactionTolerance: 0.05,  // 5% tolerance
     autoMarkPaid: true
 });
-console.log('✅ Integration initialized\n');
+console.log('âœ… Integration initialized\n');
 
 // Step 2: Set up sample bills (simulating what's in the database)
 console.log('Step 2: Set up sample recurring bills');
@@ -51,7 +51,7 @@ PlaidIntegrationManager.setBillsProvider(async () => {
     return sampleBills.filter(bill => bill.status !== 'paid');
 });
 
-console.log(`📋 ${sampleBills.length} bills configured:`);
+console.log(`ðŸ“‹ ${sampleBills.length} bills configured:`);
 sampleBills.forEach(bill => {
     console.log(`   - ${bill.name}: $${bill.amount} (due ${bill.nextDueDate})`);
 });
@@ -86,7 +86,7 @@ const sampleTransactions = [
     }
 ];
 
-console.log(`💳 ${sampleTransactions.length} transactions to process:`);
+console.log(`ðŸ’³ ${sampleTransactions.length} transactions to process:`);
 sampleTransactions.forEach(txn => {
     console.log(`   - ${txn.merchant_name}: $${txn.amount} on ${txn.date}`);
 });
@@ -96,7 +96,7 @@ console.log('');
 console.log('Step 4: Find matching bills for each transaction\n');
 
 for (const transaction of sampleTransactions) {
-    console.log(`\n🔍 Processing transaction: ${transaction.merchant_name}`);
+    console.log(`\nðŸ” Processing transaction: ${transaction.merchant_name}`);
     console.log(`   Amount: $${transaction.amount}, Date: ${transaction.date}`);
     
     // Find matching bills
@@ -112,7 +112,7 @@ for (const transaction of sampleTransactions) {
     if (matches.length > 0) {
         matches.forEach(bill => {
             const confidence = PlaidIntegrationManager.calculateMatchConfidence(bill, transaction);
-            console.log(`   ✓ ${bill.name}`);
+            console.log(`   âœ“ ${bill.name}`);
             console.log(`     - Bill amount: $${bill.amount} vs Transaction: $${transaction.amount}`);
             console.log(`     - Confidence: ${confidence}%`);
             
@@ -129,7 +129,7 @@ for (const transaction of sampleTransactions) {
             console.log(`     - Days from due date: ${daysDiff} days`);
         });
     } else {
-        console.log('   ✗ No matching bills found');
+        console.log('   âœ— No matching bills found');
     }
 }
 
@@ -175,19 +175,20 @@ testCases.forEach(testCase => {
 
 // Step 6: Summary
 console.log('\n\n' + '='.repeat(60));
-console.log('📊 Demo Summary');
+console.log('ðŸ“Š Demo Summary');
 console.log('='.repeat(60));
-console.log('\n✅ Automated Bill Matching Features:');
-console.log('   • Fuzzy merchant name matching (70% similarity threshold)');
-console.log('   • Amount tolerance matching (±5%)');
-console.log('   • Date proximity matching (±5 days)');
-console.log('   • Confidence scoring (0-100 scale)');
-console.log('   • Duplicate prevention');
-console.log('\n💡 Integration Points:');
-console.log('   • Plaid sandbox API for transaction data');
-console.log('   • Automatic bill payment detection');
-console.log('   • Manual refresh capability');
-console.log('   • User notifications on match');
-console.log('   • Manual override support');
-console.log('\n🎯 Ready for Plaid Sandbox Testing!');
+console.log('\nâœ… Automated Bill Matching Features:');
+console.log('   â€¢ Fuzzy merchant name matching (70% similarity threshold)');
+console.log('   â€¢ Amount tolerance matching (Â±5%)');
+console.log('   â€¢ Date proximity matching (Â±5 days)');
+console.log('   â€¢ Confidence scoring (0-100 scale)');
+console.log('   â€¢ Duplicate prevention');
+console.log('\nðŸ’¡ Integration Points:');
+console.log('   â€¢ Plaid sandbox API for transaction data');
+console.log('   â€¢ Automatic bill payment detection');
+console.log('   â€¢ Manual refresh capability');
+console.log('   â€¢ User notifications on match');
+console.log('   â€¢ Manual override support');
+console.log('\nðŸŽ¯ Ready for Plaid Sandbox Testing!');
 console.log('   Connect a Plaid sandbox account to test with real transaction data.\n');
+

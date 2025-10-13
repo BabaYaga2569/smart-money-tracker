@@ -422,7 +422,7 @@ const Goals = () => {
     return (
       <div className="goals-container">
         <div className="page-header">
-          <h2>🎯 Goals</h2>
+          <h2>ðŸŽ¯ Goals</h2>
           <p>Loading your financial goals...</p>
         </div>
       </div>
@@ -432,7 +432,7 @@ const Goals = () => {
   return (
     <div className="goals-container">
       <div className="page-header">
-        <h2>🎯 Goals</h2>
+        <h2>ðŸŽ¯ Goals</h2>
         <p>Track your financial goals and build wealth systematically</p>
       </div>
 
@@ -511,17 +511,17 @@ const Goals = () => {
         </div>
         
         <button className="btn btn-primary" onClick={handleAddGoal}>
-          ➕ Add Goal
+          âž• Add Goal
         </button>
       </div>
 
       {/* Goals Grid */}
       {filteredGoals.length === 0 ? (
         <div className="no-goals">
-          <h3>🎯 No Goals Yet</h3>
+          <h3>ðŸŽ¯ No Goals Yet</h3>
           <p>Start building wealth by creating your first financial goal!</p>
           <button className="btn btn-primary" onClick={handleAddGoal}>
-            ➕ Create Your First Goal
+            âž• Create Your First Goal
           </button>
         </div>
       ) : (
@@ -566,14 +566,14 @@ const Goals = () => {
                       onClick={() => handleEditGoal(goal)}
                       title="Edit goal"
                     >
-                      ✏️
+                      âœï¸
                     </button>
                     <button 
                       className="btn-icon" 
                       onClick={() => deleteGoal(goal.id)}
                       title="Delete goal"
                     >
-                      🗑️
+                      ðŸ—‘ï¸
                     </button>
                   </div>
                 </div>
@@ -619,7 +619,7 @@ const Goals = () => {
                   
                   {goal.targetDate && requiredContribution !== null && (
                     <div className="goal-recommendation">
-                      💡 Need {formatCurrency(requiredContribution)}/month to reach by {formatDateForDisplay(goal.targetDate)}
+                      ðŸ’¡ Need {formatCurrency(requiredContribution)}/month to reach by {formatDateForDisplay(goal.targetDate)}
                     </div>
                   )}
                   
@@ -645,7 +645,7 @@ const Goals = () => {
                 className="close-btn" 
                 onClick={() => setShowModal(false)}
               >
-                ×
+                Ã—
               </button>
             </div>
             
@@ -836,3 +836,4 @@ const Goals = () => {
 };
 
 export default Goals;
+

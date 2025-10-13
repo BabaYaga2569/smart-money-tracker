@@ -260,7 +260,7 @@ const CSVImportModal = ({ existingItems, accounts = {}, customMapping: initialCu
           id="csv-file-input"
         />
         <label htmlFor="csv-file-input" className="file-input-label">
-          <div className="upload-icon">📄</div>
+          <div className="upload-icon">ðŸ“„</div>
           <div className="upload-text">
             <strong>Choose CSV file</strong> or drag and drop
           </div>
@@ -292,7 +292,7 @@ const CSVImportModal = ({ existingItems, accounts = {}, customMapping: initialCu
       {importData?.errors && importData.errors.length > 0 && (
         <div className="import-errors" ref={errorSectionRef}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
-            <h4>⚠️ Import Errors ({importData.errors.length}):</h4>
+            <h4>âš ï¸ Import Errors ({importData.errors.length}):</h4>
             <button 
               onClick={handleClearErrors}
               className="clear-errors-btn"
@@ -326,7 +326,7 @@ const CSVImportModal = ({ existingItems, accounts = {}, customMapping: initialCu
             )}
           </div>
           <p style={{ marginTop: '10px', color: '#ff9800' }}>
-            ⚠️ You must fix or clear these errors before continuing.
+            âš ï¸ You must fix or clear these errors before continuing.
           </p>
         </div>
       )}
@@ -340,14 +340,14 @@ const CSVImportModal = ({ existingItems, accounts = {}, customMapping: initialCu
             disabled={hasBlockingErrors}
             style={{ flex: 1, padding: '8px', backgroundColor: hasBlockingErrors ? '#555' : '#00ff88', color: '#000', border: 'none', borderRadius: '4px', cursor: hasBlockingErrors ? 'not-allowed' : 'pointer' }}
           >
-            ✓ Approve All
+            âœ“ Approve All
           </button>
           <button 
             onClick={handleSkipAll}
             className="bulk-action-btn"
             style={{ flex: 1, padding: '8px', backgroundColor: '#ff9800', color: '#000', border: 'none', borderRadius: '4px', cursor: 'pointer' }}
           >
-            ✕ Skip All
+            âœ• Skip All
           </button>
         </div>
       )}
@@ -411,7 +411,7 @@ const CSVImportModal = ({ existingItems, accounts = {}, customMapping: initialCu
                 className="remove-btn"
                 title="Remove item"
               >
-                ✕
+                âœ•
               </button>
             </div>
           </div>
@@ -421,14 +421,14 @@ const CSVImportModal = ({ existingItems, accounts = {}, customMapping: initialCu
       
       <div className="preview-actions">
         <button onClick={() => setStep('upload')} className="back-btn">
-          ← Back
+          â† Back
         </button>
         <button 
           onClick={handleProceedToConflicts}
           className="continue-btn"
           disabled={previewItems.length === 0 || hasBlockingErrors}
         >
-          Continue →
+          Continue â†’
         </button>
       </div>
     </div>
@@ -447,21 +447,21 @@ const CSVImportModal = ({ existingItems, accounts = {}, customMapping: initialCu
           className="bulk-resolution-btn"
           style={{ padding: '8px 15px', backgroundColor: '#00ff88', color: '#000', border: 'none', borderRadius: '4px', cursor: 'pointer' }}
         >
-          🔀 Merge All
+          ðŸ”€ Merge All
         </button>
         <button 
           onClick={() => handleBulkConflictResolution('skip')}
           className="bulk-resolution-btn"
           style={{ padding: '8px 15px', backgroundColor: '#ff9800', color: '#000', border: 'none', borderRadius: '4px', cursor: 'pointer' }}
         >
-          ⏭️ Skip All
+          â­ï¸ Skip All
         </button>
         <button 
           onClick={() => handleBulkConflictResolution('keep_both')}
           className="bulk-resolution-btn"
           style={{ padding: '8px 15px', backgroundColor: '#2196F3', color: '#fff', border: 'none', borderRadius: '4px', cursor: 'pointer' }}
         >
-          ➕ Keep All Separate
+          âž• Keep All Separate
         </button>
       </div>
       
@@ -511,7 +511,7 @@ const CSVImportModal = ({ existingItems, accounts = {}, customMapping: initialCu
                   />
                   <span className="option-label">
                     {rec.label}
-                    {rec.confidence === 'high' && <span className="recommended">⭐ Recommended</span>}
+                    {rec.confidence === 'high' && <span className="recommended">â­ Recommended</span>}
                   </span>
                   <span className="option-description">{rec.description}</span>
                 </label>
@@ -530,7 +530,7 @@ const CSVImportModal = ({ existingItems, accounts = {}, customMapping: initialCu
             setStep('preview');
           }
         }} className="back-btn">
-          ← Back
+          â† Back
         </button>
         <button 
           onClick={handleFinalImport}
@@ -545,7 +545,7 @@ const CSVImportModal = ({ existingItems, accounts = {}, customMapping: initialCu
 
   const renderCompleteStep = () => (
     <div className="csv-complete-step">
-      <div className="success-icon">✅</div>
+      <div className="success-icon">âœ…</div>
       <h3>Import Complete!</h3>
       <p>Successfully imported {previewItems.length} recurring items.</p>
       
@@ -581,7 +581,7 @@ const CSVImportModal = ({ existingItems, accounts = {}, customMapping: initialCu
             <div className={`step ${step === 'conflicts' ? 'active' : step === 'complete' ? 'completed' : ''}`}>4</div>
             <div className={`step ${step === 'complete' ? 'active' : ''}`}>5</div>
           </div>
-          <button className="close-btn" onClick={onCancel}>×</button>
+          <button className="close-btn" onClick={onCancel}>Ã—</button>
         </div>
         
         <div className="modal-body">

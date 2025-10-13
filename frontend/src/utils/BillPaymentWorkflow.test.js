@@ -6,7 +6,7 @@ import { PlaidIntegrationManager } from './PlaidIntegrationManager.js';
 
 // Simple test runner for the comprehensive bill fixes
 const runBillWorkflowTests = () => {
-    console.log('🧪 Testing Comprehensive Bill Payment Workflow Fixes...\n');
+    console.log('ðŸ§ª Testing Comprehensive Bill Payment Workflow Fixes...\n');
 
     // Test 1: Bill Marking as Paid and Next Due Date Calculation
     test('Bill marking as paid with next due date calculation', () => {
@@ -30,7 +30,7 @@ const runBillWorkflowTests = () => {
         assert(nextDue.getMonth() === 1, 'Next due date should be February (month 1)'); // February = 1
         assert(nextDue.getDate() === 15, 'Next due date should be 15th');
         
-        console.log('✅ Bill payment and next due date calculation working correctly');
+        console.log('âœ… Bill payment and next due date calculation working correctly');
     });
 
     // Test 2: Paid bills should never show as overdue
@@ -68,7 +68,7 @@ const runBillWorkflowTests = () => {
         assert(!RecurringBillManager.isBillPaidForCurrentCycle(unpaidOverdueBill), 'Unpaid bill should not be considered paid');
         assert(RecurringBillManager.isBillPaidForCurrentCycle(paidBill), 'Paid bill should be considered paid');
         
-        console.log('✅ Paid bills correctly excluded from overdue lists');
+        console.log('âœ… Paid bills correctly excluded from overdue lists');
     });
 
     // Test 3: Transaction creation and balance updates (mock test)
@@ -94,7 +94,7 @@ const runBillWorkflowTests = () => {
         // - Update account balance
         // - Show success notification
         
-        console.log('✅ Bill payment creates proper payment records');
+        console.log('âœ… Bill payment creates proper payment records');
     });
 
     // Test 4: Bill filtering respects paid status everywhere
@@ -144,7 +144,7 @@ const runBillWorkflowTests = () => {
         const totalAmount = RecurringBillManager.getTotalAmountInRange(bills, new Date('2025-01-10'), new Date('2025-01-25'));
         assert(totalAmount === 45.00, 'Total should only include unpaid bill amount');
         
-        console.log('✅ All filtering methods consistently exclude paid bills');
+        console.log('âœ… All filtering methods consistently exclude paid bills');
     });
 
     // Test 5: Edge case - Bill paid multiple times doesn't break logic
@@ -169,7 +169,7 @@ const runBillWorkflowTests = () => {
         // Should still be considered paid for current cycle
         assert(RecurringBillManager.isBillPaidForCurrentCycle(secondPayment), 'Should still be considered paid');
         
-        console.log('✅ Multiple payments handled correctly');
+        console.log('âœ… Multiple payments handled correctly');
     });
 
     // Test 6: Bill status determination consistency
@@ -202,16 +202,16 @@ const runBillWorkflowTests = () => {
         assert(RecurringBillManager.isBillPaidForCurrentCycle(paidBill), 'Helper should identify paid bill');
         assert(!RecurringBillManager.isBillPaidForCurrentCycle(unpaidBill), 'Helper should identify unpaid bill');
         
-        console.log('✅ Bill status determination is consistent');
+        console.log('âœ… Bill status determination is consistent');
     });
 
-    console.log('\n🎉 All comprehensive bill workflow tests passed! Fixes are working correctly.\n');
+    console.log('\nðŸŽ‰ All comprehensive bill workflow tests passed! Fixes are working correctly.\n');
 };
 
 // Simple assertion helper
 const assert = (condition, message) => {
     if (!condition) {
-        throw new Error(`❌ Assertion failed: ${message}`);
+        throw new Error(`âŒ Assertion failed: ${message}`);
     }
 };
 
@@ -220,7 +220,7 @@ const test = (name, testFn) => {
     try {
         testFn();
     } catch (error) {
-        console.error(`❌ Test failed: ${name}`);
+        console.error(`âŒ Test failed: ${name}`);
         console.error(error.message);
         throw error;
     }

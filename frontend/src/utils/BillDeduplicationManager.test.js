@@ -16,10 +16,10 @@ const assert = (condition, message) => {
 const test = (name, fn) => {
     try {
         fn();
-        console.log(`✅ ${name}`);
+        console.log(`âœ… ${name}`);
         return true;
     } catch (error) {
-        console.error(`❌ ${name}`);
+        console.error(`âŒ ${name}`);
         console.error(`   Error: ${error.message}`);
         return false;
     }
@@ -225,8 +225,8 @@ const runTests = () => {
     })) passed++; else failed++;
 
     console.log(`\n=== Test Results ===`);
-    console.log(`✅ Passed: ${passed}`);
-    console.log(`❌ Failed: ${failed}`);
+    console.log(`âœ… Passed: ${passed}`);
+    console.log(`âŒ Failed: ${failed}`);
     console.log(`Total: ${passed + failed}`);
     
     return failed === 0;
@@ -238,3 +238,4 @@ if (typeof require !== 'undefined' && require.main === module) {
 }
 
 export { runTests };
+

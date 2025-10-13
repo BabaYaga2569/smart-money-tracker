@@ -145,7 +145,7 @@ const PayCycle = () => {
     return (
       <div className="paycycle-container">
         <div className="page-header">
-          <h2>💰 Pay Cycle Management</h2>
+          <h2>ðŸ’° Pay Cycle Management</h2>
           <p>Loading paycycle data...</p>
         </div>
       </div>
@@ -156,13 +156,13 @@ const PayCycle = () => {
     <div className="paycycle-container">
       {/* Header Section */}
       <div className="paycycle-header">
-        <h1>💰 Pay Cycle Management</h1>
+        <h1>ðŸ’° Pay Cycle Management</h1>
         <p>Optimize your cash flow and align expenses with income</p>
         
         {/* Quick Stats */}
         <div className="quick-stats">
           <div className="metric-card electric-green">
-            <div className="metric-icon">💸</div>
+            <div className="metric-icon">ðŸ’¸</div>
             <div className="metric-content">
               <div className="metric-value">
                 {incomeMetrics?.nextPaycheck ? formatCurrency(incomeMetrics.nextPaycheck.amount) : 'N/A'}
@@ -175,7 +175,7 @@ const PayCycle = () => {
           </div>
           
           <div className="metric-card electric-blue">
-            <div className="metric-icon">📅</div>
+            <div className="metric-icon">ðŸ“…</div>
             <div className="metric-content">
               <div className="metric-value">
                 {incomeMetrics?.nextPaycheck?.daysUntil || 0}
@@ -188,7 +188,7 @@ const PayCycle = () => {
           </div>
           
           <div className="metric-card electric-yellow">
-            <div className="metric-icon">💰</div>
+            <div className="metric-icon">ðŸ’°</div>
             <div className="metric-content">
               <div className="metric-value">{formatCurrency(currentBalance)}</div>
               <div className="metric-label">Current Balance</div>
@@ -197,7 +197,7 @@ const PayCycle = () => {
           </div>
           
           <div className="metric-card electric-red">
-            <div className="metric-icon">📋</div>
+            <div className="metric-icon">ðŸ“‹</div>
             <div className="metric-content">
               <div className="metric-value">
                 {optimizedSchedule.filter(bill => {
@@ -226,25 +226,25 @@ const PayCycle = () => {
           className={activeTab === 'overview' ? 'active' : ''}
           onClick={() => setActiveTab('overview')}
         >
-          📊 Overview
+          ðŸ“Š Overview
         </button>
         <button 
           className={activeTab === 'income' ? 'active' : ''}
           onClick={() => setActiveTab('income')}
         >
-          💼 Income Sources
+          ðŸ’¼ Income Sources
         </button>
         <button 
           className={activeTab === 'forecast' ? 'active' : ''}
           onClick={() => setActiveTab('forecast')}
         >
-          🔮 Cash Flow Forecast
+          ðŸ”® Cash Flow Forecast
         </button>
         <button 
           className={activeTab === 'schedule' ? 'active' : ''}
           onClick={() => setActiveTab('schedule')}
         >
-          🎯 Smart Scheduling
+          ðŸŽ¯ Smart Scheduling
         </button>
       </div>
 
@@ -313,38 +313,38 @@ const OverviewTab = ({ incomeMetrics, incomeSources, cashFlowForecast, optimized
         <div className="chart-container large">
           <CashFlowForecastChart 
             data={forecastData} 
-            title="📈 90-Day Cash Flow Projection"
+            title="ðŸ“ˆ 90-Day Cash Flow Projection"
           />
         </div>
         
         <div className="chart-container">
           <IncomeSourcesChart 
             data={incomeSourcesData}
-            title="💰 Income Sources Breakdown"
+            title="ðŸ’° Income Sources Breakdown"
           />
         </div>
         
         <div className="chart-container">
           <PaymentRiskChart 
             data={optimizedSchedule}
-            title="⚠️ Payment Risk Assessment"
+            title="âš ï¸ Payment Risk Assessment"
           />
         </div>
         
         <div className="chart-container">
           <IncomeTimelineChart 
             data={incomeTimelineData}
-            title="📅 Monthly Income Distribution"
+            title="ðŸ“… Monthly Income Distribution"
           />
         </div>
       </div>
 
       {/* Key Insights */}
       <div className="insights-section">
-        <h3>🧠 Intelligent Insights</h3>
+        <h3>ðŸ§  Intelligent Insights</h3>
         <div className="insights-grid">
           <div className="insight-card">
-            <div className="insight-icon">💡</div>
+            <div className="insight-icon">ðŸ’¡</div>
             <div className="insight-content">
               <h4>Cash Flow Optimization</h4>
               <p>Your next paycheck arrives in {incomeMetrics?.nextPaycheck?.daysUntil || 0} days. 
@@ -353,7 +353,7 @@ const OverviewTab = ({ incomeMetrics, incomeSources, cashFlowForecast, optimized
           </div>
           
           <div className="insight-card">
-            <div className="insight-icon">⚡</div>
+            <div className="insight-icon">âš¡</div>
             <div className="insight-content">
               <h4>Risk Mitigation</h4>
               <p>
@@ -366,7 +366,7 @@ const OverviewTab = ({ incomeMetrics, incomeSources, cashFlowForecast, optimized
           </div>
           
           <div className="insight-card">
-            <div className="insight-icon">📊</div>
+            <div className="insight-icon">ðŸ“Š</div>
             <div className="insight-content">
               <h4>Income Diversification</h4>
               <p>
@@ -388,9 +388,9 @@ const IncomeTab = ({ incomeSources, onAdd, onEdit }) => {
   return (
     <div className="income-tab">
       <div className="section-header">
-        <h3>💼 Income Sources Management</h3>
+        <h3>ðŸ’¼ Income Sources Management</h3>
         <button className="add-button" onClick={onAdd}>
-          ➕ Add Income Source
+          âž• Add Income Source
         </button>
       </div>
 
@@ -399,14 +399,14 @@ const IncomeTab = ({ incomeSources, onAdd, onEdit }) => {
           <div key={source.id} className="income-source-card">
             <div className="income-header">
               <div className="income-icon">
-                {PaycycleManager.INCOME_SOURCE_TYPES[source.type]?.icon || '💰'}
+                {PaycycleManager.INCOME_SOURCE_TYPES[source.type]?.icon || 'ðŸ’°'}
               </div>
               <div className="income-info">
                 <h4>{source.name}</h4>
                 <span className="income-type">{source.type}</span>
               </div>
               <button className="edit-button" onClick={() => onEdit(source)}>
-                ✏️
+                âœï¸
               </button>
             </div>
             
@@ -438,7 +438,7 @@ const IncomeTab = ({ incomeSources, onAdd, onEdit }) => {
             
             <div className="income-status">
               <span className={`status-indicator ${source.active ? 'active' : 'inactive'}`}>
-                {source.active ? '🟢 Active' : '🔴 Inactive'}
+                {source.active ? 'ðŸŸ¢ Active' : 'ðŸ”´ Inactive'}
               </span>
             </div>
           </div>
@@ -446,11 +446,11 @@ const IncomeTab = ({ incomeSources, onAdd, onEdit }) => {
         
         {incomeSources.length === 0 && (
           <div className="empty-state">
-            <div className="empty-icon">💼</div>
+            <div className="empty-icon">ðŸ’¼</div>
             <h4>No Income Sources</h4>
             <p>Add your first income source to start optimizing your pay cycle.</p>
             <button className="add-button primary" onClick={onAdd}>
-              ➕ Add Income Source
+              âž• Add Income Source
             </button>
           </div>
         )}
@@ -468,7 +468,7 @@ const ForecastTab = ({ cashFlowForecast, currentBalance }) => {
     <div className="forecast-tab">
       <div className="forecast-summary">
         <div className="summary-card">
-          <h4>📊 Forecast Summary</h4>
+          <h4>ðŸ“Š Forecast Summary</h4>
           <div className="summary-metrics">
             <div className="metric">
               <span className="label">Risk Days:</span>
@@ -494,12 +494,12 @@ const ForecastTab = ({ cashFlowForecast, currentBalance }) => {
             dates: cashFlowForecast.map(day => day.date),
             balance: cashFlowForecast.map(day => day.balance)
           }}
-          title="📈 Detailed 90-Day Cash Flow Forecast"
+          title="ðŸ“ˆ Detailed 90-Day Cash Flow Forecast"
         />
       </div>
 
       <div className="forecast-events">
-        <h4>📅 Upcoming Financial Events</h4>
+        <h4>ðŸ“… Upcoming Financial Events</h4>
         <div className="events-timeline">
           {cashFlowForecast.slice(0, 14).map((day, index) => (
             <div key={index} className={`event-day ${day.riskLevel}`}>
@@ -538,7 +538,7 @@ const ScheduleTab = ({ optimizedSchedule }) => {
   return (
     <div className="schedule-tab">
       <div className="schedule-header">
-        <h3>🎯 Smart Bill Scheduling</h3>
+        <h3>ðŸŽ¯ Smart Bill Scheduling</h3>
         <p>Optimized payment schedule aligned with your pay periods</p>
       </div>
 
@@ -622,7 +622,7 @@ const IncomeSourceModal = ({ income, onSave, onClose }) => {
       <div className="modal-content">
         <div className="modal-header">
           <h3>{income ? 'Edit Income Source' : 'Add Income Source'}</h3>
-          <button className="close-button" onClick={onClose}>✕</button>
+          <button className="close-button" onClick={onClose}>âœ•</button>
         </div>
         
         <form onSubmit={handleSubmit} className="income-form">
@@ -718,3 +718,4 @@ const IncomeSourceModal = ({ income, onSave, onClose }) => {
 };
 
 export default PayCycle;
+

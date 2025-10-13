@@ -169,7 +169,7 @@ export const formatTimelineMessage = (currentAmount, targetAmount, monthlyContri
   }
   
   if (months === 0) {
-    return 'Goal completed! 🎉';
+    return 'Goal completed! ðŸŽ‰';
   }
   
   if (months === 1) {

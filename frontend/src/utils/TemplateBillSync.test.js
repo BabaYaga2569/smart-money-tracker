@@ -23,7 +23,7 @@ function testSyncBillsWithTemplate() {
     };
     
     const result1 = RecurringBillManager.syncBillsWithTemplate(newTemplate, [], 3, generateBillId);
-    console.log(`✓ Generated ${result1.stats.added} bills for new template`);
+    console.log(`âœ“ Generated ${result1.stats.added} bills for new template`);
     console.log(`  Stats: added=${result1.stats.added}, removed=${result1.stats.removed}, updated=${result1.stats.updated}, preserved=${result1.stats.preserved}`);
     
     // Test 2: Updating template amount updates unpaid bills
@@ -35,15 +35,15 @@ function testSyncBillsWithTemplate() {
     
     const existingBills = result1.updatedBills;
     const result2 = RecurringBillManager.syncBillsWithTemplate(updatedTemplate, existingBills, 3, generateBillId);
-    console.log(`✓ Updated ${result2.stats.updated} bills with new amount`);
+    console.log(`âœ“ Updated ${result2.stats.updated} bills with new amount`);
     console.log(`  Stats: added=${result2.stats.added}, removed=${result2.stats.removed}, updated=${result2.stats.updated}, preserved=${result2.stats.preserved}`);
     
     // Verify amount changed
     const updatedBill = result2.updatedBills.find(b => b.recurringTemplateId === 'template_1');
     if (updatedBill && updatedBill.amount === 17.99) {
-        console.log('✓ Bill amount correctly updated to 17.99');
+        console.log('âœ“ Bill amount correctly updated to 17.99');
     } else {
-        console.error('✗ Bill amount not updated correctly');
+        console.error('âœ— Bill amount not updated correctly');
     }
     
     // Test 3: Paid bills are preserved
@@ -66,15 +66,15 @@ function testSyncBillsWithTemplate() {
     };
     
     const result3 = RecurringBillManager.syncBillsWithTemplate(templateWithNewAmount, billsWithPaid, 3, generateBillId);
-    console.log(`✓ Preserved ${result3.stats.preserved} paid bills`);
+    console.log(`âœ“ Preserved ${result3.stats.preserved} paid bills`);
     console.log(`  Updated ${result3.stats.updated} unpaid bills`);
     
     // Verify paid bill keeps old amount
     const paidBill = result3.updatedBills.find(b => b.status === 'paid');
     if (paidBill && paidBill.amount === 17.99) {
-        console.log('✓ Paid bill preserved with original amount (17.99)');
+        console.log('âœ“ Paid bill preserved with original amount (17.99)');
     } else {
-        console.error('✗ Paid bill not preserved correctly');
+        console.error('âœ— Paid bill not preserved correctly');
     }
     
     // Test 4: Custom recurrence - selecting/unselecting months
@@ -94,7 +94,7 @@ function testSyncBillsWithTemplate() {
     
     // Generate initial bills
     const result4 = RecurringBillManager.syncBillsWithTemplate(templateWithMonths, [], 5, generateBillId);
-    console.log(`✓ Generated ${result4.stats.added} bills for selected months only`);
+    console.log(`âœ“ Generated ${result4.stats.added} bills for selected months only`);
     
     // Now add more months
     const expandedTemplate = {
@@ -103,7 +103,7 @@ function testSyncBillsWithTemplate() {
     };
     
     const result5 = RecurringBillManager.syncBillsWithTemplate(expandedTemplate, result4.updatedBills, 5, generateBillId);
-    console.log(`✓ Added ${result5.stats.added} bills for newly selected months`);
+    console.log(`âœ“ Added ${result5.stats.added} bills for newly selected months`);
     console.log(`  Updated ${result5.stats.updated} existing bills`);
     
     // Now remove some months
@@ -113,7 +113,7 @@ function testSyncBillsWithTemplate() {
     };
     
     const result6 = RecurringBillManager.syncBillsWithTemplate(reducedTemplate, result5.updatedBills, 5, generateBillId);
-    console.log(`✓ Removed ${result6.stats.removed} bills for unselected months`);
+    console.log(`âœ“ Removed ${result6.stats.removed} bills for unselected months`);
     console.log(`  Preserved ${result6.stats.preserved} paid bills (if any)`);
     
     // Test 5: Multiple templates don't interfere
@@ -133,7 +133,7 @@ function testSyncBillsWithTemplate() {
     };
     
     const result7 = RecurringBillManager.syncBillsWithTemplate(finalTemplate1, allBills, 3, generateBillId);
-    console.log(`✓ Updated template 1 bills without affecting template 2`);
+    console.log(`âœ“ Updated template 1 bills without affecting template 2`);
     console.log(`  Total bills after sync: ${result7.updatedBills.length}`);
     console.log(`  Template 1 bills: ${result7.updatedBills.filter(b => b.recurringTemplateId === 'template_1').length}`);
     console.log(`  Template 2 bills: ${result7.updatedBills.filter(b => b.recurringTemplateId === 'template_2').length}`);
@@ -147,3 +147,4 @@ if (typeof process !== 'undefined' && process.env.NODE_ENV === 'test') {
 }
 
 export { testSyncBillsWithTemplate };
+

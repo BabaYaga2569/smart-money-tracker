@@ -34,3 +34,4 @@ export default function Tile({ title, link, children }) {
     </div>
   );
 }
+

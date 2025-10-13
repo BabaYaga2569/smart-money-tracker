@@ -2,7 +2,7 @@
 import { RecurringBillManager } from './RecurringBillManager.js';
 
 export const demonstrateBillPaymentFix = () => {
-    console.log('🔧 Demonstrating Bill Payment Duplicate Prevention Fix\n');
+    console.log('ðŸ”§ Demonstrating Bill Payment Duplicate Prevention Fix\n');
 
     // Demo scenario: Two bills due before payday
     const mockBills = [
@@ -26,7 +26,7 @@ export const demonstrateBillPaymentFix = () => {
 
     const paydayDate = new Date('2025-01-31'); // Payday after both bills
 
-    console.log('📋 BEFORE PAYMENT:');
+    console.log('ðŸ“‹ BEFORE PAYMENT:');
     let billsDueBeforePayday = RecurringBillManager.getBillsDueBefore(mockBills, paydayDate);
     console.log(`Bills due before payday: ${billsDueBeforePayday.length}`);
     billsDueBeforePayday.forEach(bill => {
@@ -37,14 +37,14 @@ export const demonstrateBillPaymentFix = () => {
     console.log(`Total bills due: $${totalBefore.toFixed(2)}\n`);
 
     // Simulate payment of NV Energy bill
-    console.log('💳 PROCESSING PAYMENT: NV Energy bill marked as paid');
+    console.log('ðŸ’³ PROCESSING PAYMENT: NV Energy bill marked as paid');
     const paidBill = RecurringBillManager.markBillAsPaid(mockBills[0], new Date('2025-01-30'));
     console.log(`  - Payment processed for ${paidBill.name}`);
     console.log(`  - Next due date moved to: ${paidBill.nextDueDate.toDateString()}`);
     console.log(`  - Payment record created: $${paidBill.lastPayment.amount} on ${paidBill.lastPaidDate.toDateString()}\n`);
 
     // Check bills due after payment
-    console.log('📋 AFTER PAYMENT:');
+    console.log('ðŸ“‹ AFTER PAYMENT:');
     const updatedBills = [paidBill, mockBills[1]]; // NV Energy paid, Southwest Gas still unpaid
     billsDueBeforePayday = RecurringBillManager.getBillsDueBefore(updatedBills, paydayDate);
     console.log(`Bills due before payday: ${billsDueBeforePayday.length}`);
@@ -56,7 +56,7 @@ export const demonstrateBillPaymentFix = () => {
     console.log(`Total bills due: $${totalAfter.toFixed(2)}\n`);
 
     // Demonstrate duplicate payment prevention
-    console.log('🚫 TESTING DUPLICATE PAYMENT PREVENTION:');
+    console.log('ðŸš« TESTING DUPLICATE PAYMENT PREVENTION:');
     const duplicateCheck = (bill) => {
         if (!bill.lastPaidDate || !bill.lastPayment) {
             return false;
@@ -71,18 +71,18 @@ export const demonstrateBillPaymentFix = () => {
     const nvEnergyAlreadyPaid = duplicateCheck(paidBill);
     const southwestGasAlreadyPaid = duplicateCheck(mockBills[1]);
 
-    console.log(`  - NV Energy already paid for current cycle: ${nvEnergyAlreadyPaid ? '✅ YES' : '❌ NO'}`);
-    console.log(`  - Southwest Gas already paid for current cycle: ${southwestGasAlreadyPaid ? '✅ YES' : '❌ NO'}\n`);
+    console.log(`  - NV Energy already paid for current cycle: ${nvEnergyAlreadyPaid ? 'âœ… YES' : 'âŒ NO'}`);
+    console.log(`  - Southwest Gas already paid for current cycle: ${southwestGasAlreadyPaid ? 'âœ… YES' : 'âŒ NO'}\n`);
 
     // Summary
-    console.log('📊 FIX SUMMARY:');
-    console.log(`  ✅ Bills due reduced from ${mockBills.length} to ${billsDueBeforePayday.length}`);
-    console.log(`  ✅ Total amount reduced from $${totalBefore.toFixed(2)} to $${totalAfter.toFixed(2)}`);
-    console.log(`  ✅ Paid bill (NV Energy) no longer appears in "due before payday" list`);
-    console.log(`  ✅ Duplicate payment prevented by checking payment history`);
-    console.log(`  ✅ Button state would show "Already Paid" for NV Energy\n`);
+    console.log('ðŸ“Š FIX SUMMARY:');
+    console.log(`  âœ… Bills due reduced from ${mockBills.length} to ${billsDueBeforePayday.length}`);
+    console.log(`  âœ… Total amount reduced from $${totalBefore.toFixed(2)} to $${totalAfter.toFixed(2)}`);
+    console.log(`  âœ… Paid bill (NV Energy) no longer appears in "due before payday" list`);
+    console.log(`  âœ… Duplicate payment prevented by checking payment history`);
+    console.log(`  âœ… Button state would show "Already Paid" for NV Energy\n`);
 
-    console.log('🎉 Bill Payment Duplicate Prevention Fix Working Correctly!');
+    console.log('ðŸŽ‰ Bill Payment Duplicate Prevention Fix Working Correctly!');
 };
 
 // Auto-run if called directly

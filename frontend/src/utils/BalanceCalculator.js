@@ -111,3 +111,4 @@ export const formatBalanceDifference = (difference) => {
     return `-${formatted} (pending expenses)`;
   }
 };
+

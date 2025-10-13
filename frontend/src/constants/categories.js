@@ -22,21 +22,21 @@ export const TRANSACTION_CATEGORIES = [
 
 // Category icons mapping
 export const CATEGORY_ICONS = {
-  "Groceries": "🛒",
-  "Food & Dining": "🍔",
-  "Gas & Fuel": "⛽",
-  "Transportation": "🚗",
-  "Bills & Utilities": "🏠",
-  "Household Items": "🧽",
-  "Clothing": "👕",
-  "Healthcare": "🏥",
-  "Pharmacy": "💊",
-  "Personal Care": "💇",
-  "Entertainment": "🎬",
-  "Subscriptions": "📺",
-  "Shopping": "🛍️",
-  "Income": "💰",
-  "Transfer": "🔄"
+  "Groceries": "ðŸ›’",
+  "Food & Dining": "ðŸ”",
+  "Gas & Fuel": "â›½",
+  "Transportation": "ðŸš—",
+  "Bills & Utilities": "ðŸ ",
+  "Household Items": "ðŸ§½",
+  "Clothing": "ðŸ‘•",
+  "Healthcare": "ðŸ¥",
+  "Pharmacy": "ðŸ’Š",
+  "Personal Care": "ðŸ’‡",
+  "Entertainment": "ðŸŽ¬",
+  "Subscriptions": "ðŸ“º",
+  "Shopping": "ðŸ›ï¸",
+  "Income": "ðŸ’°",
+  "Transfer": "ðŸ”„"
 };
 
 // Auto-categorization keywords for smart categorization
@@ -72,7 +72,7 @@ export const LEGACY_CATEGORY_MAPPING = {
 
 // Helper function to get category icon
 export const getCategoryIcon = (category) => {
-  return CATEGORY_ICONS[category] || '💰';
+  return CATEGORY_ICONS[category] || 'ðŸ’°';
 };
 
 // Helper function to migrate legacy category to new category

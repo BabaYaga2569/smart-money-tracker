@@ -300,15 +300,15 @@ Car Insurance,450.00,State Farm,2025-03-01,monthly,Insurance`;
     <div className="modal-overlay" onClick={onCancel}>
       <div className="modal csv-import-modal" onClick={(e) => e.stopPropagation()}>
         <div className="modal-header">
-          <h3>📊 Import Bills from CSV</h3>
-          <button className="close-btn" onClick={onCancel}>×</button>
+          <h3>ðŸ“Š Import Bills from CSV</h3>
+          <button className="close-btn" onClick={onCancel}>Ã—</button>
         </div>
 
         <div className="modal-body">
           {step === 'upload' && (
             <div className="upload-section">
               <div style={{ marginBottom: '20px', padding: '16px', background: 'rgba(0, 123, 255, 0.1)', borderRadius: '8px', border: '1px solid #007bff' }}>
-                <h4 style={{ color: '#007bff', marginBottom: '8px', marginTop: 0 }}>📖 How to Import Bills</h4>
+                <h4 style={{ color: '#007bff', marginBottom: '8px', marginTop: 0 }}>ðŸ“– How to Import Bills</h4>
                 <ul style={{ color: '#ccc', fontSize: '14px', margin: 0, paddingLeft: '20px' }}>
                   <li>Upload a CSV file with bill information</li>
                   <li>Required columns: <strong>name</strong> and <strong>amount</strong></li>
@@ -343,13 +343,13 @@ Car Insurance,450.00,State Farm,2025-03-01,monthly,Insurance`;
                     fontWeight: '600'
                   }}
                 >
-                  {loading ? '📄 Processing...' : '📁 Choose CSV File'}
+                  {loading ? 'ðŸ“„ Processing...' : 'ðŸ“ Choose CSV File'}
                 </button>
               </div>
 
               {errors.length > 0 && (
                 <div className="error-section" style={{ marginTop: '20px', padding: '12px', background: 'rgba(244, 67, 54, 0.1)', borderRadius: '8px', border: '1px solid #f44336' }}>
-                  <h4 style={{ color: '#f44336', marginBottom: '8px' }}>⚠️ Errors:</h4>
+                  <h4 style={{ color: '#f44336', marginBottom: '8px' }}>âš ï¸ Errors:</h4>
                   {errors.map((err, idx) => (
                     <div key={idx} style={{ color: '#ff9999', fontSize: '14px' }}>{err}</div>
                   ))}
@@ -358,7 +358,7 @@ Car Insurance,450.00,State Farm,2025-03-01,monthly,Insurance`;
 
               <div style={{ marginTop: '30px', padding: '16px', background: 'rgba(0, 255, 136, 0.1)', borderRadius: '8px', border: '1px solid #00ff88' }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
-                  <h4 style={{ color: '#00ff88', margin: 0 }}>💡 CSV Format Example:</h4>
+                  <h4 style={{ color: '#00ff88', margin: 0 }}>ðŸ’¡ CSV Format Example:</h4>
                   <button
                     onClick={downloadTemplate}
                     style={{
@@ -372,7 +372,7 @@ Car Insurance,450.00,State Farm,2025-03-01,monthly,Insurance`;
                       fontSize: '14px'
                     }}
                   >
-                    📥 Download Template
+                    ðŸ“¥ Download Template
                   </button>
                 </div>
                 <pre style={{ fontSize: '12px', color: '#ccc', overflow: 'auto' }}>
@@ -389,7 +389,7 @@ Car Insurance,450.00,State Farm,2025-03-01,monthly,Insurance`}
 
           {step === 'mapping' && (
             <div className="mapping-section">
-              <h4 style={{ marginBottom: '16px', color: '#00ff88' }}>🗂️ Map CSV Columns</h4>
+              <h4 style={{ marginBottom: '16px', color: '#00ff88' }}>ðŸ—‚ï¸ Map CSV Columns</h4>
               <p style={{ marginBottom: '20px', color: '#ccc' }}>
                 Map your CSV columns to bill fields. Required: Name and Amount
               </p>
@@ -447,7 +447,7 @@ Car Insurance,450.00,State Farm,2025-03-01,monthly,Insurance`}
                     fontWeight: '600'
                   }}
                 >
-                  ← Back
+                  â† Back
                 </button>
                 <button
                   onClick={() => {
@@ -471,7 +471,7 @@ Car Insurance,450.00,State Farm,2025-03-01,monthly,Insurance`}
                     fontWeight: '600'
                   }}
                 >
-                  Continue to Preview →
+                  Continue to Preview â†’
                 </button>
               </div>
             </div>
@@ -486,22 +486,22 @@ Car Insurance,450.00,State Farm,2025-03-01,monthly,Insurance`}
                   </h4>
                   {previewBills.some(b => b.dateError) && (
                     <p style={{ color: '#f44336', fontSize: '14px', marginBottom: '4px' }}>
-                      ❌ {previewBills.filter(b => b.dateError).length} bills have date errors
+                      âŒ {previewBills.filter(b => b.dateError).length} bills have date errors
                     </p>
                   )}
                   {previewBills.some(b => b.dateWarning && !b.dateError) && (
                     <p style={{ color: '#ff9800', fontSize: '14px', marginBottom: '4px' }}>
-                      ⚠️ {previewBills.filter(b => b.dateWarning && !b.dateError).length} bills have warnings
+                      âš ï¸ {previewBills.filter(b => b.dateWarning && !b.dateError).length} bills have warnings
                     </p>
                   )}
                   {previewBills.some(b => b.isDuplicate) && (
                     <p style={{ color: '#ff9800', fontSize: '14px', marginBottom: '4px' }}>
-                      ⚠️ {previewBills.filter(b => b.isDuplicate).length} bills appear to be duplicates
+                      âš ï¸ {previewBills.filter(b => b.isDuplicate).length} bills appear to be duplicates
                     </p>
                   )}
                   {errors.length > 0 && (
                     <p style={{ color: '#f44336', fontSize: '14px', marginBottom: '4px' }}>
-                      ❌ {errors.length} rows had parsing errors
+                      âŒ {errors.length} rows had parsing errors
                     </p>
                   )}
                 </div>
@@ -511,14 +511,14 @@ Car Insurance,450.00,State Farm,2025-03-01,monthly,Insurance`}
                     style={{ padding: '8px 16px', background: '#00ff88', color: '#000', border: 'none', borderRadius: '4px', cursor: 'pointer' }}
                     title="Include all bills for import"
                   >
-                    ✓ Approve All
+                    âœ“ Approve All
                   </button>
                   <button
                     onClick={handleSkipAll}
                     style={{ padding: '8px 16px', background: '#ff9800', color: '#000', border: 'none', borderRadius: '4px', cursor: 'pointer' }}
                     title="Skip all bills"
                   >
-                    ✕ Skip All
+                    âœ• Skip All
                   </button>
                   {previewBills.some(b => b.dateError) && (
                     <button
@@ -531,7 +531,7 @@ Car Insurance,450.00,State Farm,2025-03-01,monthly,Insurance`}
                       style={{ padding: '8px 16px', background: '#f44336', color: '#fff', border: 'none', borderRadius: '4px', cursor: 'pointer' }}
                       title="Skip all bills with date errors"
                     >
-                      ✕ Skip Bills with Errors
+                      âœ• Skip Bills with Errors
                     </button>
                   )}
                   <div style={{ position: 'relative', display: 'inline-block' }}>
@@ -553,7 +553,7 @@ Car Insurance,450.00,State Farm,2025-03-01,monthly,Insurance`}
                       }}
                       title="Select a category to apply to all non-skipped bills at once. This is useful when importing bills that all belong to the same category."
                     >
-                      <option value="">🏷️ Bulk Assign Category</option>
+                      <option value="">ðŸ·ï¸ Bulk Assign Category</option>
                       {Object.keys(TRANSACTION_CATEGORIES).map(cat => (
                         <option key={cat} value={cat}>{cat}</option>
                       ))}
@@ -568,7 +568,7 @@ Car Insurance,450.00,State Farm,2025-03-01,monthly,Insurance`}
                       }}
                       title="Bulk Assign Category allows you to set the same category for all bills that haven't been skipped. Simply select a category from the dropdown and it will be applied to all visible (non-skipped) bills at once."
                     >
-                      ℹ️
+                      â„¹ï¸
                     </span>
                   </div>
                 </div>
@@ -582,7 +582,7 @@ Car Insurance,450.00,State Farm,2025-03-01,monthly,Insurance`}
                     </summary>
                     <div style={{ marginTop: '8px', fontSize: '13px', color: '#ff9999' }}>
                       {errors.map((error, idx) => (
-                        <div key={idx} style={{ marginBottom: '4px' }}>• {error}</div>
+                        <div key={idx} style={{ marginBottom: '4px' }}>â€¢ {error}</div>
                       ))}
                     </div>
                   </details>
@@ -611,30 +611,30 @@ Car Insurance,450.00,State Farm,2025-03-01,monthly,Insurance`}
                             <h4 style={{ margin: 0, color: '#fff' }}>{bill.name}</h4>
                             {bill.institutionName && (
                               <div style={{ fontSize: '12px', color: '#888', marginTop: '2px' }}>
-                                🏦 {bill.institutionName}
+                                ðŸ¦ {bill.institutionName}
                               </div>
                             )}
                             {bill.isDuplicate && (
                               <span style={{ fontSize: '12px', color: '#ff9800', display: 'block', marginTop: '4px' }}>
-                                ⚠️ Possible Duplicate (same name, amount, and date)
+                                âš ï¸ Possible Duplicate (same name, amount, and date)
                               </span>
                             )}
                             {bill.dateError && (
                               <span style={{ fontSize: '12px', color: '#f44336', display: 'block', marginTop: '4px' }}>
-                                ❌ {bill.dateError}
+                                âŒ {bill.dateError}
                               </span>
                             )}
                             {bill.dateWarning && !bill.dateError && (
                               <span style={{ fontSize: '12px', color: '#ff9800', display: 'block', marginTop: '4px' }}>
-                                ⚠️ {bill.dateWarning}
+                                âš ï¸ {bill.dateWarning}
                               </span>
                             )}
                           </div>
                         </div>
                         <div style={{ fontSize: '14px', color: '#888', display: 'flex', gap: '20px', flexWrap: 'wrap', marginTop: '8px', alignItems: 'center' }}>
-                          <span>💰 ${bill.amount.toFixed(2)}</span>
+                          <span>ðŸ’° ${bill.amount.toFixed(2)}</span>
                           <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
-                            <span>📅</span>
+                            <span>ðŸ“…</span>
                             <input
                               type="date"
                               value={bill.dueDate}
@@ -652,9 +652,9 @@ Car Insurance,450.00,State Farm,2025-03-01,monthly,Insurance`}
                               title="Edit due date"
                             />
                           </div>
-                          <span>🔄 {bill.recurrence}</span>
+                          <span>ðŸ”„ {bill.recurrence}</span>
                           <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                            <span>🏷️</span>
+                            <span>ðŸ·ï¸</span>
                             <select
                               value={bill.category}
                               onChange={(e) => handleCategoryChange(index, e.target.value)}
@@ -691,7 +691,7 @@ Car Insurance,450.00,State Farm,2025-03-01,monthly,Insurance`}
                         }}
                         title={bill.isSkipped ? 'Include this bill' : 'Skip this bill'}
                       >
-                        {bill.isSkipped ? '✓ Include' : '✕ Skip'}
+                        {bill.isSkipped ? 'âœ“ Include' : 'âœ• Skip'}
                       </button>
                     </div>
                   </div>
@@ -702,7 +702,7 @@ Car Insurance,450.00,State Farm,2025-03-01,monthly,Insurance`}
                 <div style={{ fontSize: '13px', color: '#ccc' }}>
                   {previewBills.filter(b => !b.isSkipped && b.dateError).length > 0 && (
                     <span style={{ color: '#f44336' }}>
-                      ⚠️ {previewBills.filter(b => !b.isSkipped && b.dateError).length} bills have date errors - fix or skip them before importing
+                      âš ï¸ {previewBills.filter(b => !b.isSkipped && b.dateError).length} bills have date errors - fix or skip them before importing
                     </span>
                   )}
                 </div>
@@ -756,7 +756,7 @@ Car Insurance,450.00,State Farm,2025-03-01,monthly,Insurance`}
 
           {step === 'complete' && (
             <div className="complete-section" style={{ textAlign: 'center', padding: '40px 20px' }}>
-              <div style={{ fontSize: '48px', marginBottom: '20px' }}>✅</div>
+              <div style={{ fontSize: '48px', marginBottom: '20px' }}>âœ…</div>
               <h3 style={{ color: '#00ff88', marginBottom: '10px' }}>Import Complete!</h3>
               <p style={{ color: '#ccc' }}>
                 Successfully imported {previewBills.filter(b => !b.isSkipped).length} bills
@@ -785,3 +785,4 @@ Car Insurance,450.00,State Farm,2025-03-01,monthly,Insurance`}
 };
 
 export default BillCSVImportModal;
+

@@ -671,7 +671,7 @@ const Transactions = () => {
     return (
       <div className="transactions-container">
         <div className="page-header">
-          <h2>💰 Transactions</h2>
+          <h2>ðŸ’° Transactions</h2>
           <p>Loading your transactions...</p>
         </div>
       </div>
@@ -681,7 +681,7 @@ const Transactions = () => {
   return (
     <div className="transactions-container">
       <div className="page-header">
-        <h2>💰 Transactions</h2>
+        <h2>ðŸ’° Transactions</h2>
         <p>Complete transaction management and financial analytics</p>
       </div>
 
@@ -700,7 +700,7 @@ const Transactions = () => {
           fontSize: '14px'
         }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-            <span>⚠️</span>
+            <span>âš ï¸</span>
             <span>
               <strong>Plaid Not Connected</strong> - Connect to automatically sync transactions
             </span>
@@ -719,7 +719,7 @@ const Transactions = () => {
               whiteSpace: 'nowrap'
             }}
           >
-            Connect Bank →
+            Connect Bank â†’
           </button>
         </div>
       )}
@@ -738,7 +738,7 @@ const Transactions = () => {
           fontSize: '14px'
         }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-            <span>❌</span>
+            <span>âŒ</span>
             <span>
               <strong>Connection Error</strong> - {PlaidConnectionManager.getErrorMessage()}
             </span>
@@ -774,7 +774,7 @@ const Transactions = () => {
           boxShadow: '0 4px 6px rgba(0,0,0,0.1)'
         }}>
           <div style={{ fontSize: '16px', fontWeight: '600' }}>
-            ✅ Plaid Connected - Auto-sync enabled
+            âœ… Plaid Connected - Auto-sync enabled
           </div>
         </div>
       )}
@@ -820,7 +820,7 @@ const Transactions = () => {
             onClick={() => setShowAddForm(!showAddForm)}
             disabled={saving || syncingPlaid}
           >
-            {showAddForm ? '✕ Cancel' : '+ Add Transaction'}
+            {showAddForm ? 'âœ• Cancel' : '+ Add Transaction'}
           </button>
           
           <button 
@@ -842,7 +842,7 @@ const Transactions = () => {
               opacity: ((!plaidStatus.isConnected && !hasPlaidAccounts) || syncingPlaid) ? 0.6 : 1
             }}
           >
-            {syncingPlaid ? '🔄 Syncing...' : ((!plaidStatus.isConnected && !hasPlaidAccounts) ? '🔒 Sync Plaid (Not Connected)' : '🔄 Sync Plaid Transactions')}
+            {syncingPlaid ? 'ðŸ”„ Syncing...' : ((!plaidStatus.isConnected && !hasPlaidAccounts) ? 'ðŸ”’ Sync Plaid (Not Connected)' : 'ðŸ”„ Sync Plaid Transactions')}
           </button>
           
           <button 
@@ -850,7 +850,7 @@ const Transactions = () => {
             onClick={() => setShowTemplates(!showTemplates)}
             disabled={saving || syncingPlaid}
           >
-            📋 Templates
+            ðŸ“‹ Templates
           </button>
           
           {transactions.length > 0 && (
@@ -859,7 +859,7 @@ const Transactions = () => {
               onClick={exportTransactions}
               disabled={saving || syncingPlaid}
             >
-              📥 Export CSV
+              ðŸ“¥ Export CSV
             </button>
           )}
         </div>
@@ -1119,7 +1119,7 @@ const Transactions = () => {
                     </span>
                     {transaction.source && (
                       <span className={`transaction-source ${transaction.source}`} title={`Source: ${transaction.source === 'plaid' ? 'Auto-detected (Plaid)' : 'Manual entry'}`}>
-                        {transaction.source === 'plaid' ? '🔄' : '✋'}
+                        {transaction.source === 'plaid' ? 'ðŸ”„' : 'âœ‹'}
                       </span>
                     )}
                   </div>
@@ -1138,7 +1138,7 @@ const Transactions = () => {
                       disabled={saving}
                       title="Edit transaction"
                     >
-                      ✏️
+                      âœï¸
                     </button>
                     <button 
                       className="delete-btn"
@@ -1146,7 +1146,7 @@ const Transactions = () => {
                       disabled={saving}
                       title="Delete transaction"
                     >
-                      🗑️
+                      ðŸ—‘ï¸
                     </button>
                   </div>
                 </div>
@@ -1185,3 +1185,4 @@ const Transactions = () => {
 };
 
 export default Transactions;
+

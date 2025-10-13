@@ -77,7 +77,7 @@ const Categories = () => {
   // Category form states
   const [newCategory, setNewCategory] = useState({
     name: '',
-    emoji: '📦',
+    emoji: 'ðŸ“¦',
     color: '#10b981',
     monthlyBudget: '',
     description: '',
@@ -232,7 +232,7 @@ const Categories = () => {
             type: 'pattern',
             title: 'Weekend Spending Pattern',
             message: `You spend ${((weekendSpending / (weekendSpending + weekdaySpending)) * 100).toFixed(0)}% of your money on weekends`,
-            icon: '📈'
+            icon: 'ðŸ“ˆ'
           });
         }
         
@@ -509,7 +509,7 @@ const Categories = () => {
   const handleAddCategory = () => {
     setNewCategory({
       name: '',
-      emoji: '📦',
+      emoji: 'ðŸ“¦',
       color: '#10b981',
       monthlyBudget: '',
       description: '',
@@ -591,7 +591,7 @@ const Categories = () => {
       // Reset form and close modal
       setNewCategory({
         name: '',
-        emoji: '📦',
+        emoji: 'ðŸ“¦',
         color: '#10b981',
         monthlyBudget: '',
         description: '',
@@ -672,24 +672,24 @@ const Categories = () => {
       {/* Summary Cards */}
       <div className="categories-summary">
         <div className="summary-card">
-          <h3>📊 Total Categories</h3>
+          <h3>ðŸ“Š Total Categories</h3>
           <div className="total-amount">{getAllCategories().length}</div>
           <small>Active categories</small>
         </div>
         <div className="summary-card">
-          <h3>💰 Total Spent</h3>
+          <h3>ðŸ’° Total Spent</h3>
           <div className="total-amount attention">
             {formatCurrency(Object.values(categoryAnalytics).reduce((sum, amount) => sum + amount, 0))}
           </div>
           <small>This month</small>
         </div>
         <div className="summary-card">
-          <h3>🎯 Budgets Set</h3>
+          <h3>ðŸŽ¯ Budgets Set</h3>
           <div className="total-amount positive">{Object.keys(budgets).length}</div>
           <small>Categories with budgets</small>
         </div>
         <div className="summary-card">
-          <h3>⚠️ Budget Alerts</h3>
+          <h3>âš ï¸ Budget Alerts</h3>
           <div className="total-amount attention">{budgetAlerts.length}</div>
           <small>Active alerts</small>
         </div>
@@ -698,12 +698,12 @@ const Categories = () => {
       {/* Budget Alerts */}
       {budgetAlerts.length > 0 && (
         <div className="budget-alerts">
-          <h3>⚠️ Budget Alerts</h3>
+          <h3>âš ï¸ Budget Alerts</h3>
           <div className="alerts-list">
             {budgetAlerts.map((alert, index) => (
               <div key={index} className={`alert alert-${alert.severity}`}>
                 <span className="alert-icon">
-                  {alert.type === 'over' ? '🚨' : alert.type === 'warning' ? '⚠️' : '💡'}
+                  {alert.type === 'over' ? 'ðŸš¨' : alert.type === 'warning' ? 'âš ï¸' : 'ðŸ’¡'}
                 </span>
                 <span className="alert-message">{alert.message}</span>
               </div>
@@ -715,7 +715,7 @@ const Categories = () => {
       {/* Insights */}
       {insights.length > 0 && (
         <div className="spending-insights">
-          <h3>🧠 Smart Insights</h3>
+          <h3>ðŸ§  Smart Insights</h3>
           <div className="insights-grid">
             {insights.map((insight, index) => (
               <div key={index} className={`insight insight-${insight.type}`}>
@@ -732,7 +732,7 @@ const Categories = () => {
 
       {/* Top Categories */}
       <div className="top-categories">
-        <h3>🏆 Top Spending Categories</h3>
+        <h3>ðŸ† Top Spending Categories</h3>
         <div className="categories-list">
           {Object.entries(categoryAnalytics)
             .sort(([,a], [,b]) => b - a)
@@ -827,14 +827,14 @@ const Categories = () => {
       <div className="categories-analytics">
         <div className="analytics-charts">
           <div className="chart-container">
-            <h3>💰 Spending Distribution</h3>
+            <h3>ðŸ’° Spending Distribution</h3>
             <div className="chart-wrapper">
               <Pie data={pieData} options={{ responsive: true, maintainAspectRatio: false, plugins: { legend: { labels: { color: '#fff' } } } }} />
             </div>
           </div>
           
           <div className="chart-container">
-            <h3>📊 Monthly Comparison</h3>
+            <h3>ðŸ“Š Monthly Comparison</h3>
             <div className="chart-wrapper">
               <Bar data={barData} options={chartOptions} />
             </div>
@@ -843,7 +843,7 @@ const Categories = () => {
 
         {/* Spending Trends */}
         <div className="spending-trends">
-          <h3>📈 Spending Trends</h3>
+          <h3>ðŸ“ˆ Spending Trends</h3>
           <div className="trends-list">
             {Object.entries(spendingTrends)
               .filter(([, trend]) => trend.thisMonth > 0)
@@ -854,7 +854,7 @@ const Categories = () => {
                     <span className="category-icon">{getCategoryIcon(category)}</span>
                     <span className="category-name">{category}</span>
                     <span className={`trend-indicator ${trend.changePercent > 0 ? 'up' : 'down'}`}>
-                      {trend.changePercent > 0 ? '⬆️' : '⬇️'} {Math.abs(trend.changePercent).toFixed(1)}%
+                      {trend.changePercent > 0 ? 'â¬†ï¸' : 'â¬‡ï¸'} {Math.abs(trend.changePercent).toFixed(1)}%
                     </span>
                   </div>
                   <div className="trend-details">
@@ -879,7 +879,7 @@ const Categories = () => {
   const renderBudgetsTab = () => (
     <div className="categories-budgets">
       <div className="budgets-header">
-        <h3>💰 Budget Management</h3>
+        <h3>ðŸ’° Budget Management</h3>
         <button 
           className="btn btn-primary"
           onClick={() => setShowAddBudgetForm(true)}
@@ -1068,14 +1068,14 @@ const Categories = () => {
               <div className="budget-header">
                 <span className="category-icon">{getCategoryIcon(category)}</span>
                 <span className="category-name">{category}</span>
-                <span className="budget-period">{isWeekly ? '📅 Weekly' : '📆 Monthly'}</span>
+                <span className="budget-period">{isWeekly ? 'ðŸ“… Weekly' : 'ðŸ“† Monthly'}</span>
                 <span className="budget-amount">{formatCurrency(periodBudget)}</span>
                 <button 
                   className="btn btn-small btn-edit"
                   onClick={() => handleEditBudget(category)}
                   title="Edit budget"
                 >
-                  ✏️ Edit
+                  âœï¸ Edit
                 </button>
               </div>
               
@@ -1112,19 +1112,19 @@ const Categories = () => {
               
               {percentage > 100 && (
                 <div className="budget-alert">
-                  🚨 Over budget by {formatCurrency(periodSpent - periodBudget)}
+                  ðŸš¨ Over budget by {formatCurrency(periodSpent - periodBudget)}
                 </div>
               )}
               
               {percentage >= 75 && percentage < 90 && (
                 <div className="budget-alert warning">
-                  💡 You've used {percentage.toFixed(0)}% of your budget
+                  ðŸ’¡ You've used {percentage.toFixed(0)}% of your budget
                 </div>
               )}
               
               {percentage >= 90 && percentage < 100 && (
                 <div className="budget-alert caution">
-                  ⚠️ Approaching budget limit ({percentage.toFixed(0)}%)
+                  âš ï¸ Approaching budget limit ({percentage.toFixed(0)}%)
                 </div>
               )}
             </div>
@@ -1137,7 +1137,7 @@ const Categories = () => {
   const renderManagementTab = () => (
     <div className="categories-management">
       <div className="management-header">
-        <h3>🏷️ Category Management</h3>
+        <h3>ðŸ·ï¸ Category Management</h3>
         <button 
           className="btn btn-primary"
           onClick={handleAddCategory}
@@ -1159,7 +1159,7 @@ const Categories = () => {
                 <div className="category-details">
                   <span className="category-name">{category}</span>
                   <span className="category-stats">
-                    {transactionCount} transactions • {formatCurrency(spent)} this month
+                    {transactionCount} transactions â€¢ {formatCurrency(spent)} this month
                   </span>
                 </div>
               </div>
@@ -1194,7 +1194,7 @@ const Categories = () => {
     return (
       <div className="categories-container">
         <div className="loading-state">
-          <h2>🏷️ Loading Categories...</h2>
+          <h2>ðŸ·ï¸ Loading Categories...</h2>
           <p>Analyzing your spending patterns...</p>
         </div>
       </div>
@@ -1212,7 +1212,7 @@ const Categories = () => {
 
       {/* Page Header */}
       <div className="page-header">
-        <h2>🏷️ Categories</h2>
+        <h2>ðŸ·ï¸ Categories</h2>
         <p>Intelligent spending analytics and budget management</p>
       </div>
 
@@ -1222,25 +1222,25 @@ const Categories = () => {
           className={`nav-tab ${activeView === 'overview' ? 'active' : ''}`}
           onClick={() => setActiveView('overview')}
         >
-          📊 Overview
+          ðŸ“Š Overview
         </button>
         <button 
           className={`nav-tab ${activeView === 'analytics' ? 'active' : ''}`}
           onClick={() => setActiveView('analytics')}
         >
-          📈 Analytics
+          ðŸ“ˆ Analytics
         </button>
         <button 
           className={`nav-tab ${activeView === 'budgets' ? 'active' : ''}`}
           onClick={() => setActiveView('budgets')}
         >
-          💰 Budgets
+          ðŸ’° Budgets
         </button>
         <button 
           className={`nav-tab ${activeView === 'management' ? 'active' : ''}`}
           onClick={() => setActiveView('management')}
         >
-          🏷️ Management
+          ðŸ·ï¸ Management
         </button>
       </div>
 
@@ -1270,7 +1270,7 @@ const Categories = () => {
                   setSelectedCategory(null);
                 }}
               >
-                ×
+                Ã—
               </button>
             </div>
             
@@ -1292,7 +1292,7 @@ const Categories = () => {
                     type="text"
                     value={newCategory.emoji}
                     onChange={(e) => setNewCategory({...newCategory, emoji: e.target.value})}
-                    placeholder="📦"
+                    placeholder="ðŸ“¦"
                     maxLength={2}
                   />
                 </div>
@@ -1382,7 +1382,7 @@ const Categories = () => {
                   setSelectedCategory(null);
                 }}
               >
-                ×
+                Ã—
               </button>
             </div>
             
@@ -1522,7 +1522,7 @@ const Categories = () => {
                   setSelectedCategory(null);
                 }}
               >
-                ×
+                Ã—
               </button>
             </div>
             
@@ -1614,3 +1614,4 @@ const Categories = () => {
 };
 
 export default Categories;
+

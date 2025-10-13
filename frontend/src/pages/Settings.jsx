@@ -89,9 +89,9 @@ const Settings = () => {
       setSaving(true);
       setMessage('');
 
-      console.log('🔵 SAVE SETTINGS CLICKED');
-      console.log('🔵 paySchedules.yours:', paySchedules.yours);
-      console.log('🔵 nextPaydayOverride:', nextPaydayOverride);
+      console.log('ðŸ”µ SAVE SETTINGS CLICKED');
+      console.log('ðŸ”µ paySchedules.yours:', paySchedules.yours);
+      console.log('ðŸ”µ nextPaydayOverride:', nextPaydayOverride);
 
       const settingsDocRef = doc(db, 'users', currentUser.uid, 'settings', 'personal');
       
@@ -101,7 +101,7 @@ const Settings = () => {
 
       // MERGE WITH EXISTING DATA
       const settingsData = {
-        ...currentData, // ← CRITICAL: Preserves plaidAccounts, transactions, etc.
+        ...currentData, // â† CRITICAL: Preserves plaidAccounts, transactions, etc.
         personalInfo,
         paySchedules,
         bankAccounts,
@@ -111,17 +111,17 @@ const Settings = () => {
         lastUpdated: new Date().toISOString()
       };
 
-      console.log('🔵 Settings data prepared:', settingsData);
+      console.log('ðŸ”µ Settings data prepared:', settingsData);
 
       await setDoc(settingsDocRef, settingsData);
 
-      console.log('🔵 Settings saved to Firebase');
-      console.log('🔵 Now calculating payday...');
+      console.log('ðŸ”µ Settings saved to Firebase');
+      console.log('ðŸ”µ Now calculating payday...');
 
       // Use override date if provided, otherwise calculate next payday
       let nextPaydayInfo;
       if (nextPaydayOverride) {
-        console.log('🔵 Using manual override:', nextPaydayOverride);
+        console.log('ðŸ”µ Using manual override:', nextPaydayOverride);
         const daysUntil = getDaysUntilDateInPacific(nextPaydayOverride);
         nextPaydayInfo = {
           date: nextPaydayOverride,
@@ -129,10 +129,10 @@ const Settings = () => {
           source: "manual_override",
           amount: 0
         };
-        console.log('🔵 Override payday info:', nextPaydayInfo);
+        console.log('ðŸ”µ Override payday info:', nextPaydayInfo);
       } else {
-        console.log('🔵 Calculating from paySchedules...');
-        console.log('🔵 Input to calculator:', {
+        console.log('ðŸ”µ Calculating from paySchedules...');
+        console.log('ðŸ”µ Input to calculator:', {
           yours: paySchedules.yours,
           spouse: paySchedules.spouse
         });
@@ -142,21 +142,21 @@ const Settings = () => {
           paySchedules.spouse
         );
         
-        console.log('🔵 Calculated payday result:', nextPaydayInfo);
+        console.log('ðŸ”µ Calculated payday result:', nextPaydayInfo);
       }
 
       if (nextPaydayInfo) {
-        console.log('🔵 Saving to Firebase payCycle collection:', nextPaydayInfo);
+        console.log('ðŸ”µ Saving to Firebase payCycle collection:', nextPaydayInfo);
         await setDoc(doc(db, 'users', currentUser.uid, 'financial', 'payCycle'), nextPaydayInfo);
-        console.log('✅ PayCycle saved successfully to Firebase');
+        console.log('âœ… PayCycle saved successfully to Firebase');
       } else {
-        console.warn('⚠️ nextPaydayInfo is null/undefined - not saving to payCycle');
+        console.warn('âš ï¸ nextPaydayInfo is null/undefined - not saving to payCycle');
       }
 
-      console.log('✅ SAVE COMPLETE');
+      console.log('âœ… SAVE COMPLETE');
       setMessage('Settings saved successfully!');
     } catch (error) {
-      console.error('❌ Error saving settings:', error);
+      console.error('âŒ Error saving settings:', error);
       setMessage('Error saving settings');
     } finally {
       setSaving(false);
@@ -190,7 +190,7 @@ const Settings = () => {
     return (
       <div className="settings-container">
         <div className="page-header">
-          <h2>⚙️ Financial Settings</h2>
+          <h2>âš™ï¸ Financial Settings</h2>
           <p>Loading your settings...</p>
         </div>
       </div>
@@ -200,7 +200,7 @@ const Settings = () => {
   return (
     <div className="settings-container">
       <div className="page-header">
-        <h2>⚙️ Financial Settings</h2>
+        <h2>âš™ï¸ Financial Settings</h2>
         <p>Configure your pay schedules, bank accounts, and bills</p>
         {message && (
           <div className={`message ${message.includes('Error') ? 'error' : 'success'}`}>
@@ -213,7 +213,7 @@ const Settings = () => {
         
         {/* Tile 1: Personal Information */}
         <div className="settings-tile">
-          <h3>👤 Personal Information</h3>
+          <h3>ðŸ‘¤ Personal Information</h3>
           <div className="tile-content">
             <div className="form-group">
               <label>Your Name</label>
@@ -238,7 +238,7 @@ const Settings = () => {
 
         {/* Tile 2: Your Pay Schedule */}
         <div className="settings-tile">
-          <h3>💰 Your Pay Schedule (Bi-Weekly)</h3>
+          <h3>ðŸ’° Your Pay Schedule (Bi-Weekly)</h3>
           <div className="tile-content">
             <div className="form-group">
               <label>Pay Amount</label>
@@ -308,7 +308,7 @@ const Settings = () => {
 
         {/* Tile 3: Spouse Pay Schedule */}
         <div className="settings-tile">
-          <h3>💑 Spouse Pay Schedule (15th & 30th)</h3>
+          <h3>ðŸ’‘ Spouse Pay Schedule (15th & 30th)</h3>
           <div className="tile-content">
             <div className="form-group">
               <label>Pay Amount</label>
@@ -324,16 +324,16 @@ const Settings = () => {
             </div>
             <div className="automatic-schedule">
               <h4>Automatic Schedule</h4>
-              <p>• Pays on the 15th and 30th of each month</p>
-              <p>• Friday adjustment rule applies for weekends</p>
-              <p>• System calculates next payday automatically</p>
+              <p>â€¢ Pays on the 15th and 30th of each month</p>
+              <p>â€¢ Friday adjustment rule applies for weekends</p>
+              <p>â€¢ System calculates next payday automatically</p>
             </div>
           </div>
         </div>
 
         {/* Tile 4: Spending Preferences */}
         <div className="settings-tile">
-          <h3>💡 Spending Preferences</h3>
+          <h3>ðŸ’¡ Spending Preferences</h3>
           <div className="tile-content">
             <div className="form-group">
               <label>Next Payday Date (Override)</label>
@@ -368,16 +368,16 @@ const Settings = () => {
             
             {/* Bill Sorting Preferences */}
             <div className="preferences-section">
-              <h4>📊 Bill Sorting & Alerts</h4>
+              <h4>ðŸ“Š Bill Sorting & Alerts</h4>
               <div className="form-group">
                 <label>Default Bill Sort Order</label>
                 <select
                   value={preferences.billSortOrder}
                   onChange={(e) => setPreferences({...preferences, billSortOrder: e.target.value})}
                 >
-                  <option value="dueDate">🔥 By Due Date (Recommended)</option>
-                  <option value="alphabetical">🔤 Alphabetical</option>
-                  <option value="amount">💰 By Amount</option>
+                  <option value="dueDate">ðŸ”¥ By Due Date (Recommended)</option>
+                  <option value="alphabetical">ðŸ”¤ Alphabetical</option>
+                  <option value="amount">ðŸ’° By Amount</option>
                 </select>
                 <small>How bills are sorted in the Recurring page</small>
               </div>
@@ -404,7 +404,7 @@ const Settings = () => {
                     min="1"
                     max="30"
                   />
-                  <small>Show 🟠 urgent when due in X days</small>
+                  <small>Show ðŸŸ  urgent when due in X days</small>
                 </div>
                 
                 <div className="form-group">
@@ -416,7 +416,7 @@ const Settings = () => {
                     min="1"
                     max="60"
                   />
-                  <small>Show 🟡 warning when due in X days</small>
+                  <small>Show ðŸŸ¡ warning when due in X days</small>
                 </div>
               </div>
             </div>
@@ -433,7 +433,7 @@ const Settings = () => {
 
         {/* Tile 5: Bank Accounts */}
         <div className="settings-tile">
-          <h3>🏦 Bank Accounts</h3>
+          <h3>ðŸ¦ Bank Accounts</h3>
           <div className="tile-content">
             {Object.entries(bankAccounts).map(([key, account]) => (
               <div key={key} className="form-group">
@@ -455,13 +455,13 @@ const Settings = () => {
 
         {/* Tile 6: Recurring Bills */}
         <div className="settings-tile bills-tile">
-          <h3>🔄 Recurring Bills</h3>
+          <h3>ðŸ”„ Recurring Bills</h3>
           <div className="tile-content">
             
             {/* Info about advanced import */}
             <div className="import-info-section">
               <p className="info-message">
-                💡 For advanced CSV import with duplicate detection and error handling, 
+                ðŸ’¡ For advanced CSV import with duplicate detection and error handling, 
                 visit the <Link to="/recurring" style={{ color: '#00ff88', textDecoration: 'none', fontWeight: 'bold' }}>
                   Recurring page
                 </Link> which offers intelligent categorization and conflict resolution.
@@ -551,3 +551,4 @@ const Settings = () => {
 };
 
 export default Settings;
+

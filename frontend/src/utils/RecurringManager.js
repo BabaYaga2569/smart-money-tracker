@@ -295,7 +295,7 @@ export class RecurringManager {
                         confidence: similarity.confidence,
                         reasons: similarity.reasons,
                         type: similarity.primaryMatch,
-                        message: `${similarity.score}% match: "${existingItem.name}" ↔ "${newItem.name}"`,
+                        message: `${similarity.score}% match: "${existingItem.name}" â†” "${newItem.name}"`,
                         recommendations: this.generateRecommendations(existingItem, newItem, similarity)
                     });
                 }

@@ -40,7 +40,7 @@
 }
 
 .step.completed::after {
-  content: '✓';
+  content: 'âœ“';
   font-size: 0.8rem;
 }
 

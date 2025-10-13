@@ -141,7 +141,7 @@ const AccountMappingStep = ({
                 <span className="frequency">{item.frequency}</span>
                 {item.institutionName && (
                   <span className="institution">
-                    🏦 {item.institutionName}
+                    ðŸ¦ {item.institutionName}
                   </span>
                 )}
               </div>
@@ -165,7 +165,7 @@ const AccountMappingStep = ({
                   className="save-mapping-btn"
                   title="Save this mapping for future imports"
                 >
-                  💾
+                  ðŸ’¾
                 </button>
               )}
             </div>
@@ -180,7 +180,7 @@ const AccountMappingStep = ({
             onClick={() => setShowMappingTable(!showMappingTable)}
             className="toggle-mapping-btn"
           >
-            {showMappingTable ? '▼' : '▶'} Institution Mapping Table ({Object.keys(customMapping).length})
+            {showMappingTable ? 'â–¼' : 'â–¶'} Institution Mapping Table ({Object.keys(customMapping).length})
           </button>
           
           {showMappingTable && (
@@ -191,7 +191,7 @@ const AccountMappingStep = ({
               
               {Object.keys(customMapping).length === 0 ? (
                 <div className="no-mappings">
-                  No saved mappings yet. Use the 💾 button next to each item to save a mapping.
+                  No saved mappings yet. Use the ðŸ’¾ button next to each item to save a mapping.
                 </div>
               ) : (
                 <table className="mappings-table">
@@ -213,7 +213,7 @@ const AccountMappingStep = ({
                             className="remove-mapping-btn"
                             title="Remove this mapping"
                           >
-                            ✕
+                            âœ•
                           </button>
                         </td>
                       </tr>
@@ -229,13 +229,13 @@ const AccountMappingStep = ({
       {/* Action Buttons */}
       <div className="mapping-actions">
         <button onClick={onBack} className="back-btn">
-          ← Back to Preview
+          â† Back to Preview
         </button>
         <button 
           onClick={handleContinue}
           className="continue-btn"
         >
-          Continue to Import →
+          Continue to Import â†’
         </button>
       </div>
     </div>
@@ -243,3 +243,4 @@ const AccountMappingStep = ({
 };
 
 export default AccountMappingStep;
+

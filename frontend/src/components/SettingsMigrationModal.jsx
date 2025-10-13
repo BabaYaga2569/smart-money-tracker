@@ -95,7 +95,7 @@ const SettingsMigrationModal = ({ settingsBills, existingItems, onImport, onCanc
                 <div className="item-info">
                   <div className="item-name">{item.name}</div>
                   <div className="item-details">
-                    {formatCurrency(item.amount)} • {item.frequency} • Due: {item.nextOccurrence}
+                    {formatCurrency(item.amount)} â€¢ {item.frequency} â€¢ Due: {item.nextOccurrence}
                   </div>
                 </div>
                 <div className="item-category">
@@ -119,7 +119,7 @@ const SettingsMigrationModal = ({ settingsBills, existingItems, onImport, onCanc
 
       {migrationPreview?.hasConflicts && (
         <div className="conflicts-notice">
-          <div className="warning-icon">⚠️</div>
+          <div className="warning-icon">âš ï¸</div>
           <div>
             <strong>Potential Duplicates Found</strong>
             <p>We found {conflicts.length} potential duplicate(s). Review them on the next step.</p>
@@ -153,7 +153,7 @@ const SettingsMigrationModal = ({ settingsBills, existingItems, onImport, onCanc
         {conflicts.map((conflict, index) => (
           <div key={index} className="conflict-item">
             <div className="conflict-header">
-              <div className="conflict-icon">🔍</div>
+              <div className="conflict-icon">ðŸ”</div>
               <div className="conflict-title">Potential duplicate: {conflict.incoming.name}</div>
             </div>
             
@@ -243,7 +243,7 @@ const SettingsMigrationModal = ({ settingsBills, existingItems, onImport, onCanc
 
   const renderCompleteStep = () => (
     <div className="migration-complete-step">
-      <div className="success-icon">✅</div>
+      <div className="success-icon">âœ…</div>
       <h3>Import Complete!</h3>
       <p>Successfully imported {migrationPreview?.itemsToMigrate?.length || 0} bills to your Recurring page.</p>
       <p>Your bills are now sorted by due date proximity to help you prioritize payments.</p>

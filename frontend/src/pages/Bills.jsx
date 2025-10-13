@@ -1054,7 +1054,7 @@ const Bills = () => {
 
   const getStatusDisplayText = (bill) => {
     if (bill.status === 'skipped') {
-      return '⏭️ SKIPPED';
+      return 'â­ï¸ SKIPPED';
     }
     
     const now = new Date();
@@ -1126,7 +1126,7 @@ const Bills = () => {
     return (
       <div className="bills-container">
         <div className="page-header">
-          <h2>🧾 Bills Management</h2>
+          <h2>ðŸ§¾ Bills Management</h2>
           <p>Loading your bills...</p>
         </div>
       </div>
@@ -1151,7 +1151,7 @@ const Bills = () => {
           fontSize: '14px'
         }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-            <span>🔗</span>
+            <span>ðŸ”—</span>
             <span>
               <strong>Connect Your Bank</strong> - Automate bill tracking and never miss a payment
             </span>
@@ -1170,7 +1170,7 @@ const Bills = () => {
               whiteSpace: 'nowrap'
             }}
           >
-            Connect Bank →
+            Connect Bank â†’
           </button>
         </div>
       )}
@@ -1189,7 +1189,7 @@ const Bills = () => {
           fontSize: '14px'
         }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-            <span>❌</span>
+            <span>âŒ</span>
             <span>
               <strong>Connection Error</strong> - {PlaidConnectionManager.getErrorMessage()}
             </span>
@@ -1225,7 +1225,7 @@ const Bills = () => {
           boxShadow: '0 4px 6px rgba(0,0,0,0.1)'
         }}>
           <div style={{ fontSize: '16px', fontWeight: '600' }}>
-            ✅ Plaid Connected - Automated bill matching enabled
+            âœ… Plaid Connected - Automated bill matching enabled
           </div>
         </div>
       )}
@@ -1233,7 +1233,7 @@ const Bills = () => {
       <div className="page-header">
         <div className="header-content">
           <div>
-            <h2>🧾 Bills Management</h2>
+            <h2>ðŸ§¾ Bills Management</h2>
             <p>Complete bill lifecycle management and automation</p>
           </div>
           <div style={{ display: 'flex', gap: '12px' }}>
@@ -1251,7 +1251,7 @@ const Bills = () => {
               }}
               title="Show help and documentation"
             >
-              ❓ Help
+              â“ Help
             </button>
             <button 
               className="add-bill-btn-header"
@@ -1293,12 +1293,12 @@ const Bills = () => {
               }}
             >
               {refreshingTransactions 
-                ? '🔄 Matching...' 
+                ? 'ðŸ”„ Matching...' 
                 : plaidStatus.hasError 
-                  ? '❌ Plaid Error' 
+                  ? 'âŒ Plaid Error' 
                   : (!plaidStatus.isConnected && !hasPlaidAccounts)
-                    ? '🔒 Connect Plaid' 
-                    : '🔄 Match Transactions'}
+                    ? 'ðŸ”’ Connect Plaid' 
+                    : 'ðŸ”„ Match Transactions'}
             </button>
             
             {typeof window !== 'undefined' && window.location.hostname === 'localhost' && (
@@ -1316,7 +1316,7 @@ const Bills = () => {
                   cursor: 'pointer'
                 }}
               >
-                🧪 Test Auto-Payment
+                ðŸ§ª Test Auto-Payment
               </button>
             )}
           </div>
@@ -1385,15 +1385,15 @@ const Bills = () => {
             onChange={(e) => setFilterStatus(e.target.value)}
             className="filter-select"
           >
-            <option value="all">📋 All Status</option>
-            <option value="upcoming">⏳ Show Upcoming</option>
-            <option value="paid">✅ Paid</option>
-            <option value="overdue">🚨 Overdue</option>
-            <option value="due-today">📅 Due Today</option>
-            <option value="urgent">⚠️ Urgent (≤3 days)</option>
-            <option value="this-week">📆 This Week</option>
-            <option value="pending">🔵 Pending</option>
-            <option value="skipped">⏭️ Skipped</option>
+            <option value="all">ðŸ“‹ All Status</option>
+            <option value="upcoming">â³ Show Upcoming</option>
+            <option value="paid">âœ… Paid</option>
+            <option value="overdue">ðŸš¨ Overdue</option>
+            <option value="due-today">ðŸ“… Due Today</option>
+            <option value="urgent">âš ï¸ Urgent (â‰¤3 days)</option>
+            <option value="this-week">ðŸ“† This Week</option>
+            <option value="pending">ðŸ”µ Pending</option>
+            <option value="skipped">â­ï¸ Skipped</option>
           </select>
           <select 
             value={filterRecurring} 
@@ -1402,8 +1402,8 @@ const Bills = () => {
             title="Filter by bill source"
           >
             <option value="all">All Bills</option>
-            <option value="recurring">🔄 Auto-Generated</option>
-            <option value="manual">✋ Manual Bills</option>
+            <option value="recurring">ðŸ”„ Auto-Generated</option>
+            <option value="manual">âœ‹ Manual Bills</option>
           </select>
         </div>
         
@@ -1415,7 +1415,7 @@ const Bills = () => {
               disabled={loading}
               title="Restore deleted bills"
             >
-              ↩️ Undo Delete
+              â†©ï¸ Undo Delete
             </button>
           )}
           {processedBills.length > 0 && (
@@ -1425,7 +1425,7 @@ const Bills = () => {
               disabled={loading}
               title="Delete all bills"
             >
-              🗑️ Delete All Bills
+              ðŸ—‘ï¸ Delete All Bills
             </button>
           )}
           {processedBills.length > 0 && (
@@ -1447,7 +1447,7 @@ const Bills = () => {
                 opacity: (loading || deduplicating) ? 0.6 : 1
               }}
             >
-              {deduplicating ? '🔄 Deduplicating...' : '🧹 Deduplicate Bills'}
+              {deduplicating ? 'ðŸ”„ Deduplicating...' : 'ðŸ§¹ Deduplicate Bills'}
             </button>
           )}
           <button 
@@ -1468,7 +1468,7 @@ const Bills = () => {
               opacity: loading ? 0.6 : 1
             }}
           >
-            📊 Import from CSV
+            ðŸ“Š Import from CSV
           </button>
           {importHistory.length > 0 && (
             <>
@@ -1490,7 +1490,7 @@ const Bills = () => {
                   opacity: loading ? 0.6 : 1
                 }}
               >
-                📜 Import History ({importHistory.length})
+                ðŸ“œ Import History ({importHistory.length})
               </button>
               <button 
                 className="undo-import-button"
@@ -1511,7 +1511,7 @@ const Bills = () => {
                   animation: 'pulse 2s ease-in-out infinite'
                 }}
               >
-                ↩️ Undo Last Import
+                â†©ï¸ Undo Last Import
               </button>
             </>
           )}
@@ -1551,7 +1551,7 @@ const Bills = () => {
                             fontWeight: 'normal'
                           }}
                         >
-                          🔄 Auto
+                          ðŸ”„ Auto
                         </span>
                       )}
                     </h4>
@@ -1581,10 +1581,10 @@ const Bills = () => {
                       color: '#00d4ff'
                     }}>
                       <div style={{ fontWeight: '600', marginBottom: '2px' }}>
-                        ✓ Auto-matched Transaction
+                        âœ“ Auto-matched Transaction
                       </div>
                       <div style={{ opacity: 0.9 }}>
-                        {bill.lastPayment.merchantName || 'Transaction'} • {formatCurrency(bill.lastPayment.amount)}
+                        {bill.lastPayment.merchantName || 'Transaction'} â€¢ {formatCurrency(bill.lastPayment.amount)}
                       </div>
                       <div style={{ opacity: 0.7, fontSize: '10px' }}>
                         {formatDate(bill.lastPayment.paidDate)}
@@ -1634,7 +1634,7 @@ const Bills = () => {
                       }}
                       title={bill.status === 'skipped' ? 'Unskip this bill' : 'Skip this month'}
                     >
-                      {bill.status === 'skipped' ? '↩️ Unskip' : '⏭️ Skip Month'}
+                      {bill.status === 'skipped' ? 'â†©ï¸ Unskip' : 'â­ï¸ Skip Month'}
                     </button>
                   )}
                   
@@ -1690,8 +1690,8 @@ const Bills = () => {
         <div className="modal-overlay" onClick={() => setShowBulkDeleteModal(false)}>
           <div className="modal" onClick={(e) => e.stopPropagation()}>
             <div className="modal-header">
-              <h3>⚠️ Delete All Bills?</h3>
-              <button className="close-btn" onClick={() => setShowBulkDeleteModal(false)}>×</button>
+              <h3>âš ï¸ Delete All Bills?</h3>
+              <button className="close-btn" onClick={() => setShowBulkDeleteModal(false)}>Ã—</button>
             </div>
             
             <div className="modal-body">
@@ -1699,10 +1699,10 @@ const Bills = () => {
                 Are you sure you want to delete <strong>all {processedBills.length} bills</strong>?
               </p>
               <p style={{ marginBottom: '20px', color: '#ff9800' }}>
-                ⚠️ This will permanently delete all your bills from the system.
+                âš ï¸ This will permanently delete all your bills from the system.
               </p>
               <p style={{ marginBottom: '20px', color: '#00ff88' }}>
-                ✓ Don't worry! You can undo this action using the "Undo Delete" button that will appear after deletion.
+                âœ“ Don't worry! You can undo this action using the "Undo Delete" button that will appear after deletion.
               </p>
               
               <div className="modal-actions" style={{ display: 'flex', gap: '10px', justifyContent: 'flex-end' }}>
@@ -1739,8 +1739,8 @@ const Bills = () => {
         <div className="modal-overlay" onClick={() => setShowImportHistory(false)}>
           <div className="modal" onClick={(e) => e.stopPropagation()} style={{ maxWidth: '700px' }}>
             <div className="modal-header">
-              <h3>📜 Import History</h3>
-              <button className="close-btn" onClick={() => setShowImportHistory(false)}>×</button>
+              <h3>ðŸ“œ Import History</h3>
+              <button className="close-btn" onClick={() => setShowImportHistory(false)}>Ã—</button>
             </div>
             
             <div className="modal-body">
@@ -1770,12 +1770,12 @@ const Bills = () => {
                           {entry.billCount} bills imported
                           {entry.errorsCount > 0 && (
                             <span style={{ color: '#f44336', marginLeft: '8px' }}>
-                              • {entry.errorsCount} errors
+                              â€¢ {entry.errorsCount} errors
                             </span>
                           )}
                           {entry.warningsCount > 0 && (
                             <span style={{ color: '#ff9800', marginLeft: '8px' }}>
-                              • {entry.warningsCount} warnings
+                              â€¢ {entry.warningsCount} warnings
                             </span>
                           )}
                         </div>
@@ -1785,18 +1785,18 @@ const Bills = () => {
                       <div style={{ fontWeight: '600', marginBottom: '6px' }}>Bills:</div>
                       {entry.bills.map((b, idx) => (
                         <div key={idx} style={{ paddingLeft: '12px', marginBottom: '4px' }}>
-                          • {b.name} 
+                          â€¢ {b.name} 
                           {b.institutionName && <span style={{ color: '#888' }}> ({b.institutionName})</span>}
                           <span style={{ color: '#888' }}> - ${b.amount?.toFixed?.(2) || b.amount}</span>
                           {b.dueDate && <span style={{ color: '#888' }}> - Due: {b.dueDate}</span>}
                           {b.dateError && (
                             <span style={{ color: '#f44336', marginLeft: '8px' }}>
-                              ❌ {b.dateError}
+                              âŒ {b.dateError}
                             </span>
                           )}
                           {b.dateWarning && !b.dateError && (
                             <span style={{ color: '#ff9800', marginLeft: '8px' }}>
-                              ⚠️ {b.dateWarning}
+                              âš ï¸ {b.dateWarning}
                             </span>
                           )}
                         </div>
@@ -1837,7 +1837,7 @@ const Bills = () => {
                       fontWeight: '600'
                     }}
                   >
-                    ↩️ Undo Last Import
+                    â†©ï¸ Undo Last Import
                   </button>
                 )}
               </div>
@@ -1850,13 +1850,13 @@ const Bills = () => {
         <div className="modal-overlay" onClick={() => setShowHelpModal(false)}>
           <div className="modal" onClick={(e) => e.stopPropagation()} style={{ maxWidth: '800px', maxHeight: '90vh', overflowY: 'auto' }}>
             <div className="modal-header">
-              <h3>❓ Bills Management Help</h3>
-              <button className="close-btn" onClick={() => setShowHelpModal(false)}>×</button>
+              <h3>â“ Bills Management Help</h3>
+              <button className="close-btn" onClick={() => setShowHelpModal(false)}>Ã—</button>
             </div>
             
             <div className="modal-body">
               <div style={{ marginBottom: '24px' }}>
-                <h4 style={{ color: '#00ff88', marginBottom: '12px' }}>📊 CSV Import</h4>
+                <h4 style={{ color: '#00ff88', marginBottom: '12px' }}>ðŸ“Š CSV Import</h4>
                 <ul style={{ color: '#ccc', lineHeight: '1.8' }}>
                   <li><strong>Step 1:</strong> Click "Import from CSV" and upload your CSV file</li>
                   <li><strong>Step 2:</strong> Review column mapping (auto-detected or manual mapping available)</li>
@@ -1886,7 +1886,7 @@ const Bills = () => {
               </div>
 
               <div style={{ marginBottom: '24px' }}>
-                <h4 style={{ color: '#00ff88', marginBottom: '12px' }}>📜 Import History</h4>
+                <h4 style={{ color: '#00ff88', marginBottom: '12px' }}>ðŸ“œ Import History</h4>
                 <ul style={{ color: '#ccc', lineHeight: '1.8' }}>
                   <li>Track your last 10 CSV imports with timestamps</li>
                   <li>View bill count and names for each import</li>
@@ -1896,7 +1896,7 @@ const Bills = () => {
               </div>
 
               <div style={{ marginBottom: '24px' }}>
-                <h4 style={{ color: '#00ff88', marginBottom: '12px' }}>🔄 Transaction Matching</h4>
+                <h4 style={{ color: '#00ff88', marginBottom: '12px' }}>ðŸ”„ Transaction Matching</h4>
                 <ul style={{ color: '#ccc', lineHeight: '1.8' }}>
                   <li><strong>Connect Plaid:</strong> Link your bank accounts from the Accounts page</li>
                   <li><strong>Auto-match:</strong> Click "Match Transactions" to automatically find payments</li>
@@ -1907,9 +1907,9 @@ const Bills = () => {
               </div>
 
               <div style={{ marginBottom: '24px' }}>
-                <h4 style={{ color: '#00ff88', marginBottom: '12px' }}>🔄 Recurring Bills</h4>
+                <h4 style={{ color: '#00ff88', marginBottom: '12px' }}>ðŸ”„ Recurring Bills</h4>
                 <ul style={{ color: '#ccc', lineHeight: '1.8' }}>
-                  <li><strong>Auto badge:</strong> Bills with 🔄 Auto are generated from recurring templates</li>
+                  <li><strong>Auto badge:</strong> Bills with ðŸ”„ Auto are generated from recurring templates</li>
                   <li><strong>Create templates:</strong> Set up recurring bills on the Recurring page</li>
                   <li><strong>Template control:</strong> Delete templates with option to remove generated bills</li>
                   <li><strong>Cleanup menu:</strong> Bulk maintenance tools for recurring bills</li>
@@ -1917,7 +1917,7 @@ const Bills = () => {
               </div>
 
               <div style={{ marginBottom: '24px' }}>
-                <h4 style={{ color: '#00ff88', marginBottom: '12px' }}>🗑️ Bulk Operations</h4>
+                <h4 style={{ color: '#00ff88', marginBottom: '12px' }}>ðŸ—‘ï¸ Bulk Operations</h4>
                 <ul style={{ color: '#ccc', lineHeight: '1.8' }}>
                   <li><strong>Delete All:</strong> Remove all bills with one click (with undo option)</li>
                   <li><strong>Undo Delete:</strong> Restore all deleted bills if done by mistake</li>
@@ -1927,7 +1927,7 @@ const Bills = () => {
               </div>
 
               <div style={{ marginBottom: '24px' }}>
-                <h4 style={{ color: '#00ff88', marginBottom: '12px' }}>💡 Tips & Best Practices</h4>
+                <h4 style={{ color: '#00ff88', marginBottom: '12px' }}>ðŸ’¡ Tips & Best Practices</h4>
                 <ul style={{ color: '#ccc', lineHeight: '1.8' }}>
                   <li>Download the CSV template for proper formatting</li>
                   <li>Review duplicate warnings before importing</li>
@@ -2043,7 +2043,7 @@ const BillModal = ({ bill, categories, accounts, onSave, onCancel }) => {
       <div className="modal-content" onClick={(e) => e.stopPropagation()}>
         <div className="modal-header">
           <h3>{bill ? 'Edit Bill' : 'Add New Bill'}</h3>
-          <button className="modal-close" onClick={onCancel}>×</button>
+          <button className="modal-close" onClick={onCancel}>Ã—</button>
         </div>
         
         <form className="modal-form" onSubmit={handleSubmit}>
@@ -2156,3 +2156,4 @@ const BillModal = ({ bill, categories, accounts, onSave, onCancel }) => {
 };
 
 export default Bills;
+

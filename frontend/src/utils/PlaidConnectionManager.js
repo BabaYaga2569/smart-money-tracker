@@ -265,3 +265,4 @@ class PlaidConnectionManager {
 
 // Export singleton instance
 export default new PlaidConnectionManager();
+

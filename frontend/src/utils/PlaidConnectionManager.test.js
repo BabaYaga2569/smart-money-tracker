@@ -14,17 +14,17 @@ const assert = (condition, message) => {
 const test = (name, fn) => {
     try {
         fn();
-        console.log(`✅ ${name}`);
+        console.log(`âœ… ${name}`);
         return true;
     } catch (error) {
-        console.error(`❌ ${name}`);
+        console.error(`âŒ ${name}`);
         console.error(`   Error: ${error.message}`);
         return false;
     }
 };
 
 export const runPlaidConnectionManagerTests = () => {
-    console.log('🧪 Testing PlaidConnectionManager\n');
+    console.log('ðŸ§ª Testing PlaidConnectionManager\n');
 
     let passedTests = 0;
     let totalTests = 0;
@@ -137,13 +137,13 @@ export const runPlaidConnectionManagerTests = () => {
     }
 
     // Summary
-    console.log(`\n📊 Test Summary: ${passedTests}/${totalTests} tests passed`);
+    console.log(`\nðŸ“Š Test Summary: ${passedTests}/${totalTests} tests passed`);
     
     if (passedTests === totalTests) {
-        console.log('✅ All tests passed!');
+        console.log('âœ… All tests passed!');
         return true;
     } else {
-        console.log(`❌ ${totalTests - passedTests} test(s) failed`);
+        console.log(`âŒ ${totalTests - passedTests} test(s) failed`);
         return false;
     }
 };
@@ -152,3 +152,4 @@ export const runPlaidConnectionManagerTests = () => {
 if (typeof process !== 'undefined' && process.env.NODE_ENV === 'test') {
     runPlaidConnectionManagerTests();
 }
+

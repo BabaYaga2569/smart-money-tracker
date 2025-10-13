@@ -11,40 +11,40 @@ export class PaycycleManager {
       frequency: ['weekly', 'bi-weekly', 'semi-monthly', 'monthly'],
       predictable: true,
       taxable: true,
-      icon: '💼'
+      icon: 'ðŸ’¼'
     },
     HOURLY: {
       frequency: ['weekly', 'bi-weekly'],
       predictable: false,
       taxable: true,
-      icon: '⏰'
+      icon: 'â°'
     },
     GIG_WORK: {
       frequency: 'irregular',
       predictable: false,
       taxable: true,
       platforms: ['uber', 'doordash', 'freelance', 'other'],
-      icon: '🚗'
+      icon: 'ðŸš—'
     },
     SIDE_HUSTLE: {
       frequency: 'irregular',
       predictable: false,
       taxable: true,
-      icon: '💡'
+      icon: 'ðŸ’¡'
     },
     INVESTMENT: {
       frequency: ['monthly', 'quarterly', 'annual'],
       predictable: true,
       taxable: true,
       types: ['dividends', 'interest', 'rental'],
-      icon: '📈'
+      icon: 'ðŸ“ˆ'
     },
     BENEFITS: {
       frequency: ['monthly', 'one-time'],
       predictable: true,
       taxable: false,
       types: ['unemployment', 'disability', 'social_security'],
-      icon: '🏛️'
+      icon: 'ðŸ›ï¸'
     }
   };
 

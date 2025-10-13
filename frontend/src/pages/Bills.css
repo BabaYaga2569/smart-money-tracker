@@ -210,7 +210,7 @@
 }
 
 /* Bills list container - displays at least 15 bills before scrolling
-   Calculation: 15 bills × ~110px per bill + 14 gaps × 12px ≈ 1,818px
+   Calculation: 15 bills Ã— ~110px per bill + 14 gaps Ã— 12px â‰ˆ 1,818px
    Set to 2000px to comfortably show 15+ bills before vertical scrolling activates
    Using !important to override any conflicting styles from other CSS files */
 .bills-list {

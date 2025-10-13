@@ -10,10 +10,10 @@ const assert = (condition, message) => {
 const test = (name, fn) => {
     try {
         fn();
-        console.log(`✅ ${name}`);
+        console.log(`âœ… ${name}`);
         return true;
     } catch (error) {
-        console.error(`❌ ${name}`);
+        console.error(`âŒ ${name}`);
         console.error(`   Error: ${error.message}`);
         return false;
     }
@@ -48,7 +48,7 @@ const filterOutBill = (bills, billToRemove) => {
 };
 
 export const runBillIdentificationTests = () => {
-    console.log('🧪 Testing Bill Identification with Unique IDs\n');
+    console.log('ðŸ§ª Testing Bill Identification with Unique IDs\n');
 
     let passedTests = 0;
     let totalTests = 0;
@@ -223,12 +223,12 @@ export const runBillIdentificationTests = () => {
         passedTests++;
     }
 
-    console.log(`\n📊 Test Results: ${passedTests}/${totalTests} tests passed`);
+    console.log(`\nðŸ“Š Test Results: ${passedTests}/${totalTests} tests passed`);
     
     if (passedTests === totalTests) {
-        console.log('🎉 All bill identification tests passed!');
+        console.log('ðŸŽ‰ All bill identification tests passed!');
     } else {
-        console.log(`⚠️  ${totalTests - passedTests} test(s) failed`);
+        console.log(`âš ï¸  ${totalTests - passedTests} test(s) failed`);
     }
 
     return {
@@ -242,3 +242,4 @@ export const runBillIdentificationTests = () => {
 if (typeof window !== 'undefined' && window.location) {
     window.runBillIdentificationTests = runBillIdentificationTests;
 }
+

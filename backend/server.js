@@ -90,17 +90,17 @@ if (!admin.apps.length) {
       admin.initializeApp({
         credential: admin.credential.cert(serviceAccount)
       });
-      console.log('✓ Firebase Admin initialized with service account');
+      console.log('âœ“ Firebase Admin initialized with service account');
     } else {
       // Fallback to application default credentials (for local development)
       admin.initializeApp({
         credential: admin.credential.applicationDefault()
       });
-      console.log('✓ Firebase Admin initialized with application default credentials');
+      console.log('âœ“ Firebase Admin initialized with application default credentials');
     }
   } catch (error) {
-    console.error('✗ Failed to initialize Firebase Admin:', error.message);
-    console.log('⚠ Some features requiring Firestore will be unavailable');
+    console.error('âœ— Failed to initialize Firebase Admin:', error.message);
+    console.log('âš  Some features requiring Firestore will be unavailable');
   }
 }
 
@@ -624,3 +624,4 @@ app.get("/healthz", (req, res) => res.send("ok"));
 
 const PORT = process.env.PORT || 5000;
 app.listen(PORT, () => console.log(`Server running on ${PORT}`));
+

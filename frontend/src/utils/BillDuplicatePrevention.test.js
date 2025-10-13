@@ -12,17 +12,17 @@ const assert = (condition, message) => {
 const test = (name, fn) => {
     try {
         fn();
-        console.log(`✅ ${name}`);
+        console.log(`âœ… ${name}`);
         return true;
     } catch (error) {
-        console.error(`❌ ${name}`);
+        console.error(`âŒ ${name}`);
         console.error(`   Error: ${error.message}`);
         return false;
     }
 };
 
 export const runDuplicatePreventionTests = () => {
-    console.log('🧪 Testing Enhanced Bill Duplicate Prevention with Plaid Integration\n');
+    console.log('ðŸ§ª Testing Enhanced Bill Duplicate Prevention with Plaid Integration\n');
 
     let passedTests = 0;
     let totalTests = 0;
@@ -173,12 +173,12 @@ export const runDuplicatePreventionTests = () => {
         passedTests++;
     }
 
-    console.log(`\n📊 Test Results: ${passedTests}/${totalTests} tests passed`);
+    console.log(`\nðŸ“Š Test Results: ${passedTests}/${totalTests} tests passed`);
     
     if (passedTests === totalTests) {
-        console.log('🎉 All duplicate prevention tests passed!');
+        console.log('ðŸŽ‰ All duplicate prevention tests passed!');
     } else {
-        console.log(`⚠️  ${totalTests - passedTests} test(s) failed`);
+        console.log(`âš ï¸  ${totalTests - passedTests} test(s) failed`);
     }
 
     return {
@@ -192,3 +192,4 @@ export const runDuplicatePreventionTests = () => {
 if (typeof window !== 'undefined' && window.location) {
     window.runDuplicatePreventionTests = runDuplicatePreventionTests;
 }
+

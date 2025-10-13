@@ -266,7 +266,7 @@ const CashFlow = () => {
         {/* Cash Flow Summary Cards */}
         <div className="cashflow-summary">
           <div className="summary-card">
-            <h3>💰 Net Cash Flow</h3>
+            <h3>ðŸ’° Net Cash Flow</h3>
             <div className={`total-amount ${cashFlowData.netFlow >= 0 ? 'positive' : 'expense'}`}>
               {formatCurrency(cashFlowData.netFlow)}
             </div>
@@ -274,7 +274,7 @@ const CashFlow = () => {
           </div>
           
           <div className="summary-card">
-            <h3>📈 Total Income</h3>
+            <h3>ðŸ“ˆ Total Income</h3>
             <div className="total-amount positive">
               {formatCurrency(cashFlowData.income.total)}
             </div>
@@ -282,7 +282,7 @@ const CashFlow = () => {
           </div>
           
           <div className="summary-card">
-            <h3>📉 Total Expenses</h3>
+            <h3>ðŸ“‰ Total Expenses</h3>
             <div className="total-amount expense">
               {formatCurrency(cashFlowData.expenses.total)}
             </div>
@@ -290,7 +290,7 @@ const CashFlow = () => {
           </div>
           
           <div className="summary-card">
-            <h3>🎯 Savings Rate</h3>
+            <h3>ðŸŽ¯ Savings Rate</h3>
             <div className="total-amount">
               {cashFlowData.efficiency.toFixed(1)}%
             </div>
@@ -298,7 +298,7 @@ const CashFlow = () => {
           </div>
           
           <div className="summary-card">
-            <h3>🔄 Cash Velocity</h3>
+            <h3>ðŸ”„ Cash Velocity</h3>
             <div className="total-amount">
               {cashFlowData.velocity.toFixed(1)}
             </div>
@@ -306,7 +306,7 @@ const CashFlow = () => {
           </div>
           
           <div className="summary-card">
-            <h3>📊 Total Transactions</h3>
+            <h3>ðŸ“Š Total Transactions</h3>
             <div className="total-amount">
               {cashFlowData.transactionCount}
             </div>
@@ -319,28 +319,28 @@ const CashFlow = () => {
           <div className="chart-container large">
             <CashFlowTrendChart 
               data={chartData.trend} 
-              title="💹 Cash Flow Trend Analysis"
+              title="ðŸ’¹ Cash Flow Trend Analysis"
             />
           </div>
           
           <div className="chart-container">
             <IncomeStreamsChart 
               data={cashFlowData.income.streams} 
-              title="💰 Income Sources Breakdown"
+              title="ðŸ’° Income Sources Breakdown"
             />
           </div>
           
           <div className="chart-container">
             <ExpenseCategoriesChart 
               data={cashFlowData.expenses.categories} 
-              title="💸 Expense Categories"
+              title="ðŸ’¸ Expense Categories"
             />
           </div>
           
           <div className="chart-container large">
             <MonthlyComparisonChart 
               data={chartData.monthly} 
-              title="📊 Monthly Income vs Expenses"
+              title="ðŸ“Š Monthly Income vs Expenses"
             />
           </div>
         </div>
@@ -357,7 +357,7 @@ const CashFlow = () => {
       <div className="trends-tab">
         <div className="trends-summary">
           <div className="summary-card">
-            <h3>📈 3-Month Avg</h3>
+            <h3>ðŸ“ˆ 3-Month Avg</h3>
             <div className="total-amount">
               {formatCurrency(cashFlowData.trends.threeMonth)}
             </div>
@@ -365,7 +365,7 @@ const CashFlow = () => {
           </div>
           
           <div className="summary-card">
-            <h3>📊 6-Month Avg</h3>
+            <h3>ðŸ“Š 6-Month Avg</h3>
             <div className="total-amount">
               {formatCurrency(cashFlowData.trends.sixMonth)}
             </div>
@@ -373,7 +373,7 @@ const CashFlow = () => {
           </div>
           
           <div className="summary-card">
-            <h3>📅 12-Month Avg</h3>
+            <h3>ðŸ“… 12-Month Avg</h3>
             <div className="total-amount">
               {formatCurrency(cashFlowData.trends.twelveMonth)}
             </div>
@@ -381,7 +381,7 @@ const CashFlow = () => {
           </div>
           
           <div className="summary-card">
-            <h3>🔄 Year-over-Year</h3>
+            <h3>ðŸ”„ Year-over-Year</h3>
             <div className={`total-amount ${cashFlowData.trends.yearOverYear >= 0 ? 'positive' : 'expense'}`}>
               {cashFlowData.trends.yearOverYear > 0 ? '+' : ''}{cashFlowData.trends.yearOverYear.toFixed(1)}%
             </div>
@@ -393,14 +393,14 @@ const CashFlow = () => {
           <div className="chart-container large">
             <WaterfallChart 
               data={chartData.waterfall} 
-              title="🌊 Cash Flow Waterfall Analysis"
+              title="ðŸŒŠ Cash Flow Waterfall Analysis"
             />
           </div>
           
           <div className="chart-container large">
             <VelocityChart 
               data={chartData.velocity} 
-              title="⚡ Transaction Activity Trends"
+              title="âš¡ Transaction Activity Trends"
             />
           </div>
         </div>
@@ -417,7 +417,7 @@ const CashFlow = () => {
       <div className="forecast-tab">
         <div className="forecast-summary">
           <div className="summary-card">
-            <h3>🔮 Next Month</h3>
+            <h3>ðŸ”® Next Month</h3>
             <div className="total-amount">
               {formatCurrency(forecast.nextMonth)}
             </div>
@@ -425,7 +425,7 @@ const CashFlow = () => {
           </div>
           
           <div className="summary-card">
-            <h3>📈 6-Month Outlook</h3>
+            <h3>ðŸ“ˆ 6-Month Outlook</h3>
             <div className="total-amount">
               {formatCurrency(forecast.sixMonth)}
             </div>
@@ -433,7 +433,7 @@ const CashFlow = () => {
           </div>
           
           <div className="summary-card">
-            <h3>📊 12-Month Projection</h3>
+            <h3>ðŸ“Š 12-Month Projection</h3>
             <div className="total-amount">
               {formatCurrency(forecast.twelveMonth)}
             </div>
@@ -441,7 +441,7 @@ const CashFlow = () => {
           </div>
           
           <div className="summary-card">
-            <h3>📉 Volatility</h3>
+            <h3>ðŸ“‰ Volatility</h3>
             <div className="total-amount">
               {formatCurrency(forecast.volatility)}
             </div>
@@ -453,21 +453,21 @@ const CashFlow = () => {
           <div className="chart-container mega">
             <ForecastChart 
               data={chartData.forecast} 
-              title="🔮 Cash Flow Forecast with Confidence Intervals"
+              title="ðŸ”® Cash Flow Forecast with Confidence Intervals"
             />
           </div>
         </div>
         
         <div className="forecast-factors">
-          <h3>🧠 Forecast Factors</h3>
+          <h3>ðŸ§  Forecast Factors</h3>
           <div className="factors-list">
             {forecast.factors.map((factor, index) => (
               <div key={index} className="factor-item">
                 <span className="factor-icon">
-                  {factor === 'seasonal_variation' && '🌍'}
-                  {factor === 'recurring_bills' && '🔄'}
-                  {factor === 'positive_trend' && '📈'}
-                  {factor === 'negative_trend' && '📉'}
+                  {factor === 'seasonal_variation' && 'ðŸŒ'}
+                  {factor === 'recurring_bills' && 'ðŸ”„'}
+                  {factor === 'positive_trend' && 'ðŸ“ˆ'}
+                  {factor === 'negative_trend' && 'ðŸ“‰'}
                 </span>
                 <span className="factor-text">
                   {factor.replace('_', ' ').replace(/\b\w/g, l => l.toUpperCase())}
@@ -502,7 +502,7 @@ const CashFlow = () => {
           
           {insights.length === 0 && (
             <div className="no-insights">
-              <h3>🤖 AI Insights</h3>
+              <h3>ðŸ¤– AI Insights</h3>
               <p>Add more transactions to get personalized cash flow insights and recommendations.</p>
             </div>
           )}
@@ -515,7 +515,7 @@ const CashFlow = () => {
     return (
       <div className="cashflow-container">
         <div className="loading">
-          <h3>💹 Loading Cash Flow Analytics...</h3>
+          <h3>ðŸ’¹ Loading Cash Flow Analytics...</h3>
           <div className="loading-spinner"></div>
         </div>
       </div>
@@ -525,7 +525,7 @@ const CashFlow = () => {
   return (
     <div className="cashflow-container">
       <div className="page-header">
-        <h2>💹 Cash Flow Analytics</h2>
+        <h2>ðŸ’¹ Cash Flow Analytics</h2>
         <p>Advanced financial analysis, forecasting, and intelligent insights</p>
       </div>
 
@@ -563,25 +563,25 @@ const CashFlow = () => {
             className={selectedTab === 'overview' ? 'active' : ''}
             onClick={() => setSelectedTab('overview')}
           >
-            📊 Overview
+            ðŸ“Š Overview
           </button>
           <button 
             className={selectedTab === 'trends' ? 'active' : ''}
             onClick={() => setSelectedTab('trends')}
           >
-            📈 Trends
+            ðŸ“ˆ Trends
           </button>
           <button 
             className={selectedTab === 'forecast' ? 'active' : ''}
             onClick={() => setSelectedTab('forecast')}
           >
-            🔮 Forecast
+            ðŸ”® Forecast
           </button>
           <button 
             className={selectedTab === 'insights' ? 'active' : ''}
             onClick={() => setSelectedTab('insights')}
           >
-            🧠 Insights
+            ðŸ§  Insights
           </button>
         </div>
       </div>
@@ -596,7 +596,7 @@ const CashFlow = () => {
 
       {transactions.length === 0 && (
         <div className="empty-state">
-          <h3>📊 No Transaction Data</h3>
+          <h3>ðŸ“Š No Transaction Data</h3>
           <p>Add transactions to start analyzing your cash flow patterns and get intelligent insights.</p>
         </div>
       )}
@@ -605,3 +605,4 @@ const CashFlow = () => {
 };
 
 export default CashFlow;
+

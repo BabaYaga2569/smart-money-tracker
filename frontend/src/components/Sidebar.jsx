@@ -40,7 +40,7 @@ const Sidebar = () => {
 
   return (
     <aside className="sidebar">
-      <h2 className="sidebar-title">💰 Smart Money</h2>
+      <h2 className="sidebar-title">ðŸ’° Smart Money</h2>
       <nav>
         <ul>
           {menuItems.map((item) => (
@@ -58,7 +58,7 @@ const Sidebar = () => {
       
       <div className="sidebar-logout">
         <button onClick={handleLogout} className="logout-btn">
-          🚪 Logout
+          ðŸšª Logout
         </button>
         {currentUser && (
           <small className="user-email">{currentUser.email}</small>
@@ -69,3 +69,4 @@ const Sidebar = () => {
 };
 
 export default Sidebar;
+

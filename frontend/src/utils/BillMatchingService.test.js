@@ -11,17 +11,17 @@ const assert = (condition, message) => {
 const test = (name, fn) => {
     try {
         fn();
-        console.log(`✅ ${name}`);
+        console.log(`âœ… ${name}`);
         return true;
     } catch (error) {
-        console.error(`❌ ${name}`);
+        console.error(`âŒ ${name}`);
         console.error(`   Error: ${error.message}`);
         return false;
     }
 };
 
 export const runBillMatchingTests = () => {
-    console.log('🧪 Testing Automated Bill Detection and Matching\n');
+    console.log('ðŸ§ª Testing Automated Bill Detection and Matching\n');
 
     let passedTests = 0;
     let totalTests = 0;
@@ -353,12 +353,12 @@ export const runBillMatchingTests = () => {
     })) passedTests++;
 
     // Summary
-    console.log(`\n📊 Bill Matching Tests Complete: ${passedTests}/${totalTests} passed`);
+    console.log(`\nðŸ“Š Bill Matching Tests Complete: ${passedTests}/${totalTests} passed`);
     
     if (passedTests === totalTests) {
-        console.log('✨ All tests passed! Bill matching is working correctly.\n');
+        console.log('âœ¨ All tests passed! Bill matching is working correctly.\n');
     } else {
-        console.log(`⚠️  ${totalTests - passedTests} test(s) failed.\n`);
+        console.log(`âš ï¸  ${totalTests - passedTests} test(s) failed.\n`);
     }
 
     return { passedTests, totalTests };
@@ -368,3 +368,4 @@ export const runBillMatchingTests = () => {
 if (typeof window === 'undefined') {
     runBillMatchingTests();
 }
+

@@ -322,11 +322,11 @@ const Accounts = () => {
 
   const getAccountTypeIcon = (type) => {
   switch ((type || 'checking').toLowerCase()) {
-    case 'checking': return '🦁';
-    case 'savings': return '💰';
-    case 'credit': return '💳';
-    case 'investment': return '📈';
-    default: return '🛍️';
+    case 'checking': return 'ðŸ¦';
+    case 'savings': return 'ðŸ’°';
+    case 'credit': return 'ðŸ’³';
+    case 'investment': return 'ðŸ“ˆ';
+    default: return 'ðŸ›ï¸';
   }
 };
 
@@ -341,7 +341,7 @@ const Accounts = () => {
     return (
       <div className="accounts-container">
         <div className="page-header">
-          <h2>💳 Bank Accounts</h2>
+          <h2>ðŸ’³ Bank Accounts</h2>
           <p>Loading your accounts...</p>
         </div>
       </div>
@@ -358,7 +358,7 @@ const Accounts = () => {
       )}
 
       <div className="page-header">
-        <h2>💳 Bank Accounts</h2>
+        <h2>ðŸ’³ Bank Accounts</h2>
         <p>View and manage your bank accounts</p>
         <div className="header-actions">
           <button 
@@ -366,14 +366,14 @@ const Accounts = () => {
             onClick={() => setShowHelp(!showHelp)}
             title="Learn about balance types"
           >
-            ❓ Help
+            â“ Help
           </button>
           {plaidAccounts.length === 0 ? (
             <PlaidLink
               onSuccess={handlePlaidSuccess}
               onExit={handlePlaidExit}
-              userId={currentUser.uid}  // ✅ Correct
-              buttonText="🔗 Connect Bank"
+              userId={currentUser.uid}  // âœ… Correct
+              buttonText="ðŸ”— Connect Bank"
             />
           ) : (
             <>
@@ -381,7 +381,7 @@ const Accounts = () => {
                 onSuccess={handlePlaidSuccess}
                 onExit={handlePlaidExit}
                 userId={currentUser.uid}  // Add { } around every instance
-                buttonText="➕ Add Another Bank"
+                buttonText="âž• Add Another Bank"
               />
             </>
           )}
@@ -403,7 +403,7 @@ const Accounts = () => {
           fontSize: '14px'
         }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-            <span>⚠️</span>
+            <span>âš ï¸</span>
             <span>
               <strong>No Bank Connected</strong> - Connect your bank to automatically sync balances and transactions
             </span>
@@ -412,7 +412,7 @@ const Accounts = () => {
             onSuccess={handlePlaidSuccess}
             onExit={handlePlaidExit}
             userId={currentUser.uid}  // Add { } around every instance
-            buttonText="🔗 Connect Now"
+            buttonText="ðŸ”— Connect Now"
           />
         </div>
       )}
@@ -431,7 +431,7 @@ const Accounts = () => {
           fontSize: '14px'
         }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-            <span>❌</span>
+            <span>âŒ</span>
             <span>
               <strong>Connection Error</strong> - {PlaidConnectionManager.getErrorMessage()}
             </span>
@@ -469,7 +469,7 @@ const Accounts = () => {
           fontSize: '13px'
         }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-            <span>✅</span>
+            <span>âœ…</span>
             <span style={{ fontWeight: '500' }}>
               Bank Connected - Live balance syncing enabled
             </span>
@@ -501,29 +501,29 @@ const Accounts = () => {
       {/* Help Section */}
       {showHelp && (
         <div className="help-section">
-          <h3>💡 Understanding Balance Types</h3>
+          <h3>ðŸ’¡ Understanding Balance Types</h3>
           <div className="help-content">
             <div className="help-item">
-              <h4>🔗 Live Balance</h4>
+              <h4>ðŸ”— Live Balance</h4>
               <p>
                 Your <strong>Live Balance</strong> is the current balance from your bank, synced through Plaid. 
                 This is read-only and reflects what your bank reports in real-time.
               </p>
             </div>
             <div className="help-item">
-              <h4>📊 Projected Balance</h4>
+              <h4>ðŸ“Š Projected Balance</h4>
               <p>
                 Your <strong>Projected Balance</strong> includes your Live Balance plus any manual transactions 
                 you've tracked in the app. This helps you plan ahead by accounting for:
               </p>
               <ul>
-                <li>✅ Pending expenses you've logged</li>
-                <li>✅ Expected income not yet deposited</li>
-                <li>✅ Planned purchases and payments</li>
+                <li>âœ… Pending expenses you've logged</li>
+                <li>âœ… Expected income not yet deposited</li>
+                <li>âœ… Planned purchases and payments</li>
               </ul>
             </div>
             <div className="help-item">
-              <h4>🔍 Why the difference?</h4>
+              <h4>ðŸ” Why the difference?</h4>
               <p>
                 Plaid provides read-only access to your bank data for security. Manual transactions you track 
                 in the app adjust your Projected Balance to give you a better picture of your actual available funds.
@@ -561,13 +561,13 @@ const Accounts = () => {
           <div className="balance-display">
             {(showBalanceType === 'live' || showBalanceType === 'both') && (
               <div className="balance-item">
-                <span className="balance-label">🔗 Live Balance</span>
+                <span className="balance-label">ðŸ”— Live Balance</span>
                 <div className="balance-value">{formatCurrency(totalBalance)}</div>
               </div>
             )}
             {(showBalanceType === 'projected' || showBalanceType === 'both') && (
               <div className="balance-item">
-                <span className="balance-label">📊 Projected Balance</span>
+                <span className="balance-label">ðŸ“Š Projected Balance</span>
                 <div className="balance-value projected">{formatCurrency(totalProjectedBalance)}</div>
               </div>
             )}
@@ -598,14 +598,14 @@ const Accounts = () => {
                   <span className="account-icon">{getAccountTypeIcon(account.type)}</span>
                   <h3>{account.official_name}</h3>
                 </div>
-                <span className="account-type">{account.type} {account.mask ? `••${account.mask}` : ''}</span>
+                <span className="account-type">{account.type} {account.mask ? `â€¢â€¢${account.mask}` : ''}</span>
               </div>
               
               <div className="account-balances">
                 {(showBalanceType === 'live' || showBalanceType === 'both') && (
                   <div className="balance-row">
                     <span className="balance-label" title="Current balance from your bank">
-                      🔗 Live Balance
+                      ðŸ”— Live Balance
                     </span>
                     <span className="balance-amount">{formatCurrency(liveBalance)}</span>
                   </div>
@@ -613,7 +613,7 @@ const Accounts = () => {
                 {(showBalanceType === 'projected' || showBalanceType === 'both') && (
                   <div className="balance-row projected">
                     <span className="balance-label" title="Live balance adjusted for manual transactions">
-                      📊 Projected Balance
+                      ðŸ“Š Projected Balance
                     </span>
                     <span className="balance-amount">{formatCurrency(projectedBalance)}</span>
                   </div>
@@ -634,7 +634,7 @@ const Accounts = () => {
                     disabled
                     title="Balance is synced automatically via Plaid"
                   >
-                    🔄 Auto-synced
+                    ðŸ”„ Auto-synced
                   </button>
                 ) : (
                   <button 
@@ -643,7 +643,7 @@ const Accounts = () => {
                     title="Plaid connection required for auto-sync"
                     style={{ opacity: 0.6 }}
                   >
-                    ⏸️ Sync Paused
+                    â¸ï¸ Sync Paused
                   </button>
                 )}
               </div>
@@ -694,7 +694,7 @@ const Accounts = () => {
                       {(showBalanceType === 'live' || showBalanceType === 'both') && (
                         <div className="balance-row">
                           <span className="balance-label" title="Your manually tracked balance">
-                            🔗 Live Balance
+                            ðŸ”— Live Balance
                           </span>
                           <span className="balance-amount">{formatCurrency(liveBalance)}</span>
                         </div>
@@ -702,7 +702,7 @@ const Accounts = () => {
                       {(showBalanceType === 'projected' || showBalanceType === 'both') && (
                         <div className="balance-row projected">
                           <span className="balance-label" title="Live balance adjusted for manual transactions">
-                            📊 Projected Balance
+                            ðŸ“Š Projected Balance
                           </span>
                           <span className="balance-amount">{formatCurrency(projectedBalance)}</span>
                         </div>
@@ -724,14 +724,14 @@ const Accounts = () => {
                     onClick={() => setEditingAccount(key)}
                     disabled={saving || editingAccount === key}
                   >
-                    ✏️ Edit Balance
+                    âœï¸ Edit Balance
                   </button>
                   <button 
                     className="action-btn delete-btn"
                     onClick={() => setShowDeleteModal(key)}
                     disabled={saving}
                   >
-                    🗑️ Delete
+                    ðŸ—‘ï¸ Delete
                   </button>
                 </div>
               </div>
@@ -746,7 +746,7 @@ const Accounts = () => {
               onSuccess={handlePlaidSuccess}
               onExit={handlePlaidExit}
               userId={currentUser.uid}  // Add { } around every instance
-              buttonText="🔗 Connect Your First Bank"
+              buttonText="ðŸ”— Connect Your First Bank"
             />
           </div>
         )}
@@ -762,7 +762,7 @@ const Accounts = () => {
                 className="close-btn"
                 onClick={() => setShowDeleteModal(null)}
               >
-                ✕
+                âœ•
               </button>
             </div>
             <div className="modal-body">
@@ -803,3 +803,4 @@ const Accounts = () => {
 };
 
 export default Accounts;
+

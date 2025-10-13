@@ -283,7 +283,7 @@ export class CSVImporter {
         
         // Remove currency symbols, commas, and whitespace
         const cleaned = amountStr.toString()
-            .replace(/[$€£¥₹,\s]/g, '')
+            .replace(/[$â‚¬Â£Â¥â‚¹,\s]/g, '')
             .replace(/[()]/g, ''); // Remove parentheses
         
         const amount = parseFloat(cleaned);

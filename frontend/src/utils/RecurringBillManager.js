@@ -517,3 +517,4 @@ static isBillPaidForCurrentCycle(bill) {
         };
     }
 }
+

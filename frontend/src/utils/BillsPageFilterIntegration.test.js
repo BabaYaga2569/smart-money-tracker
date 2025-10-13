@@ -14,23 +14,23 @@ import { RecurringBillManager } from './RecurringBillManager.js';
 // Simple test runner
 const assert = (condition, message) => {
     if (!condition) {
-        throw new Error(`❌ FAILED: ${message}`);
+        throw new Error(`âŒ FAILED: ${message}`);
     }
 };
 
 const test = (description, fn) => {
     try {
         fn();
-        console.log(`✅ PASS: ${description}`);
+        console.log(`âœ… PASS: ${description}`);
     } catch (error) {
-        console.error(`❌ FAIL: ${description}`);
+        console.error(`âŒ FAIL: ${description}`);
         console.error(`   ${error.message}`);
         throw error;
     }
 };
 
 const runIntegrationTests = () => {
-    console.log('🧪 Testing Bills Page Filter Integration...\n');
+    console.log('ðŸ§ª Testing Bills Page Filter Integration...\n');
 
     // Test 1: All Status filter shows bills with every possible status
     test('All Status filter shows bills with ALL statuses (paid, overdue, skipped, etc)', () => {
@@ -74,8 +74,8 @@ const runIntegrationTests = () => {
             assert(billWithStatus, `Should include bill with status: ${status}`);
         });
 
-        console.log(`   ✓ All ${allStatuses.length} status types visible with 'All Status' filter`);
-        console.log(`   ✓ Including: paid, overdue, skipped`);
+        console.log(`   âœ“ All ${allStatuses.length} status types visible with 'All Status' filter`);
+        console.log(`   âœ“ Including: paid, overdue, skipped`);
     });
 
     // Test 2: Bill count reflects total, not filtered count
@@ -109,9 +109,9 @@ const runIntegrationTests = () => {
         assert(displayText === '3 of 10',
             `Display should show "3 of 10", got "${displayText}"`);
         
-        console.log(`   ✓ Total: ${processedBillsCount} bills`);
-        console.log(`   ✓ Filtered: ${filteredBills.length} bills`);
-        console.log(`   ✓ Display: "${displayText}"`);
+        console.log(`   âœ“ Total: ${processedBillsCount} bills`);
+        console.log(`   âœ“ Filtered: ${filteredBills.length} bills`);
+        console.log(`   âœ“ Display: "${displayText}"`);
     });
 
     // Test 3: Skipped bills remain visible through processing
@@ -156,9 +156,9 @@ const runIntegrationTests = () => {
         assert(skippedFiltered.length === 1,
             `Skipped filter should show 1 bill, got ${skippedFiltered.length}`);
         
-        console.log(`   ✓ Skipped bill preserved through processing`);
-        console.log(`   ✓ Visible in 'All Status' filter`);
-        console.log(`   ✓ Visible in 'Skipped' filter`);
+        console.log(`   âœ“ Skipped bill preserved through processing`);
+        console.log(`   âœ“ Visible in 'All Status' filter`);
+        console.log(`   âœ“ Visible in 'Skipped' filter`);
     });
 
     // Test 4: Paid bills show Mark Unpaid button
@@ -195,9 +195,9 @@ const runIntegrationTests = () => {
         const isPaidAfterUnmark = RecurringBillManager.isBillPaidForCurrentCycle(unmarkedBill);
         assert(!isPaidAfterUnmark, 'Bill should not be paid after unmarking');
         
-        console.log(`   ✓ Paid bill correctly identified`);
-        console.log(`   ✓ Unmark functionality works correctly`);
-        console.log(`   ✓ Bill not deleted, only status changed`);
+        console.log(`   âœ“ Paid bill correctly identified`);
+        console.log(`   âœ“ Unmark functionality works correctly`);
+        console.log(`   âœ“ Bill not deleted, only status changed`);
     });
 
     // Test 5: All filter options show correct bills
@@ -242,9 +242,9 @@ const runIntegrationTests = () => {
                 `Filter '${filterName}' should show ${expectedCount} bills, got ${filtered.length}`);
         });
 
-        console.log(`   ✓ All 9 filter options tested`);
-        console.log(`   ✓ Each filter shows correct bills`);
-        console.log(`   ✓ No bills hidden or lost`);
+        console.log(`   âœ“ All 9 filter options tested`);
+        console.log(`   âœ“ Each filter shows correct bills`);
+        console.log(`   âœ“ No bills hidden or lost`);
     });
 
     // Test 6: Status toggling doesn't delete bills
@@ -278,19 +278,19 @@ const runIntegrationTests = () => {
         assert(unmarkedBill.id === originalBill.id, 'Bill ID should still be unchanged');
         assert(unmarkedBill.name === originalBill.name, 'Bill name should still be unchanged');
         
-        console.log(`   ✓ Bill persists through paid status change`);
-        console.log(`   ✓ Bill persists through unpaid status change`);
-        console.log(`   ✓ No deletion, only status modification`);
+        console.log(`   âœ“ Bill persists through paid status change`);
+        console.log(`   âœ“ Bill persists through unpaid status change`);
+        console.log(`   âœ“ No deletion, only status modification`);
     });
 
-    console.log('\n✅ All integration tests passed!');
-    console.log('\n📋 Summary:');
-    console.log('   • All Status filter shows ALL bills ✓');
-    console.log('   • Bill count reflects total, not filtered count ✓');
-    console.log('   • Skipped bills remain visible ✓');
-    console.log('   • Mark Unpaid button works correctly ✓');
-    console.log('   • All filter options work as expected ✓');
-    console.log('   • Status toggling never deletes bills ✓');
+    console.log('\nâœ… All integration tests passed!');
+    console.log('\nðŸ“‹ Summary:');
+    console.log('   â€¢ All Status filter shows ALL bills âœ“');
+    console.log('   â€¢ Bill count reflects total, not filtered count âœ“');
+    console.log('   â€¢ Skipped bills remain visible âœ“');
+    console.log('   â€¢ Mark Unpaid button works correctly âœ“');
+    console.log('   â€¢ All filter options work as expected âœ“');
+    console.log('   â€¢ Status toggling never deletes bills âœ“');
 };
 
 // Run tests if this file is executed directly
@@ -299,10 +299,11 @@ if (typeof process !== 'undefined' && process.argv[1] && process.argv[1].endsWit
         runIntegrationTests();
         if (typeof process !== 'undefined' && process.exit) process.exit(0);
     } catch (err) {
-        console.error('\n❌ Test suite failed!');
+        console.error('\nâŒ Test suite failed!');
         console.error(err);
         if (typeof process !== 'undefined' && process.exit) process.exit(1);
     }
 }
 
 export { runIntegrationTests };
+

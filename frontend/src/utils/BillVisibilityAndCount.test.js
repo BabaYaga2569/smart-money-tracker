@@ -13,23 +13,23 @@ import { RecurringBillManager } from './RecurringBillManager.js';
 // Simple test runner
 const assert = (condition, message) => {
     if (!condition) {
-        throw new Error(`❌ FAILED: ${message}`);
+        throw new Error(`âŒ FAILED: ${message}`);
     }
 };
 
 const test = (description, fn) => {
     try {
         fn();
-        console.log(`✅ PASS: ${description}`);
+        console.log(`âœ… PASS: ${description}`);
     } catch (error) {
-        console.error(`❌ FAIL: ${description}`);
+        console.error(`âŒ FAIL: ${description}`);
         console.error(`   ${error.message}`);
         throw error;
     }
 };
 
 const runBillVisibilityTests = () => {
-    console.log('🧪 Testing Bill Visibility and Count Accuracy...\n');
+    console.log('ðŸ§ª Testing Bill Visibility and Count Accuracy...\n');
 
     // Test 1: Bill count reflects total bills, not filtered bills
     test('Bill count shows total bills regardless of filter', () => {
@@ -111,7 +111,7 @@ const runBillVisibilityTests = () => {
         assert(paidBill.lastPaidDate, 'Bill should have lastPaidDate');
         assert(paidBill.lastPayment, 'Bill should have lastPayment record');
         
-        console.log(`   Bill marked as paid: ${mockBill.name} → status: ${paidBill.status}`);
+        console.log(`   Bill marked as paid: ${mockBill.name} â†’ status: ${paidBill.status}`);
     });
 
     // Test 4: Unmarking bill as paid changes status back
@@ -142,7 +142,7 @@ const runBillVisibilityTests = () => {
         const isPaid = RecurringBillManager.isBillPaidForCurrentCycle(unmarkedBill);
         assert(!isPaid, 'Bill should no longer be considered paid after unmarking');
         
-        console.log(`   Bill unmarked successfully: ${mockBill.name} → isPaid: ${isPaid}`);
+        console.log(`   Bill unmarked successfully: ${mockBill.name} â†’ isPaid: ${isPaid}`);
     });
 
     // Test 5: Upcoming filter groups multiple statuses correctly
@@ -225,10 +225,10 @@ const runBillVisibilityTests = () => {
             `Skipped status should be preserved, got: ${processed[0].status}`);
         assert(processed[0].skippedAt, 'skippedAt timestamp should be preserved');
         
-        console.log(`   Skipped bill status preserved: ${mockSkippedBill.name} → status: ${processed[0].status}`);
+        console.log(`   Skipped bill status preserved: ${mockSkippedBill.name} â†’ status: ${processed[0].status}`);
     });
 
-    console.log('\n✅ All bill visibility and count tests passed!');
+    console.log('\nâœ… All bill visibility and count tests passed!');
 };
 
 // Run tests if this file is executed directly
@@ -237,10 +237,11 @@ if (typeof process !== 'undefined' && process.argv[1] && process.argv[1].endsWit
         runBillVisibilityTests();
         if (typeof process !== 'undefined' && process.exit) process.exit(0);
     } catch (err) {
-        console.error('\n❌ Test suite failed!');
+        console.error('\nâŒ Test suite failed!');
         console.error(err);
         if (typeof process !== 'undefined' && process.exit) process.exit(1);
     }
 }
 
 export { runBillVisibilityTests };
+

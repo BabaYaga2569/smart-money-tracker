@@ -3,55 +3,55 @@
 // Goal categories with icons and descriptions
 export const GOAL_CATEGORIES = {
   'Emergency Fund': {
-    icon: '🚨',
+    icon: 'ðŸš¨',
     description: 'Build emergency savings (3-6 months of expenses)',
     priority: 1,
     color: '#ff4444'
   },
   'Vacation': {
-    icon: '🏖️',
+    icon: 'ðŸ–ï¸',
     description: 'Trips, travel, and experiences',
     priority: 3,
     color: '#44aaff'
   },
   'Major Purchase': {
-    icon: '🏠',
+    icon: 'ðŸ ',
     description: 'House down payment, furniture, appliances',
     priority: 2,
     color: '#ff8844'
   },
   'Vehicle': {
-    icon: '🚗',
+    icon: 'ðŸš—',
     description: 'Car, motorcycle, repairs',
     priority: 2,
     color: '#aa44ff'
   },
   'Education': {
-    icon: '🎓',
+    icon: 'ðŸŽ“',
     description: 'Courses, training, certifications',
     priority: 2,
     color: '#44ff88'
   },
   'Investment': {
-    icon: '💰',
+    icon: 'ðŸ’°',
     description: 'Stock portfolio, retirement fund',
     priority: 2,
     color: '#ffaa44'
   },
   'Special Events': {
-    icon: '🎁',
+    icon: 'ðŸŽ',
     description: 'Wedding, holidays, gifts',
     priority: 3,
     color: '#ff44aa'
   },
   'Debt Payoff': {
-    icon: '💳',
+    icon: 'ðŸ’³',
     description: 'Credit cards, student loans',
     priority: 1,
     color: '#ff6644'
   },
   'Custom': {
-    icon: '🎯',
+    icon: 'ðŸŽ¯',
     description: 'User-defined goals',
     priority: 3,
     color: '#44ffaa'
@@ -74,10 +74,10 @@ export const GOAL_STATUSES = {
 
 // Contribution types
 export const CONTRIBUTION_TYPES = {
-  manual: { label: 'Manual', icon: '✋' },
-  automatic: { label: 'Automatic', icon: '🔄' },
-  transfer: { label: 'Transfer', icon: '💸' },
-  transaction: { label: 'Linked Transaction', icon: '🔗' }
+  manual: { label: 'Manual', icon: 'âœ‹' },
+  automatic: { label: 'Automatic', icon: 'ðŸ”„' },
+  transfer: { label: 'Transfer', icon: 'ðŸ’¸' },
+  transaction: { label: 'Linked Transaction', icon: 'ðŸ”—' }
 };
 
 // Milestone percentages for celebrations
@@ -85,7 +85,7 @@ export const MILESTONE_PERCENTAGES = [10, 25, 50, 75, 90, 100];
 
 // Helper functions
 export const getGoalCategoryIcon = (category) => {
-  return GOAL_CATEGORIES[category]?.icon || '🎯';
+  return GOAL_CATEGORIES[category]?.icon || 'ðŸŽ¯';
 };
 
 export const getGoalCategoryColor = (category) => {

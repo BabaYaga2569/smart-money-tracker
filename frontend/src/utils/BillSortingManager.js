@@ -34,7 +34,7 @@ export class BillSortingManager {
         if (daysUntilDue < 0) {
             return {
                 category: 'overdue',
-                indicator: '🔴',
+                indicator: 'ðŸ”´',
                 label: 'OVERDUE',
                 priority: 1,
                 className: 'urgency-overdue'
@@ -42,7 +42,7 @@ export class BillSortingManager {
         } else if (daysUntilDue <= 7) {
             return {
                 category: 'urgent',
-                indicator: '🟠',
+                indicator: 'ðŸŸ ',
                 label: 'DUE SOON',
                 priority: 2,
                 className: 'urgency-urgent'
@@ -50,7 +50,7 @@ export class BillSortingManager {
         } else if (daysUntilDue <= 30) {
             return {
                 category: 'upcoming',
-                indicator: '🟡',
+                indicator: 'ðŸŸ¡',
                 label: 'THIS MONTH',
                 priority: 3,
                 className: 'urgency-upcoming'
@@ -58,7 +58,7 @@ export class BillSortingManager {
         } else {
             return {
                 category: 'future',
-                indicator: '🟢',
+                indicator: 'ðŸŸ¢',
                 label: 'NEXT MONTH',
                 priority: 4,
                 className: 'urgency-future'

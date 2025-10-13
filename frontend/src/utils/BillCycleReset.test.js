@@ -4,7 +4,7 @@ import { RecurringBillManager } from './RecurringBillManager.js';
 // Simple assertion helper
 const assert = (condition, message) => {
     if (!condition) {
-        throw new Error(`❌ Assertion failed: ${message}`);
+        throw new Error(`âŒ Assertion failed: ${message}`);
     }
 };
 
@@ -13,14 +13,14 @@ const test = (name, testFn) => {
     try {
         testFn();
     } catch (error) {
-        console.error(`❌ Test failed: ${name}`);
+        console.error(`âŒ Test failed: ${name}`);
         console.error(error.message);
         throw error;
     }
 };
 
 const runBillCycleResetTests = () => {
-    console.log('🧪 Testing Bill Cycle Reset Behavior...\n');
+    console.log('ðŸ§ª Testing Bill Cycle Reset Behavior...\n');
 
     // Test 1: When a bill is paid and then processBills is called, 
     // the next cycle should show the bill as unpaid
@@ -99,7 +99,7 @@ const runBillCycleResetTests = () => {
         assert(lastPaymentDueDateStr === '2025-01-15', 
             'Payment history should show payment for January cycle');
         
-        console.log('✅ Bill cycle reset working correctly');
+        console.log('âœ… Bill cycle reset working correctly');
     });
 
     // Test 2: Multiple bills with different payment states
@@ -168,7 +168,7 @@ const runBillCycleResetTests = () => {
         assert(!RecurringBillManager.isBillPaidForCurrentCycle(billBFeb), 
             'Bill B should still not be paid');
         
-        console.log('✅ Multiple bills handle cycle resets correctly');
+        console.log('âœ… Multiple bills handle cycle resets correctly');
     });
 
     // Test 3: Bill paid multiple times should maintain correct payment history
@@ -226,10 +226,10 @@ const runBillCycleResetTests = () => {
         assert(secondPaymentDate.includes('2025-02-10'), 
             'Second payment should be for February');
         
-        console.log('✅ Payment history maintained correctly across cycles');
+        console.log('âœ… Payment history maintained correctly across cycles');
     });
 
-    console.log('\n🎉 All bill cycle reset tests passed!');
+    console.log('\nðŸŽ‰ All bill cycle reset tests passed!');
 };
 
 // Export for use in other contexts
@@ -239,3 +239,4 @@ export { runBillCycleResetTests };
 if (typeof globalThis !== 'undefined' && globalThis.process && globalThis.process.env && globalThis.process.env.NODE_ENV === 'test') {
     runBillCycleResetTests();
 }
+

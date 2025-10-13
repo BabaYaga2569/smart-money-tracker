@@ -8,7 +8,7 @@ This backend server provides secure API endpoints for Plaid integration, ensurin
 
 ### Plaid Token Storage
 
-**✅ SECURE APPROACH (Current Implementation)**
+**âœ… SECURE APPROACH (Current Implementation)**
 
 All Plaid access tokens and item IDs are stored **server-side only** in Firestore:
 
@@ -20,21 +20,21 @@ users/{userId}/plaid/credentials
 ```
 
 **Key Security Benefits:**
-- ✅ Tokens never sent to frontend/client
-- ✅ Tokens never stored in localStorage or browser
-- ✅ Tokens encrypted at rest in Firestore
-- ✅ Per-user isolation - one user cannot access another's tokens
-- ✅ Centralized token management
-- ✅ Easy token revocation
+- âœ… Tokens never sent to frontend/client
+- âœ… Tokens never stored in localStorage or browser
+- âœ… Tokens encrypted at rest in Firestore
+- âœ… Per-user isolation - one user cannot access another's tokens
+- âœ… Centralized token management
+- âœ… Easy token revocation
 
-**❌ INSECURE APPROACH (What We Avoid)**
+**âŒ INSECURE APPROACH (What We Avoid)**
 
 Never store tokens in:
-- ❌ Frontend localStorage
-- ❌ Frontend state/memory
-- ❌ Client-side code
-- ❌ URL parameters
-- ❌ Cookies accessible to JavaScript
+- âŒ Frontend localStorage
+- âŒ Frontend state/memory
+- âŒ Client-side code
+- âŒ URL parameters
+- âŒ Cookies accessible to JavaScript
 
 ## API Endpoints
 
@@ -169,7 +169,7 @@ PORT=5000
 
 ### Option 1: Service Account Key (Production)
 
-1. Go to Firebase Console → Project Settings → Service Accounts
+1. Go to Firebase Console â†’ Project Settings â†’ Service Accounts
 2. Click "Generate New Private Key"
 3. Set the JSON content as environment variable:
    ```bash
@@ -228,11 +228,11 @@ console.assert(user2Creds.accessToken === 'token-2');
 
 If migrating from localStorage-based token storage:
 
-1. ✅ Backend now stores tokens in Firestore
-2. ✅ Frontend updated to send `userId` instead of `access_token`
-3. ✅ `exchange_token` endpoint updated to not return `access_token`
-4. ✅ `PlaidConnectionManager` no longer uses localStorage
-5. ✅ All Plaid API calls retrieve tokens server-side
+1. âœ… Backend now stores tokens in Firestore
+2. âœ… Frontend updated to send `userId` instead of `access_token`
+3. âœ… `exchange_token` endpoint updated to not return `access_token`
+4. âœ… `PlaidConnectionManager` no longer uses localStorage
+5. âœ… All Plaid API calls retrieve tokens server-side
 
 ## Troubleshooting
 
@@ -256,13 +256,13 @@ If migrating from localStorage-based token storage:
 
 ## Security Best Practices
 
-1. ✅ Never log actual token values in production
-2. ✅ Use Firestore security rules to restrict access
-3. ✅ Rotate Plaid secrets regularly
-4. ✅ Monitor for unauthorized access patterns
-5. ✅ Use HTTPS only in production
-6. ✅ Implement rate limiting on sensitive endpoints
-7. ✅ Validate userId matches authenticated user
+1. âœ… Never log actual token values in production
+2. âœ… Use Firestore security rules to restrict access
+3. âœ… Rotate Plaid secrets regularly
+4. âœ… Monitor for unauthorized access patterns
+5. âœ… Use HTTPS only in production
+6. âœ… Implement rate limiting on sensitive endpoints
+7. âœ… Validate userId matches authenticated user
 
 ## Changelog
 
@@ -275,3 +275,4 @@ If migrating from localStorage-based token storage:
 
 ### v1.0.0 - Initial Release
 - Basic Plaid integration with localStorage (deprecated)
+

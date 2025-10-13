@@ -179,11 +179,11 @@ if (settingsData.nextPaydayOverride) {
   
   // NUCLEAR: Enhanced force refresh of payday calculation with immediate feedback
   const forceRefreshPaydayCalculation = () => {
-    console.log('🔄 NUCLEAR REFRESH: Forcing refresh of payday calculation');
+    console.log('ðŸ”„ NUCLEAR REFRESH: Forcing refresh of payday calculation');
     
     // Immediate recalculation for instant feedback
     const freshCalculation = getManualPacificDaysUntilPayday();
-    console.log('🔄 IMMEDIATE REFRESH RESULT:', {
+    console.log('ðŸ”„ IMMEDIATE REFRESH RESULT:', {
       freshDaysCalculation: freshCalculation,
       currentDisplayed: financialData.daysUntilPayday,
       willUpdate: freshCalculation !== financialData.daysUntilPayday
@@ -199,7 +199,7 @@ if (settingsData.nextPaydayOverride) {
     setRefreshTrigger(prev => prev + 1);
     
     // Show notification to user
-    console.log(`🔄 REFRESH COMPLETE: Payday countdown updated to ${freshCalculation} days`);
+    console.log(`ðŸ”„ REFRESH COMPLETE: Payday countdown updated to ${freshCalculation} days`);
   };
 
   const handleSpendAmountChange = (e) => {
@@ -346,7 +346,7 @@ if (settingsData.nextPaydayOverride) {
     return (
       <div className="spendability-container">
         <div className="page-header">
-          <h2>💰 Spendability Calculator</h2>
+          <h2>ðŸ’° Spendability Calculator</h2>
           <p>Loading your financial data...</p>
         </div>
       </div>
@@ -357,7 +357,7 @@ if (settingsData.nextPaydayOverride) {
     return (
       <div className="spendability-container">
         <div className="page-header">
-          <h2>💰 Spendability Calculator</h2>
+          <h2>ðŸ’° Spendability Calculator</h2>
           <p style={{ color: '#ff6b6b' }}>Error: {error}</p>
         </div>
       </div>
@@ -367,7 +367,7 @@ if (settingsData.nextPaydayOverride) {
   return (
     <div className="spendability-container">
       <div className="page-header">
-        <h2>💰 Spendability Calculator</h2>
+        <h2>ðŸ’° Spendability Calculator</h2>
         <p>Find out how much you can safely spend until your next payday</p>
         <div className="connection-status">
           <span className="status-indicator connected"></span>
@@ -395,8 +395,8 @@ if (settingsData.nextPaydayOverride) {
             {canSpend !== null && (
               <div className={`spend-result ${canSpend ? 'can-spend' : 'cannot-spend'}`}>
                 {canSpend 
-                  ? `✅ Yes, you can safely spend ${formatCurrency(parseFloat(spendAmount))}`
-                  : `❌ No, this exceeds your safe spending limit`
+                  ? `âœ… Yes, you can safely spend ${formatCurrency(parseFloat(spendAmount))}`
+                  : `âŒ No, this exceeds your safe spending limit`
                 }
               </div>
             )}
@@ -460,7 +460,7 @@ if (settingsData.nextPaydayOverride) {
                 </div>
               ))
             ) : (
-              <p className="no-bills">No bills due before next payday! 🎉</p>
+              <p className="no-bills">No bills due before next payday! ðŸŽ‰</p>
             )}
             <div className="total-bills">
               <span><strong>Total Bills:</strong></span>
@@ -521,7 +521,7 @@ if (settingsData.nextPaydayOverride) {
               }}
               title="Refresh payday calculation"
             >
-              🔄
+              ðŸ”„
             </button>
           </div>
         </div>
@@ -539,3 +539,4 @@ if (settingsData.nextPaydayOverride) {
 };
 
 export default Spendability;
+

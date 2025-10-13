@@ -11,17 +11,17 @@ const assert = (condition, message) => {
 const test = (name, fn) => {
     try {
         fn();
-        console.log(`✅ ${name}`);
+        console.log(`âœ… ${name}`);
         return true;
     } catch (error) {
-        console.error(`❌ ${name}`);
+        console.error(`âŒ ${name}`);
         console.error(`   Error: ${error.message}`);
         return false;
     }
 };
 
 export const runAccountMatcherTests = () => {
-    console.log('🧪 Testing Account Matcher with Plaid Integration\n');
+    console.log('ðŸ§ª Testing Account Matcher with Plaid Integration\n');
 
     let passedTests = 0;
     let totalTests = 0;
@@ -200,12 +200,12 @@ export const runAccountMatcherTests = () => {
         assert(prodResult.matched === true, 'Should match prod account');
     })) passedTests++;
 
-    console.log(`\n📊 Test Results: ${passedTests}/${totalTests} passed`);
+    console.log(`\nðŸ“Š Test Results: ${passedTests}/${totalTests} passed`);
     
     if (passedTests === totalTests) {
-        console.log('✅ All tests passed!');
+        console.log('âœ… All tests passed!');
     } else {
-        console.log(`❌ ${totalTests - passedTests} test(s) failed`);
+        console.log(`âŒ ${totalTests - passedTests} test(s) failed`);
     }
     
     return passedTests === totalTests;
@@ -215,3 +215,4 @@ export const runAccountMatcherTests = () => {
 if (import.meta.url === `file://${process.argv[1]}`) {
     runAccountMatcherTests();
 }
+

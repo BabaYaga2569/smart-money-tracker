@@ -1015,7 +1015,7 @@ const Recurring = () => {
     return (
       <div className="recurring-container">
         <div className="page-header">
-          <h2>🔄 Recurring</h2>
+          <h2>ðŸ”„ Recurring</h2>
           <p>Loading recurring data...</p>
         </div>
       </div>
@@ -1033,14 +1033,14 @@ const Recurring = () => {
 
       {/* Page Header */}
       <div className="page-header">
-        <h2>🔄 Recurring</h2>
+        <h2>ðŸ”„ Recurring</h2>
         <p>Manage all recurring incomes, expenses, and subscriptions</p>
       </div>
 
       {/* Overview Dashboard */}
       <div className="recurring-summary">
         <div className="summary-card income">
-          <div className="summary-icon">💰</div>
+          <div className="summary-icon">ðŸ’°</div>
           <div className="summary-content">
             <div className="summary-amount">{formatCurrency(metrics.monthlyIncome)}</div>
             <div className="summary-label">Monthly Income</div>
@@ -1048,7 +1048,7 @@ const Recurring = () => {
         </div>
         
         <div className="summary-card expense">
-          <div className="summary-icon">💸</div>
+          <div className="summary-icon">ðŸ’¸</div>
           <div className="summary-content">
             <div className="summary-amount">{formatCurrency(metrics.monthlyExpenses)}</div>
             <div className="summary-label">Monthly Expenses</div>
@@ -1056,7 +1056,7 @@ const Recurring = () => {
         </div>
         
         <div className={`summary-card net ${metrics.netRecurring >= 0 ? 'positive' : 'negative'}`}>
-          <div className="summary-icon">📊</div>
+          <div className="summary-icon">ðŸ“Š</div>
           <div className="summary-content">
             <div className="summary-amount">{formatCurrency(metrics.netRecurring)}</div>
             <div className="summary-label">Net Recurring</div>
@@ -1065,7 +1065,7 @@ const Recurring = () => {
         
         <div className="summary-card upcoming">
           <div className="summary-icon">
-            {metrics.urgency?.overdue > 0 ? '🔴' : metrics.urgency?.urgent > 0 ? '🟠' : '⏰'}
+            {metrics.urgency?.overdue > 0 ? 'ðŸ”´' : metrics.urgency?.urgent > 0 ? 'ðŸŸ ' : 'â°'}
           </div>
           <div className="summary-content">
             <div className="summary-amount">
@@ -1077,10 +1077,10 @@ const Recurring = () => {
             {metrics.urgency && (metrics.urgency.overdue > 0 || metrics.urgency.urgent > 0) && (
               <div className="urgency-breakdown">
                 {metrics.urgency.overdue > 0 && (
-                  <span className="urgency-stat overdue">🔴 {metrics.urgency.overdue} overdue</span>
+                  <span className="urgency-stat overdue">ðŸ”´ {metrics.urgency.overdue} overdue</span>
                 )}
                 {metrics.urgency.urgent > 0 && (
-                  <span className="urgency-stat urgent">🟠 {metrics.urgency.urgent} urgent</span>
+                  <span className="urgency-stat urgent">ðŸŸ  {metrics.urgency.urgent} urgent</span>
                 )}
               </div>
             )}
@@ -1136,9 +1136,9 @@ const Recurring = () => {
             onChange={(e) => setSortOrder(e.target.value)}
             className="filter-select sort-select"
           >
-            <option value="dueDate">🔥 By Due Date</option>
-            <option value="alphabetical">🔤 Alphabetical</option>
-            <option value="amount">💰 By Amount</option>
+            <option value="dueDate">ðŸ”¥ By Due Date</option>
+            <option value="alphabetical">ðŸ”¤ Alphabetical</option>
+            <option value="amount">ðŸ’° By Amount</option>
           </select>
         </div>
         
@@ -1150,7 +1150,7 @@ const Recurring = () => {
               disabled={saving}
               title="Restore deleted items"
             >
-              ↩️ Undo Delete
+              â†©ï¸ Undo Delete
             </button>
           )}
           {recurringItems.length > 0 && (
@@ -1161,7 +1161,7 @@ const Recurring = () => {
                 disabled={saving}
                 title="Delete all recurring items"
               >
-                🗑️ Delete All
+                ðŸ—‘ï¸ Delete All
               </button>
               <div style={{ position: 'relative' }}>
                 <button 
@@ -1181,7 +1181,7 @@ const Recurring = () => {
                     whiteSpace: 'nowrap'
                   }}
                 >
-                  🔧 Cleanup
+                  ðŸ”§ Cleanup
                 </button>
                 {showCleanupMenu && (
                   <div 
@@ -1219,7 +1219,7 @@ const Recurring = () => {
                       onMouseEnter={(e) => e.target.style.background = '#2a2a2a'}
                       onMouseLeave={(e) => e.target.style.background = 'transparent'}
                     >
-                      ➕ Generate Bills from Templates
+                      âž• Generate Bills from Templates
                       <div style={{ fontSize: '12px', color: '#888', marginTop: '4px' }}>
                         Create bill instances for next 3 months
                       </div>
@@ -1242,7 +1242,7 @@ const Recurring = () => {
                       onMouseEnter={(e) => e.target.style.background = '#2a2a2a'}
                       onMouseLeave={(e) => e.target.style.background = 'transparent'}
                     >
-                      🗑️ Delete All Generated Bills
+                      ðŸ—‘ï¸ Delete All Generated Bills
                       <div style={{ fontSize: '12px', color: '#888', marginTop: '4px' }}>
                         Remove bills auto-created from templates
                       </div>
@@ -1257,14 +1257,14 @@ const Recurring = () => {
             onClick={() => setShowCSVImport(true)}
             disabled={saving}
           >
-            📊 Import from CSV
+            ðŸ“Š Import from CSV
           </button>
           <button 
             className="add-button"
             onClick={handleAddItem}
             disabled={saving}
           >
-            ➕ Add Recurring Item
+            âž• Add Recurring Item
           </button>
         </div>
       </div>
@@ -1291,7 +1291,7 @@ const Recurring = () => {
                     </h4>
                     <div className="item-meta">
                       <span className={`item-type ${item.type}`}>
-                        {item.type === 'income' ? '📈' : '📉'} {item.type}
+                        {item.type === 'income' ? 'ðŸ“ˆ' : 'ðŸ“‰'} {item.type}
                       </span>
                       <span className="item-category">{item.category}</span>
                       <span className="item-frequency">
@@ -1308,7 +1308,7 @@ const Recurring = () => {
                             }}
                             title={`Active in: ${item.activeMonths.map(m => ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'][m]).join(', ')}`}
                           >
-                            📅 {item.activeMonths.length}mo
+                            ðŸ“… {item.activeMonths.length}mo
                           </span>
                         )}
                       </span>
@@ -1338,7 +1338,7 @@ const Recurring = () => {
                     {accounts[item.linkedAccount]?.name || 'No Account'}
                   </div>
                   <div className="item-autopay">
-                    {item.autoPay ? '🔄 Auto' : '👤 Manual'}
+                    {item.autoPay ? 'ðŸ”„ Auto' : 'ðŸ‘¤ Manual'}
                   </div>
                 </div>
                 
@@ -1348,21 +1348,21 @@ const Recurring = () => {
                     onClick={() => handleEditItem(item)}
                     title="Edit"
                   >
-                    ✏️
+                    âœï¸
                   </button>
                   <button 
                     className={`action-btn ${item.status === 'paused' ? 'resume' : 'pause'}`}
                     onClick={() => handleTogglePause(item)}
                     title={item.status === 'paused' ? 'Resume' : 'Pause'}
                   >
-                    {item.status === 'paused' ? '▶️' : '⏸️'}
+                    {item.status === 'paused' ? 'â–¶ï¸' : 'â¸ï¸'}
                   </button>
                   <button 
                     className="action-btn history"
                     onClick={() => handleShowHistory(item)}
                     title="History"
                   >
-                    📋
+                    ðŸ“‹
                   </button>
                   <button 
                     className="action-btn delete"
@@ -1373,7 +1373,7 @@ const Recurring = () => {
                     }}
                     title="Delete"
                   >
-                    🗑️
+                    ðŸ—‘ï¸
                   </button>
                 </div>
               </div>
@@ -1395,7 +1395,7 @@ const Recurring = () => {
           <div className="modal" onClick={(e) => e.stopPropagation()}>
             <div className="modal-header">
               <h3>{editingItem ? 'Edit Recurring Item' : 'Add Recurring Item'}</h3>
-              <button className="close-btn" onClick={() => setShowModal(false)}>×</button>
+              <button className="close-btn" onClick={() => setShowModal(false)}>Ã—</button>
             </div>
             
             <div className="modal-body">
@@ -1530,7 +1530,7 @@ const Recurring = () => {
                       </div>
                       {newItem.activeMonths.length > 0 && (
                         <div style={{ marginTop: '10px', fontSize: '13px', color: '#8a2be2', fontWeight: '500' }}>
-                          ✓ Active in {newItem.activeMonths.length} month{newItem.activeMonths.length !== 1 ? 's' : ''}
+                          âœ“ Active in {newItem.activeMonths.length} month{newItem.activeMonths.length !== 1 ? 's' : ''}
                         </div>
                       )}
                     </div>
@@ -1598,7 +1598,7 @@ const Recurring = () => {
           <div className="modal" onClick={(e) => e.stopPropagation()}>
             <div className="modal-header">
               <h3>History: {selectedItem.name}</h3>
-              <button className="close-btn" onClick={() => setShowHistoryModal(false)}>×</button>
+              <button className="close-btn" onClick={() => setShowHistoryModal(false)}>Ã—</button>
             </div>
             
             <div className="modal-body">
@@ -1636,8 +1636,8 @@ const Recurring = () => {
         <div className="modal-overlay" onClick={() => setShowDeleteModal(false)}>
           <div className="modal" onClick={(e) => e.stopPropagation()}>
             <div className="modal-header">
-              <h3>⚠️ Delete "{itemToDelete.name}"?</h3>
-              <button className="close-btn" onClick={() => setShowDeleteModal(false)}>×</button>
+              <h3>âš ï¸ Delete "{itemToDelete.name}"?</h3>
+              <button className="close-btn" onClick={() => setShowDeleteModal(false)}>Ã—</button>
             </div>
             
             <div className="modal-body">
@@ -1693,8 +1693,8 @@ const Recurring = () => {
         <div className="modal-overlay" onClick={() => setShowBulkDeleteModal(false)}>
           <div className="modal" onClick={(e) => e.stopPropagation()}>
             <div className="modal-header">
-              <h3>⚠️ Delete All Recurring Items?</h3>
-              <button className="close-btn" onClick={() => setShowBulkDeleteModal(false)}>×</button>
+              <h3>âš ï¸ Delete All Recurring Items?</h3>
+              <button className="close-btn" onClick={() => setShowBulkDeleteModal(false)}>Ã—</button>
             </div>
             
             <div className="modal-body">
@@ -1702,10 +1702,10 @@ const Recurring = () => {
                 Are you sure you want to delete <strong>all {recurringItems.length} recurring items</strong>?
               </p>
               <p style={{ marginBottom: '20px', color: '#ff9800' }}>
-                ⚠️ This will permanently delete all your recurring incomes, expenses, and subscriptions.
+                âš ï¸ This will permanently delete all your recurring incomes, expenses, and subscriptions.
               </p>
               <p style={{ marginBottom: '20px', color: '#00ff88' }}>
-                ✓ Don't worry! You can undo this action using the "Undo Delete" button that will appear after deletion.
+                âœ“ Don't worry! You can undo this action using the "Undo Delete" button that will appear after deletion.
               </p>
               
               <div className="modal-actions" style={{ display: 'flex', gap: '10px', justifyContent: 'flex-end' }}>
@@ -1734,3 +1734,4 @@ const Recurring = () => {
 };
 
 export default Recurring;
+

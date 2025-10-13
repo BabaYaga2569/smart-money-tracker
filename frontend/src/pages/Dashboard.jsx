@@ -198,7 +198,7 @@ const Dashboard = () => {
   const tiles = [
     {
       title: 'Accounts',
-      icon: '💳',
+      icon: 'ðŸ’³',
       value: `${dashboardData.accountCount} accounts`,
       subtitle: dashboardData.totalBalance !== dashboardData.totalProjectedBalance
         ? `Live: ${formatCurrency(dashboardData.totalBalance)} | Projected: ${formatCurrency(dashboardData.totalProjectedBalance)}`
@@ -209,7 +209,7 @@ const Dashboard = () => {
     },
     {
       title: 'Transactions',
-      icon: '📊',
+      icon: 'ðŸ“Š',
       value: `${dashboardData.transactionCount} this month`,
       subtitle: 'Recent activity',
       path: '/transactions',
@@ -217,7 +217,7 @@ const Dashboard = () => {
     },
     {
       title: 'Spendability',
-      icon: '💰',
+      icon: 'ðŸ’°',
       value: formatCurrency(dashboardData.safeToSpend),
       subtitle: 'Safe to spend',
       path: '/spendability',
@@ -225,7 +225,7 @@ const Dashboard = () => {
     },
     {
       title: 'Bills',
-      icon: '🧾',
+      icon: 'ðŸ§¾',
       value: `${dashboardData.billsDueSoon} due soon`,
       subtitle: 'Upcoming bills',
       path: '/bills',
@@ -233,7 +233,7 @@ const Dashboard = () => {
     },
     {
       title: 'Recurring',
-      icon: '🔄',
+      icon: 'ðŸ”„',
       value: `${dashboardData.recurringCount} active`,
       subtitle: 'Auto-payments',
       path: '/recurring',
@@ -241,7 +241,7 @@ const Dashboard = () => {
     },
     {
       title: 'Goals',
-      icon: '🎯',
+      icon: 'ðŸŽ¯',
       value: '3 in progress',
       subtitle: 'Financial targets',
       path: '/goals',
@@ -249,7 +249,7 @@ const Dashboard = () => {
     },
     {
       title: 'Categories',
-      icon: '🏷️',
+      icon: 'ðŸ·ï¸',
       value: '12 categories',
       subtitle: 'Spending breakdown',
       path: '/categories',
@@ -257,7 +257,7 @@ const Dashboard = () => {
     },
     {
       title: 'Cash Flow',
-      icon: '📈',
+      icon: 'ðŸ“ˆ',
       value: formatCurrency(dashboardData.monthlyIncome - dashboardData.monthlyExpenses),
       subtitle: 'Monthly net income',
       path: '/cashflow',
@@ -265,7 +265,7 @@ const Dashboard = () => {
     },
     {
       title: 'Pay Cycle',
-      icon: '📅',
+      icon: 'ðŸ“…',
       value: `${dashboardData.daysUntilPayday} days`,
       subtitle: 'Until next payday',
       path: '/paycycle',
@@ -277,7 +277,7 @@ const Dashboard = () => {
   return (
     <div className="dashboard-container">
       <div className="page-header">
-        <h2>💰 Smart Money Tracker</h2>
+        <h2>ðŸ’° Smart Money Tracker</h2>
         <p>Your complete financial overview</p>
         <div className="backend-status" style={{ display: 'flex', alignItems: 'center', gap: '20px' }}>
           <div style={{ 
@@ -308,7 +308,7 @@ const Dashboard = () => {
             border: `1px solid ${(plaidStatus.isConnected || hasPlaidAccounts) ? 'rgba(16, 185, 129, 0.3)' : (plaidStatus.hasError ? 'rgba(239, 68, 68, 0.3)' : 'rgba(251, 191, 36, 0.3)')}`
           }}>
             <span style={{ fontSize: '12px' }}>
-              {(plaidStatus.isConnected || hasPlaidAccounts) ? '✅' : (plaidStatus.hasError ? '❌' : '⚠️')}
+              {(plaidStatus.isConnected || hasPlaidAccounts) ? 'âœ…' : (plaidStatus.hasError ? 'âŒ' : 'âš ï¸')}
             </span>
             <span style={{ 
               fontSize: '13px', 
@@ -367,3 +367,4 @@ const Dashboard = () => {
 };
 
 export default Dashboard;
+

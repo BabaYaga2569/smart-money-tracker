@@ -3,7 +3,7 @@ import { RecurringBillManager } from './RecurringBillManager.js';
 
 // Simple test runner for our comprehensive bill fixes
 const runBillPaymentTests = () => {
-    console.log('🧪 Testing Comprehensive Bill Payment Fix...\n');
+    console.log('ðŸ§ª Testing Comprehensive Bill Payment Fix...\n');
 
     // Test 1: Bill should be excluded from "bills due before payday" after being paid
     test('Bill excluded from bills due before payday after payment', () => {
@@ -32,7 +32,7 @@ const runBillPaymentTests = () => {
         billsDueBeforePayday = RecurringBillManager.getBillsDueBefore([paidBill], paydayDate);
         assert(billsDueBeforePayday.length === 0, 'Bill should be excluded after payment');
         
-        console.log('✅ Bill filtering after payment working correctly');
+        console.log('âœ… Bill filtering after payment working correctly');
     });
 
     // Test 2: Multiple bills - only unpaid ones should be included
@@ -70,7 +70,7 @@ const runBillPaymentTests = () => {
         assert(billsDueBeforePayday.length === 1, 'Only unpaid bill should be included');
         assert(billsDueBeforePayday[0].name === 'Water Bill', 'Water bill should still be included');
         
-        console.log('✅ Multiple bills filtering working correctly');
+        console.log('âœ… Multiple bills filtering working correctly');
     });
 
     // Test 3: Bill payment creates correct payment record and status
@@ -97,7 +97,7 @@ const runBillPaymentTests = () => {
         assert(paidBill.isPaid === true, 'Should be marked as paid');
         assert(paidBill.status === 'paid', 'Status should be paid');
         
-        console.log('✅ Payment record creation and status working correctly');
+        console.log('âœ… Payment record creation and status working correctly');
     });
 
     // Test 4: Bill payment correctly advances due date to next cycle
@@ -130,7 +130,7 @@ const runBillPaymentTests = () => {
                'Next due date should be in the next month');
         assert(nextDueDate.getDate() === originalDueDate.getDate(), 'Next due date should be same day of month');
         
-        console.log('✅ Bill payment advances due date correctly');
+        console.log('âœ… Bill payment advances due date correctly');
     });
 
     // Test 5: isBillPaidForCurrentCycle helper function
@@ -180,7 +180,7 @@ const runBillPaymentTests = () => {
         assert(RecurringBillManager.isBillPaidForCurrentCycle(paidBillCurrentCycle), 'Bill paid for current cycle should be considered paid');
         assert(!RecurringBillManager.isBillPaidForCurrentCycle(billAdvancedToNextCycle), 'Bill advanced to next cycle should NOT be considered paid');
         
-        console.log('✅ isBillPaidForCurrentCycle helper working correctly');
+        console.log('âœ… isBillPaidForCurrentCycle helper working correctly');
     });
 
     // Test 6: Bills marked as paid don't appear in range filters
@@ -221,16 +221,16 @@ const runBillPaymentTests = () => {
         const totalInRange = RecurringBillManager.getTotalAmountInRange(bills, startDate, endDate);
         assert(totalInRange === 125.50, 'Total should only include unpaid bill amount');
         
-        console.log('✅ Range filtering excludes paid bills correctly');
+        console.log('âœ… Range filtering excludes paid bills correctly');
     });
 
-    console.log('\n🎉 All comprehensive bill payment tests passed! Fix is working correctly.\n');
+    console.log('\nðŸŽ‰ All comprehensive bill payment tests passed! Fix is working correctly.\n');
 };
 
 // Simple assertion helper
 const assert = (condition, message) => {
     if (!condition) {
-        throw new Error(`❌ Assertion failed: ${message}`);
+        throw new Error(`âŒ Assertion failed: ${message}`);
     }
 };
 
@@ -239,7 +239,7 @@ const test = (name, testFn) => {
     try {
         testFn();
     } catch (error) {
-        console.error(`❌ Test failed: ${name}`);
+        console.error(`âŒ Test failed: ${name}`);
         console.error(error.message);
         throw error;
     }

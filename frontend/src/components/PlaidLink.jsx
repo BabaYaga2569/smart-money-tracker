@@ -194,7 +194,7 @@ const PlaidLink = ({ onSuccess, onExit, userId, buttonText = "Connect Bank" }) =
         maxWidth: '500px'
       }}>
         <div style={{ display: 'flex', alignItems: 'flex-start', marginBottom: '12px' }}>
-          <span style={{ fontSize: '20px', marginRight: '8px' }}>⚠️</span>
+          <span style={{ fontSize: '20px', marginRight: '8px' }}>âš ï¸</span>
           <div style={{ flex: 1 }}>
             <p style={{ margin: '0 0 4px 0', fontWeight: '600', fontSize: '14px' }}>
               Unable to Initialize Bank Connection
@@ -212,7 +212,7 @@ const PlaidLink = ({ onSuccess, onExit, userId, buttonText = "Connect Bank" }) =
             borderTop: '1px solid rgba(239, 68, 68, 0.2)'
           }}>
             <p style={{ margin: '0 0 8px 0', fontWeight: '600', fontSize: '13px' }}>
-              💡 Troubleshooting Steps:
+              ðŸ’¡ Troubleshooting Steps:
             </p>
             <ul style={{ 
               margin: '0',
@@ -242,7 +242,7 @@ const PlaidLink = ({ onSuccess, onExit, userId, buttonText = "Connect Bank" }) =
             width: '100%'
           }}
         >
-          🔄 Try Again{retryCount > 0 ? ` (Retry ${retryCount})${getRetryDelay()}` : ''}
+          ðŸ”„ Try Again{retryCount > 0 ? ` (Retry ${retryCount})${getRetryDelay()}` : ''}
         </button>
       </div>
     );
@@ -263,3 +263,4 @@ const PlaidLink = ({ onSuccess, onExit, userId, buttonText = "Connect Bank" }) =
 };
 
 export default PlaidLink;
+

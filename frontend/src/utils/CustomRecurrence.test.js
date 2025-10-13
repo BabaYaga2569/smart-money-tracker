@@ -3,7 +3,7 @@ import { RecurringBillManager } from './RecurringBillManager.js';
 
 // Simple test runner for custom recurrence feature
 const runCustomRecurrenceTests = () => {
-    console.log('🧪 Testing Custom Recurrence Feature...\n');
+    console.log('ðŸ§ª Testing Custom Recurrence Feature...\n');
 
     // Test 1: Bills with activeMonths should only generate for those months
     test('Bills only generated in active months', () => {
@@ -42,7 +42,7 @@ const runCustomRecurrenceTests = () => {
         assert(septemberBills.length === 0, 'No bills should be generated in September');
         assert(octoberBills.length === 0, 'No bills should be generated in October');
         
-        console.log(`✅ Generated ${bills.length} bills, all in active months`);
+        console.log(`âœ… Generated ${bills.length} bills, all in active months`);
     });
 
     // Test 2: Bills without activeMonths should generate for all months
@@ -67,7 +67,7 @@ const runCustomRecurrenceTests = () => {
         // Should generate 12 bills (one for each month)
         assert(bills.length >= 10, `Should generate at least 10 bills, got ${bills.length}`);
         
-        console.log(`✅ Generated ${bills.length} bills without month restrictions`);
+        console.log(`âœ… Generated ${bills.length} bills without month restrictions`);
     });
 
     // Test 3: Empty activeMonths array should be treated as no restriction
@@ -93,7 +93,7 @@ const runCustomRecurrenceTests = () => {
         // Should generate 6 bills (one for each month)
         assert(bills.length >= 5, `Should generate at least 5 bills, got ${bills.length}`);
         
-        console.log(`✅ Empty activeMonths array allows all months`);
+        console.log(`âœ… Empty activeMonths array allows all months`);
     });
 
     // Test 4: Multiple consecutive months work correctly
@@ -126,7 +126,7 @@ const runCustomRecurrenceTests = () => {
             );
         });
         
-        console.log(`✅ Consecutive months work correctly, generated ${bills.length} bills`);
+        console.log(`âœ… Consecutive months work correctly, generated ${bills.length} bills`);
     });
 
     // Test 5: Non-consecutive months work correctly
@@ -159,7 +159,7 @@ const runCustomRecurrenceTests = () => {
             );
         });
         
-        console.log(`✅ Non-consecutive months work correctly, generated ${bills.length} bills`);
+        console.log(`âœ… Non-consecutive months work correctly, generated ${bills.length} bills`);
     });
 
     // Test 6: Year boundary handling (Nov-Feb)
@@ -196,16 +196,16 @@ const runCustomRecurrenceTests = () => {
         const years = new Set(bills.map(bill => new Date(bill.dueDate).getFullYear()));
         assert(years.size >= 1, 'Should have bills spanning at least one year');
         
-        console.log(`✅ Year boundary handling works, generated ${bills.length} bills across ${years.size} year(s)`);
+        console.log(`âœ… Year boundary handling works, generated ${bills.length} bills across ${years.size} year(s)`);
     });
 
-    console.log('\n🎉 All custom recurrence tests passed! Feature is working correctly.\n');
+    console.log('\nðŸŽ‰ All custom recurrence tests passed! Feature is working correctly.\n');
 };
 
 // Simple assertion helper
 const assert = (condition, message) => {
     if (!condition) {
-        throw new Error(`❌ Assertion failed: ${message}`);
+        throw new Error(`âŒ Assertion failed: ${message}`);
     }
 };
 
@@ -214,7 +214,7 @@ const test = (name, testFn) => {
     try {
         testFn();
     } catch (error) {
-        console.error(`❌ Test failed: ${name}`);
+        console.error(`âŒ Test failed: ${name}`);
         console.error(error.message);
         throw error;
     }
@@ -231,3 +231,4 @@ if (typeof window !== 'undefined' && window.location) {
     // Node.js test environment
     runCustomRecurrenceTests();
 }
+

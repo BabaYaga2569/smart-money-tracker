@@ -50,7 +50,7 @@ const NotificationSystem = () => {
                 onClick={() => handleDismiss(notification.id)}
                 aria-label="Dismiss notification"
               >
-                ×
+                Ã—
               </button>
             </div>
             

@@ -423,7 +423,7 @@ export class CashFlowAnalytics {
     if (metrics.netFlow > 0) {
       insights.push({
         type: 'positive',
-        icon: '✅',
+        icon: 'âœ…',
         title: 'Positive Cash Flow',
         message: `You have a surplus of $${Math.abs(metrics.netFlow).toFixed(2)} this period`,
         priority: 'high'
@@ -431,7 +431,7 @@ export class CashFlowAnalytics {
     } else if (metrics.netFlow < 0) {
       insights.push({
         type: 'warning',
-        icon: '⚠️',
+        icon: 'âš ï¸',
         title: 'Negative Cash Flow',
         message: `You spent $${Math.abs(metrics.netFlow).toFixed(2)} more than you earned`,
         priority: 'high'
@@ -442,7 +442,7 @@ export class CashFlowAnalytics {
     if (metrics.efficiency > 80) {
       insights.push({
         type: 'positive',
-        icon: '🎯',
+        icon: 'ðŸŽ¯',
         title: 'Excellent Savings Rate',
         message: `You're saving ${metrics.efficiency.toFixed(1)}% of your income`,
         priority: 'medium'
@@ -450,7 +450,7 @@ export class CashFlowAnalytics {
     } else if (metrics.efficiency < 20) {
       insights.push({
         type: 'warning',
-        icon: '💸',
+        icon: 'ðŸ’¸',
         title: 'Low Savings Rate',
         message: `Consider reducing expenses to improve your ${metrics.efficiency.toFixed(1)}% savings rate`,
         priority: 'medium'
@@ -461,7 +461,7 @@ export class CashFlowAnalytics {
     if (metrics.trends.yearOverYear > 20) {
       insights.push({
         type: 'positive',
-        icon: '📈',
+        icon: 'ðŸ“ˆ',
         title: 'Improving Trends',
         message: `Your cash flow improved ${metrics.trends.yearOverYear.toFixed(1)}% compared to last year`,
         priority: 'medium'
@@ -469,7 +469,7 @@ export class CashFlowAnalytics {
     } else if (metrics.trends.yearOverYear < -20) {
       insights.push({
         type: 'warning',
-        icon: '📉',
+        icon: 'ðŸ“‰',
         title: 'Declining Trends',
         message: `Your cash flow decreased ${Math.abs(metrics.trends.yearOverYear).toFixed(1)}% compared to last year`,
         priority: 'medium'
@@ -480,7 +480,7 @@ export class CashFlowAnalytics {
     if (metrics.velocity > 5) {
       insights.push({
         type: 'info',
-        icon: '🔄',
+        icon: 'ðŸ”„',
         title: 'High Transaction Frequency',
         message: `You average ${metrics.velocity.toFixed(1)} transactions per day`,
         priority: 'low'
