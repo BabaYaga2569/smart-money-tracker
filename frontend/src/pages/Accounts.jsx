@@ -4,7 +4,7 @@ import { db } from '../firebase';
 import { useNavigate } from 'react-router-dom';
 import PlaidLink from '../components/PlaidLink';
 import PlaidErrorModal from '../components/PlaidErrorModal';
-import { calculateProjectedBalance, calculateTotalProjectedBalance, getBalanceDifference, formatBalanceDifference } from '../utils/BalanceCalculator';
+import { calculateTotalProjectedBalance, getBalanceDifference, formatBalanceDifference } from '../utils/BalanceCalculator';
 import PlaidConnectionManager from '../utils/PlaidConnectionManager';
 import './Accounts.css';
 import { useAuth } from '../contexts/AuthContext';
@@ -87,6 +87,45 @@ const Accounts = () => {
       setTotalProjectedBalance(projectedTotal);
     }
   }, [transactions, plaidAccounts, accounts]);
+
+  // Local calculateProjectedBalance with comprehensive logging
+  // This overrides the imported function to provide debugging capabilities
+  const calculateProjectedBalance = (accountId, liveBalance, transactionsList) => {
+    console.log(`[ProjectedBalance] Calculating for account: ${accountId}`);
+    
+    if (!transactionsList || transactionsList.length === 0) {
+      console.log(`[ProjectedBalance] No transactions found for ${accountId}`);
+      return liveBalance;
+    }
+
+    const accountTransactions = transactionsList.filter(t => t.account_id === accountId || t.account === accountId);
+    console.log(`[ProjectedBalance] Account ${accountId}: ${accountTransactions.length} total transactions`);
+    
+    // CRITICAL FIX: Check multiple pending formats
+    // Walmart uses pending: 'true' (string)
+    // Zelle/Starbucks use pending: true (boolean) or status: 'pending'
+    const pendingTransactions = accountTransactions.filter(t => {
+      const isPending = t.pending === true || t.pending === 'true' || t.status === 'pending';
+      if (isPending) {
+        console.log(`[ProjectedBalance]   - ${t.name}: ${t.amount.toFixed(2)} (pending: ${t.pending}, status: ${t.status})`);
+      }
+      return isPending;
+    });
+    
+    console.log(`[ProjectedBalance] Found ${pendingTransactions.length} pending transactions for ${accountId}`);
+    
+    const pendingTotal = pendingTransactions.reduce((sum, t) => sum + t.amount, 0);
+    console.log(`[ProjectedBalance] Pending total: ${pendingTotal.toFixed(2)}`);
+    
+    // After PR #154, all transactions use accounting convention:
+    // - Negative amount = Expense (decreases balance)
+    // - Positive amount = Income (increases balance)
+    // So we add the amount directly (negative amounts will decrease the balance)
+    const projected = liveBalance + pendingTotal;
+    console.log(`[ProjectedBalance] Final projected balance: ${projected.toFixed(2)} (Live: ${liveBalance} + Pending: ${pendingTotal.toFixed(2)})`);
+    
+    return projected;
+  };
 
   // Real-time transactions listener
   useEffect(() => {
