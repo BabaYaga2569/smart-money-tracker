@@ -1119,7 +1119,17 @@ const Transactions = () => {
     }
     
     if (filters.type) {
-      filtered = filtered.filter(t => t.type === filters.type);
+      if (filters.type === 'pending') {
+        // Filter for pending transactions
+        filtered = filtered.filter(t => 
+          t.pending === true || 
+          t.pending === 'true' || 
+          t.status === 'pending'
+        );
+      } else {
+        // Filter by transaction type (income/expense)
+        filtered = filtered.filter(t => t.type === filters.type);
+      }
     }
     
     if (filters.dateFrom) {
@@ -1858,6 +1868,7 @@ const Transactions = () => {
             <option value="">All Types</option>
             <option value="income">Income</option>
             <option value="expense">Expense</option>
+            <option value="pending">Pending</option>
           </select>
         </div>
         <div className="date-filters">
