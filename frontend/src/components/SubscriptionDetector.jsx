@@ -23,7 +23,7 @@ const SubscriptionDetector = ({ onClose, onSubscriptionAdded, accounts }) => {
     setError(null);
     
     try {
-      const response = await fetch(`${import.meta.env.VITE_API_URL || 'http://localhost:5000'}/api/subscriptions/detect`, {
+      const response = await fetch(`${import.meta.env.VITE_API_URL || 'https://smart-money-tracker-09ks.onrender.com'}/api/subscriptions/detect`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
