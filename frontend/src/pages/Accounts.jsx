@@ -186,6 +186,57 @@ const Accounts = () => {
     }
   }, [currentUser]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  // Local calculateProjectedBalance with comprehensive logging
+  // This overrides the imported function to provide debugging capabilities
+  const calculateProjectedBalance = (accountId, liveBalance, transactionsList) => {
+    console.log(`[ProjectedBalance] Calculating for account: ${accountId}`);
+    console.log(`[ProjectedBalance] Live balance: ${liveBalance}`);
+    
+    if (!transactionsList || transactionsList.length === 0) {
+      console.log(`[ProjectedBalance] No transactions, returning live balance`);
+      return liveBalance;
+    }
+
+    // ✅ FIX: Filter for pending transactions for THIS account
+    const pendingTxs = transactionsList.filter(tx => {
+      const txAccountId = tx.account_id || tx.account;
+      const isPending = tx.pending === true || tx.pending === 'true'; // ✅ Catch both types
+      
+      // Debug logging for troubleshooting
+      if ((tx.merchant_name?.toLowerCase().includes('starbucks') || 
+           tx.name?.toLowerCase().includes('starbucks')) && txAccountId === accountId) {
+        console.log(`[ProjectedBalance] 🔍 STARBUCKS FOUND:`, {
+          merchant: tx.merchant_name || tx.name,
+          pending: tx.pending,
+          pendingType: typeof tx.pending,
+          isPending: isPending,
+          amount: tx.amount,
+          accountMatch: txAccountId === accountId
+        });
+      }
+      
+      return isPending && txAccountId === accountId;
+    });
+
+    console.log(`[ProjectedBalance] Found ${pendingTxs.length} pending transactions for ${accountId}`);
+
+    if (pendingTxs.length === 0) {
+      return liveBalance;
+    }
+
+    // Calculate total pending amount
+    const pendingTotal = pendingTxs.reduce((sum, tx) => {
+      const amount = Math.abs(parseFloat(tx.amount) || 0);
+      console.log(`[ProjectedBalance] Pending: ${tx.merchant_name || tx.name}, Amount: -${amount}`);
+      return sum + amount;
+    }, 0);
+
+    const projected = liveBalance - pendingTotal;
+    console.log(`[ProjectedBalance] Live: ${liveBalance}, Pending: -${pendingTotal}, Projected: ${projected}`);
+    
+    return projected;
+  };
+
   const syncPlaidTransactions = async () => {
     try {
       setSyncingPlaid(true);
