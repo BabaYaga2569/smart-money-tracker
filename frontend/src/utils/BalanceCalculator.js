@@ -1,30 +1,11 @@
 /**
- * BalanceCalculator.js
- * Version: 1.0.1 - Force deploy for PR #157 projected balance fix
- * Last updated: 2025-10-12 16:38:03 UTC
- * 
- * Utility functions for calculating Live and Projected balances
- * 
- * Live Balance: Current balance from Plaid (read-only from bank)
- * Projected Balance: Live balance adjusted for pending transactions
- * 
- * CHANGELOG:
- * - 1.0.1 (2025-10-12): Fixed pending transaction detection to be inclusive
- *   - Now recognizes pending: true (boolean), pending: 'true' (string), 
- *     status: 'pending', and other indicators
- *   - Fixes bug where some pending transactions (like Starbucks) were missed
- * - 1.0.0: Initial version
- */
-
-/**
  * Calculate projected balance for a specific account
  * @param {string} accountId - The account ID or key
  * @param {number} liveBalance - Current balance from Plaid or manual entry
  * @param {Array} transactions - Array of all transactions (including pending)
- * @param {boolean} debug - Enable debug logging (optional)
  * @returns {number} - Projected balance
  */
-export const calculateProjectedBalance = (accountId, liveBalance, transactions, debug = false) => {
+export const calculateProjectedBalance = (accountId, liveBalance, transactions) => {
   if (!transactions || transactions.length === 0) {
     return liveBalance;
   }
@@ -34,32 +15,17 @@ export const calculateProjectedBalance = (accountId, liveBalance, transactions, 
     (t) => t.account === accountId || t.account_id === accountId
   );
 
-  if (debug) {
-    console.log(`[ProjectedBalance] Account ${accountId}: ${accountTransactions.length} total transactions`);
-  }
-
   // Calculate the sum of pending transaction adjustments
-  // Pending transactions affect the projected balance
-  const pendingTransactions = [];
   const pendingAdjustments = accountTransactions.reduce((sum, transaction) => {
-    // Check multiple pending indicators to be inclusive
-    // Some transactions may have pending as string 'true', or use status field
+    // ✅ FIX: Check both boolean AND string 'true' for backward compatibility
     const isPending = (
       transaction.pending === true ||
       transaction.pending === 'true' ||
-      transaction.status === 'pending' ||
-      transaction.authorized === true ||
-      (transaction.pending_transaction_id && transaction.pending_transaction_id !== null)
+      transaction.status === 'pending'
     );
     
     if (isPending) {
       const amount = parseFloat(transaction.amount) || 0;
-      pendingTransactions.push({
-        name: transaction.merchant_name || transaction.name || 'Unknown',
-        amount: amount,
-        date: transaction.date
-      });
-      
       // After PR #154, all transactions use accounting convention:
       // - Negative amount = Expense (decreases balance)
       // - Positive amount = Income (increases balance)
@@ -69,93 +35,66 @@ export const calculateProjectedBalance = (accountId, liveBalance, transactions, 
     return sum;
   }, 0);
 
-  if (debug) {
-    console.log(`[ProjectedBalance] Found ${pendingTransactions.length} pending transactions:`);
-    pendingTransactions.forEach(tx => {
-      console.log(`  - ${tx.name}: $${tx.amount.toFixed(2)} (${tx.date})`);
-    });
-    console.log(`[ProjectedBalance] Pending total: $${pendingAdjustments.toFixed(2)}`);
-    console.log(`[ProjectedBalance] Live: $${liveBalance.toFixed(2)}, Projected: $${(liveBalance + pendingAdjustments).toFixed(2)}`);
-  }
-
   return liveBalance + pendingAdjustments;
 };
 
-/**
- * Calculate projected balances for all accounts
- * @param {Object|Array} accounts - Accounts object/array (Plaid or manual)
- * @param {Array} transactions - Array of manual transactions
- * @returns {Object} - Map of account IDs to their projected balances
- */
-export const calculateAllProjectedBalances = (accounts, transactions) => {
-  const projectedBalances = {};
-
-  // Handle Plaid accounts (array format)
-  if (Array.isArray(accounts)) {
-    accounts.forEach((account) => {
-      const accountId = account.account_id;
-      const liveBalance = parseFloat(account.balance) || 0;
-      projectedBalances[accountId] = calculateProjectedBalance(
-        accountId,
-        liveBalance,
-        transactions
-      );
-    });
-  } else {
-    // Handle manual accounts (object format)
-    Object.entries(accounts).forEach(([accountId, account]) => {
-      const liveBalance = parseFloat(account.balance) || 0;
-      projectedBalances[accountId] = calculateProjectedBalance(
-        accountId,
-        liveBalance,
-        transactions
-      );
-    });
-  }
-
-  return projectedBalances;
-};
-
-/**
- * Calculate total projected balance across all accounts
- * @param {Object|Array} accounts - Accounts object/array
- * @param {Array} transactions - Array of manual transactions
- * @returns {number} - Total projected balance
- */
+// ✅ FIXED: Handles both boolean and string pending values for backward compatibility
 export const calculateTotalProjectedBalance = (accounts, transactions) => {
-  const projectedBalances = calculateAllProjectedBalances(accounts, transactions);
-  return Object.values(projectedBalances).reduce((sum, balance) => sum + balance, 0);
-};
-
-/**
- * Get the difference between projected and live balance
- * @param {number} projectedBalance - Projected balance
- * @param {number} liveBalance - Live balance
- * @returns {number} - Difference (positive means pending income, negative means pending expenses)
- */
-export const getBalanceDifference = (projectedBalance, liveBalance) => {
-  return projectedBalance - liveBalance;
-};
-
-/**
- * Format balance difference for display
- * @param {number} difference - Balance difference
- * @returns {string} - Formatted string with sign and description
- */
-export const formatBalanceDifference = (difference) => {
-  if (difference === 0) {
-    return 'No pending transactions';
-  }
+  if (!accounts || !transactions) return 0;
   
-  const absValue = Math.abs(difference);
-  const formatted = new Intl.NumberFormat('en-US', {
-    style: 'currency',
-    currency: 'USD'
-  }).format(absValue);
+  console.log('[BalanceCalculator] Starting calculation...');
+  console.log('[BalanceCalculator] Accounts:', Array.isArray(accounts) ? accounts.length : Object.keys(accounts).length);
+  console.log('[BalanceCalculator] Transactions:', transactions.length);
   
-  if (difference > 0) {
-    return `+${formatted} (pending income)`;
+  // Calculate total live balance
+  let liveTotal = 0;
+  
+  if (Array.isArray(accounts)) {
+    liveTotal = accounts.reduce((sum, acc) => {
+      return sum + (parseFloat(acc.balance) || 0);
+    }, 0);
   } else {
-    return `-${formatted} (pending expenses)`;
+    liveTotal = Object.values(accounts).reduce((sum, acc) => {
+      return sum + (parseFloat(acc.balance) || 0);
+    }, 0);
   }
+  
+  console.log('[BalanceCalculator] Live total:', liveTotal);
+  
+  // ✅ FIX: Get ALL pending transactions (handle both boolean AND string)
+  const pendingTxs = transactions.filter(tx => 
+    tx.pending === true || tx.pending === 'true'
+  );
+  
+  console.log('[BalanceCalculator] Total pending transactions:', pendingTxs.length);
+  
+  // Calculate total pending amount
+  const pendingTotal = pendingTxs.reduce((sum, tx) => {
+    const amount = Math.abs(parseFloat(tx.amount) || 0);
+    return sum + amount;
+  }, 0);
+  
+  console.log('[BalanceCalculator] Total pending amount:', pendingTotal);
+  
+  const projectedTotal = liveTotal - pendingTotal;
+  console.log('[BalanceCalculator] Projected total:', projectedTotal);
+  
+  return projectedTotal;
+};
+
+export const getBalanceDifference = (liveBalance, projectedBalance) => {
+  const difference = projectedBalance - liveBalance;
+  
+  return {
+    amount: Math.abs(difference),
+    isPositive: difference > 0,
+    hasDifference: Math.abs(difference) > 0.01
+  };
+};
+
+export const formatBalanceDifference = (differenceObj) => {
+  if (!differenceObj.hasDifference) return '';
+  
+  const sign = differenceObj.isPositive ? '+' : '-';
+  return `${sign}${differenceObj.amount.toFixed(2)}`;
 };

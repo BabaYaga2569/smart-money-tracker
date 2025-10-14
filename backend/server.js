@@ -1054,6 +1054,9 @@ app.post("/api/plaid/sync_transactions", async (req, res) => {
       const txDoc = await txDocRef.get();
       
       // Prepare transaction data in our format
+      // ✅ CRITICAL FIX: Ensure pending is ALWAYS saved as boolean
+      const isPending = Boolean(plaidTx.pending);
+      
       const transactionData = {
         transaction_id: plaidTx.transaction_id,
         account_id: plaidTx.account_id,
@@ -1062,14 +1065,25 @@ app.post("/api/plaid/sync_transactions", async (req, res) => {
         name: plaidTx.name,
         merchant_name: plaidTx.merchant_name || plaidTx.name,
         category: autoCategorizTransaction(plaidTx.merchant_name || plaidTx.name),
-        pending: plaidTx.pending || false,  // ← KEY FIELD!
+        pending: isPending,  // ✅ Always boolean, never string
         payment_channel: plaidTx.payment_channel || 'other',
         source: 'plaid',
         timestamp: admin.firestore.FieldValue.serverTimestamp(),
         lastSyncedAt: admin.firestore.FieldValue.serverTimestamp()
       };
+      
+      // ✅ Debug logging for troubleshooting
+      if (plaidTx.merchant_name?.toLowerCase().includes('starbucks') || 
+          plaidTx.name?.toLowerCase().includes('starbucks')) {
+        console.log('💾 [STARBUCKS] Saving:', {
+          merchant: plaidTx.merchant_name,
+          pending_original: plaidTx.pending,
+          pending_saved: isPending,
+          amount: plaidTx.amount
+        });
+      }
 
-      if (plaidTx.pending) {
+      if (isPending) {
         pendingCount++;
       }
 
