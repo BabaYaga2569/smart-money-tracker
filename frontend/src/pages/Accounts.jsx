@@ -125,9 +125,27 @@ const Accounts = () => {
     const autoSyncOnStartup = async () => {
       if (!currentUser) return;
       
-      // Check if user has Plaid accounts
-      if (plaidAccounts.length === 0) {
-        console.log('[AutoSync] No Plaid accounts configured, skipping auto-sync');
+      try {
+        // ✅ Query Firebase directly instead of checking React state
+        const settingsDocRef = doc(db, 'users', currentUser.uid, 'settings', 'personal');
+        const settingsDocSnap = await getDoc(settingsDocRef);
+        
+        if (!settingsDocSnap.exists()) {
+          console.log('[AutoSync] No settings document found');
+          return;
+        }
+        
+        const data = settingsDocSnap.data();
+        const plaidAccountsList = data.plaidAccounts || [];
+        
+        if (plaidAccountsList.length === 0) {
+          console.log('[AutoSync] No Plaid accounts in Firebase, skipping auto-sync');
+          return;
+        }
+        
+        console.log(`[AutoSync] Found ${plaidAccountsList.length} Plaid accounts in Firebase`);
+      } catch (error) {
+        console.error('[AutoSync] Error checking accounts:', error);
         return;
       }
       
