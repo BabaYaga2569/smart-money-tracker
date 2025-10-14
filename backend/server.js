@@ -437,6 +437,117 @@ function levenshteinDistance(str1, str2) {
   return matrix[str2.length][str1.length];
 }
 
+// ============================================================================
+// AUTOMATIC MIGRATION: Add mask and institution_name to existing transactions
+// ============================================================================
+
+/**
+ * Migrate existing transactions to add mask and institution_name fields
+ * This function is idempotent and safe to run multiple times
+ * Runs on server startup to ensure all transactions have complete data
+ */
+async function migrateTransactionsAddMaskAndInstitution() {
+  console.log('🔄 [Migration] Checking transactions for mask/institution fields...');
+  
+  try {
+    const usersSnapshot = await db.collection('users').get();
+    
+    for (const userDoc of usersSnapshot.docs) {
+      const userId = userDoc.id;
+      console.log(`[Migration] Processing user: ${userId}`);
+      
+      // Get user's Plaid items
+      const plaidItemsSnapshot = await db
+        .collection('users')
+        .doc(userId)
+        .collection('plaid_items')
+        .get();
+      
+      if (plaidItemsSnapshot.empty) {
+        console.log(`[Migration] No Plaid items for user ${userId}, skipping`);
+        continue;
+      }
+      
+      for (const itemDoc of plaidItemsSnapshot.docs) {
+        const itemData = itemDoc.data();
+        const accessToken = itemData.accessToken;
+        const institutionName = itemData.institutionName;
+        
+        if (!accessToken) {
+          console.log(`[Migration] No access token for item ${itemData.itemId}, skipping`);
+          continue;
+        }
+        
+        try {
+          // Fetch accounts from Plaid to get masks
+          const accountsResponse = await plaidClient.accountsGet({
+            access_token: accessToken,
+          });
+          const accounts = accountsResponse.data.accounts;
+          
+          // Get transactions for this user that are missing mask or institution_name
+          const transactionsSnapshot = await db
+            .collection('users')
+            .doc(userId)
+            .collection('transactions')
+            .where('item_id', '==', itemData.itemId)
+            .get();
+          
+          let updatedCount = 0;
+          let batch = db.batch();
+          let batchCount = 0;
+          
+          for (const txDoc of transactionsSnapshot.docs) {
+            const txData = txDoc.data();
+            
+            // Check if transaction needs migration
+            if (txData.mask === undefined || txData.institution_name === undefined) {
+              // Find matching account for this transaction
+              const accountInfo = accounts.find(acc => acc.account_id === txData.account_id);
+              
+              if (accountInfo) {
+                // Update transaction with mask and institution_name
+                batch.update(txDoc.ref, {
+                  mask: accountInfo.mask || null,
+                  institution_name: institutionName || null,
+                  migrated_at: admin.firestore.FieldValue.serverTimestamp()
+                });
+                updatedCount++;
+                batchCount++;
+                
+                // Firebase batch limit is 500 operations
+                if (batchCount >= 500) {
+                  await batch.commit();
+                  console.log(`[Migration] Committed batch of ${batchCount} transactions for item ${itemData.itemId}`);
+                  batch = db.batch();
+                  batchCount = 0;
+                }
+              }
+            }
+          }
+          
+          // Commit remaining transactions
+          if (batchCount > 0) {
+            await batch.commit();
+            console.log(`✅ [Migration] Updated ${updatedCount} transactions for item ${itemData.itemId}`);
+          } else if (updatedCount === 0) {
+            console.log(`[Migration] No transactions to update for item ${itemData.itemId}`);
+          }
+          
+        } catch (error) {
+          console.error(`[Migration] Error processing item ${itemData.itemId}:`, error.message);
+          continue;
+        }
+      }
+    }
+    
+    console.log('✅ [Migration] Transaction migration complete!');
+    
+  } catch (error) {
+    console.error('❌ [Migration] Migration failed:', error);
+  }
+}
+
 // Test route
 app.get("/api/hello", (req, res) => {
   res.json({ message: "Backend is working!" });
@@ -960,6 +1071,25 @@ app.post("/api/plaid/sync_transactions", async (req, res) => {
 
         logDiagnostic.info('SYNC_TRANSACTIONS', `Syncing item ${item.itemId} (${item.institutionName}), cursor: ${lastCursor ? 'exists' : 'none'}`);
 
+        // Fetch accounts for this item to get mask information
+        let accountsMap = {};
+        try {
+          const accountsResponse = await plaidClient.accountsGet({
+            access_token: item.accessToken,
+          });
+          accountsResponse.data.accounts.forEach(account => {
+            accountsMap[account.account_id] = {
+              mask: account.mask || null,
+              name: account.name,
+              type: account.type
+            };
+          });
+          logDiagnostic.info('SYNC_TRANSACTIONS', `Fetched ${accountsResponse.data.accounts.length} accounts for item ${item.itemId}`);
+        } catch (accountError) {
+          logDiagnostic.error('SYNC_TRANSACTIONS', `Failed to fetch accounts for item ${item.itemId}`, accountError);
+          // Continue without account mask data
+        }
+
         // Fetch all transaction changes using transactionsSync with pagination
         let itemAdded = [];
         let itemModified = [];
@@ -976,19 +1106,21 @@ app.post("/api/plaid/sync_transactions", async (req, res) => {
             }
           });
           
-          // Add institution info to transactions
+          // Add institution info and mask to transactions
           const addedWithInstitution = response.data.added.map(tx => ({
             ...tx,
             institution_name: item.institutionName,
             institution_id: item.institutionId,
-            item_id: item.itemId
+            item_id: item.itemId,
+            mask: accountsMap[tx.account_id]?.mask || null
           }));
           
           const modifiedWithInstitution = response.data.modified.map(tx => ({
             ...tx,
             institution_name: item.institutionName,
             institution_id: item.institutionId,
-            item_id: item.itemId
+            item_id: item.itemId,
+            mask: accountsMap[tx.account_id]?.mask || null
           }));
           
           itemAdded.push(...addedWithInstitution);
@@ -1068,6 +1200,10 @@ app.post("/api/plaid/sync_transactions", async (req, res) => {
         pending: isPending,  // ✅ Always boolean, never string
         payment_channel: plaidTx.payment_channel || 'other',
         source: 'plaid',
+        // ✅ Always include mask and institution_name for account matching
+        mask: plaidTx.mask || null,
+        institution_name: plaidTx.institution_name || null,
+        item_id: plaidTx.item_id || null,
         timestamp: admin.firestore.FieldValue.serverTimestamp(),
         lastSyncedAt: admin.firestore.FieldValue.serverTimestamp()
       };
@@ -2105,3 +2241,18 @@ app.get("/healthz", (req, res) => res.send("ok"));
 
 const PORT = process.env.PORT || 5000;
 app.listen(PORT, () => console.log(`Server running on ${PORT}`));
+
+// ============================================================================
+// RUN MIGRATION ON STARTUP
+// ============================================================================
+
+// Run migration on server startup (only in production or when explicitly enabled)
+// This ensures all transactions have mask and institution_name fields
+if (process.env.NODE_ENV === 'production' || process.env.RUN_MIGRATION === 'true') {
+  console.log('[Migration] Starting automatic migration on server startup...');
+  migrateTransactionsAddMaskAndInstitution()
+    .then(() => console.log('[Migration] Startup migration completed'))
+    .catch(err => console.error('[Migration] Startup migration error:', err));
+} else {
+  console.log('[Migration] Skipping migration (not in production and RUN_MIGRATION not set)');
+}
