@@ -197,12 +197,34 @@ const Accounts = () => {
       return liveBalance;
     }
 
+    // ✅ DEBUG: Log first transaction to see structure
+    if (transactionsList.length > 0) {
+      console.log(`[ProjectedBalance] Sample transaction structure:`, {
+        account_id: transactionsList[0].account_id,
+        account: transactionsList[0].account,
+        pending: transactionsList[0].pending,
+        name: transactionsList[0].name
+      });
+    }
+
     // ✅ FIX: Filter for pending transactions for THIS account
     const pendingTxs = transactionsList.filter(tx => {
       const txAccountId = tx.account_id || tx.account;
       const isPending = tx.pending === true || tx.pending === 'true'; // ✅ Catch both types
       
-      // Debug logging for troubleshooting
+      // ✅ DEBUG: Log ALL pending transactions to see which accounts they belong to
+      if (isPending) {
+        console.log(`[ProjectedBalance] Pending tx found:`, {
+          merchant: tx.merchant_name || tx.name,
+          tx_account_id: txAccountId,
+          looking_for: accountId,
+          matches: txAccountId === accountId,
+          pending: tx.pending,
+          amount: tx.amount
+        });
+      }
+      
+      // Debug logging for Starbucks
       if ((tx.merchant_name?.toLowerCase().includes('starbucks') || 
            tx.name?.toLowerCase().includes('starbucks')) && txAccountId === accountId) {
         console.log(`[ProjectedBalance] 🔍 STARBUCKS FOUND:`, {
