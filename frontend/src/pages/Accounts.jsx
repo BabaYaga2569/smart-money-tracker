@@ -4,7 +4,7 @@ import { db } from '../firebase';
 import { useNavigate } from 'react-router-dom';
 import PlaidLink from '../components/PlaidLink';
 import PlaidErrorModal from '../components/PlaidErrorModal';
-import { calculateProjectedBalance, calculateTotalProjectedBalance, getBalanceDifference, formatBalanceDifference } from '../utils/BalanceCalculator';
+import { calculateTotalProjectedBalance, getBalanceDifference, formatBalanceDifference } from '../utils/BalanceCalculator';
 import PlaidConnectionManager from '../utils/PlaidConnectionManager';
 import './Accounts.css';
 import { useAuth } from '../contexts/AuthContext';
