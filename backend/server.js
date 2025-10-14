@@ -2171,7 +2171,11 @@ async function migrateTransactionsAddMaskAndInstitution() {
         continue;
       }
       
-      // Process each Plaid connection
+      // Build a master account map across all items
+      const accountsMap = {};
+      const institutionMap = {};
+      
+      // Fetch account data from Plaid for ALL items
       for (const itemDoc of plaidItemsSnapshot.docs) {
         const itemData = itemDoc.data();
         const accessToken = itemData.accessToken;
@@ -2190,79 +2194,89 @@ async function migrateTransactionsAddMaskAndInstitution() {
           });
           const accounts = accountsResponse.data.accounts;
           
-          console.log(`[Migration] Item ${itemId}: Found ${accounts.length} accounts`);
+          console.log(`[Migration] Item ${itemId} (${institutionName}): Found ${accounts.length} accounts`);
           
-          // Get transactions for this item that need migration
-          const transactionsSnapshot = await admin.firestore()
-            .collection('users')
-            .doc(userId)
-            .collection('transactions')
-            .where('item_id', '==', itemId)
-            .get();
-          
-          console.log(`[Migration] Item ${itemId}: Found ${transactionsSnapshot.size} transactions`);
-          
-          // Build account map for quick lookup
-          const accountsMap = {};
+          // Add accounts to master map by account_id
           accounts.forEach(acc => {
             accountsMap[acc.account_id] = acc;
+            institutionMap[acc.account_id] = institutionName;
           });
           
-          // Batch update transactions
-          let updatedCount = 0;
-          const batchSize = 500; // Firestore batch limit
-          let batch = admin.firestore().batch();
-          let batchCount = 0;
-          
-          for (const txDoc of transactionsSnapshot.docs) {
-            const txData = txDoc.data();
-            
-            // Check if transaction needs migration
-            if (txData.mask === undefined || txData.institution_name === undefined) {
-              // Find matching account
-              const accountInfo = accountsMap[txData.account_id];
-              
-              if (accountInfo) {
-                // Update transaction with mask and institution_name
-                batch.update(txDoc.ref, {
-                  mask: accountInfo.mask || null,
-                  institution_name: institutionName || null,
-                  migrated_at: admin.firestore.FieldValue.serverTimestamp()
-                });
-                
-                updatedCount++;
-                batchCount++;
-                
-                // Commit batch if we hit the limit
-                if (batchCount >= batchSize) {
-                  await batch.commit();
-                  console.log(`[Migration] Committed batch of ${batchCount} updates`);
-                  batch = admin.firestore().batch();
-                  batchCount = 0;
-                }
-              } else {
-                console.log(`[Migration] No account found for transaction ${txDoc.id} (account_id: ${txData.account_id})`);
-              }
-            }
-          }
-          
-          // Commit remaining updates
-          if (batchCount > 0) {
-            await batch.commit();
-            console.log(`[Migration] Committed final batch of ${batchCount} updates`);
-          }
-          
-          if (updatedCount > 0) {
-            console.log(`✅ [Migration] Updated ${updatedCount} transactions for item ${itemId} (${institutionName})`);
-          } else {
-            console.log(`[Migration] No transactions needed migration for item ${itemId}`);
-          }
-          
         } catch (error) {
-          console.error(`❌ [Migration] Error processing item ${itemId}:`, error.message);
-          // Continue with next item even if this one fails
+          console.error(`❌ [Migration] Error fetching accounts for item ${itemId}:`, error.message);
           continue;
         }
+      }
+      
+      console.log(`[Migration] Built account map with ${Object.keys(accountsMap).length} accounts`);
+      
+      // ✅ FIX: Get ALL transactions for user (no item_id filter)
+      const transactionsSnapshot = await admin.firestore()
+        .collection('users')
+        .doc(userId)
+        .collection('transactions')
+        .get();
+      
+      console.log(`[Migration] User ${userId}: Found ${transactionsSnapshot.size} total transactions`);
+      
+      // Batch update transactions
+      let updatedCount = 0;
+      let skippedCount = 0;
+      const batchSize = 500; // Firestore batch limit
+      let batch = admin.firestore().batch();
+      let batchCount = 0;
+      
+      for (const txDoc of transactionsSnapshot.docs) {
+        const txData = txDoc.data();
+        
+        // Check if transaction needs migration
+        if (txData.mask === undefined || txData.institution_name === undefined) {
+          // Find matching account by account_id
+          const accountInfo = accountsMap[txData.account_id];
+          const institutionName = institutionMap[txData.account_id];
+          
+          if (accountInfo && institutionName) {
+            // Update transaction with mask and institution_name
+            batch.update(txDoc.ref, {
+              mask: accountInfo.mask || null,
+              institution_name: institutionName || null,
+              migrated_at: admin.firestore.FieldValue.serverTimestamp()
+            });
+            
+            updatedCount++;
+            batchCount++;
+            
+            // Log first few for verification
+            if (updatedCount <= 3) {
+              console.log(`[Migration] ✅ Updating tx: ${txData.merchant_name || txData.name} → mask: ${accountInfo.mask}, institution: ${institutionName}`);
+            }
+            
+            // Commit batch if we hit the limit
+            if (batchCount >= batchSize) {
+              await batch.commit();
+              console.log(`[Migration] Committed batch of ${batchCount} updates`);
+              batch = admin.firestore().batch();
+              batchCount = 0;
+            }
+          } else {
+            skippedCount++;
+            if (skippedCount <= 3) {
+              console.log(`[Migration] ⚠️ No account found for transaction ${txDoc.id} (account_id: ${txData.account_id})`);
+            }
+          }
+        }
+      }
+      
+      // Commit remaining updates
+      if (batchCount > 0) {
+        await batch.commit();
+        console.log(`[Migration] Committed final batch of ${batchCount} updates`);
+      }
+      
+      if (updatedCount > 0) {
+        console.log(`✅ [Migration] Updated ${updatedCount} transactions for user ${userId} (${skippedCount} skipped - no matching account)`);
+      } else {
+        console.log(`[Migration] No transactions needed migration for user ${userId}`);
       }
     }
     
