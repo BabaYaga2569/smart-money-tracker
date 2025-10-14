@@ -2144,5 +2144,149 @@ app.post("/api/subscriptions/detect", async (req, res) => {
 // Health check
 app.get("/healthz", (req, res) => res.send("ok"));
 
+// ============================================
+// MIGRATION: Add mask and institution_name to existing transactions
+// ============================================
+
+async function migrateTransactionsAddMaskAndInstitution() {
+  console.log('🔄 [Migration] Checking transactions for mask/institution fields...');
+  
+  try {
+    // Get all users
+    const usersSnapshot = await admin.firestore().collection('users').get();
+    
+    for (const userDoc of usersSnapshot.docs) {
+      const userId = userDoc.id;
+      console.log(`[Migration] Processing user: ${userId}`);
+      
+      // Get user's Plaid items
+      const plaidItemsSnapshot = await admin.firestore()
+        .collection('users')
+        .doc(userId)
+        .collection('plaid_items')
+        .get();
+      
+      if (plaidItemsSnapshot.empty) {
+        console.log(`[Migration] No Plaid items for user ${userId}, skipping`);
+        continue;
+      }
+      
+      // Process each Plaid connection
+      for (const itemDoc of plaidItemsSnapshot.docs) {
+        const itemData = itemDoc.data();
+        const accessToken = itemData.accessToken;
+        const institutionName = itemData.institutionName;
+        const itemId = itemData.itemId;
+        
+        if (!accessToken) {
+          console.log(`[Migration] No access token for item ${itemId}, skipping`);
+          continue;
+        }
+        
+        try {
+          // Fetch accounts from Plaid to get masks
+          const accountsResponse = await plaidClient.accountsGet({
+            access_token: accessToken,
+          });
+          const accounts = accountsResponse.data.accounts;
+          
+          console.log(`[Migration] Item ${itemId}: Found ${accounts.length} accounts`);
+          
+          // Get transactions for this item that need migration
+          const transactionsSnapshot = await admin.firestore()
+            .collection('users')
+            .doc(userId)
+            .collection('transactions')
+            .where('item_id', '==', itemId)
+            .get();
+          
+          console.log(`[Migration] Item ${itemId}: Found ${transactionsSnapshot.size} transactions`);
+          
+          // Build account map for quick lookup
+          const accountsMap = {};
+          accounts.forEach(acc => {
+            accountsMap[acc.account_id] = acc;
+          });
+          
+          // Batch update transactions
+          let updatedCount = 0;
+          const batchSize = 500; // Firestore batch limit
+          let batch = admin.firestore().batch();
+          let batchCount = 0;
+          
+          for (const txDoc of transactionsSnapshot.docs) {
+            const txData = txDoc.data();
+            
+            // Check if transaction needs migration
+            if (txData.mask === undefined || txData.institution_name === undefined) {
+              // Find matching account
+              const accountInfo = accountsMap[txData.account_id];
+              
+              if (accountInfo) {
+                // Update transaction with mask and institution_name
+                batch.update(txDoc.ref, {
+                  mask: accountInfo.mask || null,
+                  institution_name: institutionName || null,
+                  migrated_at: admin.firestore.FieldValue.serverTimestamp()
+                });
+                
+                updatedCount++;
+                batchCount++;
+                
+                // Commit batch if we hit the limit
+                if (batchCount >= batchSize) {
+                  await batch.commit();
+                  console.log(`[Migration] Committed batch of ${batchCount} updates`);
+                  batch = admin.firestore().batch();
+                  batchCount = 0;
+                }
+              } else {
+                console.log(`[Migration] No account found for transaction ${txDoc.id} (account_id: ${txData.account_id})`);
+              }
+            }
+          }
+          
+          // Commit remaining updates
+          if (batchCount > 0) {
+            await batch.commit();
+            console.log(`[Migration] Committed final batch of ${batchCount} updates`);
+          }
+          
+          if (updatedCount > 0) {
+            console.log(`✅ [Migration] Updated ${updatedCount} transactions for item ${itemId} (${institutionName})`);
+          } else {
+            console.log(`[Migration] No transactions needed migration for item ${itemId}`);
+          }
+          
+        } catch (error) {
+          console.error(`❌ [Migration] Error processing item ${itemId}:`, error.message);
+          // Continue with next item even if this one fails
+          continue;
+        }
+      }
+    }
+    
+    console.log('✅ [Migration] Transaction migration complete!');
+    
+  } catch (error) {
+    console.error('❌ [Migration] Migration failed:', error);
+    // Don't crash the server if migration fails
+  }
+}
+
+// ============================================
+// Run migration on server startup
+// ============================================
+
+// Only run in production or when explicitly enabled
+if (process.env.NODE_ENV === 'production' || process.env.RUN_MIGRATION === 'true') {
+  // Run migration after server starts (non-blocking)
+  setTimeout(() => {
+    migrateTransactionsAddMaskAndInstitution()
+      .then(() => console.log('[Migration] Startup migration completed'))
+      .catch(err => console.error('[Migration] Startup migration error:', err));
+  }, 5000); // Wait 5 seconds after server starts
+}
+
 const PORT = process.env.PORT || 5000;
 app.listen(PORT, () => console.log(`Server running on ${PORT}`));
