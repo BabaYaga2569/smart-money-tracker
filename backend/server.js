@@ -966,6 +966,9 @@ app.post("/api/plaid/sync_transactions", async (req, res) => {
         let itemRemoved = [];
         let hasMore = true;
         let cursor = lastCursor;
+        
+        // Map to store account information by account_id for quick lookup
+        let accountsMap = {};
 
         while (hasMore) {
           const response = await plaidClient.transactionsSync({
@@ -976,19 +979,28 @@ app.post("/api/plaid/sync_transactions", async (req, res) => {
             }
           });
           
-          // Add institution info to transactions
+          // Build accounts map from response for mask lookup
+          if (response.data.accounts && response.data.accounts.length > 0) {
+            response.data.accounts.forEach(account => {
+              accountsMap[account.account_id] = account;
+            });
+          }
+          
+          // Add institution info and mask to transactions
           const addedWithInstitution = response.data.added.map(tx => ({
             ...tx,
             institution_name: item.institutionName,
             institution_id: item.institutionId,
-            item_id: item.itemId
+            item_id: item.itemId,
+            mask: accountsMap[tx.account_id]?.mask || null
           }));
           
           const modifiedWithInstitution = response.data.modified.map(tx => ({
             ...tx,
             institution_name: item.institutionName,
             institution_id: item.institutionId,
-            item_id: item.itemId
+            item_id: item.itemId,
+            mask: accountsMap[tx.account_id]?.mask || null
           }));
           
           itemAdded.push(...addedWithInstitution);
@@ -1068,6 +1080,8 @@ app.post("/api/plaid/sync_transactions", async (req, res) => {
         pending: isPending,  // ✅ Always boolean, never string
         payment_channel: plaidTx.payment_channel || 'other',
         source: 'plaid',
+        mask: plaidTx.mask || null,  // ✅ ADD: Last 4 digits for mask matching
+        institution_name: plaidTx.institution_name || null,  // ✅ ADD: Bank name for institution matching
         timestamp: admin.firestore.FieldValue.serverTimestamp(),
         lastSyncedAt: admin.firestore.FieldValue.serverTimestamp()
       };
@@ -1081,6 +1095,13 @@ app.post("/api/plaid/sync_transactions", async (req, res) => {
           pending_saved: isPending,
           amount: plaidTx.amount
         });
+      }
+
+      // ✅ Enhanced logging for mask and institution_name
+      if (isPending && (transactionData.mask || transactionData.institution_name)) {
+        logDiagnostic.info('SYNC_TRANSACTIONS', 
+          `[SaveTransaction] Pending tx with mask: ${transactionData.mask}, institution: ${transactionData.institution_name}, merchant: ${transactionData.merchant_name}`
+        );
       }
 
       if (isPending) {
@@ -1410,6 +1431,14 @@ app.post("/api/plaid/webhook", async (req, res) => {
             }, { merge: true });
           }
           
+          // Build accounts map for mask lookup
+          const accountsMap = {};
+          if (syncResponse.data.accounts && syncResponse.data.accounts.length > 0) {
+            syncResponse.data.accounts.forEach(account => {
+              accountsMap[account.account_id] = account;
+            });
+          }
+          
           // Save transactions to Firebase using batched writes
           const allTransactions = [
             ...syncResponse.data.added,
@@ -1426,15 +1455,27 @@ app.post("/api/plaid/webhook", async (req, res) => {
                 .collection('transactions')
                 .doc(transaction.transaction_id);
               
+              const txMask = accountsMap[transaction.account_id]?.mask || null;
+              const txInstitution = itemData.institutionName;
+              
               batch.set(transactionRef, {
                 ...transaction,
                 amount: -transaction.amount,  // ← FLIP SIGN: Plaid positive=expense, we need negative=expense
                 category: autoCategorizTransaction(transaction.merchant_name || transaction.name),
                 item_id: item_id,
-                institutionName: itemData.institutionName,
+                institutionName: txInstitution,
+                institution_name: txInstitution,  // ✅ ADD: Bank name for institution matching
+                mask: txMask,  // ✅ ADD: Last 4 digits for mask matching
                 synced_at: admin.firestore.FieldValue.serverTimestamp(),
                 webhook_code: webhook_code
               }, { merge: true });
+              
+              // ✅ Enhanced logging for pending transactions with mask data
+              if (transaction.pending && (txMask || txInstitution)) {
+                logDiagnostic.info('WEBHOOK', 
+                  `[SaveTransaction] Pending tx with mask: ${txMask}, institution: ${txInstitution}, merchant: ${transaction.merchant_name || transaction.name}`
+                );
+              }
               
               batchCount++;
               
