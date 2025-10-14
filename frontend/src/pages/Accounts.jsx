@@ -188,7 +188,7 @@ const Accounts = () => {
 
   // Local calculateProjectedBalance with comprehensive logging
   // This overrides the imported function to provide debugging capabilities
-  const calculateProjectedBalance = (accountId, liveBalance, transactionsList) => {
+  const calculateProjectedBalance = (accountId, liveBalance, transactionsList, currentAccount) => {
     console.log(`[ProjectedBalance] Calculating for account: ${accountId}`);
     console.log(`[ProjectedBalance] Live balance: ${liveBalance}`);
     
@@ -197,47 +197,77 @@ const Accounts = () => {
       return liveBalance;
     }
 
-    // ✅ DEBUG: Log first transaction to see structure
-    if (transactionsList.length > 0) {
-      console.log(`[ProjectedBalance] Sample transaction structure:`, {
-        account_id: transactionsList[0].account_id,
-        account: transactionsList[0].account,
-        pending: transactionsList[0].pending,
-        name: transactionsList[0].name
-      });
-    }
-
-    // ✅ FIX: Filter for pending transactions for THIS account
+    // ✅ BULLETPROOF FIX: Multiple matching strategies
     const pendingTxs = transactionsList.filter(tx => {
-      const txAccountId = tx.account_id || tx.account;
-      const isPending = tx.pending === true || tx.pending === 'true'; // ✅ Catch both types
+      const isPending = tx.pending === true || tx.pending === 'true';
       
-      // ✅ DEBUG: Log ALL pending transactions to see which accounts they belong to
-      if (isPending) {
-        console.log(`[ProjectedBalance] Pending tx found:`, {
+      if (!isPending) return false;
+      
+      const txAccountId = tx.account_id || tx.account;
+      
+      // Strategy 1: Exact account_id match (fastest)
+      if (txAccountId === accountId) {
+        console.log(`[ProjectedBalance] ✅ Matched by account_id:`, {
           merchant: tx.merchant_name || tx.name,
-          tx_account_id: txAccountId,
-          looking_for: accountId,
-          matches: txAccountId === accountId,
-          pending: tx.pending,
+          strategy: 'exact_id',
           amount: tx.amount
         });
+        return true;
       }
       
-      // Debug logging for Starbucks
-      if ((tx.merchant_name?.toLowerCase().includes('starbucks') || 
-           tx.name?.toLowerCase().includes('starbucks')) && txAccountId === accountId) {
-        console.log(`[ProjectedBalance] 🔍 STARBUCKS FOUND:`, {
-          merchant: tx.merchant_name || tx.name,
-          pending: tx.pending,
-          pendingType: typeof tx.pending,
-          isPending: isPending,
-          amount: tx.amount,
-          accountMatch: txAccountId === accountId
-        });
+      // Strategy 2: Match by mask (last 4 digits) - most reliable fallback
+      if (currentAccount?.mask && tx.mask) {
+        const masksMatch = currentAccount.mask === tx.mask;
+        
+        // Also verify institution name to avoid false positives
+        const institutionMatch = !currentAccount.institution_name || 
+                                !tx.institution_name || 
+                                currentAccount.institution_name === tx.institution_name;
+        
+        if (masksMatch && institutionMatch) {
+          console.log(`[ProjectedBalance] ✅ Matched by mask + institution:`, {
+            merchant: tx.merchant_name || tx.name,
+            strategy: 'mask_match',
+            mask: currentAccount.mask,
+            amount: tx.amount
+          });
+          return true;
+        }
       }
       
-      return isPending && txAccountId === accountId;
+      // Strategy 3: Match by institution (only if account is the sole one from this bank)
+      if (currentAccount?.institution_name && tx.institution_name) {
+        const institutionMatch = currentAccount.institution_name === tx.institution_name;
+        
+        // Count how many accounts share this institution
+        const accountsFromBank = plaidAccounts.filter(acc => 
+          acc.institution_name === currentAccount.institution_name
+        );
+        
+        // Only use institution matching if it's the ONLY account from this bank
+        if (institutionMatch && accountsFromBank.length === 1) {
+          console.log(`[ProjectedBalance] ✅ Matched by institution (single account):`, {
+            merchant: tx.merchant_name || tx.name,
+            strategy: 'institution_only',
+            institution: currentAccount.institution_name,
+            amount: tx.amount
+          });
+          return true;
+        }
+      }
+      
+      // No match found
+      console.log(`[ProjectedBalance] ❌ No match for transaction:`, {
+        merchant: tx.merchant_name || tx.name,
+        tx_account_id: txAccountId,
+        tx_mask: tx.mask,
+        tx_institution: tx.institution_name,
+        looking_for_id: accountId,
+        account_mask: currentAccount?.mask,
+        account_institution: currentAccount?.institution_name
+      });
+      
+      return false;
     });
 
     console.log(`[ProjectedBalance] Found ${pendingTxs.length} pending transactions for ${accountId}`);
@@ -1186,7 +1216,12 @@ const Accounts = () => {
         {/* Plaid-linked accounts */}
         {plaidAccounts.map((account) => {
           const liveBalance = parseFloat(account.balance) || 0;
-          const projectedBalance = calculateProjectedBalance(account.account_id, liveBalance, transactions);
+          const projectedBalance = calculateProjectedBalance(
+            account.account_id, 
+            liveBalance, 
+            transactions,
+            account  // ✅ Pass full account object for mask/institution matching
+          );
           const hasDifference = projectedBalance !== liveBalance;
           
           return (
@@ -1287,7 +1322,12 @@ const Accounts = () => {
           .filter(([, account]) => !account.isPlaid)
           .map(([key, account]) => {
             const liveBalance = parseFloat(account.balance) || 0;
-            const projectedBalance = calculateProjectedBalance(key, liveBalance, transactions);
+            const projectedBalance = calculateProjectedBalance(
+              key, 
+              liveBalance, 
+              transactions,
+              account  // ✅ Pass full account object for mask/institution matching
+            );
             const hasDifference = projectedBalance !== liveBalance;
             
             return (
