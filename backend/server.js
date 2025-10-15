@@ -612,6 +612,64 @@ app.post("/api/plaid/exchange_token", async (req, res) => {
 });
 
 // Get account balances
+
+/**
+ * GET /api/accounts - Get user's Plaid accounts with fresh balances
+ */
+app.get('/api/accounts', async (req, res) => {
+  const endpoint = '/api/accounts';
+  console.log(`[${endpoint}] Request received`);
+
+  try {
+    const { userId } = req.query;
+
+    if (!userId) {
+      return res.status(400).json({ success: false, error: 'Missing userId' });
+    }
+
+    console.log(`[${endpoint}] Fetching accounts for user: ${userId}`);
+
+    // Get Plaid credentials from Firestore
+    const credentials = await getPlaidCredentials(userId);
+
+    if (!credentials || !credentials.accessToken) {
+      console.log(`[${endpoint}] No Plaid credentials found for user`);
+      return res.json({ success: false, accounts: [], message: 'No bank connected' });
+    }
+
+    // Get fresh balances from Plaid
+    const balanceResponse = await plaidClient.accountsBalanceGet({
+      access_token: credentials.accessToken,
+    });
+
+    console.log(`[${endpoint}] ✅ Retrieved ${balanceResponse.data.accounts.length} accounts from Plaid`);
+
+    // Return accounts with fresh balances
+    return res.json({
+      success: true,
+      accounts: balanceResponse.data.accounts.map(account => ({
+        account_id: account.account_id,
+        name: account.name,
+        official_name: account.official_name,
+        type: account.type,
+        subtype: account.subtype,
+        balances: account.balances,
+        mask: account.mask,
+        item_id: credentials.itemId,
+        institution_name: credentials.institutionName,
+        institution_id: credentials.institutionId
+      }))
+    });
+
+  } catch (error) {
+    console.error(`[${endpoint}] Error:`, error.message);
+    return res.status(500).json({
+      success: false,
+      error: 'Failed to fetch accounts',
+      details: error.message
+    });
+  }
+});
 app.post("/api/plaid/get_balances", async (req, res) => {
   const endpoint = "/api/plaid/get_balances";
   logDiagnostic.request(endpoint, req.body);
