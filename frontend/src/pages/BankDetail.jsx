@@ -12,6 +12,7 @@ const BankDetail = () => {
   
   const [loading, setLoading] = useState(true);
   const [account, setAccount] = useState(null);
+  const [liveBalance, setLiveBalance] = useState(null);
   const [transactions, setTransactions] = useState([]);
   const [filteredTransactions, setFilteredTransactions] = useState([]);
   const [searchTerm, setSearchTerm] = useState('');
@@ -54,6 +55,33 @@ const BankDetail = () => {
     };
     
     loadAccountDetails();
+  }, [currentUser, accountId]);
+
+  // Fetch fresh balance from API
+  useEffect(() => {
+    const fetchFreshBalance = async () => {
+      if (!currentUser || !accountId) return;
+      
+      try {
+        const apiUrl = import.meta.env.VITE_API_URL || 'https://smart-money-tracker-09ks.onrender.com';
+        const response = await fetch(
+          `${apiUrl}/api/accounts?userId=${currentUser.uid}`
+        );
+        const data = await response.json();
+        
+        if (data.success && data.accounts) {
+          const matchingAccount = data.accounts.find(acc => acc.account_id === accountId);
+          if (matchingAccount) {
+            console.log('✅ [BankDetail] Fresh balance fetched:', matchingAccount.balances.current);
+            setLiveBalance(matchingAccount.balances.current);
+          }
+        }
+      } catch (error) {
+        console.error('[BankDetail] Failed to fetch fresh balance:', error);
+      }
+    };
+    
+    fetchFreshBalance();
   }, [currentUser, accountId]);
 
   // Real-time listener for transactions filtered by account_id
@@ -254,7 +282,7 @@ const BankDetail = () => {
           </div>
           <div className="bank-balance">
             <span className="balance-label">Current Balance</span>
-            <div className="balance-amount">{formatCurrency(parseFloat(account.balance) || 0)}</div>
+            <div className="balance-amount">{formatCurrency(liveBalance ?? (parseFloat(account.balance) || 0))}</div>
           </div>
         </div>
       </div>
