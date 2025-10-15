@@ -282,7 +282,7 @@ const BankDetail = () => {
           </div>
           <div className="bank-balance">
             <span className="balance-label">Current Balance</span>
-            <div className="balance-amount">{formatCurrency(liveBalance ?? parseFloat(account.balance) || 0)}</div>
+            <div className="balance-amount">{formatCurrency(liveBalance ?? (parseFloat(account.balance) || 0))}</div>
           </div>
         </div>
       </div>
