@@ -929,6 +929,15 @@ app.post("/api/plaid/sync_transactions", async (req, res) => {
         error: "userId is required. Please authenticate." 
       });
     }
+    // Set sync status to "syncing"
+    await db.collection('users')
+      .doc(userId)
+      .collection('metadata')
+      .doc('sync')
+      .set({
+        syncStatus: 'syncing',
+        lastSyncStart: admin.firestore.FieldValue.serverTimestamp()
+      }, { merge: true });
 
     // Retrieve all Plaid items for the user
     const items = await getAllPlaidItems(userId);
@@ -1211,6 +1220,18 @@ app.post("/api/plaid/sync_transactions", async (req, res) => {
       deduplicated: deduplicatedCount,
       removed: allRemoved.length
     });
+    // Mark sync as complete with timestamp
+    await db.collection('users')
+      .doc(userId)
+      .collection('metadata')
+      .doc('sync')
+      .set({
+        lastPlaidSync: admin.firestore.FieldValue.serverTimestamp(),
+        lastPlaidSyncDate: new Date().toISOString(),
+        syncStatus: 'idle',
+        lastSyncError: null,
+        transactionCount: txCount
+      }, { merge: true });
 
     res.json({
       success: true,
@@ -1224,7 +1245,21 @@ app.post("/api/plaid/sync_transactions", async (req, res) => {
     });
   } catch (error) {
     logDiagnostic.error('SYNC_TRANSACTIONS', 'Failed to sync transactions', error);
-    
+
+    // Mark sync as failed
+    try {
+      await db.collection('users')
+        .doc(req.body.userId)
+        .collection('metadata')
+        .doc('sync')
+        .set({
+          syncStatus: 'error',
+          lastSyncError: error.message,
+          lastErrorTime: admin.firestore.FieldValue.serverTimestamp()
+        }, { merge: true });
+    } catch (metadataError) {
+      logDiagnostic.error('SYNC_TRANSACTIONS', 'Could not update error status:', metadataError);
+    }
     // Provide more detailed error information
     let errorMessage = "Failed to sync transactions from your bank";
     let statusCode = 500;
