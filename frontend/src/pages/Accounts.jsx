@@ -148,31 +148,50 @@ const Accounts = () => {
         console.error('[AutoSync] Error checking accounts:', error);
         return;
       }
-      
-      try {
-        const lastSync = localStorage.getItem('lastPlaidSync');
-        const now = Date.now();
-        const FIVE_MINUTES = 5 * 60 * 1000;
-        
-        // Auto-sync if no previous sync or data is stale
-        if (!lastSync || (now - parseInt(lastSync)) > FIVE_MINUTES) {
-          console.log('[AutoSync] Data stale, triggering auto-sync...');
-          setAutoSyncing(true);
-          
-          await syncPlaidTransactions(); // Call sync function
-          
-          localStorage.setItem('lastPlaidSync', now.toString());
-          console.log('[AutoSync] Complete');
-        } else {
-          const minutesAgo = Math.floor((now - parseInt(lastSync)) / (60 * 1000));
-          console.log(`[AutoSync] Data fresh (synced ${minutesAgo} min ago), skipping sync`);
-        }
-      } catch (error) {
-        console.error('[AutoSync] Error:', error);
-        // Don't block page load if sync fails
-      } finally {
-        setAutoSyncing(false);
+     // Check Firebase for last sync time (not localStorage)
+    try {
+      // Check if we already synced this session
+      const sessionSync = sessionStorage.getItem(`autoSync_${currentUser.uid}`);
+      if (sessionSync) {
+        console.log('[AutoSync] Already synced this session, skipping');
+        return;
       }
+
+      // Get the REAL last sync time from Firebase
+      const syncDocRef = doc(db, `users/${currentUser.uid}/metadata/sync`);
+      const syncDoc = await getDoc(syncDocRef);
+      
+      const lastSync = syncDoc.exists() 
+        ? syncDoc.data()?.lastPlaidSync?.toMillis() 
+        : 0;
+      
+      const now = Date.now();
+      const ONE_HOUR = 60 * 60 * 1000;
+      const timeSinceSync = now - lastSync;
+
+      console.log('[AutoSync] Last sync was', Math.round(timeSinceSync / 1000 / 60), 'minutes ago');
+
+      // Sync if data is older than 1 hour
+      if (timeSinceSync > ONE_HOUR) {
+        console.log('[AutoSync] Data is stale, syncing now...');
+        setAutoSyncing(true);
+        
+        await syncPlaidTransactions();
+        
+        // Mark this session as synced
+        sessionStorage.setItem(`autoSync_${currentUser.uid}`, Date.now().toString());
+        
+        console.log('[AutoSync] ✅ Sync complete!');
+      } else {
+        console.log('[AutoSync] Data is fresh, no sync needed');
+      }
+
+    } catch (error) {
+      console.error('[AutoSync] Error:', error);
+    } finally {
+      setAutoSyncing(false);
+    } 
+     
     };
     
     // Run auto-sync when user is authenticated and component mounts
