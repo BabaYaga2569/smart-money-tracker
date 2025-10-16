@@ -484,19 +484,30 @@ const Accounts = () => {
 
       if (data.success && data.accounts && data.accounts.length > 0) {
         // Format backend accounts for frontend display
-        const formattedPlaidAccounts = data.accounts.map(account => ({
-          account_id: account.account_id,
-          name: account.name,
-          official_name: account.official_name,
-          type: account.subtype || account.type,
-          balance: account.balances.current.toString(),
-          available: account.balances.available?.toString() || '0',
-          mask: account.mask,
-          isPlaid: true,
-          item_id: account.item_id,
-          institution_name: account.institution_name,
-          institution_id: account.institution_id
-        }));
+        // ✅ Improved mapping logic – reflects pending (uses available first)
+const formattedPlaidAccounts = data.accounts.map(account => {
+  const currentBalance = parseFloat(account.balances?.current ?? 0);
+  const availableBalance = parseFloat(account.balances?.available ?? currentBalance);
+  const liveBalance = availableBalance; // available includes pending
+  const pendingAdjustment = currentBalance - availableBalance; // difference = total pending
+
+  return {
+    account_id: account.account_id ?? '',
+    name: account.name ?? 'Unknown Account',
+    official_name: account.official_name ?? account.name ?? 'Unknown Account',
+    type: account.subtype || account.type || 'checking',
+    balance: liveBalance.toFixed(2), // ✅ main displayed balance
+    available: availableBalance.toFixed(2),
+    current: currentBalance.toFixed(2),
+    pending_adjustment: pendingAdjustment.toFixed(2),
+    mask: account.mask ?? '',
+    isPlaid: true,
+    item_id: account.item_id ?? '',
+    institution_name: account.institution_name ?? data?.institution_name ?? '',
+    institution_id: account.institution_id ?? '',
+  };
+});
+
         
         setPlaidAccounts(formattedPlaidAccounts);
         
@@ -876,18 +887,30 @@ const Accounts = () => {
       if (data?.success && data?.accounts) {
         // Format Plaid accounts for display with null checks
         // IMPORTANT: Do NOT store access_token - it's now stored securely server-side
-        const formattedPlaidAccounts = data.accounts.map((account) => ({
-          account_id: account?.account_id || '',
-          name: account?.name || 'Unknown Account',
-          official_name: account?.official_name || account?.name || 'Unknown Account',
-          type: account?.subtype || account?.type || 'checking',
-          balance: account?.balances?.current?.toString() || '0',
-          available: account?.balances?.available?.toString() || '0',
-          mask: account?.mask || '',
-          institution_name: account?.institution_name || data?.institution_name || '',
-          isPlaid: true,
-          item_id: data.item_id || '',
-        }));
+        // ✅ Improved mapping logic – reflects pending (uses available first)
+const formattedPlaidAccounts = data.accounts.map(account => {
+  const currentBalance = parseFloat(account.balances?.current ?? 0);
+  const availableBalance = parseFloat(account.balances?.available ?? currentBalance);
+  const liveBalance = availableBalance; // available includes pending
+  const pendingAdjustment = currentBalance - availableBalance; // difference = total pending
+
+  return {
+    account_id: account.account_id ?? '',
+    name: account.name ?? 'Unknown Account',
+    official_name: account.official_name ?? account.name ?? 'Unknown Account',
+    type: account.subtype || account.type || 'checking',
+    balance: liveBalance.toFixed(2), // ✅ main displayed balance
+    available: availableBalance.toFixed(2),
+    current: currentBalance.toFixed(2),
+    pending_adjustment: pendingAdjustment.toFixed(2),
+    mask: account.mask ?? '',
+    isPlaid: true,
+    item_id: account.item_id ?? '',
+    institution_name: account.institution_name ?? data?.institution_name ?? '',
+    institution_id: account.institution_id ?? '',
+  };
+});
+
 
         // Save to Firebase
         const settingsDocRef = doc(db, 'users', currentUser.uid, 'settings', 'personal');
