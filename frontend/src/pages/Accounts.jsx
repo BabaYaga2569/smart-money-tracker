@@ -484,10 +484,11 @@ const Accounts = () => {
 
       if (data.success && data.accounts && data.accounts.length > 0) {
         // Format backend accounts for frontend display
-        // ✅ Improved mapping logic – reflects pending (uses available first)
+       // ✅ Improved mapping logic – reflects pending (uses available first) and safely handles null balances
 const formattedPlaidAccounts = data.accounts.map(account => {
-  const currentBalance = parseFloat(account.balances?.current ?? 0);
-  const availableBalance = parseFloat(account.balances?.available ?? currentBalance);
+  const balances = account.balances || {}; // 👈 prevents null crash
+  const currentBalance = parseFloat(balances.current ?? 0);
+  const availableBalance = parseFloat(balances.available ?? currentBalance);
   const liveBalance = availableBalance; // available includes pending
   const pendingAdjustment = currentBalance - availableBalance; // difference = total pending
 
@@ -507,6 +508,7 @@ const formattedPlaidAccounts = data.accounts.map(account => {
     institution_id: account.institution_id ?? '',
   };
 });
+
 
         
         setPlaidAccounts(formattedPlaidAccounts);
@@ -887,10 +889,11 @@ const formattedPlaidAccounts = data.accounts.map(account => {
       if (data?.success && data?.accounts) {
         // Format Plaid accounts for display with null checks
         // IMPORTANT: Do NOT store access_token - it's now stored securely server-side
-        // ✅ Improved mapping logic – reflects pending (uses available first)
+        // ✅ Improved mapping logic – reflects pending (uses available first) and safely handles null balances
 const formattedPlaidAccounts = data.accounts.map(account => {
-  const currentBalance = parseFloat(account.balances?.current ?? 0);
-  const availableBalance = parseFloat(account.balances?.available ?? currentBalance);
+  const balances = account.balances || {}; // 👈 prevents null crash
+  const currentBalance = parseFloat(balances.current ?? 0);
+  const availableBalance = parseFloat(balances.available ?? currentBalance);
   const liveBalance = availableBalance; // available includes pending
   const pendingAdjustment = currentBalance - availableBalance; // difference = total pending
 
@@ -910,6 +913,7 @@ const formattedPlaidAccounts = data.accounts.map(account => {
     institution_id: account.institution_id ?? '',
   };
 });
+
 
 
         // Save to Firebase
