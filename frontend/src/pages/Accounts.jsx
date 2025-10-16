@@ -47,17 +47,36 @@ const Accounts = () => {
 
  // eslint-disable-next-line react-hooks/exhaustive-deps
  useEffect(() => {
-  // Load immediately - don't wait for Plaid
-  loadAccountsAndTransactions();
+  // ✅ FIX: Force fresh balances on page load
+  const loadWithFreshBalances = async () => {
+    try {
+      // Step 1: Tell Plaid to check banks NOW (only if user is logged in)
+      if (currentUser) {
+        const apiUrl = import.meta.env.VITE_API_URL || 'https://smart-money-tracker-09ks.onrender.com';
+        await fetch(`${apiUrl}/api/plaid/refresh_transactions`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ userId: currentUser.uid })
+        }).catch(err => console.log('Refresh skipped:', err));
+        
+        // Step 2: Wait 2 seconds for Plaid to fetch fresh data
+        await new Promise(resolve => setTimeout(resolve, 2000));
+      }
+      
+      // Step 3: Load the fresh balances
+      await loadAccountsAndTransactions();
+    } catch (error) {
+      console.error('Fresh balance load failed:', error);
+      // Still load cached data if refresh fails
+      await loadAccountsAndTransactions();
+    }
+  };
+  
+  loadWithFreshBalances();
   
   // Check Plaid in background (non-blocking)
   checkPlaidConnection().catch(err => {
     console.error('Plaid check failed:', err);
-  });
-  
-  // Check connection health on page load
-  checkConnectionHealth().catch(err => {
-    console.error('Health check failed:', err);
   });
   
   const unsubscribe = PlaidConnectionManager.subscribe((status) => {
