@@ -49,7 +49,9 @@ const Accounts = () => {
  useEffect(() => {
   // ✅ FIX: Force fresh balances on page load
   const loadWithFreshBalances = async () => {
-    try {
+  // Clear session sync flag to force fresh balance check
+  sessionStorage.removeItem(`autoSync_${currentUser?.uid}`);
+  try {
       // Step 1: Tell Plaid to check banks NOW (only if user is logged in)
       if (currentUser) {
         const apiUrl = import.meta.env.VITE_API_URL || 'https://smart-money-tracker-09ks.onrender.com';
