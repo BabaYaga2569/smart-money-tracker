@@ -94,7 +94,7 @@ const Accounts = () => {
   return () => {
     unsubscribe();
   };
-}, []);
+}, [currentUser]);
 
   // Recalculate projected balance when transactions change
   useEffect(() => {
