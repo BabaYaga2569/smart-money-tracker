@@ -310,9 +310,11 @@ async function deduplicateAndSaveAccounts(userId, newAccounts, institutionName, 
     mask: account.mask,
     type: account.type,
     subtype: account.subtype,
-    balance: account.balances.current || account.balances.available || 0,
-    institution_name: institutionName,
-    item_id: itemId
+    balance: account.balances.available || account.balances.current || 0,
+current_balance: account.balances.current || 0,
+available_balance: account.balances.available || 0,
+institution_name: institutionName,
+item_id: itemId
   }));
 
   // Deduplicate by institution + mask
