@@ -1284,9 +1284,13 @@ app.post("/api/plaid/refresh_transactions", async (req, res) => {
     const refreshResults = [];
     for (const item of items) {
       try {
-        const response = await plaidClient.transactionsRefresh({
-          access_token: item.accessToken
-        });
+        const response = await plaidClient.transactionsSync({
+  access_token: item.accessToken,
+  options: {
+    include_personal_finance_category: true,
+    count: 500
+  }
+});
 
         refreshResults.push({
           item_id: item.itemId,
