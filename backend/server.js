@@ -817,67 +817,7 @@ app.get("/api/accounts", async (req, res) => {
         // Continue with other items even if one fails
       }
     }
-
-    const txCount = allTransactions.length;
-    const totalTx = allTransactions.length;
-    logDiagnostic.info('GET_TRANSACTIONS', `Successfully fetched ${txCount} transactions from ${items.length} banks via transactionsSync`);
-    logDiagnostic.response(endpoint, 200, { 
-      success: true, 
-      transaction_count: txCount,
-      total_transactions: totalTx 
-    });
-
-    res.json({
-      success: true,
-      transactions: allTransactions,
-      accounts: allAccounts,
-      total_transactions: totalTx
-    });
-    catch (error) {
-    logDiagnostic.error('GET_TRANSACTIONS', 'Failed to fetch transactions', error);
-    
-    // Provide more detailed error information
-    let errorMessage = "Failed to fetch transactions from your bank";
-    let statusCode = 500;
-    
-    if (error.response) {
-      // Plaid API error
-      const plaidError = error.response.data;
-      statusCode = error.response.status;
-      
-      logDiagnostic.error('GET_TRANSACTIONS', `Plaid API error: ${plaidError.error_code}`, {
-        error_code: plaidError.error_code,
-        error_type: plaidError.error_type,
-        error_message: plaidError.error_message
-      });
-      
-      if (plaidError.error_code === 'ITEM_LOGIN_REQUIRED') {
-        errorMessage = "Your bank connection has expired. Please reconnect your account.";
-        statusCode = 401;
-      } else if (plaidError.error_code === 'INVALID_ACCESS_TOKEN') {
-        errorMessage = "Invalid access token. Please reconnect your bank account.";
-        statusCode = 401;
-      } else if (plaidError.error_code === 'PRODUCT_NOT_READY') {
-        errorMessage = "Transaction data is not yet available. Please try again in a few moments.";
-        statusCode = 503;
-      } else if (plaidError.error_message) {
-        errorMessage = `Bank error: ${plaidError.error_message}`;
-      }
-    } else if (error.message) {
-      errorMessage = error.message;
-    }
-    
-    logDiagnostic.response(endpoint, statusCode, { error: errorMessage });
-    
-    res.status(statusCode).json({ 
-      success: false,
-      error: errorMessage,
-      error_code: error.response?.data?.error_code,
-      error_type: error.response?.data?.error_type
-    });
-  }
-});
-
+   
 // Sync transactions to Firebase (includes pending transactions)
 app.post("/api/plaid/sync_transactions", async (req, res) => {
   const endpoint = "/api/plaid/sync_transactions";
