@@ -833,7 +833,7 @@ app.get("/api/accounts", async (req, res) => {
       accounts: allAccounts,
       total_transactions: totalTx
     });
-  } catch (error) {
+    catch (error) {
     logDiagnostic.error('GET_TRANSACTIONS', 'Failed to fetch transactions', error);
     
     // Provide more detailed error information
