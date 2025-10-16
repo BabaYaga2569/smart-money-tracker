@@ -55,14 +55,16 @@ const Accounts = () => {
       // Step 1: Tell Plaid to check banks NOW (only if user is logged in)
       if (currentUser) {
         const apiUrl = import.meta.env.VITE_API_URL || 'https://smart-money-tracker-09ks.onrender.com';
+        console.log('[REFRESH] Requesting fresh balances from Plaid...');
         await fetch(`${apiUrl}/api/plaid/refresh_transactions`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ userId: currentUser.uid })
+          body: JSON.stringify({ userId: currentUser.uid })          
         }).catch(err => console.log('Refresh skipped:', err));
+        console.log('[REFRESH] Waiting 6 seconds for Plaid to fetch fresh data...');
         
         // Step 2: Wait 2 seconds for Plaid to fetch fresh data
-        await new Promise(resolve => setTimeout(resolve, 2000));
+        await new Promise(resolve => setTimeout(resolve, 6000));
       }
       
       // Step 3: Load the fresh balances
