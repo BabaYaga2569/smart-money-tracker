@@ -715,49 +715,7 @@ app.get("/api/accounts", async (req, res) => {
       });
     }
 
-    // Fetch accounts from all items
-    let allAccounts = [];
-    for (const item of items) {
-      try {
-        // Use transactionsSync for fresher balance data (same approach as Rocket Money)
-        // Why transactionsSync instead of accountsBalanceGet:
-        // - Plaid prioritizes transaction sync endpoints (called more frequently by apps)
-        // - Transaction sync has less aggressive caching (updates more often)
-        // - Returns both transactions AND current balance in one call
-        // - Balance data comes from transaction stream (more up-to-date)
-        const syncResponse = await plaidClient.transactionsSync({
-          access_token: item.accessToken,
-          options: {
-            include_personal_finance_category: true
-          }
-        });
-        
-        // Extract accounts with fresh balance from sync response
-        // transactionsSync returns more up-to-date balance data than accountsBalanceGet
-        const accountsWithInstitution = syncResponse.data.accounts.map(account => ({
-          account_id: account.account_id,
-          name: account.name,
-          official_name: account.official_name,
-          type: account.type,
-          subtype: account.subtype,
-          mask: account.mask,
-          balances: account.balances, // This balance is FRESH from transaction sync!
-          institution_name: item.institutionName,
-          institution_id: item.institutionId,
-          item_id: item.itemId
-        }));
-        
-        allAccounts.push(...accountsWithInstitution);
-      } catch (itemError) {
-        console.error(`Error getting accounts for item ${item.itemId}:`, itemError);
-        // Continue with other items even if one fails
-      }
-    }
-
-    res.json({
-      success: true,
-      accounts: allAccounts,
-    });
+    
   } catch (error) {
     console.error("Error getting accounts:", error);
     
