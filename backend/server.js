@@ -692,6 +692,7 @@ app.post("/api/plaid/get_balances", async (req, res) => {
 });
 
 // Get accounts - provides account list for frontend (gracefully handles missing credentials)
+// Get accounts - provides account list for frontend (gracefully handles missing credentials)
 app.get("/api/accounts", async (req, res) => {
   try {
     // Extract userId from query parameter or header
@@ -715,11 +716,43 @@ app.get("/api/accounts", async (req, res) => {
       });
     }
 
-    
+    // Fetch accounts from all items
+    let allAccounts = [];
+    for (const item of items) {
+      try {
+        const syncResponse = await plaidClient.transactionsSync({
+          access_token: item.accessToken,
+          options: {
+            include_personal_finance_category: true
+          }
+        });
+        
+        const accountsWithInstitution = syncResponse.data.accounts.map(account => ({
+          account_id: account.account_id,
+          name: account.name,
+          official_name: account.official_name,
+          type: account.type,
+          subtype: account.subtype,
+          mask: account.mask,
+          balances: account.balances,
+          institution_name: item.institutionName,
+          institution_id: item.institutionId,
+          item_id: item.itemId
+        }));
+        
+        allAccounts.push(...accountsWithInstitution);
+      } catch (itemError) {
+        console.error(`Error getting accounts for item ${item.itemId}:`, itemError);
+      }
+    }
+
+    res.json({
+      success: true,
+      accounts: allAccounts,
+    });
   } catch (error) {
     console.error("Error getting accounts:", error);
     
-    // Return graceful error instead of 500
     res.status(200).json({ 
       success: false,
       accounts: [],
@@ -728,33 +761,6 @@ app.get("/api/accounts", async (req, res) => {
     });
   }
 });
-
-// Get transactions for bill matching
-app.post("/api/plaid/get_transactions", async (req, res) => {
-  const endpoint = "/api/plaid/get_transactions";
-  logDiagnostic.request(endpoint, req.body);
-  
-  try {
-    const { userId, start_date, end_date } = req.body;
-
-    if (!userId) {
-      logDiagnostic.error('GET_TRANSACTIONS', 'Missing userId in request');
-      return res.status(400).json({ 
-        success: false,
-        error: "userId is required. Please authenticate." 
-      });
-    }
-
-    // Retrieve all Plaid items for the user
-    const items = await getAllPlaidItems(userId);
-    if (!items || items.length === 0) {
-      logDiagnostic.error('GET_TRANSACTIONS', 'No Plaid credentials found for user');
-      return res.status(404).json({ 
-        success: false,
-        error: "No Plaid connection found. Please connect your bank account first.",
-        error_code: "NO_CREDENTIALS"
-      });
-    }
 
     // Default to last 30 days if no dates provided
     const endDate = end_date || new Date().toISOString().split('T')[0];
