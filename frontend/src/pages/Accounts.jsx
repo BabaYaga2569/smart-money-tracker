@@ -49,32 +49,47 @@ const Accounts = () => {
  useEffect(() => {
   // ✅ FIX: Force fresh balances on page load
   const loadWithFreshBalances = async () => {
-  // Clear session sync flag to force fresh balance check
-  sessionStorage.removeItem(`autoSync_${currentUser?.uid}`);
-  try {
-      // Step 1: Tell Plaid to check banks NOW (only if user is logged in)
-      if (currentUser) {
-        const apiUrl = import.meta.env.VITE_API_URL || 'https://smart-money-tracker-09ks.onrender.com';
-        console.log('[REFRESH] Requesting fresh balances from Plaid...');
-        await fetch(`${apiUrl}/api/plaid/refresh_transactions`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ userId: currentUser.uid })          
-        }).catch(err => console.log('Refresh skipped:', err));
-        console.log('[REFRESH] Waiting 6 seconds for Plaid to fetch fresh data...');
-        
-        // Step 2: Wait 2 seconds for Plaid to fetch fresh data
-        await new Promise(resolve => setTimeout(resolve, 6000));
-      }
+      // Clear session sync flag to force fresh balance check
+      sessionStorage.removeItem(`autoSync_${currentUser?.uid}`);
       
-      // Step 3: Load the fresh balances
-      await loadAccountsAndTransactions();
-    } catch (error) {
-      console.error('Fresh balance load failed:', error);
-      // Still load cached data if refresh fails
-      await loadAccountsAndTransactions();
-    }
-  };
+      // Check if we need to refresh (only if data is >10 minutes old)
+      const lastRefreshTime = localStorage.getItem(`lastPlaidRefresh_${currentUser?.uid}`);
+      const now = Date.now();
+      const TEN_MINUTES = 10 * 60 * 1000;
+      const needsRefresh = !lastRefreshTime || (now - parseInt(lastRefreshTime)) > TEN_MINUTES;
+      
+      if (needsRefresh && currentUser) {
+        console.log('[REFRESH] Data is stale (>10 min), refreshing BOTH balances and transactions...');
+        
+        const apiUrl = import.meta.env.VITE_API_URL || 'https://smart-money-tracker-09ks.onrender.com';
+        
+        // Fire BOTH refresh requests in parallel (don't wait for them)
+        Promise.all([
+          // Refresh balances
+          fetch(`${apiUrl}/api/accounts?userId=${currentUser.uid}&refresh=true&_t=${Date.now()}`)
+            .then(() => console.log('[REFRESH] ✅ Balance refresh sent'))
+            .catch(err => console.log('[REFRESH] ❌ Balance refresh failed:', err)),
+          
+          // Refresh transactions
+          fetch(`${apiUrl}/api/plaid/sync_transactions`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ userId: currentUser.uid })
+          })
+            .then(() => console.log('[REFRESH] ✅ Transaction refresh sent'))
+            .catch(err => console.log('[REFRESH] ❌ Transaction refresh failed:', err))
+        ]).then(() => {
+          // Mark as refreshed AFTER both complete
+          localStorage.setItem(`lastPlaidRefresh_${currentUser.uid}`, now.toString());
+        });
+        
+        // Load cached data immediately, fresh data will come via real-time listener
+        await loadAccountsAndTransactions();
+      } else {
+        console.log('[REFRESH] Data is fresh (<10 min old), loading from cache');
+        await loadAccountsAndTransactions();
+      }
+    };
   
   loadWithFreshBalances();
   
