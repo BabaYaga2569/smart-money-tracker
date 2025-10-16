@@ -1285,12 +1285,12 @@ app.post("/api/plaid/refresh_transactions", async (req, res) => {
     for (const item of items) {
       try {
         const response = await plaidClient.transactionsSync({
-  access_token: item.accessToken,
-  options: {
-    include_personal_finance_category: true,
-    count: 500
-  }
-});
+          access_token: item.accessToken,
+          options: {
+            include_personal_finance_category: true,
+            count: 500
+          }
+        });
 
         refreshResults.push({
           item_id: item.itemId,
@@ -1387,6 +1387,27 @@ app.post("/api/plaid/webhook", async (req, res) => {
               include_personal_finance_category: true
             }
           });
+
+          // ✅ ADD LOGGING HERE TO SEE WHAT PLAID SENDS:
+          logDiagnostic.info('WEBHOOK', `Raw Plaid response for ${itemData.institutionName}:`, {
+            total_added: syncResponse.data.added.length,
+            total_modified: syncResponse.data.modified.length,
+            total_removed: syncResponse.data.removed.length,
+            pending_count: syncResponse.data.added.filter(tx => tx.pending === true).length
+          });
+
+          // Log first few transactions to see structure
+          if (syncResponse.data.added.length > 0) {
+            syncResponse.data.added.slice(0, 3).forEach(tx => {
+              logDiagnostic.info('WEBHOOK', `Transaction sample:`, {
+                merchant: tx.merchant_name || tx.name,
+                amount: tx.amount,
+                pending: tx.pending,
+                date: tx.date,
+                account_id: tx.account_id
+              });
+            });
+          }
           
           logDiagnostic.info('WEBHOOK', 'Received transaction data from Plaid', {
             accounts: syncResponse.data.accounts.length,
