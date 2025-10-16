@@ -1342,28 +1342,31 @@ const formattedPlaidAccounts = data.accounts.map(account => {
               
               <div className="account-balances">
                 {(showBalanceType === 'live' || showBalanceType === 'both') && (
-                  <div className="balance-row">
-                    <span className="balance-label" title="Current balance from your bank">
-                      🔗 Live Balance
-                    </span>
-                    <span className="balance-amount">{formatCurrency(liveBalance)}</span>
-                  </div>
-                )}
-                {(showBalanceType === 'projected' || showBalanceType === 'both') && (
-                  <div className="balance-row projected">
-                    <span className="balance-label" title="Live balance adjusted for manual transactions">
-                      📊 Projected Balance
-                    </span>
-                    <span className="balance-amount">{formatCurrency(projectedBalance)}</span>
-                  </div>
-                )}
-                {showBalanceType === 'both' && hasDifference && (
-                  <div className="balance-row difference">
-                    <small className="difference-text">
-                      {formatBalanceDifference(getBalanceDifference(projectedBalance, liveBalance))}
-                    </small>
-                  </div>
-                )}
+  <>
+    <div className="balance-row">
+      <span className="balance-label" title="What you can spend (includes pending)">
+        💳 Available Balance
+      </span>
+      <span className="balance-amount">{formatCurrency(parseFloat(account.available || liveBalance))}</span>
+    </div>
+    <div className="balance-row" style={{ fontSize: '0.9em', opacity: 0.8 }}>
+      <span className="balance-label" title="Ledger balance (before pending)">
+        📖 Current Balance
+      </span>
+      <span className="balance-amount">{formatCurrency(parseFloat(account.current || liveBalance))}</span>
+    </div>
+    {account.pending_adjustment && parseFloat(account.pending_adjustment) !== 0 && (
+      <div className="balance-row" style={{ fontSize: '0.85em', opacity: 0.7 }}>
+        <span className="balance-label" title="Total pending charges">
+          ⏳ Pending
+        </span>
+        <span className="balance-amount" style={{ color: '#f59e0b' }}>
+          {formatCurrency(parseFloat(account.pending_adjustment))}
+        </span>
+      </div>
+    )}
+  </>
+)}
               </div>
               
               <div className="account-actions">
