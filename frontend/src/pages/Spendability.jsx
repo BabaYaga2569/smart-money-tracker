@@ -138,9 +138,11 @@ if (settingsData.nextPaydayOverride) {
   console.log('Spendability: Calculating payday from schedules');
 
 // ✅ FIX: Read from the ACTUAL Settings data structure
+// Check multiple possible locations for lastPayDate for backward compatibility
+const lastPayDateValue = settingsData.lastPayDate || settingsData.yoursSchedule?.lastPaydate;
 const yoursSchedule = {
-  lastPaydate: settingsData.lastPayDate,  // ← FIXED: Read from correct location
-  amount: parseFloat(settingsData.payAmount) || 0  // ← FIXED: Read from correct location
+  lastPaydate: lastPayDateValue,
+  amount: parseFloat(settingsData.payAmount || settingsData.yoursSchedule?.amount) || 0
 };
 
 const spouseSchedule = {

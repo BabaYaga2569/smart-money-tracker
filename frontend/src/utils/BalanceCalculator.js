@@ -68,15 +68,17 @@ export const calculateTotalProjectedBalance = (accounts, transactions) => {
   
   console.log('[BalanceCalculator] Total pending transactions:', pendingTxs.length);
   
-  // Calculate total pending amount
+  // Calculate total pending amount using proper accounting convention
+  // Negative amount = Expense (decreases balance)
+  // Positive amount = Income (increases balance)
   const pendingTotal = pendingTxs.reduce((sum, tx) => {
-    const amount = Math.abs(parseFloat(tx.amount) || 0);
+    const amount = parseFloat(tx.amount) || 0;
     return sum + amount;
   }, 0);
   
-  console.log('[BalanceCalculator] Total pending amount:', pendingTotal);
+  console.log('[BalanceCalculator] Total pending amount (with signs):', pendingTotal);
   
-  const projectedTotal = liveTotal - pendingTotal;
+  const projectedTotal = liveTotal + pendingTotal;
   console.log('[BalanceCalculator] Projected total:', projectedTotal);
   
   return projectedTotal;
