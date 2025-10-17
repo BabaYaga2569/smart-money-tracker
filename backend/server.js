@@ -391,12 +391,15 @@ async function updateAccountBalances(userId, accounts) {
       updatedCount++;
       logDiagnostic.info('UPDATE_BALANCES', `Updating balance for account: ${existingAcc.name} (...${existingAcc.mask})`);
       
+      // Safely access balances (handle null/undefined)
+      const balances = freshAccount.balances || {};
+      
       // Update balance fields with fresh data
       return {
         ...existingAcc,
-        balance: freshAccount.balances.available || freshAccount.balances.current || 0,
-        current_balance: freshAccount.balances.current || 0,
-        available_balance: freshAccount.balances.available || 0,
+        balance: balances.available || balances.current || 0,
+        current_balance: balances.current || 0,
+        available_balance: balances.available || 0,
         lastUpdated: new Date().toISOString()
       };
     }
