@@ -1908,7 +1908,7 @@ app.put("/api/transactions/:transactionId", async (req, res) => {
       .doc(userId)
       .collection('transactions')
       .doc(transactionId);
-    try {
+    
     const transactionDoc = await transactionRef.get();
     
     if (!transactionDoc.exists) {
@@ -1918,14 +1918,14 @@ app.put("/api/transactions/:transactionId", async (req, res) => {
     const existingTransaction = transactionDoc.data();
     
     if (existingTransaction.source === 'plaid') {
-  if (merchant_name !== undefined || amount !== undefined || 
-      date !== undefined || notes !== undefined) {
-    return res.status(403).json({ 
-      error: "Can only edit category for Plaid transactions.",
-      error_code: "PLAID_READ_ONLY"
-    });
-  }
-} else {
+      if (merchant_name !== undefined || amount !== undefined || 
+          date !== undefined || notes !== undefined) {
+        return res.status(403).json({ 
+          error: "Can only edit category for Plaid transactions.",
+          error_code: "PLAID_READ_ONLY"
+        });
+      }
+    }
     
     const updates = {
       updated_at: admin.firestore.FieldValue.serverTimestamp()
@@ -1935,9 +1935,9 @@ app.put("/api/transactions/:transactionId", async (req, res) => {
     if (amount !== undefined) updates.amount = amount;
     if (date !== undefined) updates.date = date;
     if (category !== undefined) {
-  updates.category = category;
-  updates.category_override = true;
-}
+      updates.category = category;
+      updates.category_override = true;
+    }
     if (notes !== undefined) updates.notes = notes;
     
     await transactionRef.update(updates);
