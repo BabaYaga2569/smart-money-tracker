@@ -877,29 +877,37 @@ useEffect(() => {
   };
 
   const handleEditTransaction = (transaction) => {
-    if (transaction.source === 'plaid') {
-      showNotification('❌ Cannot edit Plaid transactions. They sync from your bank.', 'error');
-      return;
-    }
-    
-    setEditingTransaction(transaction.id);
-    setEditFormData({
-      merchant_name: transaction.merchant_name || transaction.name || transaction.description || '',
-      amount: Math.abs(transaction.amount || 0),
-      date: transaction.date || '',
-      category: transaction.category || '',
-      notes: transaction.notes || ''
-    });
-  };
+  if (transaction.source === 'plaid') {
+    showNotification('❌ Cannot edit Plaid transactions. They sync from your bank.', 'error');
+    return;
+  }
+  
+  setEditingTransaction(transaction.id);
+  setEditFormData({
+    merchant_name: transaction.merchant_name || transaction.name || transaction.description || '',
+    amount: Math.abs(transaction.amount || 0),
+    date: transaction.date || '',
+    category: transaction.category || '',
+    notes: transaction.notes || ''
+  });
+};
+```
+
+**In your GitHub editor, use Find (Ctrl+F) and search for:**
+```
+handleEditTransaction
 
   const handleSaveEdit = async () => {
-    if (!editingTransaction) return;
-    
-    // Find the transaction to determine its type
-    const transaction = transactions.find(t => t.id === editingTransaction);
-    if (!transaction) return;
-    
-    // Preserve the sign of the amount based on transaction type
+  if (!editingTransaction) return;
+  
+  const transaction = transactions.find(t => t.id === editingTransaction);
+  if (!transaction) return;
+  
+  if (editFormData.isPlaidTransaction) {
+    await updateTransaction(editingTransaction, {
+      category: editFormData.category
+    });
+  } else {
     const finalAmount = transaction.amount < 0 
       ? -Math.abs(editFormData.amount)
       : Math.abs(editFormData.amount);
@@ -911,12 +919,38 @@ useEffect(() => {
       category: editFormData.category,
       notes: editFormData.notes
     });
-  };
+  }
+};
 
   const handleCancelEdit = () => {
     setEditingTransaction(null);
     setEditFormData({});
   };
+  const handleBulkCategorize = async () => {
+  try {
+    setSaving(true);
+    const API_URL = import.meta.env.VITE_API_URL || 'https://smart-money-tracker-backend.onrender.com';
+    
+    const response = await fetch(`${API_URL}/api/transactions/bulk-categorize`, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${await currentUser.getIdToken()}`,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({ userId: currentUser.uid })
+    });
+    
+    const data = await response.json();
+    if (!response.ok) throw new Error(data.error);
+    
+    await fetchTransactions();
+    showNotification(`✅ ${data.message}`, 'success');
+  } catch (error) {
+    showNotification(`❌ ${error.message}`, 'error');
+  } finally {
+    setSaving(false);
+  }
+};
 
   const deleteTransaction = async (transactionId, transaction) => {
     if (!window.confirm('Are you sure you want to delete this transaction?')) {
@@ -1980,7 +2014,14 @@ useEffect(() => {
         <div className="transactions-header">
           <h3>Recent Transactions</h3>
           <p>Showing {filteredTransactions.length} of {transactions.length} transactions</p>
-        </div>
+        </div>  
+        <button 
+  className="btn-categorize-all"
+  onClick={handleBulkCategorize}
+  disabled={saving || loading}
+>
+  🤖 Categorize All
+</button>
         
         {filteredTransactions.length === 0 ? (
           <div className="no-transactions">
