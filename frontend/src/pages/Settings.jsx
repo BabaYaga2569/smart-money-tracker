@@ -118,6 +118,10 @@ const Settings = () => {
           ...paySchedules,
           spouse: spouseSchedule  // Use enhanced version with dates guaranteed
         },
+        // 🔥 CRITICAL FIX: Save pay schedule data at root level for Spendability.jsx
+        lastPayDate: paySchedules.yours.lastPaydate,
+        payAmount: paySchedules.yours.amount,
+        spousePayAmount: spouseSchedule.amount,
         bankAccounts,
         bills: bills.filter(bill => bill.name && bill.amount),
         preferences,
