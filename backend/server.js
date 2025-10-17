@@ -1908,7 +1908,7 @@ app.put("/api/transactions/:transactionId", async (req, res) => {
       .doc(userId)
       .collection('transactions')
       .doc(transactionId);
-    
+    try {
     const transactionDoc = await transactionRef.get();
     
     if (!transactionDoc.exists) {
