@@ -354,6 +354,76 @@ item_id: itemId
 }
 
 /**
+ * Update account balances in Firebase settings/personal collection
+ * This function only updates balances for existing accounts, doesn't add/remove accounts
+ * @param {string} userId - User's UID
+ * @param {Array} accounts - Array of accounts with fresh balance data from Plaid
+ * @returns {Promise<Object>} Result with updated count
+ */
+async function updateAccountBalances(userId, accounts) {
+  if (!userId || !Array.isArray(accounts)) {
+    throw new Error('Invalid parameters for updateAccountBalances');
+  }
+
+  logDiagnostic.info('UPDATE_BALANCES', `Updating balances for ${accounts.length} accounts for user: ${userId}`);
+
+  const settingsRef = db.collection('users').doc(userId)
+    .collection('settings').doc('personal');
+
+  // Get current settings
+  const settingsDoc = await settingsRef.get();
+  const currentSettings = settingsDoc.exists ? settingsDoc.data() : {};
+  const existingPlaidAccounts = currentSettings.plaidAccounts || [];
+
+  if (existingPlaidAccounts.length === 0) {
+    logDiagnostic.info('UPDATE_BALANCES', 'No existing accounts to update');
+    return { updated: 0, total: 0 };
+  }
+
+  let updatedCount = 0;
+
+  // Update balances for matching accounts
+  const updatedPlaidAccounts = existingPlaidAccounts.map(existingAcc => {
+    // Find matching account in fresh data by account_id
+    const freshAccount = accounts.find(acc => acc.account_id === existingAcc.account_id);
+    
+    if (freshAccount) {
+      updatedCount++;
+      logDiagnostic.info('UPDATE_BALANCES', `Updating balance for account: ${existingAcc.name} (...${existingAcc.mask})`);
+      
+      // Safely access balances (handle null/undefined)
+      const balances = freshAccount.balances || {};
+      
+      // Update balance fields with fresh data
+      return {
+        ...existingAcc,
+        balance: balances.available || balances.current || 0,
+        current_balance: balances.current || 0,
+        available_balance: balances.available || 0,
+        lastUpdated: new Date().toISOString()
+      };
+    }
+    
+    // Keep existing account unchanged if no fresh data
+    return existingAcc;
+  });
+
+  // Update settings/personal with fresh balances
+  await settingsRef.set({
+    ...currentSettings,
+    plaidAccounts: updatedPlaidAccounts,
+    lastBalanceUpdate: admin.firestore.FieldValue.serverTimestamp()
+  }, { merge: true });
+
+  logDiagnostic.info('UPDATE_BALANCES', `Updated ${updatedCount} account balances`);
+
+  return {
+    updated: updatedCount,
+    total: updatedPlaidAccounts.length
+  };
+}
+
+/**
  * Delete Plaid credentials from Firestore
  * @param {string} userId - User's UID
  * @param {string} itemId - Optional Plaid item ID. If not provided, deletes all items
@@ -673,6 +743,16 @@ app.post("/api/plaid/get_balances", async (req, res) => {
 
     const accountCount = allAccounts.length;
     logDiagnostic.info('GET_BALANCES', `Successfully fetched balances for ${accountCount} accounts from ${items.length} banks`);
+    
+    // Update account balances in Firebase settings/personal collection
+    try {
+      const updateResult = await updateAccountBalances(userId, allAccounts);
+      logDiagnostic.info('GET_BALANCES', `Persisted balances to Firebase: ${updateResult.updated} accounts updated`);
+    } catch (updateError) {
+      logDiagnostic.error('GET_BALANCES', 'Failed to persist balances to Firebase', updateError);
+      // Continue anyway - don't fail the request if Firebase update fails
+    }
+    
     logDiagnostic.response(endpoint, 200, { success: true, account_count: accountCount, item_count: items.length });
 
     res.json({
@@ -754,6 +834,15 @@ app.get("/api/accounts", async (req, res) => {
         console.error(`Error getting accounts for item ${item.itemId}:`, itemError);
         // Continue with other items even if one fails
       }
+    }
+
+    // Update account balances in Firebase settings/personal collection
+    try {
+      const updateResult = await updateAccountBalances(userId, allAccounts);
+      logDiagnostic.info('GET_ACCOUNTS', `Persisted balances to Firebase: ${updateResult.updated} accounts updated`);
+    } catch (updateError) {
+      logDiagnostic.error('GET_ACCOUNTS', 'Failed to persist balances to Firebase', updateError);
+      // Continue anyway - don't fail the request if Firebase update fails
     }
 
     res.json({
