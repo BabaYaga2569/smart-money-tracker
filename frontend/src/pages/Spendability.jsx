@@ -135,42 +135,44 @@ if (settingsData.nextPaydayOverride) {
   nextPayday = payCycleData.date;
   daysUntilPayday = payCycleData.daysUntil || getDaysUntilDateInPacific(nextPayday);
 } else {
-  console.log('Spendability: Calculating payday from schedules', {
-    yoursAmount: settingsData.paySchedules?.yours?.amount,
-    spouseAmount: settingsData.paySchedules?.spouse?.amount,
-    lastPaydate: settingsData.paySchedules?.yours?.lastPaydate
-  });
-  
- const result = PayCycleCalculator.calculateNextPayday(
-  { 
-    lastPaydate: settingsData.paySchedules?.yours?.lastPaydate, 
-    amount: settingsData.paySchedules?.yours?.amount || 0 
-  },
-  { 
-    type: settingsData.paySchedules?.spouse?.type || 'bi-monthly',
-    amount: settingsData.paySchedules?.spouse?.amount || 0,
-    dates: settingsData.paySchedules?.spouse?.dates || [15, 30]  // 🔥 THIS IS WHAT'S MISSING!
-  }
-);
-  
-  console.log('Spendability: Payday calculation result', result);
-  nextPayday = result.date;
-  daysUntilPayday = result.daysUntil;
+  console.log('Spendability: Calculating payday from schedules');
 
-  // 📅 PAYDAY CALCULATION DEBUG
-  console.log('📅 PAYDAY CALCULATION DEBUG:', {
-    yourSchedule: {
-      lastPaydate: settingsData.paySchedules?.yours?.lastPaydate,
-      amount: settingsData.paySchedules?.yours?.amount
-    },
-    spouseSchedule: {
-      type: settingsData.paySchedules?.spouse?.type,
-      amount: settingsData.paySchedules?.spouse?.amount
-    },
-    nextPayday: nextPayday,
-    daysUntilPayday: daysUntilPayday,
-    source: result.source || 'Check what PayCycleCalculator returned'
-  });
+// ✅ FIX: Read from the ACTUAL Settings data structure
+const yoursSchedule = {
+  lastPaydate: settingsData.lastPayDate,  // ← FIXED: Read from correct location
+  amount: parseFloat(settingsData.payAmount) || 0  // ← FIXED: Read from correct location
+};
+
+const spouseSchedule = {
+  type: 'bi-monthly',  // 15th & 30th
+  amount: parseFloat(settingsData.spousePayAmount) || 0,
+  dates: [15, 30]
+};
+
+console.log('Spendability: Using schedules', {
+  yours: yoursSchedule,
+  spouse: spouseSchedule,
+  rawSettingsData: {
+    lastPayDate: settingsData.lastPayDate,
+    payAmount: settingsData.payAmount,
+    spousePayAmount: settingsData.spousePayAmount
+  }
+});
+
+const result = PayCycleCalculator.calculateNextPayday(yoursSchedule, spouseSchedule);
+
+console.log('Spendability: Payday calculation result', result);
+nextPayday = result.date;
+daysUntilPayday = result.daysUntil;
+
+// 📅 PAYDAY CALCULATION DEBUG
+console.log('📅 PAYDAY CALCULATION DEBUG:', {
+  yourSchedule: yoursSchedule,
+  spouseSchedule: spouseSchedule,
+  nextPayday: nextPayday,
+  daysUntilPayday: daysUntilPayday,
+  source: result.source || 'Check what PayCycleCalculator returned'
+});
 }      
  
       const bills = settingsData.bills || [];
