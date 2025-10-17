@@ -8,10 +8,15 @@ import { calculateTotalProjectedBalance, getBalanceDifference, formatBalanceDiff
 import PlaidConnectionManager from '../utils/PlaidConnectionManager';
 import './Accounts.css';
 import { useAuth } from '../contexts/AuthContext';
+import { useSmartBalanceSync } from '../hooks/useSmartBalanceSync';
 
 const Accounts = () => {
   const { currentUser } = useAuth();
   const navigate = useNavigate();
+  
+  // Smart background balance sync (runs automatically)
+  useSmartBalanceSync(currentUser?.uid);
+  
   const [loading, setLoading] = useState(true);
   const [accounts, setAccounts] = useState({});
   const [totalBalance, setTotalBalance] = useState(0);
