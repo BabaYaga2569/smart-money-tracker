@@ -1918,11 +1918,14 @@ app.put("/api/transactions/:transactionId", async (req, res) => {
     const existingTransaction = transactionDoc.data();
     
     if (existingTransaction.source === 'plaid') {
-      return res.status(403).json({ 
-        error: "Cannot edit Plaid transactions",
-        error_code: "PLAID_READ_ONLY"
-      });
-    }
+  if (merchant_name !== undefined || amount !== undefined || 
+      date !== undefined || notes !== undefined) {
+    return res.status(403).json({ 
+      error: "Can only edit category for Plaid transactions.",
+      error_code: "PLAID_READ_ONLY"
+    });
+  }
+} else {
     
     const updates = {
       updated_at: admin.firestore.FieldValue.serverTimestamp()
@@ -1931,7 +1934,10 @@ app.put("/api/transactions/:transactionId", async (req, res) => {
     if (merchant_name !== undefined) updates.merchant_name = merchant_name;
     if (amount !== undefined) updates.amount = amount;
     if (date !== undefined) updates.date = date;
-    if (category !== undefined) updates.category = category;
+    if (category !== undefined) {
+  updates.category = category;
+  updates.category_override = true;
+}
     if (notes !== undefined) updates.notes = notes;
     
     await transactionRef.update(updates);
@@ -1946,6 +1952,52 @@ app.put("/api/transactions/:transactionId", async (req, res) => {
     
   } catch (error) {
     logDiagnostic.error('UPDATE_TRANSACTION', 'Update failed', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Bulk categorize transactions
+app.post("/api/transactions/bulk-categorize", async (req, res) => {
+  try {
+    const { userId } = req.body;
+    if (!userId) return res.status(400).json({ error: "userId is required" });
+    
+    const CATEGORY_KEYWORDS = {
+      "Groceries": ["walmart", "target", "kroger", "costco", "trader joe"],
+      "Food & Dining": ["mcdonalds", "starbucks", "pizza", "burger king", "chipotle"],
+      "Gas & Fuel": ["shell", "chevron", "exxon", "bp"],
+      "Pharmacy": ["cvs", "walgreens"],
+      "Shopping": ["amazon"]
+    };
+    
+    const categorize = (name) => {
+      if (!name) return null;
+      const n = name.toLowerCase();
+      for (const [cat, words] of Object.entries(CATEGORY_KEYWORDS)) {
+        if (words.some(w => n.includes(w))) return cat;
+      }
+      return null;
+    };
+    
+    const ref = db.collection('users').doc(userId).collection('transactions');
+    const snap = await ref.get();
+    const batch = db.batch();
+    let categorized = 0;
+    
+    snap.forEach(doc => {
+      const t = doc.data();
+      if (!t.category && !t.category_override) {
+        const cat = categorize(t.merchant_name || t.name || t.description);
+        if (cat) {
+          batch.update(doc.ref, { category: cat, category_auto_assigned: true });
+          categorized++;
+        }
+      }
+    });
+    
+    await batch.commit();
+    res.json({ success: true, categorized, message: `Categorized ${categorized} transactions` });
+  } catch (error) {
     res.status(500).json({ error: error.message });
   }
 });
