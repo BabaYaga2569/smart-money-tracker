@@ -495,7 +495,7 @@ const formattedPlaidAccounts = data.accounts.map(account => {
   const currentBalance = parseFloat(balances.current ?? 0);
   const availableBalance = parseFloat(balances.available ?? currentBalance);
   const liveBalance = availableBalance; // available includes pending
-  const pendingAdjustment = currentBalance - availableBalance; // difference = total pending
+  const pendingAdjustment = availableBalance - currentBalance; // difference = total pending (positive for deposits, negative for expenses)
 
   return {
     account_id: account.account_id ?? '',
@@ -900,7 +900,7 @@ const formattedPlaidAccounts = data.accounts.map(account => {
   const currentBalance = parseFloat(balances.current ?? 0);
   const availableBalance = parseFloat(balances.available ?? currentBalance);
   const liveBalance = availableBalance; // available includes pending
-  const pendingAdjustment = currentBalance - availableBalance; // difference = total pending
+  const pendingAdjustment = availableBalance - currentBalance; // difference = total pending (positive for deposits, negative for expenses)
 
   return {
     account_id: account.account_id ?? '',
@@ -1365,7 +1365,7 @@ const formattedPlaidAccounts = data.accounts.map(account => {
         <span className="balance-label" title="Total pending charges">
           ⏳ Pending
         </span>
-        <span className="balance-amount" style={{ color: '#f59e0b' }}>
+        <span className="balance-amount" style={{ color: parseFloat(account.pending_adjustment) > 0 ? '#10b981' : '#f59e0b' }}>
           {formatCurrency(parseFloat(account.pending_adjustment))}
         </span>
       </div>
