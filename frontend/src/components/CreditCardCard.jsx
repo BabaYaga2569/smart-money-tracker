@@ -1,17 +1,13 @@
 // components/CreditCardCard.jsx
 import React from "react";
 import WhatIfPanel from "./WhatIfPanel";
-import UtilizationBar from "./UtilizationBar";
 import { currency } from "../utils/debt";
 import { getPlan, updatePlan } from "../store/creditCards";
-import { extractApr } from "../utils/snowball";
 
 export default function CreditCardCard({ account, liability }) {
   const plan = getPlan(account.account_id);
   const apr = extractApr(liability) ?? 20;
   const minPayment = liability?.minimum_payment_amount;
-  const balance = account.balances?.current ?? 0;
-  const limit = account.balances?.limit;
 
   return (
     <div className="rounded-2xl border p-5 bg-white shadow-sm grid gap-4">
@@ -33,16 +29,14 @@ export default function CreditCardCard({ account, liability }) {
       </div>
 
       <div className="grid md:grid-cols-4 gap-4">
-        <Field label="Balance" value={currency(balance)} />
+        <Field label="Balance" value={currency(account.balances?.current ?? 0)} />
         <Field label="APR" value={`${Number(apr).toFixed(2)}%`} />
-        <Field label="Limit" value={limit ? currency(limit) : "—"} />
+        <Field label="Limit" value={account?.balances?.limit ? currency(account.balances.limit) : "—"} />
         <Field label="Min Payment" value={minPayment != null ? currency(minPayment) : "—"} />
       </div>
 
-      <UtilizationBar balance={balance} limit={limit} />
-
       <WhatIfPanel
-        balance={balance}
+        balance={account.balances?.current ?? 0}
         apr={apr}
         minPayment={minPayment}
         initialPayment={plan.customMonthlyPayment}
@@ -65,4 +59,10 @@ function Field({ label, value }) {
       <div className="text-lg font-semibold">{value}</div>
     </div>
   );
+}
+
+function extractApr(liab) {
+  if (!liab || !Array.isArray(liab.aprs)) return undefined;
+  const item = liab.aprs.find(a => typeof a.apr_percentage === "number");
+  return item?.apr_percentage;
 }
