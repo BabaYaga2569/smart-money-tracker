@@ -47,6 +47,7 @@ const Sidebar = () => {
     { name: "Spendability", path: "/spendability" },
     { name: "Bills", path: "/bills" },
     { name: "Recurring", path: "/recurring" },
+    { name: "Credit Cards", path: "/creditcards" },
     { name: "Subscriptions", path: "/subscriptions", badge: detectionCount },
     { name: "Goals", path: "/goals" },
     { name: "Categories", path: "/categories" },
