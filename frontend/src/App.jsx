@@ -16,6 +16,8 @@ import Cashflow from './pages/Cashflow';
 import Paycycle from './pages/Paycycle';
 import Settings from './pages/Settings';
 import BankDetail from './pages/BankDetail';
+import CreditCards from './pages/CreditCards';
+
 import Login from './pages/Login';
 import DebugButton from './components/DebugButton';
 import { useWindowSize } from './hooks/useWindowSize';
@@ -185,6 +187,14 @@ function App() {
               </AppLayout>
             </PrivateRoute>
           } />
+          
+          <Route path="/creditcards" element={
+            <PrivateRoute>
+              <AppLayout showDebugButton={debugModeEnabled}>
+               <CreditCards />
+             </AppLayout>
+          </PrivateRoute>
+         } />     
           
           <Route path="/cashflow" element={
             <PrivateRoute>
