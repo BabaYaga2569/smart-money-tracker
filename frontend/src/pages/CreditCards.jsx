@@ -5,7 +5,7 @@ import DebtTimeline from "../components/DebtTimeline";
 import { currency } from "../utils/debt";
 import { subscribePlans } from "../store/creditCards";
 import { buildPayoffPlan } from "../utils/snowball";
-import "../styles.css";
+
 
 export default function CreditCards() {
   const [cards, setCards] = useState([]); // Plaid credit accounts
