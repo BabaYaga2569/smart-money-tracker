@@ -1,130 +1,87 @@
 // pages/CreditCards.jsx
-import React, { useEffect, useState, useMemo } from "react";
-import CreditCardCard from "../components/CreditCardCard";
-import DebtTimeline from "../components/DebtTimeline";
+import React, { useEffect, useState } from "react";
 import { currency } from "../utils/debt";
-import { subscribePlans } from "../store/creditCards";
-import { buildPayoffPlan } from "../utils/snowball";
 
 export default function CreditCards() {
-  const [cards, setCards] = useState([]); // Plaid credit accounts
-  const [liabByAcc, setLiabByAcc] = useState({}); // optional liabilities
-  const [tick, setTick] = useState(0); // refresh counter
-
-  // Snowball / Avalanche
-  const [mode, setMode] = useState("snowball");
-  const [extra, setExtra] = useState(0);
+  const [cards, setCards] = useState([]);
 
   useEffect(() => {
-    // Fetch Plaid accounts
     fetch("/api/accounts")
       .then((r) => r.json())
       .then((data) => {
-        const list = data.accounts || data || [];
+        const list = data.accounts || [];
         const credit = list.filter((a) => a.type === "credit");
         setCards(credit);
       })
       .catch(() => setCards([]));
-
-    // Fetch liabilities if available
-    fetch("/api/liabilities/credit")
-      .then((r) => (r.ok ? r.json() : []))
-      .then((list) => {
-        const map = {};
-        (list || []).forEach((l) => (map[l.account_id] = l));
-        setLiabByAcc(map);
-      })
-      .catch(() => setLiabByAcc({}));
-
-    const unsub = subscribePlans(() => setTick((t) => t + 1));
-    return () => unsub();
   }, []);
 
-  // Build payoff plan
-  const plan = useMemo(() => buildPayoffPlan(cards, liabByAcc, mode, extra), [cards, liabByAcc, mode, extra, tick]);
-
-  // Totals
-  const totalBalance = cards.reduce((sum, c) => sum + (c.balances?.current || 0), 0);
+  const liveBalance = cards.reduce((sum, c) => sum + (c.balances?.current || 0), 0);
+  const projectedBalance = cards.reduce((sum, c) => sum + (c.balances?.available || 0), 0);
 
   return (
-    <div className="page-container text-green-400 p-6">
-      <header className="mb-6">
-        <h1 className="text-3xl font-bold mb-2">💳 Credit Cards</h1>
-        <p className="text-gray-300">
-          Snowball/Avalanche payoff planning, utilization awareness, and Spendability integration.
+    <div className="page-container">
+      <header className="page-header">
+        <h1 className="page-title text-3xl font-bold text-green-400 mb-1">
+          💳 Credit Cards
+        </h1>
+        <p className="text-gray-300 mb-6">
+          View and manage your credit card balances and payoff strategies.
         </p>
       </header>
 
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 mb-8">
-        <div className="bg-zinc-900 rounded-xl p-4 shadow-md">
-          <h2 className="font-semibold text-lg text-green-300 mb-2">Total CC Balance</h2>
-          <p className="text-3xl font-bold">{currency(totalBalance)}</p>
+      {/* Summary cards like Accounts page */}
+      <div className="flex flex-wrap gap-4 mb-8">
+        <div className="bg-zinc-900 rounded-xl p-4 flex-1 min-w-[250px] shadow-md">
+          <h2 className="text-green-300 font-semibold mb-1">Live Balance</h2>
+          <p className="text-3xl font-bold">{currency(liveBalance)}</p>
         </div>
-
-        <div className="bg-zinc-900 rounded-xl p-4 shadow-md">
-          <h2 className="font-semibold text-lg text-green-300 mb-2">Cards Tracked</h2>
+        <div className="bg-zinc-900 rounded-xl p-4 flex-1 min-w-[250px] shadow-md">
+          <h2 className="text-green-300 font-semibold mb-1">Projected Balance</h2>
+          <p className="text-3xl font-bold">{currency(projectedBalance)}</p>
+        </div>
+        <div className="bg-zinc-900 rounded-xl p-4 flex-1 min-w-[250px] shadow-md">
+          <h2 className="text-green-300 font-semibold mb-1">Cards Linked</h2>
           <p className="text-3xl font-bold">{cards.length}</p>
-        </div>
-
-        <div className="bg-zinc-900 rounded-xl p-4 shadow-md">
-          <h2 className="font-semibold text-lg text-green-300 mb-2">Strategy</h2>
-          <div className="flex items-center gap-3 mt-2">
-            <label className="flex items-center gap-2">
-              <input
-                type="radio"
-                name="strategy"
-                value="snowball"
-                checked={mode === "snowball"}
-                onChange={(e) => setMode(e.target.value)}
-              />
-              Snowball
-            </label>
-            <label className="flex items-center gap-2">
-              <input
-                type="radio"
-                name="strategy"
-                value="avalanche"
-                checked={mode === "avalanche"}
-                onChange={(e) => setMode(e.target.value)}
-              />
-              Avalanche
-            </label>
-          </div>
-          <div className="mt-4">
-            <label className="block text-sm mb-1">Extra Monthly Paydown</label>
-            <input
-              type="number"
-              value={extra}
-              onChange={(e) => setExtra(parseFloat(e.target.value) || 0)}
-              className="bg-zinc-800 text-green-400 rounded px-2 py-1 w-24"
-            />
-          </div>
         </div>
       </div>
 
+      {/* Cards grid */}
       {cards.length === 0 ? (
         <div className="bg-zinc-900 rounded-xl p-6 text-center text-green-400 shadow-md">
-          No credit card accounts detected from Plaid yet.<br />
+          No credit card accounts detected from Plaid yet.
+          <br />
           Make sure your connected institutions include credit cards.
         </div>
       ) : (
-        <>
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-            {cards.map((card) => (
-              <CreditCardCard
-                key={card.account_id}
-                card={card}
-                liability={liabByAcc[card.account_id]}
-                mode={mode}
-                extra={extra}
-              />
-            ))}
-          </div>
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+          {cards.map((card) => (
+            <div
+              key={card.account_id}
+              className="bg-gradient-to-b from-zinc-900 to-black rounded-2xl p-4 border border-green-500 shadow-md hover:shadow-lg hover:scale-[1.01] cursor-pointer transition-all"
+            >
+              <div className="flex justify-between items-center mb-3">
+                <h3 className="text-green-300 font-semibold">{card.name}</h3>
+                <span className="text-sm text-gray-400">
+                  {card.subtype || "Credit"}
+                </span>
+              </div>
 
-          <div className="mt-10">
-            <DebtTimeline plan={plan} />
-          </div>
-        </>
+              <p className="text-lg">
+                Available: <span className="text-green-400">{currency(card.balances?.available || 0)}</span>
+              </p>
+              <p className="text-lg">
+                Current Balance: <span className="text-red-400">{currency(card.balances?.current || 0)}</span>
+              </p>
+
+              <div className="mt-3">
+                <button className="bg-green-600 hover:bg-green-700 text-black font-semibold py-1 px-3 rounded w-full">
+                  View Details
+                </button>
+              </div>
+            </div>
+          ))}
+        </div>
       )}
     </div>
   );
