@@ -1,123 +1,279 @@
 // pages/CreditCards.jsx
 import React, { useEffect, useState } from "react";
-import { currency } from "../utils/debt";
+import { useAuth } from "../contexts/AuthContext";
+import PlaidErrorModal from "../components/PlaidErrorModal";
+import PlaidConnectionManager from "../utils/PlaidConnectionManager";
+import { calculateTotalProjectedBalance, getBalanceDifference, formatBalanceDifference } from "../utils/BalanceCalculator";
+import { db } from "../firebase";
+import { doc, getDoc } from "firebase/firestore";
+import "./Accounts.css";
 
 export default function CreditCards() {
-  const [cards, setCards] = useState([]);
+  const { currentUser } = useAuth();
+  const [plaidAccounts, setPlaidAccounts] = useState([]);
+  const [transactions, setTransactions] = useState([]);
+  const [totalBalance, setTotalBalance] = useState(0);
+  const [totalProjectedBalance, setTotalProjectedBalance] = useState(0);
+  const [showBalanceType, setShowBalanceType] = useState("both");
+  const [loading, setLoading] = useState(true);
+  const [showErrorModal, setShowErrorModal] = useState(false);
+  const [plaidStatus, setPlaidStatus] = useState({
+    isConnected: false,
+    hasError: false,
+    errorMessage: null,
+  });
 
   useEffect(() => {
-    fetch("/api/accounts")
-      .then((r) => r.json())
-      .then((data) => {
-        const list = data.accounts || [];
-        const credit = list.filter((a) => a.type === "credit");
-        setCards(credit);
-      })
-      .catch(() => setCards([]));
+    if (!currentUser) return;
+
+    const loadCreditAccounts = async () => {
+      try {
+        const apiUrl =
+          import.meta.env.VITE_API_URL ||
+          "https://smart-money-tracker-09ks.onrender.com";
+        const response = await fetch(
+          `${apiUrl}/api/accounts?userId=${currentUser.uid}&_t=${Date.now()}`
+        );
+        const data = await response.json();
+
+        if (data.success && data.accounts) {
+          const creditAccounts = data.accounts.filter(
+            (a) => a.type === "credit" || a.subtype === "credit"
+          );
+          const formatted = creditAccounts.map((account) => {
+            const balances = account.balances || {};
+            const currentBalance = parseFloat(balances.current ?? 0);
+            const availableBalance = parseFloat(balances.available ?? currentBalance);
+            const pendingAdjustment = availableBalance - currentBalance;
+            return {
+              ...account,
+              current: currentBalance.toFixed(2),
+              available: availableBalance.toFixed(2),
+              pending_adjustment: pendingAdjustment.toFixed(2),
+            };
+          });
+
+          setPlaidAccounts(formatted);
+
+          const liveTotal = formatted.reduce(
+            (sum, acc) => sum + parseFloat(acc.available || 0),
+            0
+          );
+          const projectedTotal = calculateTotalProjectedBalance(formatted, transactions);
+          setTotalBalance(liveTotal);
+          setTotalProjectedBalance(projectedTotal);
+        }
+      } catch (error) {
+        console.error("[CreditCards] Error loading accounts:", error);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    loadCreditAccounts();
+  }, [currentUser]);
+
+  useEffect(() => {
+    const unsubscribe = PlaidConnectionManager.subscribe((status) => {
+      setPlaidStatus({
+        isConnected:
+          status.hasToken && status.isApiWorking === true && status.hasAccounts,
+        hasError: status.error !== null,
+        errorMessage: status.error,
+      });
+    });
+    return () => unsubscribe();
   }, []);
 
-  const liveBalance = cards.reduce((sum, c) => sum + (c.balances?.current || 0), 0);
-  const projectedBalance = cards.reduce((sum, c) => sum + (c.balances?.available || 0), 0);
-  const difference = projectedBalance - liveBalance;
+  const formatCurrency = (amount) => {
+    return new Intl.NumberFormat("en-US", {
+      style: "currency",
+      currency: "USD",
+    }).format(amount);
+  };
+
+  if (loading) {
+    return (
+      <div className="accounts-container">
+        <div className="page-header">
+          <h2>💳 Credit Cards</h2>
+          <p>Loading your credit cards...</p>
+        </div>
+      </div>
+    );
+  }
 
   return (
-    <div className="flex flex-col p-6 space-y-8">
-      {/* Header */}
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-3xl font-bold text-green-400 flex items-center gap-2">
-            💳 Credit Cards
-          </h1>
-          <p className="text-gray-300">
-            View and manage your credit card balances, utilization, and payoff details.
-          </p>
+    <div className="accounts-container">
+      <div className="page-header">
+        <h2>💳 Credit Cards</h2>
+        <p>View and manage your credit card balances and utilization</p>
+      </div>
+
+      {/* Summary */}
+      <div className="accounts-summary">
+        <div className="summary-card">
+          <div className="summary-header">
+            <h3>Total Balances</h3>
+            <div className="balance-toggle">
+              <button
+                className={showBalanceType === "live" ? "active" : ""}
+                onClick={() => setShowBalanceType("live")}
+              >
+                Live Only
+              </button>
+              <button
+                className={showBalanceType === "both" ? "active" : ""}
+                onClick={() => setShowBalanceType("both")}
+              >
+                Both
+              </button>
+              <button
+                className={showBalanceType === "projected" ? "active" : ""}
+                onClick={() => setShowBalanceType("projected")}
+              >
+                Projected Only
+              </button>
+            </div>
+          </div>
+          <div className="balance-display">
+            {(showBalanceType === "live" || showBalanceType === "both") && (
+              <div className="balance-item">
+                <span className="balance-label">💳 Live Balance</span>
+                <div className="balance-value">{formatCurrency(totalBalance)}</div>
+              </div>
+            )}
+            {(showBalanceType === "projected" || showBalanceType === "both") && (
+              <div className="balance-item">
+                <span className="balance-label">📊 Projected Balance</span>
+                <div className="balance-value projected">
+                  {formatCurrency(totalProjectedBalance)}
+                </div>
+              </div>
+            )}
+            {showBalanceType === "both" &&
+              totalProjectedBalance !== totalBalance && (
+                <div className="balance-difference">
+                  <span className="difference-label">Difference:</span>
+                  <span
+                    className={`difference-value ${
+                      totalProjectedBalance > totalBalance ? "positive" : "negative"
+                    }`}
+                  >
+                    {formatBalanceDifference(
+                      getBalanceDifference(totalProjectedBalance, totalBalance)
+                    )}
+                  </span>
+                </div>
+              )}
+          </div>
+          <small>
+            Across {plaidAccounts.length} credit card
+            {plaidAccounts.length === 1 ? "" : "s"}
+          </small>
         </div>
       </div>
 
-      {/* Summary Tiles (identical to Accounts.jsx) */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-        <div className="bg-gradient-to-b from-zinc-900 to-black border border-green-500 rounded-xl p-4 shadow-md text-center">
-          <h2 className="text-green-300 font-semibold">Live Balance</h2>
-          <p className="text-3xl font-bold">{currency(liveBalance)}</p>
-        </div>
-
-        <div className="bg-gradient-to-b from-zinc-900 to-black border border-green-500 rounded-xl p-4 shadow-md text-center">
-          <h2 className="text-green-300 font-semibold">Projected Balance</h2>
-          <p className="text-3xl font-bold">{currency(projectedBalance)}</p>
-        </div>
-
-        <div className="bg-gradient-to-b from-zinc-900 to-black border border-green-500 rounded-xl p-4 shadow-md text-center">
-          <h2 className="text-green-300 font-semibold">Difference</h2>
-          <p
-            className={`text-3xl font-bold ${
-              difference >= 0 ? "text-green-400" : "text-red-400"
-            }`}
-          >
-            {difference >= 0 ? "+" : ""}
-            {currency(difference)}
-          </p>
-        </div>
-      </div>
-
-      {/* Credit Card Tiles */}
-      {cards.length === 0 ? (
-        <div className="bg-zinc-900 border border-green-500 rounded-xl p-6 text-center text-green-400 shadow-md">
-          No credit card accounts detected from Plaid yet.
-          <br />
-          Make sure your connected institutions include credit cards.
-        </div>
-      ) : (
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
-          {cards.map((card) => {
-            const available = card.balances?.available ?? 0;
-            const current = card.balances?.current ?? 0;
-            const utilization = available
-              ? ((current / available) * 100).toFixed(1)
-              : 0;
+      {/* Grid */}
+      <div className="accounts-grid">
+        {plaidAccounts.length === 0 ? (
+          <div className="no-accounts">
+            <h3>No Credit Cards Found</h3>
+            <p>
+              No credit card accounts detected from Plaid yet. Ensure your connected
+              institutions include credit cards.
+            </p>
+          </div>
+        ) : (
+          plaidAccounts.map((account) => {
+            const liveBalance = parseFloat(account.available) || 0;
+            const projectedBalance = calculateTotalProjectedBalance(
+              [account],
+              transactions
+            );
+            const utilization = account.balances?.limit
+              ? ((liveBalance / account.balances.limit) * 100).toFixed(1)
+              : null;
 
             return (
               <div
-                key={card.account_id}
-                className="bg-gradient-to-b from-zinc-900 to-black border border-green-500 rounded-2xl p-5 shadow-md hover:shadow-lg hover:scale-[1.01] transition-all"
+                key={account.account_id}
+                className="account-card plaid-account clickable-card"
               >
-                <div className="flex justify-between items-center mb-2">
-                  <h3 className="text-green-300 font-semibold">{card.name}</h3>
-                  <span className="text-sm text-gray-400">
-                    {card.subtype || "Credit"}
+                <div className="account-header">
+                  <div className="account-title">
+                    <span className="account-icon">💳</span>
+                    <h3>{account.name}</h3>
+                  </div>
+                  <span className="account-type">
+                    Credit ••{account.mask || ""}
                   </span>
                 </div>
 
-                <div className="text-sm text-gray-400 space-y-1">
-                  <p>
-                    Available Credit:{" "}
-                    <span className="text-green-400">
-                      {currency(available)}
+                <div className="account-balances">
+                  <div className="balance-row">
+                    <span className="balance-label">💰 Available Credit</span>
+                    <span className="balance-amount">
+                      {formatCurrency(parseFloat(account.available || 0))}
                     </span>
-                  </p>
-                  <p>
-                    Current Balance:{" "}
-                    <span className="text-red-400">
-                      {currency(current)}
+                  </div>
+                  <div className="balance-row" style={{ fontSize: "0.9em", opacity: 0.8 }}>
+                    <span className="balance-label">📖 Current Balance</span>
+                    <span className="balance-amount">
+                      {formatCurrency(parseFloat(account.current || 0))}
                     </span>
-                  </p>
-                  <p>Utilization: {utilization}%</p>
+                  </div>
+                  {account.pending_adjustment &&
+                    parseFloat(account.pending_adjustment) !== 0 && (
+                      <div
+                        className="balance-row"
+                        style={{ fontSize: "0.85em", opacity: 0.7 }}
+                      >
+                        <span className="balance-label">⏳ Pending</span>
+                        <span
+                          className="balance-amount"
+                          style={{
+                            color:
+                              parseFloat(account.pending_adjustment) > 0
+                                ? "#10b981"
+                                : "#f59e0b",
+                          }}
+                        >
+                          {formatCurrency(parseFloat(account.pending_adjustment))}
+                        </span>
+                      </div>
+                    )}
                 </div>
 
-                <div className="mt-3 w-full bg-gray-700 h-2 rounded-full">
+                {utilization && (
                   <div
-                    className="bg-green-400 h-2 rounded-full"
-                    style={{ width: `${Math.min(utilization, 100)}%` }}
-                  />
-                </div>
-
-                <button className="bg-green-600 hover:bg-green-700 text-black font-semibold py-1 px-3 rounded mt-4 w-full">
-                  View Details
-                </button>
+                    className="balance-row"
+                    style={{ fontSize: "0.85em", opacity: 0.8, marginTop: "8px" }}
+                  >
+                    <span className="balance-label">📈 Utilization</span>
+                    <span
+                      className="balance-amount"
+                      style={{
+                        color: utilization > 50 ? "#f59e0b" : "#10b981",
+                      }}
+                    >
+                      {utilization}%
+                    </span>
+                  </div>
+                )}
               </div>
             );
-          })}
-        </div>
-      )}
+          })
+        )}
+      </div>
+
+      <PlaidErrorModal
+        isOpen={showErrorModal}
+        onClose={() => setShowErrorModal(false)}
+        onRetry={() => {
+          setShowErrorModal(false);
+        }}
+      />
     </div>
   );
 }
