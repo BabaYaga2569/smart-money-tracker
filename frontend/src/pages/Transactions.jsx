@@ -1,3 +1,4 @@
+// Version 2.0 - Fixed Transactions Page - Build 2025-10-22
 import React, { useState, useEffect } from 'react';
 import { doc, getDoc, collection, addDoc, deleteDoc, query, orderBy, limit, getDocs, writeBatch, onSnapshot } from 'firebase/firestore';
 import { db } from '../firebase';
@@ -926,6 +927,32 @@ handleEditTransaction
     setEditingTransaction(null);
     setEditFormData({});
   };
+  const handleBulkCategorize = async () => {
+  try {
+    setSaving(true);
+    const API_URL = import.meta.env.VITE_API_URL || 'https://smart-money-tracker-backend.onrender.com';
+    
+    const response = await fetch(`${API_URL}/api/transactions/bulk-categorize`, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${await currentUser.getIdToken()}`,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({ userId: currentUser.uid })
+    });
+    
+    const data = await response.json();
+    if (!response.ok) throw new Error(data.error);
+    
+    await fetchTransactions();
+    showNotification(`✅ ${data.message}`, 'success');
+  } catch (error) {
+    showNotification(`❌ ${error.message}`, 'error');
+  } finally {
+    setSaving(false);
+  }
+};
+
   const deleteTransaction = async (transactionId, transaction) => {
     if (!window.confirm('Are you sure you want to delete this transaction?')) {
       return;
@@ -1989,6 +2016,7 @@ handleEditTransaction
           <h3>Recent Transactions</h3>
           <p>Showing {filteredTransactions.length} of {transactions.length} transactions</p>
         </div>  
+
         
         {filteredTransactions.length === 0 ? (
           <div className="no-transactions">
