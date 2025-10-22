@@ -1925,7 +1925,7 @@ app.put("/api/transactions/:transactionId", async (req, res) => {
       error_code: "PLAID_READ_ONLY"
     });
   }
-} else {
+  } 
     
     const updates = {
       updated_at: admin.firestore.FieldValue.serverTimestamp()
