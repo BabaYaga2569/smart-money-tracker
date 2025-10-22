@@ -930,15 +930,15 @@ handleEditTransaction
   };
   const handleBulkCategorize = async () => {
   try {
-    setSaving(true);   
-const token = await currentUser.getIdToken();
-const API_URL = import.meta.env.VITE_API_URL || 'https://smart-money-tracker-backend.onrender.com';    
-    const response = await fetch(`${API_URL}/api/transactions/bulk-categorize`, {
+    setSaving(true);
+    const token = await currentUser.getIdToken();
+    const API_URL = import.meta.env.VITE_API_URL || 'https://smart-money-tracker-backend.onrender.com';
+    
+    const response = await fetch(API_URL + '/api/transactions/bulk-categorize', {
       method: 'POST',
       headers: {
-  'Authorization': `Bearer ${token}`,
-  'Content-Type': 'application/json'
-},
+        'Authorization': 'Bearer ' + token,
+        'Content-Type': 'application/json'
       },
       body: JSON.stringify({ userId: currentUser.uid })
     });
@@ -947,9 +947,9 @@ const API_URL = import.meta.env.VITE_API_URL || 'https://smart-money-tracker-bac
     if (!response.ok) throw new Error(data.error);
     
     window.location.reload();
-    showNotification(`✅ ${data.message}`, 'success');
+    showNotification('✅ ' + data.message, 'success');
   } catch (error) {
-    showNotification(`❌ ${error.message}`, 'error');
+    showNotification('❌ ' + error.message, 'error');
   } finally {
     setSaving(false);
   }
