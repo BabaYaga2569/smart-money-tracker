@@ -1891,6 +1891,8 @@ app.post('/api/plaid/reset_cursors', async (req, res) => {
   }
 });
 
+// CORRECTED VERSION - Replace lines 1894-1957 with this:
+
 app.put("/api/transactions/:transactionId", async (req, res) => {
   const endpoint = `/api/transactions/${req.params.transactionId}`;
   logDiagnostic.request(endpoint, req.body);
@@ -1908,7 +1910,7 @@ app.put("/api/transactions/:transactionId", async (req, res) => {
       .doc(userId)
       .collection('transactions')
       .doc(transactionId);
-    try {
+      
     const transactionDoc = await transactionRef.get();
     
     if (!transactionDoc.exists) {
@@ -1917,16 +1919,18 @@ app.put("/api/transactions/:transactionId", async (req, res) => {
     
     const existingTransaction = transactionDoc.data();
     
+    // Check if trying to edit protected fields on Plaid transactions
     if (existingTransaction.source === 'plaid') {
-  if (merchant_name !== undefined || amount !== undefined || 
-      date !== undefined || notes !== undefined) {
-    return res.status(403).json({ 
-      error: "Can only edit category for Plaid transactions.",
-      error_code: "PLAID_READ_ONLY"
-    });
-  }
-  } 
+      if (merchant_name !== undefined || amount !== undefined || 
+          date !== undefined || notes !== undefined) {
+        return res.status(403).json({ 
+          error: "Can only edit category for Plaid transactions.",
+          error_code: "PLAID_READ_ONLY"
+        });
+      }
+    }
     
+    // Build updates object
     const updates = {
       updated_at: admin.firestore.FieldValue.serverTimestamp()
     };
@@ -1935,9 +1939,9 @@ app.put("/api/transactions/:transactionId", async (req, res) => {
     if (amount !== undefined) updates.amount = amount;
     if (date !== undefined) updates.date = date;
     if (category !== undefined) {
-  updates.category = category;
-  updates.category_override = true;
-}
+      updates.category = category;
+      updates.category_override = true;
+    }
     if (notes !== undefined) updates.notes = notes;
     
     await transactionRef.update(updates);
@@ -1949,7 +1953,7 @@ app.put("/api/transactions/:transactionId", async (req, res) => {
       success: true,
       message: "Transaction updated successfully"
     });
-  }  
+    
   } catch (error) {
     logDiagnostic.error('UPDATE_TRANSACTION', 'Update failed', error);
     res.status(500).json({ error: error.message });
