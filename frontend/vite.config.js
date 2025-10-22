@@ -5,15 +5,12 @@ import react from '@vitejs/plugin-react'
 export default defineConfig({
   plugins: [react()],
   build: {
-    // Force new file names on every build
     rollupOptions: {
       output: {
-        entryFileNames: `assets/[name].[hash].js`,
-        chunkFileNames: `assets/[name].[hash].js`,
-        assetFileNames: `assets/[name].[hash].[ext]`
+        entryFileNames: 'assets/[name].[hash].v2.js',
+        chunkFileNames: 'assets/[name].[hash].v2.js',
+        assetFileNames: 'assets/[name].[hash].v2.[ext]'
       }
-    },
-    // Clear output dir before build
-    emptyOutDir: true
+    }
   }
 })
