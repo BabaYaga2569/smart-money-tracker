@@ -5,7 +5,7 @@ import admin from "firebase-admin";
 
 const app = express();
 app.use(cors({
-  origin: ['https://smart-money-tracker.netlify.app', 'http://localhost:3000'],
+  origin: ['https://smart-money-tracker.netlify.app', 'https://smart-money-tracker-v2.netlify.app', 'http://localhost:3000'],
   credentials: true
 }));
 app.use(express.json());
