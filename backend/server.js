@@ -1949,7 +1949,7 @@ app.put("/api/transactions/:transactionId", async (req, res) => {
       success: true,
       message: "Transaction updated successfully"
     });
-    
+  }  
   } catch (error) {
     logDiagnostic.error('UPDATE_TRANSACTION', 'Update failed', error);
     res.status(500).json({ error: error.message });
