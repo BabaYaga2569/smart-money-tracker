@@ -225,6 +225,8 @@ useEffect(() => {
         
         console.log('✅ [Transactions] Real-time update:', txs.length, 'transactions');
         setTransactions(txs);
+        // Auto-categorize uncategorized transactions
+setTimeout(() => handleBulkCategorize(), 2000);
       },
       (error) => {
         console.error('❌ [Transactions] Listener error:', error);
@@ -2014,14 +2016,7 @@ handleEditTransaction
         <div className="transactions-header">
           <h3>Recent Transactions</h3>
           <p>Showing {filteredTransactions.length} of {transactions.length} transactions</p>
-        </div>  
-        <button 
-  className="btn-categorize-all"
-  onClick={handleBulkCategorize}
-  disabled={saving || loading}
->
-  🤖 Categorize All
-</button>
+        </div>       
         
         {filteredTransactions.length === 0 ? (
           <div className="no-transactions">
