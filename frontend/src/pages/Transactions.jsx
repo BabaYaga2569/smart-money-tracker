@@ -930,14 +930,15 @@ handleEditTransaction
   };
   const handleBulkCategorize = async () => {
   try {
-    setSaving(true);
-    const API_URL = import.meta.env.VITE_API_URL || 'https://smart-money-tracker-backend.onrender.com';
-    
+    setSaving(true);   
+const token = await currentUser.getIdToken();
+const API_URL = import.meta.env.VITE_API_URL || 'https://smart-money-tracker-backend.onrender.com';    
     const response = await fetch(`${API_URL}/api/transactions/bulk-categorize`, {
       method: 'POST',
       headers: {
-        'Authorization': `Bearer ${await currentUser.getIdToken()}`,
-        'Content-Type': 'application/json'
+  'Authorization': `Bearer ${token}`,
+  'Content-Type': 'application/json'
+}
       },
       body: JSON.stringify({ userId: currentUser.uid })
     });
