@@ -2015,13 +2015,7 @@ handleEditTransaction
           <h3>Recent Transactions</h3>
           <p>Showing {filteredTransactions.length} of {transactions.length} transactions</p>
         </div>  
-        <button 
-  className="btn-categorize-all"
-  onClick={handleBulkCategorize}
-  disabled={saving || loading}
->
-  🤖 Categorize All
-</button>
+
         
         {filteredTransactions.length === 0 ? (
           <div className="no-transactions">
