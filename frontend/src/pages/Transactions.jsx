@@ -943,7 +943,7 @@ handleEditTransaction
     const data = await response.json();
     if (!response.ok) throw new Error(data.error);
     
-    await fetchTransactions();
+    window.location.reload();
     showNotification(`✅ ${data.message}`, 'success');
   } catch (error) {
     showNotification(`❌ ${error.message}`, 'error');
