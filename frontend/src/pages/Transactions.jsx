@@ -1,4 +1,4 @@
-// Version 2.0 - Fixed Transactions Page - Build 2025-10-22
+// Version 2.0 - Fixed Transactions Page - Build 1 2025-10-22
 import React, { useState, useEffect } from 'react';
 import { doc, getDoc, collection, addDoc, deleteDoc, query, orderBy, limit, getDocs, writeBatch, onSnapshot } from 'firebase/firestore';
 import { db } from '../firebase';
