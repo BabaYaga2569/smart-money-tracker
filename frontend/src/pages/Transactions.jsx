@@ -938,7 +938,7 @@ const API_URL = import.meta.env.VITE_API_URL || 'https://smart-money-tracker-bac
       headers: {
   'Authorization': `Bearer ${token}`,
   'Content-Type': 'application/json'
-}
+},
       },
       body: JSON.stringify({ userId: currentUser.uid })
     });
