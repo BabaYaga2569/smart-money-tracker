@@ -94,11 +94,11 @@ const Bills = () => {
                 <div className="bill-title-row">
                   <span className="bill-name">{b.name}</span>
                   <span className="bill-amount">${Number(b.amount).toFixed(2)}</span>
-        setProcessedBills(processed);
-      }
-    } catch (error) {
-  console.error('Error loading bills:', error);
-}
+              setProcessedBills(processed);
+    }   // <— add this line
+  } catch (error) {
+    console.error('Error loading bills:', error);
+  }
 
 const mockBills = [
   {
