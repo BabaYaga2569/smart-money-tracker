@@ -88,13 +88,17 @@ const Bills = () => {
       {items.length===0 ? <div className="bills-empty">{emptyText}</div> : (
         <div className="bills-list">
           {items.map(b => {
-            const isOverdue = new Date(b.dueDate) < now && !b.paid;
-            return (
-              <div key={b.id} className={`bill-card ${b.paid?"paid":""} ${isOverdue?"overdue":""}`}>
-                <div className="bill-title-row">
-                  <span className="bill-name">{b.name}</span>
-                  <span className="bill-amount">${Number(b.amount).toFixed(2)}</span>
-        } catch (error) {
+  const isOverdue = new Date(b.dueDate) < now && !b.paid;
+  return (
+    <div key={b.id} className={`bill-card ${b.paid ? "paid" : ""} ${isOverdue ? "overdue" : ""}`}>
+      <div className="bill-title-row">
+        <span className="bill-name">{b.name}</span>
+        <span className="bill-amount">${Number(b.amount).toFixed(2)}</span>
+      </div>
+    </div>
+  );
+})}   // ✅ closes map and JSX section cleanly
+} catch (error) {
   console.error("Error loading bills:", error);
   setBills([]); // fallback to empty list if Firebase fails
 } finally {
