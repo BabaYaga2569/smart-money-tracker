@@ -1,3 +1,11 @@
+import React, { useMemo, useState, useEffect } from "react";
+import { collection, doc, onSnapshot, orderBy, query, updateDoc, Timestamp } from "firebase/firestore";
+import { db } from "../firebase";
+import { useAuth } from "../contexts/AuthContext";
+import { findMatchingTransactionForBill } from "../utils/billMatcher";
+import "./Bills.css";
+
+export default function Bills() {
 import React, { useState, useEffect } from 'react';
 import { doc, getDoc, updateDoc, collection, addDoc, query, where, getDocs } from 'firebase/firestore';
 import { db } from '../firebase';
@@ -23,237 +31,86 @@ const generateBillId = () => {
 
 const Bills = () => {
   const { currentUser } = useAuth();
-  const [loading, setLoading] = useState(true);
   const [bills, setBills] = useState([]);
-  const [processedBills, setProcessedBills] = useState([]);
-  const [accounts, setAccounts] = useState({});
-  const [showModal, setShowModal] = useState(false);
-  const [editingBill, setEditingBill] = useState(null);
-  const [filterCategory, setFilterCategory] = useState('all');
-  const [filterStatus, setFilterStatus] = useState('all');
-  const [filterRecurring, setFilterRecurring] = useState('all');
-  const [searchTerm, setSearchTerm] = useState('');
-  const [payingBill, setPayingBill] = useState(null);
-  const [refreshingTransactions, setRefreshingTransactions] = useState(false);
-  const [plaidStatus, setPlaidStatus] = useState({
-    isConnected: false,
-    hasError: false,
-    errorMessage: null
-  });
-  const [hasPlaidAccounts, setHasPlaidAccounts] = useState(false);
-  const [showErrorModal, setShowErrorModal] = useState(false);
-  
-  const [deletedBills, setDeletedBills] = useState([]);
-  const [showBulkDeleteModal, setShowBulkDeleteModal] = useState(false);
-  
-  const [showCSVImport, setShowCSVImport] = useState(false);
-  const [importHistory, setImportHistory] = useState([]);
-  const [showImportHistory, setShowImportHistory] = useState(false);
-  const [showHelpModal, setShowHelpModal] = useState(false);
-  
-  const [deduplicating, setDeduplicating] = useState(false);
-  
-  // Payment history state
-  const [showPaymentHistory, setShowPaymentHistory] = useState(false);
-  const [paidThisMonth, setPaidThisMonth] = useState(0);
-  const [paidBillsCount, setPaidBillsCount] = useState(0);
+  const [transactions, setTransactions] = useState([]);
 
-  const BILL_CATEGORIES = CATEGORY_ICONS;
-
-  // Main initialization useEffect
   useEffect(() => {
-    // Load data immediately - don't wait
-    loadBills();
-    loadAccounts();
-    loadPaidThisMonth();
-    
-    // Initialize Plaid in background (non-blocking)
-    initializePlaidIntegration().catch(err => {
-      console.error('Plaid init failed:', err);
+    if (!currentUser) return;
+    const billsRef = collection(db, "users", currentUser.uid, "bills");
+    const q = query(billsRef, orderBy("dueDate", "asc"));
+    const unsub = onSnapshot(q, snap => {
+      const data = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+      setBills(data);
     });
-    
-    // Check connection in background
-    checkPlaidConnection().catch(err => {
-      console.error('Plaid check failed:', err);
-    });
-    
-    const unsubscribe = PlaidConnectionManager.subscribe((status) => {
-      setPlaidStatus({
-        isConnected: status.hasToken && status.isApiWorking === true && status.hasAccounts,
-        hasError: status.error !== null,
-        errorMessage: status.error
-      });
-    });
-    
-    return () => unsubscribe();
-  }, []);
+    return () => unsub();
+  }, [currentUser]);
 
-  // Visual sync useEffect
+  // If you already load transactions elsewhere, remove this listener and pass them in
   useEffect(() => {
-    if (processedBills.length > 0) {
-      setTimeout(() => {
-        syncBillVisuals();
-      }, 100);
-    }
-  }, [processedBills]);
-
-  const checkPlaidConnection = async () => {
-    try {
-      const status = await PlaidConnectionManager.checkConnection();
-      setPlaidStatus({
-        isConnected: status.hasToken && status.isApiWorking === true && status.hasAccounts,
-        hasError: status.error !== null,
-        errorMessage: status.error
-      });
-    } catch (error) {
-      console.error('Error checking Plaid connection:', error);
-    }
-  };
-
-  const loadPaidThisMonth = async () => {
-    try {
-      const currentMonth = new Date().toISOString().slice(0, 7);
-      const paymentsRef = collection(db, 'users', currentUser.uid, 'bill_payments');
-      const q = query(paymentsRef, where('paymentMonth', '==', currentMonth));
-      
-      const querySnapshot = await getDocs(q);
-      let total = 0;
-      querySnapshot.forEach((doc) => {
-        total += doc.data().amount || 0;
-      });
-      
-      setPaidThisMonth(total);
-      setPaidBillsCount(querySnapshot.size);
-    } catch (error) {
-      console.error('Error loading paid this month:', error);
-      setPaidThisMonth(0);
-      setPaidBillsCount(0);
-    }
-  };
-
-  const initializePlaidIntegration = async () => {
-    await PlaidIntegrationManager.initialize({
-      enabled: true,
-      transactionTolerance: 0.05,
-      autoMarkPaid: true
+    if (!currentUser) return;
+    const txRef = collection(db, "users", currentUser.uid, "transactions");
+    const unsub = onSnapshot(txRef, snap => {
+      const data = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+      setTransactions(data);
     });
+    return () => unsub();
+  }, [currentUser]);
 
-    PlaidIntegrationManager.setBillPaymentProcessor(async (billId, paymentData) => {
-      const bill = processedBills.find(b => 
-        b.id === billId || b.name === billId
-      );
-      
-      if (bill) {
-        await processBillPaymentInternal(bill, paymentData);
-      }
-    });
+  const now = new Date();
 
-    PlaidIntegrationManager.setBillsProvider(async () => {
-      return processedBills.filter(bill => bill.status !== 'paid');
-    });
-  };
-
-  const refreshPlaidTransactions = async () => {
-    const status = PlaidConnectionManager.getStatus();
-    
-    const isConnected = status.hasToken && status.isApiWorking === true && status.hasAccounts;
-    
-    if (!isConnected && !hasPlaidAccounts) {
-      NotificationManager.showWarning(
-        'Plaid not connected',
-        'Please connect your bank account first to use automated bill matching. You can connect Plaid from the Accounts page.'
-      );
-      return;
+  const { overdue, upcoming, paid } = useMemo(() => {
+    const o = [], u = [], p = [];
+    for (const b of bills) {
+      const isPaid = !!b.paid;
+      const due = b.dueDate ? new Date(b.dueDate) : null;
+      const pastDue = due && due < new Date(now.toDateString()) && !isPaid;
+      if (isPaid) p.push(b); else if (pastDue) o.push(b); else u.push(b);
     }
-    
-    if (status.isApiWorking === false) {
-      NotificationManager.showError(
-        'Plaid API unavailable',
-        PlaidConnectionManager.getErrorMessage() + ' Please try again later or contact support.'
-      );
-      return;
-    }
+    o.sort((a,b)=>new Date(a.dueDate)-new Date(b.dueDate));
+    u.sort((a,b)=>new Date(a.dueDate)-new Date(b.dueDate));
+    p.sort((a,b)=>new Date(b.paidDate||0)-new Date(a.paidDate||0));
+    return { overdue:o, upcoming:u, paid:p };
+  }, [bills]);
 
-    try {
-      setRefreshingTransactions(true);
-      
-      // Pass userId instead of token - tokens are now stored server-side
-      const result = await PlaidIntegrationManager.refreshBillMatching(currentUser.uid);
-      
-      if (result.success) {
-        await loadBills();
-        NotificationManager.showSuccess(
-          `Matched ${result.processedCount} bills from ${result.totalTransactions} transactions`
-        );
-      } else {
-        NotificationManager.showError(
-          'Failed to fetch transactions',
-          result.error
-        );
-      }
-    } catch (error) {
-      console.error('Error refreshing Plaid transactions:', error);
-      NotificationManager.showError(
-        'Error refreshing transactions',
-        error.message
-      );
-    } finally {
-      setRefreshingTransactions(false);
-    }
-  };
+  async function markPaid(bill) {
+    if (!currentUser) return;
+    const ref = doc(db, "users", currentUser.uid, "bills", bill.id);
+    await updateDoc(ref, { paid:true, paidDate:Timestamp.now(), paidVia:"Manual" });
+  }
 
-  const loadBills = async () => {
-    try {
-      const settingsDocRef = doc(db, 'users', currentUser.uid, 'settings', 'personal');
-      const settingsDocSnap = await getDoc(settingsDocRef);
-      
-      if (settingsDocSnap.exists()) {
-        const data = settingsDocSnap.data();
-        let billsData = data.bills || [];
-        
-        setImportHistory(data.importHistory || []);
-        
-        let needsUpdate = false;
-        billsData = billsData.map(bill => {
-          if (!bill.id) {
-            needsUpdate = true;
-            return { ...bill, id: generateBillId() };
-          }
-          return bill;
-        });
-        
-        try {
-          const deduplicationResult = BillDeduplicationManager.removeDuplicates(billsData);
-          if (deduplicationResult.stats.duplicates > 0) {
-            console.log('[Auto-Deduplication]', BillDeduplicationManager.getSummaryMessage(deduplicationResult.stats));
-            BillDeduplicationManager.logDeduplication(deduplicationResult, 'auto-load');
-            billsData = deduplicationResult.cleanedBills;
-            needsUpdate = true;
-            
-            NotificationManager.showNotification({
-              type: 'info',
-              message: `Auto-cleanup: ${BillDeduplicationManager.getSummaryMessage(deduplicationResult.stats)}`,
-              duration: 5000
-            });
-          }
-        } catch (dedupeError) {
-          console.error('[Auto-Deduplication] Failed:', dedupeError);
-        }
-        
-        if (needsUpdate) {
-          await updateDoc(settingsDocRef, {
-            ...data,
-            bills: billsData
-          });
-        }
-        
-        setBills(billsData);
-        
-        const processed = RecurringBillManager.processBills(billsData).map(bill => ({
-          ...bill,
-          status: determineBillStatus(bill),
-          category: migrateLegacyCategory(bill.category || 'Bills & Utilities')
+  // Local auto-match pass using transactions (non-destructive; only marks when certain)
+  useEffect(() => {
+    (async () => {
+      if (!currentUser || !transactions.length || !bills.length) return;
+      const updates = [];
+      for (const b of bills) {
+        if (b.paid) continue;
+        const m = findMatchingTransactionForBill(b, transactions);
+        if (!m) continue;
+        const ref = doc(db, "users", currentUser.uid, "bills", b.id);
+        updates.push(updateDoc(ref, {
+          paid: true,
+          paidDate: Timestamp.now(),
+          paidVia: "Auto (Plaid)",
+          lastMatchedTxnId: m.id || null,
         }));
+      }
+      await Promise.allSettled(updates);
+    })();
+  }, [currentUser, transactions, bills]);
+
+  const Section = ({ title, items, emptyText }) => (
+    <section className="bills-section">
+      <h3 className="bills-section-title">{title} ({items.length})</h3>
+      {items.length===0 ? <div className="bills-empty">{emptyText}</div> : (
+        <div className="bills-list">
+          {items.map(b => {
+            const isOverdue = new Date(b.dueDate) < now && !b.paid;
+            return (
+              <div key={b.id} className={`bill-card ${b.paid?"paid":""} ${isOverdue?"overdue":""}`}>
+                <div className="bill-title-row">
+                  <span className="bill-name">{b.name}</span>
+                  <span className="bill-amount">${Number(b.amount).toFixed(2)}</span>
         setProcessedBills(processed);
       }
     } catch (error) {
@@ -1703,572 +1560,35 @@ const Bills = () => {
                     </div>
                   )}
                 </div>
-                
-                <div className="bill-status-section">
-                  <span className={getStatusBadgeClass(bill.status)}>
-                    {getStatusDisplayText(bill)}
-                  </span>
+                <div className="bill-meta-row">
+                  <span className="bill-duedate">Due {new Date(b.dueDate).toLocaleDateString()}</span>
+                  {b.paid ? (
+                    <span className="bill-paid-badge">
+                      ✅ Paid {b.paidDate?.toDate?.() ? b.paidDate.toDate().toLocaleDateString() : (b.paidDate? new Date(b.paidDate).toLocaleDateString() : "")}
+                      {b.paidVia ? ` • ${b.paidVia}` : ""}
+                    </span>
+                  ) : null}
                 </div>
-                
                 <div className="bill-actions">
-                  <button 
-                    className="action-btn mark-paid"
-                    onClick={() => handleMarkAsPaid(bill)}
-                    disabled={payingBill === bill.name || RecurringBillManager.isBillPaidForCurrentCycle(bill) || bill.status === 'skipped'}
-                  >
-                    {payingBill === bill.name ? 'Processing...' : 
-                     RecurringBillManager.isBillPaidForCurrentCycle(bill) ? 'Already Paid' :
-                     bill.status === 'skipped' ? 'Skipped' : 'Mark Paid'}
-                  </button>
-                  
-                  {RecurringBillManager.isBillPaidForCurrentCycle(bill) && (
-                    <button 
-                      className="action-btn secondary"
-                      onClick={() => handleUnmarkAsPaid(bill)}
-                      style={{
-                        background: '#ff6b00',
-                        marginTop: '4px'
-                      }}
-                      title="Mark this bill as unpaid"
-                    >
-                      Mark Unpaid
-                    </button>
+                  {!b.paid ? (
+                    <button className="btn btn-success" onClick={() => markPaid(b)}>Mark Paid</button>
+                  ) : (
+                    <button className="btn btn-muted" disabled>Paid {b.paidVia?`(${b.paidVia})`:""}</button>
                   )}
-                  
-                  {bill.recurringTemplateId && bill.status !== 'paid' && (
-                    <button 
-                      className="action-btn secondary"
-                      onClick={() => handleToggleSkipBill(bill)}
-                      style={{
-                        background: bill.status === 'skipped' ? '#4caf50' : '#9c27b0',
-                        marginTop: '4px'
-                      }}
-                      title={bill.status === 'skipped' ? 'Unskip this bill' : 'Skip this month'}
-                    >
-                      {bill.status === 'skipped' ? '↩️ Unskip' : '⏭️ Skip Month'}
-                    </button>
-                  )}
-                  
-                  <button 
-                    className="action-btn secondary"
-                    onClick={() => {
-                      setEditingBill(bill);
-                      setShowModal(true);
-                    }}
-                  >
-                    Edit
-                  </button>
-                  <button 
-                    className="action-btn danger"
-                    onClick={() => handleDeleteBill(bill)}
-                  >
-                    Delete
-                  </button>
                 </div>
               </div>
-            ))
-          ) : (
-            <div className="no-bills">
-              <p>No bills found matching your criteria.</p>
-              <button 
-                className="add-first-bill-btn"
-                onClick={() => {
-                  setEditingBill(null);
-                  setShowModal(true);
-                }}
-              >
-                Add Your First Bill
-              </button>
-            </div>
-          )}
-        </div>
-      </div>
-
-      {showModal && (
-        <BillModal
-          bill={editingBill}
-          categories={TRANSACTION_CATEGORIES}
-          accounts={accounts}
-          onSave={handleSaveBill}
-          onCancel={() => {
-            setShowModal(false);
-            setEditingBill(null);
-          }}
-        />
-      )}
-
-      {showBulkDeleteModal && (
-        <div className="modal-overlay" onClick={() => setShowBulkDeleteModal(false)}>
-          <div className="modal" onClick={(e) => e.stopPropagation()}>
-            <div className="modal-header">
-              <h3>⚠️ Delete All Bills?</h3>
-              <button className="close-btn" onClick={() => setShowBulkDeleteModal(false)}>×</button>
-            </div>
-            
-            <div className="modal-body">
-              <p style={{ marginBottom: '20px', fontSize: '16px' }}>
-                Are you sure you want to delete <strong>all {processedBills.length} bills</strong>?
-              </p>
-              <p style={{ marginBottom: '20px', color: '#ff9800' }}>
-                ⚠️ This will permanently delete all your bills from the system.
-              </p>
-              <p style={{ marginBottom: '20px', color: '#00ff88' }}>
-                ✓ Don't worry! You can undo this action using the "Undo Delete" button that will appear after deletion.
-              </p>
-              
-              <div className="modal-actions" style={{ display: 'flex', gap: '10px', justifyContent: 'flex-end' }}>
-                <button 
-                  onClick={() => setShowBulkDeleteModal(false)}
-                  className="cancel-btn"
-                  style={{ padding: '10px 20px' }}
-                >
-                  Cancel
-                </button>
-                <button 
-                  onClick={handleBulkDelete}
-                  className="delete-btn"
-                  disabled={loading}
-                  style={{ padding: '10px 20px', backgroundColor: '#f44336' }}
-                >
-                  {loading ? 'Deleting...' : 'Delete All'}
-                </button>
-              </div>
-            </div>
-          </div>
+            );
+          })}
         </div>
       )}
-
-      {showCSVImport && (
-        <BillCSVImportModal
-          existingBills={processedBills}
-          onImport={handleCSVImport}
-          onCancel={() => setShowCSVImport(false)}
-        />
-      )}
-
-{showImportHistory && (
-        <div className="modal-overlay" onClick={() => setShowImportHistory(false)}>
-          <div className="modal" onClick={(e) => e.stopPropagation()} style={{ maxWidth: '700px' }}>
-            <div className="modal-header">
-              <h3>📜 Import History</h3>
-              <button className="close-btn" onClick={() => setShowImportHistory(false)}>×</button>
-            </div>
-            
-            <div className="modal-body">
-              <p style={{ marginBottom: '20px', color: '#ccc' }}>
-                History of CSV imports (last 10)
-              </p>
-              
-              <div style={{ maxHeight: '500px', overflowY: 'auto' }}>
-                {importHistory.map((entry, index) => (
-                  <div 
-                    key={entry.id}
-                    style={{
-                      padding: '16px',
-                      marginBottom: '12px',
-                      background: index === 0 ? '#1a3a1a' : '#1a1a1a',
-                      border: index === 0 ? '2px solid #00ff88' : '1px solid #333',
-                      borderRadius: '8px'
-                    }}
-                  >
-                    <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '8px', alignItems: 'flex-start' }}>
-                      <div style={{ flex: 1 }}>
-                        <strong style={{ color: '#fff' }}>
-                          {new Date(entry.timestamp).toLocaleString()}
-                          {index === 0 && <span style={{ color: '#00ff88', marginLeft: '8px' }}>(Most Recent)</span>}
-                        </strong>
-                        <div style={{ fontSize: '14px', color: '#888', marginTop: '4px' }}>
-                          {entry.billCount} bills imported
-                          {entry.errorsCount > 0 && (
-                            <span style={{ color: '#f44336', marginLeft: '8px' }}>
-                              • {entry.errorsCount} errors
-                            </span>
-                          )}
-                          {entry.warningsCount > 0 && (
-                            <span style={{ color: '#ff9800', marginLeft: '8px' }}>
-                              • {entry.warningsCount} warnings
-                            </span>
-                          )}
-                        </div>
-                      </div>
-                    </div>
-                    <div style={{ fontSize: '13px', color: '#ccc', marginTop: '12px' }}>
-                      <div style={{ fontWeight: '600', marginBottom: '6px' }}>Bills:</div>
-                      {entry.bills.map((b, idx) => (
-                        <div key={idx} style={{ paddingLeft: '12px', marginBottom: '4px' }}>
-                          • {b.name} 
-                          {b.institutionName && <span style={{ color: '#888' }}> ({b.institutionName})</span>}
-                          <span style={{ color: '#888' }}> - ${b.amount?.toFixed?.(2) || b.amount}</span>
-                          {b.dueDate && <span style={{ color: '#888' }}> - Due: {b.dueDate}</span>}
-                          {b.dateError && (
-                            <span style={{ color: '#f44336', marginLeft: '8px' }}>
-                              ❌ {b.dateError}
-                            </span>
-                          )}
-                          {b.dateWarning && !b.dateError && (
-                            <span style={{ color: '#ff9800', marginLeft: '8px' }}>
-                              ⚠️ {b.dateWarning}
-                            </span>
-                          )}
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                ))}
-              </div>
-              
-              <div style={{ marginTop: '20px', display: 'flex', justifyContent: 'space-between' }}>
-                <button
-                  onClick={() => setShowImportHistory(false)}
-                  style={{
-                    padding: '10px 20px',
-                    background: '#555',
-                    color: '#fff',
-                    border: 'none',
-                    borderRadius: '4px',
-                    cursor: 'pointer',
-                    fontWeight: '600'
-                  }}
-                >
-                  Close
-                </button>
-                {importHistory.length > 0 && (
-                  <button
-                    onClick={() => {
-                      setShowImportHistory(false);
-                      handleUndoLastImport();
-                    }}
-                    style={{
-                      padding: '10px 20px',
-                      background: '#ff9800',
-                      color: '#000',
-                      border: 'none',
-                      borderRadius: '4px',
-                      cursor: 'pointer',
-                      fontWeight: '600'
-                    }}
-                  >
-                    ↩️ Undo Last Import
-                  </button>
-                )}
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {showHelpModal && (
-        <div className="modal-overlay" onClick={() => setShowHelpModal(false)}>
-          <div className="modal" onClick={(e) => e.stopPropagation()} style={{ maxWidth: '800px', maxHeight: '90vh', overflowY: 'auto' }}>
-            <div className="modal-header">
-              <h3>❓ Bills Management Help</h3>
-              <button className="close-btn" onClick={() => setShowHelpModal(false)}>×</button>
-            </div>
-            
-            <div className="modal-body">
-              <div style={{ marginBottom: '24px' }}>
-                <h4 style={{ color: '#00ff88', marginBottom: '12px' }}>📊 CSV Import</h4>
-                <ul style={{ color: '#ccc', lineHeight: '1.8' }}>
-                  <li><strong>Step 1:</strong> Click "Import from CSV" and upload your CSV file</li>
-                  <li><strong>Step 2:</strong> Review column mapping (auto-detected or manual mapping available)</li>
-                  <li><strong>Step 3:</strong> Preview bills and fix any errors (dates, categories, etc.)</li>
-                  <li><strong>Step 4:</strong> Use bulk actions to approve, skip, or assign categories</li>
-                </ul>
-                
-                <h5 style={{ color: '#00ff88', marginTop: '16px', marginBottom: '8px' }}>Supported Fields:</h5>
-                <ul style={{ color: '#ccc', lineHeight: '1.8' }}>
-                  <li><strong>name</strong> (required): Bill name or description</li>
-                  <li><strong>amount</strong> (required): Bill amount (numeric, can include $ and commas)</li>
-                  <li><strong>institutionName</strong> (optional): Bank or company name</li>
-                  <li><strong>dueDate</strong> (optional): Supports YYYY-MM-DD, MM/DD/YYYY, or day of month (1-31)</li>
-                  <li><strong>recurrence</strong> (optional): monthly, weekly, bi-weekly, etc. (defaults to monthly)</li>
-                  <li><strong>category</strong> (optional): Auto-detected if not provided</li>
-                </ul>
-                
-                <h5 style={{ color: '#00ff88', marginTop: '16px', marginBottom: '8px' }}>Key Features:</h5>
-                <ul style={{ color: '#ccc', lineHeight: '1.8' }}>
-                  <li><strong>Date Formats:</strong> Multiple formats supported with validation</li>
-                  <li><strong>Error Prevention:</strong> Cannot import bills with date errors - fix or skip them first</li>
-                  <li><strong>Inline Editing:</strong> Edit dates directly in the preview</li>
-                  <li><strong>Duplicate Detection:</strong> Checks name + amount + date (allows same bill on different dates)</li>
-                  <li><strong>Bulk Assign Category:</strong> Apply category to all non-skipped bills at once</li>
-                  <li><strong>Skip Bills with Errors:</strong> Automatically skip problematic bills</li>
-                </ul>
-              </div>
-
-              <div style={{ marginBottom: '24px' }}>
-                <h4 style={{ color: '#00ff88', marginBottom: '12px' }}>📜 Import History</h4>
-                <ul style={{ color: '#ccc', lineHeight: '1.8' }}>
-                  <li>Track your last 10 CSV imports with timestamps</li>
-                  <li>View bill count and names for each import</li>
-                  <li>Undo the most recent import if needed</li>
-                  <li>History is saved automatically with each import</li>
-                </ul>
-              </div>
-
-              <div style={{ marginBottom: '24px' }}>
-                <h4 style={{ color: '#00ff88', marginBottom: '12px' }}>🔄 Transaction Matching</h4>
-                <ul style={{ color: '#ccc', lineHeight: '1.8' }}>
-                  <li><strong>Connect Plaid:</strong> Link your bank accounts from the Accounts page</li>
-                  <li><strong>Auto-match:</strong> Click "Match Transactions" to automatically find payments</li>
-                  <li><strong>Smart matching:</strong> Bills are matched by amount, date, and merchant name</li>
-                  <li><strong>Status updates:</strong> Bills are automatically marked as paid when matched</li>
-                  <li><strong>Manual override:</strong> You can manually mark bills as paid or unpaid</li>
-                </ul>
-              </div>
-
-              <div style={{ marginBottom: '24px' }}>
-                <h4 style={{ color: '#00ff88', marginBottom: '12px' }}>🔄 Recurring Bills</h4>
-                <ul style={{ color: '#ccc', lineHeight: '1.8' }}>
-                  <li><strong>Auto badge:</strong> Bills with 🔄 Auto are generated from recurring templates</li>
-                  <li><strong>Create templates:</strong> Set up recurring bills on the Recurring page</li>
-                  <li><strong>Template control:</strong> Delete templates with option to remove generated bills</li>
-                  <li><strong>Cleanup menu:</strong> Bulk maintenance tools for recurring bills</li>
-                </ul>
-              </div>
-
-              <div style={{ marginBottom: '24px' }}>
-                <h4 style={{ color: '#00ff88', marginBottom: '12px' }}>🗑️ Bulk Operations</h4>
-                <ul style={{ color: '#ccc', lineHeight: '1.8' }}>
-                  <li><strong>Delete All:</strong> Remove all bills with one click (with undo option)</li>
-                  <li><strong>Undo Delete:</strong> Restore all deleted bills if done by mistake</li>
-                  <li><strong>Undo Import:</strong> Remove bills from the last CSV import</li>
-                  <li><strong>Safety first:</strong> All destructive actions require confirmation</li>
-                </ul>
-              </div>
-
-              <div style={{ marginBottom: '24px' }}>
-                <h4 style={{ color: '#00ff88', marginBottom: '12px' }}>💡 Tips & Best Practices</h4>
-                <ul style={{ color: '#ccc', lineHeight: '1.8' }}>
-                  <li>Download the CSV template for proper formatting</li>
-                  <li>Review duplicate warnings before importing</li>
-                  <li>Use bulk category assignment to speed up imports</li>
-                  <li>Connect Plaid for automatic transaction matching</li>
-                  <li>Set up recurring templates for repeating bills</li>
-                  <li>Use the search and filter to find specific bills</li>
-                </ul>
-              </div>
-
-              <div style={{ marginTop: '24px', textAlign: 'center' }}>
-                <button
-                  onClick={() => setShowHelpModal(false)}
-                  style={{
-                    padding: '12px 24px',
-                    background: '#00ff88',
-                    color: '#000',
-                    border: 'none',
-                    borderRadius: '4px',
-                    cursor: 'pointer',
-                    fontWeight: '600',
-                    fontSize: '16px'
-                  }}
-                >
-                  Got it!
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
-
-      <PlaidErrorModal
-        isOpen={showErrorModal}
-        onClose={() => setShowErrorModal(false)}
-        onRetry={() => {
-          setShowErrorModal(false);
-          checkPlaidConnection();
-        }}
-      />
-
-      <PaymentHistoryModal
-        isOpen={showPaymentHistory}
-        onClose={() => setShowPaymentHistory(false)}
-      />
-    </div>
+    </section>
   );
-};
-
-const BillModal = ({ bill, categories, accounts, onSave, onCancel }) => {
-  const [formData, setFormData] = useState({
-    name: bill?.name || '',
-    amount: bill?.amount || '',
-    dueDate: bill?.dueDate || '',
-    recurrence: bill?.recurrence || 'monthly',
-    category: migrateLegacyCategory(bill?.category || 'Bills & Utilities'),
-    account: bill?.account || Object.keys(accounts)[0] || 'bofa',
-    notes: bill?.notes || ''
-  });
-
-  const [errors, setErrors] = useState({});
-
-  const accountsList = Object.entries(accounts).map(([key, account]) => ({
-    key: key,
-    name: account.name,
-    type: account.type,
-    mask: account.mask
-  }));
-
-  const frequencies = [
-    { value: 'monthly', label: 'Monthly' },
-    { value: 'bi-weekly', label: 'Bi-weekly' },
-    { value: 'weekly', label: 'Weekly' },
-    { value: 'quarterly', label: 'Quarterly' },
-    { value: 'annually', label: 'Annually' },
-    { value: 'one-time', label: 'One-time' }
-  ];
-
-  const handleInputChange = (field, value) => {
-    setFormData(prev => ({ ...prev, [field]: value }));
-    if (errors[field]) {
-      setErrors(prev => ({ ...prev, [field]: '' }));
-    }
-  };
-
-  const validateForm = () => {
-    const newErrors = {};
-    
-    if (!formData.name.trim()) {
-      newErrors.name = 'Bill name is required';
-    }
-    
-    if (!formData.amount || parseFloat(formData.amount) <= 0) {
-      newErrors.amount = 'Valid amount is required';
-    }
-    
-    if (!formData.dueDate) {
-      newErrors.dueDate = 'Due date is required';
-    }
-    
-    setErrors(newErrors);
-    return Object.keys(newErrors).length === 0;
-  };
-
-  const handleSubmit = (e) => {
-    e.preventDefault();
-    
-    if (validateForm()) {
-      onSave({
-        ...formData,
-        amount: parseFloat(formData.amount).toString()
-      });
-    }
-  };
 
   return (
-    <div className="modal-overlay" onClick={onCancel}>
-      <div className="modal-content" onClick={(e) => e.stopPropagation()}>
-        <div className="modal-header">
-          <h3>{bill ? 'Edit Bill' : 'Add New Bill'}</h3>
-          <button className="modal-close" onClick={onCancel}>×</button>
-        </div>
-        
-        <form className="modal-form" onSubmit={handleSubmit}>
-          <div className="form-row">
-            <div className="form-group">
-              <label>Bill Name *</label>
-              <input
-                type="text"
-                value={formData.name}
-                onChange={(e) => handleInputChange('name', e.target.value)}
-                placeholder="e.g., NV Energy, Southwest Gas"
-                className={errors.name ? 'error' : ''}
-              />
-              {errors.name && <span className="error-text">{errors.name}</span>}
-            </div>
-            
-            <div className="form-group">
-              <label>Amount *</label>
-              <input
-                type="number"
-                step="0.01"
-                value={formData.amount}
-                onChange={(e) => handleInputChange('amount', e.target.value)}
-                placeholder="0.00"
-                className={errors.amount ? 'error' : ''}
-              />
-              {errors.amount && <span className="error-text">{errors.amount}</span>}
-            </div>
-          </div>
-          
-          <div className="form-row">
-            <div className="form-group">
-              <label>Due Date *</label>
-              <input
-                type="date"
-                value={formData.dueDate}
-                onChange={(e) => handleInputChange('dueDate', e.target.value)}
-                className={errors.dueDate ? 'error' : ''}
-              />
-              {errors.dueDate && <span className="error-text">{errors.dueDate}</span>}
-            </div>
-            
-            <div className="form-group">
-              <label>Frequency</label>
-              <select
-                value={formData.recurrence}
-                onChange={(e) => handleInputChange('recurrence', e.target.value)}
-              >
-                {frequencies.map(freq => (
-                  <option key={freq.value} value={freq.value}>
-                    {freq.label}
-                  </option>
-                ))}
-              </select>
-            </div>
-          </div>
-          
-          <div className="form-row">
-            <div className="form-group">
-              <label>Category</label>
-              <select
-                value={formData.category}
-                onChange={(e) => handleInputChange('category', e.target.value)}
-              >
-                {categories.map(category => (
-                  <option key={category} value={category}>
-                    {category}
-                  </option>
-                ))}
-              </select>
-            </div>
-            
-            <div className="form-group">
-              <label>Account to Debit</label>
-              <select
-                value={formData.account}
-                onChange={(e) => handleInputChange('account', e.target.value)}
-              >
-                {accountsList.map(account => (
-                  <option key={account.key} value={account.key}>
-                    {account.name} {account.mask ? `(****${account.mask})` : ''} - {account.type}
-                  </option>
-                ))}
-              </select>
-            </div>
-          </div>
-          
-          <div className="form-group">
-            <label>Notes (Optional)</label>
-            <textarea
-              value={formData.notes}
-              onChange={(e) => handleInputChange('notes', e.target.value)}
-              placeholder="Additional notes about this bill..."
-              rows={3}
-            />
-          </div>
-          
-          <div className="modal-actions">
-            <button type="button" className="btn-cancel" onClick={onCancel}>
-              Cancel
-            </button>
-            <button type="submit" className="btn-save">
-              {bill ? 'Update Bill' : 'Add Bill'}
-            </button>
-          </div>
-        </form>
-      </div>
+    <div className="bills-page">
+      <Section title="Overdue" items={overdue} emptyText="No overdue bills 🎉"/>
+      <Section title="Upcoming" items={upcoming} emptyText="No upcoming bills"/>
+      <Section title="Paid (this month)" items={paid} emptyText="Nothing paid yet"/>
     </div>
   );
-};
-
-export default Bills;
+}
