@@ -97,31 +97,35 @@ const Bills = () => {
         setProcessedBills(processed);
       }
     } catch (error) {
-      console.error('Error loading bills:', error);
-      
-      const mockBills = [
-        {
-          name: 'PiercePrime',
-          amount: 125.50,
-          category: 'Bills & Utilities',
-          recurrence: 'monthly',
-          dueDate: '2025-10-24',
-          nextDueDate: '2025-10-24',
-          status: 'pending',
-          account: 'bofa',
-          autopay: false
-        }
-      ];
-      
-      setBills(mockBills);
-      setProcessedBills(mockBills.map(bill => ({
-        ...bill,
-        category: migrateLegacyCategory(bill.category || 'Bills & Utilities')
-      })));
-    } finally {
-      setLoading(false);
-    }
-  };
+  console.error('Error loading bills:', error);
+}
+
+const mockBills = [
+  {
+    name: 'PiercePrime',
+    amount: 125.50,
+    category: 'Bills & Utilities',
+    recurrence: 'monthly',
+    dueDate: '2025-10-24',
+    nextDueDate: '2025-10-24',
+    status: 'pending',
+    account: 'bofa',
+    autopay: false
+  }
+];
+
+setBills(mockBills);
+setProcessedBills(
+  mockBills.map(bill => ({
+    ...bill,
+    category: migrateLegacyCategory(bill.category || 'Bills & Utilities'),
+  }))
+);
+
+} finally {
+  setLoading(false);
+}
+
 
   const loadAccounts = async () => {
     // ... rest of your loadAccounts function stays exactly the same
