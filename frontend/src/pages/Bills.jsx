@@ -6,24 +6,7 @@ import { findMatchingTransactionForBill } from "../utils/billMatcher";
 import "./Bills.css";
 
 export default function Bills() {
-import React, { useState, useEffect } from 'react';
-import { doc, getDoc, updateDoc, collection, addDoc, query, where, getDocs } from 'firebase/firestore';
-import { db } from '../firebase';
-import { RecurringBillManager } from '../utils/RecurringBillManager';
-import { BillSortingManager } from '../utils/BillSortingManager';
-import { NotificationManager } from '../utils/NotificationManager';
-import { BillAnimationManager } from '../utils/BillAnimationManager';
-import { PlaidIntegrationManager } from '../utils/PlaidIntegrationManager';
-import PlaidConnectionManager from '../utils/PlaidConnectionManager';
-import PlaidErrorModal from '../components/PlaidErrorModal';
-import BillCSVImportModal from '../components/BillCSVImportModal';
-import PaymentHistoryModal from '../components/PaymentHistoryModal';
-import { formatDateForDisplay, formatDateForInput, getPacificTime } from '../utils/DateUtils';
-import { TRANSACTION_CATEGORIES, CATEGORY_ICONS, getCategoryIcon, migrateLegacyCategory } from '../constants/categories';
-import NotificationSystem from '../components/NotificationSystem';
-import { BillDeduplicationManager } from '../utils/BillDeduplicationManager';
-import './Bills.css';
-import { useAuth } from '../contexts/AuthContext';
+
 
 const generateBillId = () => {
   return `bill_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
