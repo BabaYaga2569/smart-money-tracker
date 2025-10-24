@@ -32,25 +32,25 @@ export default function Bills() {
       ) : (
         <div className="bills-list">
           {items.map(b => {
-            const isOverdue = new Date(b.dueDate) < now && !b.paid;
-            return (
-              <div key={b.id} className={\`bill-card \${b.paid ? "paid" : ""} \${isOverdue ? "overdue" : ""}\`}>
-                <div className="bill-title-row">
-                  <span className="bill-name">{b.name}</span>
-                  <span className="bill-amount">${Number(b.amount).toFixed(2)}</span>
-                </div>
-                <div className="bill-meta">
-                  <span className="bill-date">Due: {b.dueDate}</span>
-                  {isOverdue && <span className="bill-status overdue">Overdue</span>}
-                  {b.paid && <span className="bill-status paid">Paid</span>}
-                </div>
-              </div>
-            );
-          })}
-        </div>
-      )}
-    </section>
+  const isOverdue = new Date(b.dueDate) < now && !b.paid;
+  return (
+    <div
+      key={b.id}
+      className={`bill-card ${b.paid ? "paid" : ""} ${isOverdue ? "overdue" : ""}`}
+    >
+      <div className="bill-title-row">
+        <span className="bill-name">{b.name}</span>
+        <span className="bill-amount">${Number(b.amount).toFixed(2)}</span>
+      </div>
+      <div className="bill-meta">
+        <span className="bill-date">Due: {b.dueDate}</span>
+        {isOverdue && <span className="bill-status overdue">Overdue</span>}
+        {b.paid && <span className="bill-status paid">Paid</span>}
+      </div>
+    </div>
   );
+})}
+
 
   const overdue = bills.filter(b => new Date(b.dueDate) < now && !b.paid);
   const upcoming = bills.filter(b => new Date(b.dueDate) >= now && !b.paid);
