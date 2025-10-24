@@ -39,8 +39,18 @@ export class PayCycleCalculator {
             
             if (yoursSchedule.lastPaydate && yoursSchedule.amount) {
                 const lastPay = new Date(yoursSchedule.lastPaydate);
+                const today = getPacificTime();
+                today.setHours(0, 0, 0, 0); // Start of day for comparison
+                
+                // Calculate next payday from last pay date
                 yourNextPay = new Date(lastPay);
                 yourNextPay.setDate(lastPay.getDate() + 14);
+                
+                // If the calculated next payday has already passed, keep adding 14 days until we find a future date
+                while (yourNextPay < today) {
+                    yourNextPay.setDate(yourNextPay.getDate() + 14);
+                }
+                
                 yourAmount = parseFloat(yoursSchedule.amount) || 0;
             }
             

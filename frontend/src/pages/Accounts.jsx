@@ -8,10 +8,15 @@ import { calculateTotalProjectedBalance, getBalanceDifference, formatBalanceDiff
 import PlaidConnectionManager from '../utils/PlaidConnectionManager';
 import './Accounts.css';
 import { useAuth } from '../contexts/AuthContext';
+import { useSmartBalanceSync } from '../hooks/useSmartBalanceSync';
 
 const Accounts = () => {
   const { currentUser } = useAuth();
   const navigate = useNavigate();
+  
+  // Smart background balance sync (runs automatically)
+  useSmartBalanceSync(currentUser?.uid);
+  
   const [loading, setLoading] = useState(true);
   const [accounts, setAccounts] = useState({});
   const [totalBalance, setTotalBalance] = useState(0);
@@ -47,17 +52,55 @@ const Accounts = () => {
 
  // eslint-disable-next-line react-hooks/exhaustive-deps
  useEffect(() => {
-  // Load immediately - don't wait for Plaid
-  loadAccountsAndTransactions();
+  // ✅ FIX: Force fresh balances on page load
+  const loadWithFreshBalances = async () => {
+      // Clear session sync flag to force fresh balance check
+      sessionStorage.removeItem(`autoSync_${currentUser?.uid}`);
+      
+      // Check if we need to refresh (only if data is >10 minutes old)
+      const lastRefreshTime = localStorage.getItem(`lastPlaidRefresh_${currentUser?.uid}`);
+      const now = Date.now();
+      const TEN_MINUTES = 10 * 60 * 1000;
+      const needsRefresh = !lastRefreshTime || (now - parseInt(lastRefreshTime)) > TEN_MINUTES;
+      
+      if (needsRefresh && currentUser) {
+        console.log('[REFRESH] Data is stale (>10 min), refreshing BOTH balances and transactions...');
+        
+        const apiUrl = import.meta.env.VITE_API_URL || 'https://smart-money-tracker-09ks.onrender.com';
+        
+        // Fire BOTH refresh requests in parallel (don't wait for them)
+        Promise.all([
+          // Refresh balances
+          fetch(`${apiUrl}/api/accounts?userId=${currentUser.uid}&refresh=true&_t=${Date.now()}`)
+            .then(() => console.log('[REFRESH] ✅ Balance refresh sent'))
+            .catch(err => console.log('[REFRESH] ❌ Balance refresh failed:', err)),
+          
+          // Refresh transactions
+          fetch(`${apiUrl}/api/plaid/sync_transactions`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ userId: currentUser.uid })
+          })
+            .then(() => console.log('[REFRESH] ✅ Transaction refresh sent'))
+            .catch(err => console.log('[REFRESH] ❌ Transaction refresh failed:', err))
+        ]).then(() => {
+          // Mark as refreshed AFTER both complete
+          localStorage.setItem(`lastPlaidRefresh_${currentUser.uid}`, now.toString());
+        });
+        
+        // Load cached data immediately, fresh data will come via real-time listener
+        await loadAccountsAndTransactions();
+      } else {
+        console.log('[REFRESH] Data is fresh (<10 min old), loading from cache');
+        await loadAccountsAndTransactions();
+      }
+    };
+  
+  loadWithFreshBalances();
   
   // Check Plaid in background (non-blocking)
   checkPlaidConnection().catch(err => {
     console.error('Plaid check failed:', err);
-  });
-  
-  // Check connection health on page load
-  checkConnectionHealth().catch(err => {
-    console.error('Health check failed:', err);
   });
   
   const unsubscribe = PlaidConnectionManager.subscribe((status) => {
@@ -75,7 +118,7 @@ const Accounts = () => {
   return () => {
     unsubscribe();
   };
-}, []);
+}, [currentUser]);
 
   // Recalculate projected balance when transactions change
   useEffect(() => {
@@ -88,45 +131,6 @@ const Accounts = () => {
     }
   }, [transactions, plaidAccounts, accounts]);
 
-  // Local calculateProjectedBalance with comprehensive logging
-  // This overrides the imported function to provide debugging capabilities
-  const calculateProjectedBalance = (accountId, liveBalance, transactionsList) => {
-    console.log(`[ProjectedBalance] Calculating for account: ${accountId}`);
-    
-    if (!transactionsList || transactionsList.length === 0) {
-      console.log(`[ProjectedBalance] No transactions found for ${accountId}`);
-      return liveBalance;
-    }
-
-    const accountTransactions = transactionsList.filter(t => t.account_id === accountId || t.account === accountId);
-    console.log(`[ProjectedBalance] Account ${accountId}: ${accountTransactions.length} total transactions`);
-    
-    // CRITICAL FIX: Check multiple pending formats
-    // Walmart uses pending: 'true' (string)
-    // Zelle/Starbucks use pending: true (boolean) or status: 'pending'
-    const pendingTransactions = accountTransactions.filter(t => {
-      const isPending = t.pending === true || t.pending === 'true' || t.status === 'pending';
-      if (isPending) {
-        console.log(`[ProjectedBalance]   - ${t.name}: ${t.amount.toFixed(2)} (pending: ${t.pending}, status: ${t.status})`);
-      }
-      return isPending;
-    });
-    
-    console.log(`[ProjectedBalance] Found ${pendingTransactions.length} pending transactions for ${accountId}`);
-    
-    const pendingTotal = pendingTransactions.reduce((sum, t) => sum + t.amount, 0);
-    console.log(`[ProjectedBalance] Pending total: ${pendingTotal.toFixed(2)}`);
-    
-    // After PR #154, all transactions use accounting convention:
-    // - Negative amount = Expense (decreases balance)
-    // - Positive amount = Income (increases balance)
-    // So we add the amount directly (negative amounts will decrease the balance)
-    const projected = liveBalance + pendingTotal;
-    console.log(`[ProjectedBalance] Final projected balance: ${projected.toFixed(2)} (Live: ${liveBalance} + Pending: ${pendingTotal.toFixed(2)})`);
-    
-    return projected;
-  };
-
   // Real-time transactions listener
   useEffect(() => {
     if (!currentUser) return;
@@ -134,68 +138,28 @@ const Accounts = () => {
     console.log('📡 [Accounts] Setting up real-time listener...');
     
     const transactionsRef = collection(db, 'users', currentUser.uid, 'transactions');
+    const q = query(transactionsRef, orderBy('timestamp', 'desc'), limit(100));
     
-    // Query 1: Get recent transactions (for display/general use)
-    const recentQuery = query(transactionsRef, orderBy('timestamp', 'desc'), limit(100));
-    
-    // Query 2: Get ALL pending transactions (critical for projected balance accuracy)
-    // This ensures we never miss pending transactions regardless of date
-    const pendingQuery = query(
-      transactionsRef, 
-      where('pending', '==', true)
-    );
-    
-    // Combined transaction map to merge results and deduplicate
-    const transactionMap = new Map();
-    
-    // Subscribe to recent transactions
-    const unsubscribeRecent = onSnapshot(
-      recentQuery,
+    const unsubscribe = onSnapshot(
+      q,
       (snapshot) => {
-        snapshot.docs.forEach(doc => {
-          transactionMap.set(doc.id, {
-            id: doc.id,
-            ...doc.data()
-          });
-        });
+        const txs = snapshot.docs.map(doc => ({
+          id: doc.id,
+          ...doc.data()
+        }));
         
-        // Update state with merged transactions
-        const mergedTxs = Array.from(transactionMap.values());
-        console.log('✅ [Accounts] Recent transactions update:', snapshot.docs.length, 'transactions');
-        console.log('✅ [Accounts] Total unique transactions:', mergedTxs.length);
-        setTransactions(mergedTxs);
+        console.log('✅ [Accounts] Real-time update:', txs.length, 'transactions');
+        setTransactions(txs);
       },
       (error) => {
-        console.error('❌ [Accounts] Recent listener error:', error);
-      }
-    );
-    
-    // Subscribe to pending transactions
-    const unsubscribePending = onSnapshot(
-      pendingQuery,
-      (snapshot) => {
-        snapshot.docs.forEach(doc => {
-          transactionMap.set(doc.id, {
-            id: doc.id,
-            ...doc.data()
-          });
-        });
-        
-        // Update state with merged transactions
-        const mergedTxs = Array.from(transactionMap.values());
-        console.log('✅ [Accounts] Pending transactions update:', snapshot.docs.length, 'pending');
-        console.log('✅ [Accounts] Total unique transactions:', mergedTxs.length);
-        setTransactions(mergedTxs);
-      },
-      (error) => {
-        console.error('❌ [Accounts] Pending listener error:', error);
+        console.error('❌ [Accounts] Listener error:', error);
+        setTransactions([]);
       }
     );
 
     return () => {
-      console.log('🔌 [Accounts] Cleaning up listeners');
-      unsubscribeRecent();
-      unsubscribePending();
+      console.log('🔌 [Accounts] Cleaning up listener');
+      unsubscribe();
     };
   }, [currentUser]);
 
@@ -204,36 +168,73 @@ const Accounts = () => {
     const autoSyncOnStartup = async () => {
       if (!currentUser) return;
       
-      // Check if user has Plaid accounts
-      if (plaidAccounts.length === 0) {
-        console.log('[AutoSync] No Plaid accounts configured, skipping auto-sync');
+      try {
+        // ✅ Query Firebase directly instead of checking React state
+        const settingsDocRef = doc(db, 'users', currentUser.uid, 'settings', 'personal');
+        const settingsDocSnap = await getDoc(settingsDocRef);
+        
+        if (!settingsDocSnap.exists()) {
+          console.log('[AutoSync] No settings document found');
+          return;
+        }
+        
+        const data = settingsDocSnap.data();
+        const plaidAccountsList = data.plaidAccounts || [];
+        
+        if (plaidAccountsList.length === 0) {
+          console.log('[AutoSync] No Plaid accounts in Firebase, skipping auto-sync');
+          return;
+        }
+        
+        console.log(`[AutoSync] Found ${plaidAccountsList.length} Plaid accounts in Firebase`);
+      } catch (error) {
+        console.error('[AutoSync] Error checking accounts:', error);
         return;
       }
-      
-      try {
-        const lastSync = localStorage.getItem('lastPlaidSync');
-        const now = Date.now();
-        const FIVE_MINUTES = 5 * 60 * 1000;
-        
-        // Auto-sync if no previous sync or data is stale
-        if (!lastSync || (now - parseInt(lastSync)) > FIVE_MINUTES) {
-          console.log('[AutoSync] Data stale, triggering auto-sync...');
-          setAutoSyncing(true);
-          
-          await syncPlaidTransactions(); // Call sync function
-          
-          localStorage.setItem('lastPlaidSync', now.toString());
-          console.log('[AutoSync] Complete');
-        } else {
-          const minutesAgo = Math.floor((now - parseInt(lastSync)) / (60 * 1000));
-          console.log(`[AutoSync] Data fresh (synced ${minutesAgo} min ago), skipping sync`);
-        }
-      } catch (error) {
-        console.error('[AutoSync] Error:', error);
-        // Don't block page load if sync fails
-      } finally {
-        setAutoSyncing(false);
+     // Check Firebase for last sync time (not localStorage)
+    try {
+      // Check if we already synced this session
+      const sessionSync = sessionStorage.getItem(`autoSync_${currentUser.uid}`);
+      if (sessionSync) {
+        console.log('[AutoSync] Already synced this session, skipping');
+        return;
       }
+
+      // Get the REAL last sync time from Firebase
+      const syncDocRef = doc(db, `users/${currentUser.uid}/metadata/sync`);
+      const syncDoc = await getDoc(syncDocRef);
+      
+      const lastSync = syncDoc.exists() 
+        ? syncDoc.data()?.lastPlaidSync?.toMillis() 
+        : 0;
+      
+      const now = Date.now();
+      const ONE_HOUR = 60 * 60 * 1000;
+      const timeSinceSync = now - lastSync;
+
+      console.log('[AutoSync] Last sync was', Math.round(timeSinceSync / 1000 / 60), 'minutes ago');
+
+      // Sync if data is older than 1 hour
+      if (timeSinceSync > ONE_HOUR) {
+        console.log('[AutoSync] Data is stale, syncing now...');
+        setAutoSyncing(true);
+        
+        await syncPlaidTransactions();
+        
+        // Mark this session as synced
+        sessionStorage.setItem(`autoSync_${currentUser.uid}`, Date.now().toString());
+        
+        console.log('[AutoSync] ✅ Sync complete!');
+      } else {
+        console.log('[AutoSync] Data is fresh, no sync needed');
+      }
+
+    } catch (error) {
+      console.error('[AutoSync] Error:', error);
+    } finally {
+      setAutoSyncing(false);
+    } 
+     
     };
     
     // Run auto-sync when user is authenticated and component mounts
@@ -246,6 +247,109 @@ const Accounts = () => {
       return () => clearTimeout(timer);
     }
   }, [currentUser]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Local calculateProjectedBalance with comprehensive logging
+  // This overrides the imported function to provide debugging capabilities
+  const calculateProjectedBalance = (accountId, liveBalance, transactionsList, currentAccount) => {
+    console.log(`[ProjectedBalance] Calculating for account: ${accountId}`);
+    console.log(`[ProjectedBalance] Live balance: ${liveBalance}`);
+    
+    if (!transactionsList || transactionsList.length === 0) {
+      console.log(`[ProjectedBalance] No transactions, returning live balance`);
+      return liveBalance;
+    }
+
+    // ✅ BULLETPROOF FIX: Multiple matching strategies
+    const pendingTxs = transactionsList.filter(tx => {
+      const isPending = tx.pending === true || tx.pending === 'true';
+      
+      if (!isPending) return false;
+      
+      const txAccountId = tx.account_id || tx.account;
+      
+      // Strategy 1: Exact account_id match (fastest)
+      if (txAccountId === accountId) {
+        console.log(`[ProjectedBalance] ✅ Matched by account_id:`, {
+          merchant: tx.merchant_name || tx.name,
+          strategy: 'exact_id',
+          amount: tx.amount
+        });
+        return true;
+      }
+      
+      // Strategy 2: Match by mask (last 4 digits) - most reliable fallback
+      if (currentAccount?.mask && tx.mask) {
+        const masksMatch = currentAccount.mask === tx.mask;
+        
+        // Also verify institution name to avoid false positives
+        const institutionMatch = !currentAccount.institution_name || 
+                                !tx.institution_name || 
+                                currentAccount.institution_name === tx.institution_name;
+        
+        if (masksMatch && institutionMatch) {
+          console.log(`[ProjectedBalance] ✅ Matched by mask + institution:`, {
+            merchant: tx.merchant_name || tx.name,
+            strategy: 'mask_match',
+            mask: currentAccount.mask,
+            amount: tx.amount
+          });
+          return true;
+        }
+      }
+      
+      // Strategy 3: Match by institution (only if account is the sole one from this bank)
+      if (currentAccount?.institution_name && tx.institution_name) {
+        const institutionMatch = currentAccount.institution_name === tx.institution_name;
+        
+        // Count how many accounts share this institution
+        const accountsFromBank = plaidAccounts.filter(acc => 
+          acc.institution_name === currentAccount.institution_name
+        );
+        
+        // Only use institution matching if it's the ONLY account from this bank
+        if (institutionMatch && accountsFromBank.length === 1) {
+          console.log(`[ProjectedBalance] ✅ Matched by institution (single account):`, {
+            merchant: tx.merchant_name || tx.name,
+            strategy: 'institution_only',
+            institution: currentAccount.institution_name,
+            amount: tx.amount
+          });
+          return true;
+        }
+      }
+      
+      // No match found
+      console.log(`[ProjectedBalance] ❌ No match for transaction:`, {
+        merchant: tx.merchant_name || tx.name,
+        tx_account_id: txAccountId,
+        tx_mask: tx.mask,
+        tx_institution: tx.institution_name,
+        looking_for_id: accountId,
+        account_mask: currentAccount?.mask,
+        account_institution: currentAccount?.institution_name
+      });
+      
+      return false;
+    });
+
+    console.log(`[ProjectedBalance] Found ${pendingTxs.length} pending transactions for ${accountId}`);
+
+    if (pendingTxs.length === 0) {
+      return liveBalance;
+    }
+
+    // Calculate total pending amount
+    const pendingTotal = pendingTxs.reduce((sum, tx) => {
+      const amount = Math.abs(parseFloat(tx.amount) || 0);
+      console.log(`[ProjectedBalance] Pending: ${tx.merchant_name || tx.name}, Amount: -${amount}`);
+      return sum + amount;
+    }, 0);
+
+    const projected = liveBalance - pendingTotal;
+    console.log(`[ProjectedBalance] Live: ${liveBalance}, Pending: -${pendingTotal}, Projected: ${projected}`);
+    
+    return projected;
+  };
 
   const syncPlaidTransactions = async () => {
     try {
@@ -385,19 +489,32 @@ const Accounts = () => {
 
       if (data.success && data.accounts && data.accounts.length > 0) {
         // Format backend accounts for frontend display
-        const formattedPlaidAccounts = data.accounts.map(account => ({
-          account_id: account.account_id,
-          name: account.name,
-          official_name: account.official_name,
-          type: account.subtype || account.type,
-          balance: account.balances.current.toString(),
-          available: account.balances.available?.toString() || '0',
-          mask: account.mask,
-          isPlaid: true,
-          item_id: account.item_id,
-          institution_name: account.institution_name,
-          institution_id: account.institution_id
-        }));
+       // ✅ Improved mapping logic – reflects pending (uses available first) and safely handles null balances
+const formattedPlaidAccounts = data.accounts.map(account => {
+  const balances = account.balances || {}; // 👈 prevents null crash
+  const currentBalance = parseFloat(balances.current ?? 0);
+  const availableBalance = parseFloat(balances.available ?? currentBalance);
+  const liveBalance = availableBalance; // available includes pending
+  const pendingAdjustment = availableBalance - currentBalance; // difference = total pending (positive for deposits, negative for expenses)
+
+  return {
+    account_id: account.account_id ?? '',
+    name: account.name ?? 'Unknown Account',
+    official_name: account.official_name ?? account.name ?? 'Unknown Account',
+    type: account.subtype || account.type || 'checking',
+    balance: liveBalance.toFixed(2), // ✅ main displayed balance
+    available: availableBalance.toFixed(2),
+    current: currentBalance.toFixed(2),
+    pending_adjustment: pendingAdjustment.toFixed(2),
+    mask: account.mask ?? '',
+    isPlaid: true,
+    item_id: account.item_id ?? '',
+    institution_name: account.institution_name ?? data?.institution_name ?? '',
+    institution_id: account.institution_id ?? '',
+  };
+});
+
+
         
         setPlaidAccounts(formattedPlaidAccounts);
         
@@ -777,18 +894,32 @@ const Accounts = () => {
       if (data?.success && data?.accounts) {
         // Format Plaid accounts for display with null checks
         // IMPORTANT: Do NOT store access_token - it's now stored securely server-side
-        const formattedPlaidAccounts = data.accounts.map((account) => ({
-          account_id: account?.account_id || '',
-          name: account?.name || 'Unknown Account',
-          official_name: account?.official_name || account?.name || 'Unknown Account',
-          type: account?.subtype || account?.type || 'checking',
-          balance: account?.balances?.current?.toString() || '0',
-          available: account?.balances?.available?.toString() || '0',
-          mask: account?.mask || '',
-          institution_name: account?.institution_name || data?.institution_name || '',
-          isPlaid: true,
-          item_id: data.item_id || '',
-        }));
+        // ✅ Improved mapping logic – reflects pending (uses available first) and safely handles null balances
+const formattedPlaidAccounts = data.accounts.map(account => {
+  const balances = account.balances || {}; // 👈 prevents null crash
+  const currentBalance = parseFloat(balances.current ?? 0);
+  const availableBalance = parseFloat(balances.available ?? currentBalance);
+  const liveBalance = availableBalance; // available includes pending
+  const pendingAdjustment = availableBalance - currentBalance; // difference = total pending (positive for deposits, negative for expenses)
+
+  return {
+    account_id: account.account_id ?? '',
+    name: account.name ?? 'Unknown Account',
+    official_name: account.official_name ?? account.name ?? 'Unknown Account',
+    type: account.subtype || account.type || 'checking',
+    balance: liveBalance.toFixed(2), // ✅ main displayed balance
+    available: availableBalance.toFixed(2),
+    current: currentBalance.toFixed(2),
+    pending_adjustment: pendingAdjustment.toFixed(2),
+    mask: account.mask ?? '',
+    isPlaid: true,
+    item_id: account.item_id ?? '',
+    institution_name: account.institution_name ?? data?.institution_name ?? '',
+    institution_id: account.institution_id ?? '',
+  };
+});
+
+
 
         // Save to Firebase
         const settingsDocRef = doc(db, 'users', currentUser.uid, 'settings', 'personal');
@@ -1174,7 +1305,12 @@ const Accounts = () => {
         {/* Plaid-linked accounts */}
         {plaidAccounts.map((account) => {
           const liveBalance = parseFloat(account.balance) || 0;
-          const projectedBalance = calculateProjectedBalance(account.account_id, liveBalance, transactions);
+          const projectedBalance = calculateProjectedBalance(
+            account.account_id, 
+            liveBalance, 
+            transactions,
+            account  // ✅ Pass full account object for mask/institution matching
+          );
           const hasDifference = projectedBalance !== liveBalance;
           
           return (
@@ -1211,28 +1347,31 @@ const Accounts = () => {
               
               <div className="account-balances">
                 {(showBalanceType === 'live' || showBalanceType === 'both') && (
-                  <div className="balance-row">
-                    <span className="balance-label" title="Current balance from your bank">
-                      🔗 Live Balance
-                    </span>
-                    <span className="balance-amount">{formatCurrency(liveBalance)}</span>
-                  </div>
-                )}
-                {(showBalanceType === 'projected' || showBalanceType === 'both') && (
-                  <div className="balance-row projected">
-                    <span className="balance-label" title="Live balance adjusted for manual transactions">
-                      📊 Projected Balance
-                    </span>
-                    <span className="balance-amount">{formatCurrency(projectedBalance)}</span>
-                  </div>
-                )}
-                {showBalanceType === 'both' && hasDifference && (
-                  <div className="balance-row difference">
-                    <small className="difference-text">
-                      {formatBalanceDifference(getBalanceDifference(projectedBalance, liveBalance))}
-                    </small>
-                  </div>
-                )}
+  <>
+    <div className="balance-row">
+      <span className="balance-label" title="What you can spend (includes pending)">
+        💳 Available Balance
+      </span>
+      <span className="balance-amount">{formatCurrency(parseFloat(account.available || liveBalance))}</span>
+    </div>
+    <div className="balance-row" style={{ fontSize: '0.9em', opacity: 0.8 }}>
+      <span className="balance-label" title="Ledger balance (before pending)">
+        📖 Current Balance
+      </span>
+      <span className="balance-amount">{formatCurrency(parseFloat(account.current || liveBalance))}</span>
+    </div>
+    {account.pending_adjustment && parseFloat(account.pending_adjustment) !== 0 && (
+      <div className="balance-row" style={{ fontSize: '0.85em', opacity: 0.7 }}>
+        <span className="balance-label" title="Total pending charges">
+          ⏳ Pending
+        </span>
+        <span className="balance-amount" style={{ color: parseFloat(account.pending_adjustment) > 0 ? '#10b981' : '#f59e0b' }}>
+          {formatCurrency(parseFloat(account.pending_adjustment))}
+        </span>
+      </div>
+    )}
+  </>
+)}
               </div>
               
               <div className="account-actions">
@@ -1275,7 +1414,12 @@ const Accounts = () => {
           .filter(([, account]) => !account.isPlaid)
           .map(([key, account]) => {
             const liveBalance = parseFloat(account.balance) || 0;
-            const projectedBalance = calculateProjectedBalance(key, liveBalance, transactions);
+            const projectedBalance = calculateProjectedBalance(
+              key, 
+              liveBalance, 
+              transactions,
+              account  // ✅ Pass full account object for mask/institution matching
+            );
             const hasDifference = projectedBalance !== liveBalance;
             
             return (

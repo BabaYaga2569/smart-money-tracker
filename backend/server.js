@@ -5,7 +5,7 @@ import admin from "firebase-admin";
 
 const app = express();
 app.use(cors({
-  origin: ['https://smart-money-tracker.netlify.app', 'http://localhost:3000'],
+  origin: ['https://smart-money-tracker.netlify.app', 'https://smart-money-tracker-v2.netlify.app', 'http://localhost:3000'],
   credentials: true
 }));
 app.use(express.json());
@@ -310,9 +310,11 @@ async function deduplicateAndSaveAccounts(userId, newAccounts, institutionName, 
     mask: account.mask,
     type: account.type,
     subtype: account.subtype,
-    balance: account.balances.current || account.balances.available || 0,
-    institution_name: institutionName,
-    item_id: itemId
+    balance: account.balances.available || account.balances.current || 0,
+current_balance: account.balances.current || 0,
+available_balance: account.balances.available || 0,
+institution_name: institutionName,
+item_id: itemId
   }));
 
   // Deduplicate by institution + mask
@@ -347,6 +349,76 @@ async function deduplicateAndSaveAccounts(userId, newAccounts, institutionName, 
   return {
     added: accountsToAdd.length,
     deduplicated: deduplicatedCount,
+    total: updatedPlaidAccounts.length
+  };
+}
+
+/**
+ * Update account balances in Firebase settings/personal collection
+ * This function only updates balances for existing accounts, doesn't add/remove accounts
+ * @param {string} userId - User's UID
+ * @param {Array} accounts - Array of accounts with fresh balance data from Plaid
+ * @returns {Promise<Object>} Result with updated count
+ */
+async function updateAccountBalances(userId, accounts) {
+  if (!userId || !Array.isArray(accounts)) {
+    throw new Error('Invalid parameters for updateAccountBalances');
+  }
+
+  logDiagnostic.info('UPDATE_BALANCES', `Updating balances for ${accounts.length} accounts for user: ${userId}`);
+
+  const settingsRef = db.collection('users').doc(userId)
+    .collection('settings').doc('personal');
+
+  // Get current settings
+  const settingsDoc = await settingsRef.get();
+  const currentSettings = settingsDoc.exists ? settingsDoc.data() : {};
+  const existingPlaidAccounts = currentSettings.plaidAccounts || [];
+
+  if (existingPlaidAccounts.length === 0) {
+    logDiagnostic.info('UPDATE_BALANCES', 'No existing accounts to update');
+    return { updated: 0, total: 0 };
+  }
+
+  let updatedCount = 0;
+
+  // Update balances for matching accounts
+  const updatedPlaidAccounts = existingPlaidAccounts.map(existingAcc => {
+    // Find matching account in fresh data by account_id
+    const freshAccount = accounts.find(acc => acc.account_id === existingAcc.account_id);
+    
+    if (freshAccount) {
+      updatedCount++;
+      logDiagnostic.info('UPDATE_BALANCES', `Updating balance for account: ${existingAcc.name} (...${existingAcc.mask})`);
+      
+      // Safely access balances (handle null/undefined)
+      const balances = freshAccount.balances || {};
+      
+      // Update balance fields with fresh data
+      return {
+        ...existingAcc,
+        balance: balances.available || balances.current || 0,
+        current_balance: balances.current || 0,
+        available_balance: balances.available || 0,
+        lastUpdated: new Date().toISOString()
+      };
+    }
+    
+    // Keep existing account unchanged if no fresh data
+    return existingAcc;
+  });
+
+  // Update settings/personal with fresh balances
+  await settingsRef.set({
+    ...currentSettings,
+    plaidAccounts: updatedPlaidAccounts,
+    lastBalanceUpdate: admin.firestore.FieldValue.serverTimestamp()
+  }, { merge: true });
+
+  logDiagnostic.info('UPDATE_BALANCES', `Updated ${updatedCount} account balances`);
+
+  return {
+    updated: updatedCount,
     total: updatedPlaidAccounts.length
   };
 }
@@ -611,7 +683,6 @@ app.post("/api/plaid/exchange_token", async (req, res) => {
   }
 });
 
-// Get account balances
 app.post("/api/plaid/get_balances", async (req, res) => {
   const endpoint = "/api/plaid/get_balances";
   logDiagnostic.request(endpoint, req.body);
@@ -640,17 +711,14 @@ app.post("/api/plaid/get_balances", async (req, res) => {
     let allAccounts = [];
     for (const item of items) {
       try {
-        // Use transactionsSync for fresher balance data (same approach as Rocket Money)
-        // transactionsSync provides more up-to-date balance data than accountsBalanceGet
-        const syncResponse = await plaidClient.transactionsSync({
-          access_token: item.accessToken,
-          options: {
-            include_personal_finance_category: true
-          }
+        // Use accountsBalanceGet to fetch real-time balance data
+        // This ensures we get fresh balances directly from the bank instead of cached data
+        const balanceResponse = await plaidClient.accountsBalanceGet({
+          access_token: item.accessToken
         });
         
-        // Extract accounts with fresh balance from sync response
-        const accountsWithInstitution = syncResponse.data.accounts.map(account => ({
+        // Extract accounts with fresh balance from balance response
+        const accountsWithInstitution = balanceResponse.data.accounts.map(account => ({
           account_id: account.account_id,
           name: account.name,
           official_name: account.official_name,
@@ -672,6 +740,16 @@ app.post("/api/plaid/get_balances", async (req, res) => {
 
     const accountCount = allAccounts.length;
     logDiagnostic.info('GET_BALANCES', `Successfully fetched balances for ${accountCount} accounts from ${items.length} banks`);
+    
+    // Update account balances in Firebase settings/personal collection
+    try {
+      const updateResult = await updateAccountBalances(userId, allAccounts);
+      logDiagnostic.info('GET_BALANCES', `Persisted balances to Firebase: ${updateResult.updated} accounts updated`);
+    } catch (updateError) {
+      logDiagnostic.error('GET_BALANCES', 'Failed to persist balances to Firebase', updateError);
+      // Continue anyway - don't fail the request if Firebase update fails
+    }
+    
     logDiagnostic.response(endpoint, 200, { success: true, account_count: accountCount, item_count: items.length });
 
     res.json({
@@ -753,6 +831,15 @@ app.get("/api/accounts", async (req, res) => {
         console.error(`Error getting accounts for item ${item.itemId}:`, itemError);
         // Continue with other items even if one fails
       }
+    }
+
+    // Update account balances in Firebase settings/personal collection
+    try {
+      const updateResult = await updateAccountBalances(userId, allAccounts);
+      logDiagnostic.info('GET_ACCOUNTS', `Persisted balances to Firebase: ${updateResult.updated} accounts updated`);
+    } catch (updateError) {
+      logDiagnostic.error('GET_ACCOUNTS', 'Failed to persist balances to Firebase', updateError);
+      // Continue anyway - don't fail the request if Firebase update fails
     }
 
     res.json({
@@ -914,7 +1001,6 @@ app.post("/api/plaid/get_transactions", async (req, res) => {
     });
   }
 });
-
 // Sync transactions to Firebase (includes pending transactions)
 app.post("/api/plaid/sync_transactions", async (req, res) => {
   const endpoint = "/api/plaid/sync_transactions";
@@ -930,6 +1016,15 @@ app.post("/api/plaid/sync_transactions", async (req, res) => {
         error: "userId is required. Please authenticate." 
       });
     }
+    // Set sync status to "syncing"
+    await db.collection('users')
+      .doc(userId)
+      .collection('metadata')
+      .doc('sync')
+      .set({
+        syncStatus: 'syncing',
+        lastSyncStart: admin.firestore.FieldValue.serverTimestamp()
+      }, { merge: true });
 
     // Retrieve all Plaid items for the user
     const items = await getAllPlaidItems(userId);
@@ -966,6 +1061,9 @@ app.post("/api/plaid/sync_transactions", async (req, res) => {
         let itemRemoved = [];
         let hasMore = true;
         let cursor = lastCursor;
+        
+        // Map to store account information by account_id for quick lookup
+        let accountsMap = {};
 
         while (hasMore) {
           const response = await plaidClient.transactionsSync({
@@ -976,19 +1074,28 @@ app.post("/api/plaid/sync_transactions", async (req, res) => {
             }
           });
           
-          // Add institution info to transactions
+          // Build accounts map from response for mask lookup
+          if (response.data.accounts && response.data.accounts.length > 0) {
+            response.data.accounts.forEach(account => {
+              accountsMap[account.account_id] = account;
+            });
+          }
+          
+          // Add institution info and mask to transactions
           const addedWithInstitution = response.data.added.map(tx => ({
             ...tx,
             institution_name: item.institutionName,
             institution_id: item.institutionId,
-            item_id: item.itemId
+            item_id: item.itemId,
+            mask: accountsMap[tx.account_id]?.mask || null
           }));
           
           const modifiedWithInstitution = response.data.modified.map(tx => ({
             ...tx,
             institution_name: item.institutionName,
             institution_id: item.institutionId,
-            item_id: item.itemId
+            item_id: item.itemId,
+            mask: accountsMap[tx.account_id]?.mask || null
           }));
           
           itemAdded.push(...addedWithInstitution);
@@ -1054,41 +1161,37 @@ app.post("/api/plaid/sync_transactions", async (req, res) => {
       const txDoc = await txDocRef.get();
       
       // Prepare transaction data in our format
+      const isPending = Boolean(plaidTx.pending);
+      
       const transactionData = {
         transaction_id: plaidTx.transaction_id,
         account_id: plaidTx.account_id,
-        amount: -plaidTx.amount,  // ← FLIP SIGN: Plaid positive=expense, we need negative=expense
+        amount: -plaidTx.amount,  // FLIP SIGN: Plaid positive=expense, we need negative=expense
         date: plaidTx.date,
         name: plaidTx.name,
         merchant_name: plaidTx.merchant_name || plaidTx.name,
         category: autoCategorizTransaction(plaidTx.merchant_name || plaidTx.name),
-        pending: plaidTx.pending || false,  // ← KEY FIELD!
+        pending: isPending,
         payment_channel: plaidTx.payment_channel || 'other',
         source: 'plaid',
+        mask: plaidTx.mask || null,
+        institution_name: plaidTx.institution_name || null,
         timestamp: admin.firestore.FieldValue.serverTimestamp(),
         lastSyncedAt: admin.firestore.FieldValue.serverTimestamp()
       };
 
-      if (plaidTx.pending) {
+      if (isPending) {
         pendingCount++;
       }
 
       // Check for duplicate manual pending charges
-      // KEY FIX: Only match with POSTED Plaid transactions (not pending ones)
       const matchingManualCharge = manualPendingCharges.find(manual => {
         // Skip if Plaid transaction is still pending
         if (plaidTx.pending) {
-          return false; // KEY FIX: Only match with POSTED transactions
+          return false;
         }
         
-        // Match criteria:
-        // 1. Same account
-        // 2. Same amount (within $0.01 tolerance for floating point)
-        // 3. Date within 3 days
-        // 4. Merchant name similarity (enhanced with fuzzy matching)
-        
         const accountMatch = manual.account_id === plaidTx.account_id || manual.account === plaidTx.account_id;
-        // Manual uses negative for expense, Plaid uses positive for expense, so negate Plaid amount for comparison
         const amountMatch = Math.abs(manual.amount - (-plaidTx.amount)) < 0.01;
         
         const manualDate = new Date(manual.date);
@@ -1096,19 +1199,16 @@ app.post("/api/plaid/sync_transactions", async (req, res) => {
         const daysDiff = Math.abs((manualDate - plaidDate) / (1000 * 60 * 60 * 24));
         const dateMatch = daysDiff <= 3;
         
-        // Enhanced name matching with fuzzy similarity
         const manualName = (manual.merchant_name || manual.name || manual.description || '').toLowerCase().trim();
         const plaidName = (plaidTx.merchant_name || plaidTx.name || '').toLowerCase().trim();
         
-        // Multiple matching strategies
         const exactMatch = manualName === plaidName;
         const containsMatch = manualName.includes(plaidName) || plaidName.includes(manualName);
         const prefixMatch = manualName.length > 5 && plaidName.length > 5 && 
                             manualName.substring(0, 5) === plaidName.substring(0, 5);
         
-        // Fuzzy similarity (Levenshtein distance)
         const similarity = calculateSimilarity(manualName, plaidName);
-        const fuzzyMatch = similarity > 0.6; // 60% similar
+        const fuzzyMatch = similarity > 0.6;
         
         const nameMatch = exactMatch || containsMatch || prefixMatch || fuzzyMatch;
         
@@ -1116,17 +1216,15 @@ app.post("/api/plaid/sync_transactions", async (req, res) => {
       });
 
       if (matchingManualCharge) {
-        // Found a duplicate - delete the manual pending charge
         const manualDocRef = transactionsRef.doc(matchingManualCharge.id);
         batch.delete(manualDocRef);
         deduplicatedCount++;
         
         logDiagnostic.info('DEDUPE', 
-          `✅ Deleting manual pending: "${matchingManualCharge.merchant_name}" (${matchingManualCharge.amount}) ` +
+          `Deleting manual pending: "${matchingManualCharge.merchant_name}" (${matchingManualCharge.amount}) ` +
           `matched with Plaid posted: "${plaidTx.merchant_name || plaidTx.name}" (${plaidTx.amount})`
         );
         
-        // Remove from the list so we don't match it again
         const index = manualPendingCharges.indexOf(matchingManualCharge);
         if (index > -1) {
           manualPendingCharges.splice(index, 1);
@@ -1134,11 +1232,9 @@ app.post("/api/plaid/sync_transactions", async (req, res) => {
       }
 
       if (!txDoc.exists) {
-        // New transaction - add to batch
         batch.set(txDocRef, transactionData);
         addedCount++;
       } else {
-        // Existing transaction - update it (in case pending status changed)
         batch.update(txDocRef, transactionData);
         updatedCount++;
       }
@@ -1149,20 +1245,10 @@ app.post("/api/plaid/sync_transactions", async (req, res) => {
       const removedDocRef = transactionsRef.doc(removedTx.transaction_id);
       const removedDoc = await removedDocRef.get();
       
-      // Only delete if it's a Plaid transaction (not manual)
       if (removedDoc.exists && removedDoc.data().source === 'plaid') {
         batch.delete(removedDocRef);
         logDiagnostic.info('SYNC_TRANSACTIONS', `Removing transaction: ${removedTx.transaction_id}`);
       }
-    }
-
-    // Log manual pending transactions that were kept (no match found)
-    if (manualPendingCharges.length > 0) {
-      manualPendingCharges.forEach(manual => {
-        logDiagnostic.info('DEDUPE', 
-          `⏸️  Keeping manual pending: "${manual.merchant_name}" (${manual.amount}) - no posted Plaid match found`
-        );
-      });
     }
 
     // Commit the batch
@@ -1177,6 +1263,19 @@ app.post("/api/plaid/sync_transactions", async (req, res) => {
       deduplicated: deduplicatedCount,
       removed: allRemoved.length
     });
+    
+    // Mark sync as complete with timestamp
+    await db.collection('users')
+      .doc(userId)
+      .collection('metadata')
+      .doc('sync')
+      .set({
+        lastPlaidSync: admin.firestore.FieldValue.serverTimestamp(),
+        lastPlaidSyncDate: new Date().toISOString(),
+        syncStatus: 'idle',
+        lastSyncError: null,
+        transactionCount: txCount
+      }, { merge: true });
 
     res.json({
       success: true,
@@ -1190,13 +1289,26 @@ app.post("/api/plaid/sync_transactions", async (req, res) => {
     });
   } catch (error) {
     logDiagnostic.error('SYNC_TRANSACTIONS', 'Failed to sync transactions', error);
+
+    // Mark sync as failed
+    try {
+      await db.collection('users')
+        .doc(req.body.userId)
+        .collection('metadata')
+        .doc('sync')
+        .set({
+          syncStatus: 'error',
+          lastSyncError: error.message,
+          lastErrorTime: admin.firestore.FieldValue.serverTimestamp()
+        }, { merge: true });
+    } catch (metadataError) {
+      logDiagnostic.error('SYNC_TRANSACTIONS', 'Could not update error status:', metadataError);
+    }
     
-    // Provide more detailed error information
     let errorMessage = "Failed to sync transactions from your bank";
     let statusCode = 500;
     
     if (error.response) {
-      // Plaid API error
       const plaidError = error.response.data;
       statusCode = error.response.status;
       
@@ -1233,10 +1345,6 @@ app.post("/api/plaid/sync_transactions", async (req, res) => {
   }
 });
 
-// ============================================================================
-// FORCE PLAID TO CHECK BANK IMMEDIATELY
-// ============================================================================
-
 // Force Plaid to check the bank immediately
 app.post("/api/plaid/refresh_transactions", async (req, res) => {
   const endpoint = "/api/plaid/refresh_transactions";
@@ -1250,7 +1358,6 @@ app.post("/api/plaid/refresh_transactions", async (req, res) => {
       return res.status(400).json({ error: "userId is required" });
     }
 
-    // Retrieve all Plaid items for the user
     const items = await getAllPlaidItems(userId);
     if (!items || items.length === 0) {
       logDiagnostic.error('REFRESH_TRANSACTIONS', 'No Plaid credentials found for user');
@@ -1262,12 +1369,15 @@ app.post("/api/plaid/refresh_transactions", async (req, res) => {
 
     logDiagnostic.info('REFRESH_TRANSACTIONS', `Requesting Plaid to refresh transactions for ${items.length} bank connections`);
 
-    // Tell Plaid to go check all banks RIGHT NOW
     const refreshResults = [];
     for (const item of items) {
       try {
-        const response = await plaidClient.transactionsRefresh({
-          access_token: item.accessToken
+        const response = await plaidClient.transactionsSync({
+          access_token: item.accessToken,
+          options: {
+            include_personal_finance_category: true,
+            count: 500
+          }
         });
 
         refreshResults.push({
@@ -1324,15 +1434,7 @@ app.post("/api/plaid/refresh_transactions", async (req, res) => {
   }
 });
 
-// ============================================================================
-// PLAID WEBHOOK HANDLER FOR REAL-TIME UPDATES
-// ============================================================================
-
-/**
- * Webhook endpoint for Plaid to send real-time updates
- * Handles balance changes, transaction updates, and connection issues
- * This is how professional apps (Rocket Money, Mint, YNAB) get fresh data
- */
+// Webhook endpoint for Plaid
 app.post("/api/plaid/webhook", async (req, res) => {
   const endpoint = "/api/plaid/webhook";
   logDiagnostic.request(endpoint, req.body);
@@ -1345,7 +1447,6 @@ app.post("/api/plaid/webhook", async (req, res) => {
       has_error: !!error
     });
     
-    // Handle transaction/balance updates
     if (webhook_type === 'TRANSACTIONS') {
       if (webhook_code === 'DEFAULT_UPDATE' || 
           webhook_code === 'INITIAL_UPDATE' ||
@@ -1353,7 +1454,6 @@ app.post("/api/plaid/webhook", async (req, res) => {
         
         logDiagnostic.info('WEBHOOK', 'Processing transaction update webhook', { item_id });
         
-        // Find which user owns this Plaid item
         const itemsSnapshot = await db.collectionGroup('plaid_items')
           .where('itemId', '==', item_id)
           .limit(1)
@@ -1368,7 +1468,6 @@ app.post("/api/plaid/webhook", async (req, res) => {
             institution: itemData.institutionName
           });
           
-          // Fetch fresh data from Plaid using transactionsSync
           const syncResponse = await plaidClient.transactionsSync({
             access_token: itemData.accessToken,
             cursor: itemData.cursor || undefined,
@@ -1376,6 +1475,27 @@ app.post("/api/plaid/webhook", async (req, res) => {
               include_personal_finance_category: true
             }
           });
+
+          // ✅ ADD LOGGING HERE TO SEE WHAT PLAID SENDS:
+          logDiagnostic.info('WEBHOOK', `Raw Plaid response for ${itemData.institutionName}:`, {
+            total_added: syncResponse.data.added.length,
+            total_modified: syncResponse.data.modified.length,
+            total_removed: syncResponse.data.removed.length,
+            pending_count: syncResponse.data.added.filter(tx => tx.pending === true).length
+          });
+
+          // Log first few transactions to see structure
+          if (syncResponse.data.added.length > 0) {
+            syncResponse.data.added.slice(0, 3).forEach(tx => {
+              logDiagnostic.info('WEBHOOK', `Transaction sample:`, {
+                merchant: tx.merchant_name || tx.name,
+                amount: tx.amount,
+                pending: tx.pending,
+                date: tx.date,
+                account_id: tx.account_id
+              });
+            });
+          }
           
           logDiagnostic.info('WEBHOOK', 'Received transaction data from Plaid', {
             accounts: syncResponse.data.accounts.length,
@@ -1384,7 +1504,6 @@ app.post("/api/plaid/webhook", async (req, res) => {
             removed: syncResponse.data.removed.length
           });
           
-          // Ensure user document exists before writing transactions
           const userDocRef = db.collection('users').doc(userId);
           const userDoc = await userDocRef.get();
           
@@ -1396,7 +1515,13 @@ app.post("/api/plaid/webhook", async (req, res) => {
             }, { merge: true });
           }
           
-          // Save transactions to Firebase using batched writes
+          const accountsMap = {};
+          if (syncResponse.data.accounts && syncResponse.data.accounts.length > 0) {
+            syncResponse.data.accounts.forEach(account => {
+              accountsMap[account.account_id] = account;
+            });
+          }
+          
           const allTransactions = [
             ...syncResponse.data.added,
             ...syncResponse.data.modified
@@ -1412,19 +1537,23 @@ app.post("/api/plaid/webhook", async (req, res) => {
                 .collection('transactions')
                 .doc(transaction.transaction_id);
               
+              const txMask = accountsMap[transaction.account_id]?.mask || null;
+              const txInstitution = itemData.institutionName;
+              
               batch.set(transactionRef, {
                 ...transaction,
-                amount: -transaction.amount,  // ← FLIP SIGN: Plaid positive=expense, we need negative=expense
+                amount: -transaction.amount,
                 category: autoCategorizTransaction(transaction.merchant_name || transaction.name),
                 item_id: item_id,
-                institutionName: itemData.institutionName,
+                institutionName: txInstitution,
+                institution_name: txInstitution,
+                mask: txMask,
                 synced_at: admin.firestore.FieldValue.serverTimestamp(),
                 webhook_code: webhook_code
               }, { merge: true });
               
               batchCount++;
               
-              // Firebase batch limit is 500 operations
               if (batchCount >= 500) {
                 await batch.commit();
                 totalSaved += batchCount;
@@ -1434,7 +1563,6 @@ app.post("/api/plaid/webhook", async (req, res) => {
               }
             }
             
-            // Commit remaining transactions
             if (batchCount > 0) {
               await batch.commit();
               totalSaved += batchCount;
@@ -1443,7 +1571,6 @@ app.post("/api/plaid/webhook", async (req, res) => {
             logDiagnostic.info('WEBHOOK', `Successfully saved ${totalSaved} transactions to Firebase`);
           }
           
-          // Handle removed transactions
           if (syncResponse.data.removed.length > 0) {
             let batch = db.batch();
             let batchCount = 0;
@@ -1471,7 +1598,6 @@ app.post("/api/plaid/webhook", async (req, res) => {
             logDiagnostic.info('WEBHOOK', `Removed ${syncResponse.data.removed.length} transactions from Firebase`);
           }
           
-          // Update cursor and sync timestamp
           await itemDoc.ref.update({
             cursor: syncResponse.data.next_cursor,
             lastWebhookUpdate: admin.firestore.FieldValue.serverTimestamp()
@@ -1488,21 +1614,18 @@ app.post("/api/plaid/webhook", async (req, res) => {
       }
     }
     
-    // Handle connection issues
     if (webhook_type === 'ITEM' && webhook_code === 'ERROR') {
       logDiagnostic.error('WEBHOOK', 'Item error reported by Plaid', {
         item_id,
         error
       });
       
-      // Find item and mark as needing reconnection
       const itemsSnapshot = await db.collectionGroup('plaid_items')
         .where('itemId', '==', item_id)
         .limit(1)
         .get();
       
       if (!itemsSnapshot.empty) {
-        // Check if error is related to token expiration
         const errorCode = error?.error_code;
         const needsReauth = errorCode === 'ITEM_LOGIN_REQUIRED' || 
                            errorCode === 'INVALID_CREDENTIALS' ||
@@ -1522,12 +1645,10 @@ app.post("/api/plaid/webhook", async (req, res) => {
       }
     }
     
-    // Always return 200 OK to Plaid (prevents webhook retries)
     logDiagnostic.response(endpoint, 200, { success: true });
     res.json({ success: true });
     
   } catch (error) {
-    // Enhanced error logging with specific handling for FAILED_PRECONDITION
     if (error.code === 9) {
       logDiagnostic.error('WEBHOOK', 'FAILED_PRECONDITION error - Document structure may not exist', {
         message: error.message,
@@ -1540,8 +1661,6 @@ app.post("/api/plaid/webhook", async (req, res) => {
       logDiagnostic.error('WEBHOOK', 'Error processing webhook', error);
     }
     
-    // Still return 200 to prevent Plaid from retrying
-    // (we don't want failed webhooks to be retried repeatedly)
     res.status(200).json({ 
       success: false, 
       error: 'Internal error processing webhook' 
@@ -1549,10 +1668,7 @@ app.post("/api/plaid/webhook", async (req, res) => {
   }
 });
 
-// ============================================================================
-// PLAID HEALTH CHECK ENDPOINT
-// ============================================================================
-
+// Health check endpoints
 app.get("/api/plaid/health", async (req, res) => {
   const endpoint = "/api/plaid/health";
   logDiagnostic.info('HEALTH_CHECK', 'Running Plaid health check');
@@ -1573,7 +1689,6 @@ app.get("/api/plaid/health", async (req, res) => {
     }
   };
 
-  // Check 1: Credentials Configuration
   if (!PLAID_CLIENT_ID || PLAID_CLIENT_ID === 'demo_client_id') {
     healthStatus.checks.credentials.status = 'error';
     healthStatus.checks.credentials.message = 'PLAID_CLIENT_ID not configured or using demo value';
@@ -1587,7 +1702,6 @@ app.get("/api/plaid/health", async (req, res) => {
     healthStatus.checks.credentials.message = 'Plaid credentials configured';
   }
 
-  // Check 2: Configuration
   if (PLAID_ENV === 'sandbox' || PLAID_ENV === 'development' || PLAID_ENV === 'production') {
     healthStatus.checks.configuration.status = 'ok';
     healthStatus.checks.configuration.message = `Environment set to: ${PLAID_ENV}`;
@@ -1596,7 +1710,6 @@ app.get("/api/plaid/health", async (req, res) => {
     healthStatus.checks.configuration.message = `Unknown PLAID_ENV: ${PLAID_ENV}`;
   }
 
-  // Check 3: API Connectivity - Try to create a test link token
   if (healthStatus.checks.credentials.status === 'ok') {
     try {
       logDiagnostic.info('HEALTH_CHECK', 'Testing Plaid API connectivity');
@@ -1638,7 +1751,6 @@ app.get("/api/plaid/health", async (req, res) => {
     healthStatus.checks.api_connectivity.message = 'Skipped due to invalid credentials';
   }
 
-  // Determine overall status
   const allChecks = Object.values(healthStatus.checks);
   if (allChecks.every(check => check.status === 'ok')) {
     healthStatus.status = 'healthy';
@@ -1651,11 +1763,9 @@ app.get("/api/plaid/health", async (req, res) => {
   logDiagnostic.info('HEALTH_CHECK', `Health check completed: ${healthStatus.status}`);
   logDiagnostic.response(endpoint, 200, { status: healthStatus.status });
 
-  // Return 200 with health status (don't use 503 to avoid confusion with server downtime)
   res.json(healthStatus);
 });
 
-// Per-user connection health check
 app.post("/api/plaid/health_check", async (req, res) => {
   const endpoint = "/api/plaid/health_check";
   logDiagnostic.request(endpoint, req.body);
@@ -1670,7 +1780,6 @@ app.post("/api/plaid/health_check", async (req, res) => {
 
     logDiagnostic.info('HEALTH_CHECK_USER', `Checking connection health for user: ${userId}`);
 
-    // Retrieve all Plaid items for the user
     const itemsSnapshot = await db
       .collection('users')
       .doc(userId)
@@ -1693,7 +1802,6 @@ app.post("/api/plaid/health_check", async (req, res) => {
 
     logDiagnostic.info('HEALTH_CHECK_USER', `Found ${items.length} Plaid items`);
 
-    // Check status of each item
     const itemStatuses = items.map(item => ({
       itemId: item.itemId,
       institutionName: item.institutionName || 'Unknown Bank',
@@ -1738,7 +1846,6 @@ app.post("/api/plaid/health_check", async (req, res) => {
   }
 });
 
-// Reset Plaid sync cursors (force full re-sync on next sync)
 app.post('/api/plaid/reset_cursors', async (req, res) => {
   try {
     const { userId } = req.body;
@@ -1749,7 +1856,6 @@ app.post('/api/plaid/reset_cursors', async (req, res) => {
     
     logDiagnostic.info('RESET_CURSORS', `Resetting sync cursors for user: ${userId}`);
     
-    // Get all plaid_items for user
     const plaidItemsRef = db.collection('users').doc(userId).collection('plaid_items');
     const snapshot = await plaidItemsRef.get();
     
@@ -1758,7 +1864,6 @@ app.post('/api/plaid/reset_cursors', async (req, res) => {
       return res.json({ success: true, reset_count: 0, message: 'No items to reset' });
     }
     
-    // Reset cursor field for each item
     const batch = db.batch();
     let resetCount = 0;
     
@@ -1786,9 +1891,7 @@ app.post('/api/plaid/reset_cursors', async (req, res) => {
   }
 });
 
-// ============================================================================
-// UPDATE TRANSACTION ENDPOINT
-// ============================================================================
+// CORRECTED VERSION - Replace lines 1894-1957 with this:
 
 app.put("/api/transactions/:transactionId", async (req, res) => {
   const endpoint = `/api/transactions/${req.params.transactionId}`;
@@ -1807,7 +1910,7 @@ app.put("/api/transactions/:transactionId", async (req, res) => {
       .doc(userId)
       .collection('transactions')
       .doc(transactionId);
-    
+      
     const transactionDoc = await transactionRef.get();
     
     if (!transactionDoc.exists) {
@@ -1816,14 +1919,18 @@ app.put("/api/transactions/:transactionId", async (req, res) => {
     
     const existingTransaction = transactionDoc.data();
     
-    // Only allow editing manual transactions
+    // Check if trying to edit protected fields on Plaid transactions
     if (existingTransaction.source === 'plaid') {
-      return res.status(403).json({ 
-        error: "Cannot edit Plaid transactions",
-        error_code: "PLAID_READ_ONLY"
-      });
+      if (merchant_name !== undefined || amount !== undefined || 
+          date !== undefined || notes !== undefined) {
+        return res.status(403).json({ 
+          error: "Can only edit category for Plaid transactions.",
+          error_code: "PLAID_READ_ONLY"
+        });
+      }
     }
     
+    // Build updates object
     const updates = {
       updated_at: admin.firestore.FieldValue.serverTimestamp()
     };
@@ -1831,7 +1938,10 @@ app.put("/api/transactions/:transactionId", async (req, res) => {
     if (merchant_name !== undefined) updates.merchant_name = merchant_name;
     if (amount !== undefined) updates.amount = amount;
     if (date !== undefined) updates.date = date;
-    if (category !== undefined) updates.category = category;
+    if (category !== undefined) {
+      updates.category = category;
+      updates.category_override = true;
+    }
     if (notes !== undefined) updates.notes = notes;
     
     await transactionRef.update(updates);
@@ -1850,13 +1960,53 @@ app.put("/api/transactions/:transactionId", async (req, res) => {
   }
 });
 
-// ============================================================================
-// SUBSCRIPTIONS API ENDPOINTS
-// ============================================================================
+// Bulk categorize transactions
+app.post("/api/transactions/bulk-categorize", async (req, res) => {
+  try {
+    const { userId } = req.body;
+    if (!userId) return res.status(400).json({ error: "userId is required" });
+    
+    const CATEGORY_KEYWORDS = {
+      "Groceries": ["walmart", "target", "kroger", "costco", "trader joe"],
+      "Food & Dining": ["mcdonalds", "starbucks", "pizza", "burger king", "chipotle"],
+      "Gas & Fuel": ["shell", "chevron", "exxon", "bp"],
+      "Pharmacy": ["cvs", "walgreens"],
+      "Shopping": ["amazon"]
+    };
+    
+    const categorize = (name) => {
+      if (!name) return null;
+      const n = name.toLowerCase();
+      for (const [cat, words] of Object.entries(CATEGORY_KEYWORDS)) {
+        if (words.some(w => n.includes(w))) return cat;
+      }
+      return null;
+    };
+    
+    const ref = db.collection('users').doc(userId).collection('transactions');
+    const snap = await ref.get();
+    const batch = db.batch();
+    let categorized = 0;
+    
+    snap.forEach(doc => {
+      const t = doc.data();
+      if (!t.category && !t.category_override) {
+        const cat = categorize(t.merchant_name || t.name || t.description);
+        if (cat) {
+          batch.update(doc.ref, { category: cat, category_auto_assigned: true });
+          categorized++;
+        }
+      }
+    });
+    
+    await batch.commit();
+    res.json({ success: true, categorized, message: `Categorized ${categorized} transactions` });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
 
-/**
- * Get all subscriptions for a user
- */
+// Subscriptions endpoints
 app.get("/api/subscriptions", async (req, res) => {
   const endpoint = "/api/subscriptions";
   logDiagnostic.request(endpoint, req.query);
@@ -1888,9 +2038,6 @@ app.get("/api/subscriptions", async (req, res) => {
   }
 });
 
-/**
- * Create a new subscription
- */
 app.post("/api/subscriptions", async (req, res) => {
   const endpoint = "/api/subscriptions";
   logDiagnostic.request(endpoint, req.body);
@@ -1902,7 +2049,6 @@ app.post("/api/subscriptions", async (req, res) => {
       return res.status(400).json({ error: "userId and subscription data are required" });
     }
     
-    // Add timestamps
     const newSubscription = {
       ...subscription,
       createdAt: admin.firestore.FieldValue.serverTimestamp(),
@@ -1925,9 +2071,6 @@ app.post("/api/subscriptions", async (req, res) => {
   }
 });
 
-/**
- * Update a subscription
- */
 app.put("/api/subscriptions/:id", async (req, res) => {
   const endpoint = "/api/subscriptions/:id";
   logDiagnostic.request(endpoint, req.body);
@@ -1940,7 +2083,6 @@ app.put("/api/subscriptions/:id", async (req, res) => {
       return res.status(400).json({ error: "userId and subscription data are required" });
     }
     
-    // Update timestamp
     const updatedSubscription = {
       ...subscription,
       updatedAt: admin.firestore.FieldValue.serverTimestamp()
@@ -1961,9 +2103,6 @@ app.put("/api/subscriptions/:id", async (req, res) => {
   }
 });
 
-/**
- * Delete a subscription
- */
 app.delete("/api/subscriptions/:id", async (req, res) => {
   const endpoint = "/api/subscriptions/:id";
   logDiagnostic.request(endpoint, req.params);
@@ -1991,9 +2130,6 @@ app.delete("/api/subscriptions/:id", async (req, res) => {
   }
 });
 
-/**
- * Mark a subscription as cancelled (soft delete)
- */
 app.post("/api/subscriptions/:id/cancel", async (req, res) => {
   const endpoint = "/api/subscriptions/:id/cancel";
   logDiagnostic.request(endpoint, req.params);
@@ -2025,68 +2161,6 @@ app.post("/api/subscriptions/:id/cancel", async (req, res) => {
   }
 });
 
-/**
- * Auto-detect subscription patterns from transactions
- */
-app.post("/api/subscriptions/detect", async (req, res) => {
-  const endpoint = "/api/subscriptions/detect";
-  logDiagnostic.request(endpoint, req.body);
-  
-  try {
-    const { userId } = req.body;
-    
-    if (!userId) {
-      return res.status(400).json({ error: "userId is required" });
-    }
-    
-    // Import detection algorithm
-    const { detectSubscriptions } = await import('./utils/subscriptionDetector.js');
-    
-    // Fetch all transactions
-    const transactionsRef = db.collection('users').doc(userId).collection('transactions');
-    const transactionsSnapshot = await transactionsRef.get();
-    
-    const transactions = [];
-    transactionsSnapshot.forEach(doc => {
-      transactions.push({
-        id: doc.id,
-        ...doc.data()
-      });
-    });
-    
-    // Fetch existing subscriptions
-    const subscriptionsRef = db.collection('users').doc(userId).collection('subscriptions');
-    const subscriptionsSnapshot = await subscriptionsRef.get();
-    
-    const existingSubscriptions = [];
-    subscriptionsSnapshot.forEach(doc => {
-      existingSubscriptions.push({
-        id: doc.id,
-        ...doc.data()
-      });
-    });
-    
-    // Run detection algorithm
-    const detected = detectSubscriptions(transactions, existingSubscriptions);
-    
-    logDiagnostic.response(endpoint, 200, { 
-      count: detected.length,
-      scannedTransactions: transactions.length
-    });
-    
-    res.json({ 
-      detected,
-      count: detected.length,
-      scannedTransactions: transactions.length
-    });
-    
-  } catch (error) {
-    logDiagnostic.error('DETECT_SUBSCRIPTIONS', 'Failed to detect subscriptions', error);
-    res.status(500).json({ error: error.message });
-  }
-});
-
-// Health check
 app.get("/healthz", (req, res) => res.send("ok"));
 
 const PORT = process.env.PORT || 5000;

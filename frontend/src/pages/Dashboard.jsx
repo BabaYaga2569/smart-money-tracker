@@ -6,6 +6,8 @@ import { calculateTotalProjectedBalance } from '../utils/BalanceCalculator';
 import PlaidConnectionManager from '../utils/PlaidConnectionManager';
 import './Dashboard.css';
 import { useAuth } from '../contexts/AuthContext';
+import DashboardTileCreditCard from "../components/DashboardTileCreditCard";
+
 
 const Dashboard = () => {
   const { currentUser } = useAuth();
@@ -344,6 +346,15 @@ setDashboardData({
       path: '/bills',
       color: 'red'
     },
+    {
+  title: 'Credit Cards',
+  icon: '💳',
+  value: 'View balances & payoffs',
+  subtitle: 'Snowball + Utilization',
+  path: '/creditcards',
+  color: 'emerald', // match your theme
+  tooltip: 'Live credit card data from Plaid'
+},
     {
       title: 'Recurring',
       icon: '🔄',

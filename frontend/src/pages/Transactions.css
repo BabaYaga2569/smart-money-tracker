@@ -852,3 +852,30 @@
   opacity: 0.5;
   cursor: not-allowed;
 }
+.btn-categorize-all {
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  color: white;
+  border: none;
+  padding: 10px 20px;
+  border-radius: 8px;
+  font-weight: 600;
+  cursor: pointer;
+  margin: 10px 0;
+}
+
+.btn-categorize-all:hover:not(:disabled) {
+  transform: translateY(-2px);
+}
+
+.btn-categorize-all:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.plaid-edit-notice {
+  background: #2563eb;
+  color: #fff;
+  padding: 8px 12px;
+  border-radius: 6px;
+  margin-bottom: 12px;
+}

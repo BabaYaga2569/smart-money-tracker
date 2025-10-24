@@ -152,25 +152,38 @@ const Transactions = () => {
     calculateAnalytics();
   }, [transactions]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Auto-sync effect - runs when user changes (login/logout)
-  useEffect(() => {
-    const autoSyncIfNeeded = async () => {
-      if (!currentUser) return;
+  // ✅ FIXED CODE - REPLACE WITH THIS:
+useEffect(() => {
+  const autoSyncIfNeeded = async () => {
+    if (!currentUser) return;
+    
+    try {
+      // ✅ Query Firebase directly to check for Plaid accounts
+      const settingsDocRef = doc(db, 'users', currentUser.uid, 'settings', 'personal');
+      const settingsDocSnap = await getDoc(settingsDocRef);
       
-      try {
-        // Check last sync timestamp from localStorage (shared with Accounts.jsx)
+      if (settingsDocSnap.exists()) {
+        const data = settingsDocSnap.data();
+        const plaidAccountsList = data.plaidAccounts || [];
+        
+        if (plaidAccountsList.length === 0) {
+          console.log('[AutoSync] No Plaid accounts in Firebase, skipping auto-sync');
+          return;
+        }
+        
+        console.log(`[AutoSync] Found ${plaidAccountsList.length} Plaid accounts in Firebase`);
+        
+        // Check last sync timestamp
         const lastSync = localStorage.getItem('lastPlaidSync');
         const now = Date.now();
-        const FIVE_MINUTES = 5 * 60 * 1000; // 5 minutes in milliseconds
+        const FIVE_MINUTES = 5 * 60 * 1000;
         
-        // Determine if we should auto-sync
         const shouldSync = !lastSync || (now - parseInt(lastSync)) > FIVE_MINUTES;
         
         if (shouldSync) {
           console.log('[AutoSync] Data stale, triggering auto-sync...');
           setAutoSyncing(true);
           
-          // Call existing sync function
           await syncPlaidTransactions();
           
           console.log('[AutoSync] Complete');
@@ -178,19 +191,20 @@ const Transactions = () => {
           const minutesAgo = Math.floor((now - parseInt(lastSync)) / (60 * 1000));
           console.log(`[AutoSync] Data fresh (synced ${minutesAgo} min ago), skipping auto-sync`);
         }
-      } catch (error) {
-        console.error('[AutoSync] Error:', error);
-        // Don't block page load if sync fails
-      } finally {
-        setAutoSyncing(false);
+      } else {
+        console.log('[AutoSync] No settings document found in Firebase');
       }
-    };
-    
-    // Run auto-sync when user is authenticated and component mounts
-    if (currentUser) {
-      autoSyncIfNeeded();
+    } catch (error) {
+      console.error('[AutoSync] Error:', error);
+    } finally {
+      setAutoSyncing(false);
     }
-  }, [currentUser]); // eslint-disable-line react-hooks/exhaustive-deps
+  };
+  
+  if (currentUser) {
+    autoSyncIfNeeded();
+  }
+}, [currentUser]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Real-time transactions listener
   useEffect(() => {
