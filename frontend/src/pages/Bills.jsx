@@ -1,14 +1,8 @@
 import React, { useMemo, useState, useEffect } from "react";
-import { collection, doc, onSnapshot, orderBy, query, updateDoc, Timestamp } from "firebase/firestore";
+import { collection, doc, onSnapshot, orderBy, query, updateDoc, Timestamp, getDoc, addDoc, where, getDocs } from "firebase/firestore";
 import { db } from "../firebase";
 import { useAuth } from "../contexts/AuthContext";
 import { findMatchingTransactionForBill } from "../utils/billMatcher";
-import "./Bills.css";
-
-export default function Bills() {
-import React, { useState, useEffect } from 'react';
-import { doc, getDoc, updateDoc, collection, addDoc, query, where, getDocs } from 'firebase/firestore';
-import { db } from '../firebase';
 import { RecurringBillManager } from '../utils/RecurringBillManager';
 import { BillSortingManager } from '../utils/BillSortingManager';
 import { NotificationManager } from '../utils/NotificationManager';
@@ -22,14 +16,13 @@ import { formatDateForDisplay, formatDateForInput, getPacificTime } from '../uti
 import { TRANSACTION_CATEGORIES, CATEGORY_ICONS, getCategoryIcon, migrateLegacyCategory } from '../constants/categories';
 import NotificationSystem from '../components/NotificationSystem';
 import { BillDeduplicationManager } from '../utils/BillDeduplicationManager';
-import './Bills.css';
-import { useAuth } from '../contexts/AuthContext';
+import "./Bills.css";
 
 const generateBillId = () => {
   return `bill_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
 };
 
-const Bills = () => {
+export default function Bills() {
   const { currentUser } = useAuth();
   const [bills, setBills] = useState([]);
   const [transactions, setTransactions] = useState([]);
@@ -111,34 +104,30 @@ const Bills = () => {
                 <div className="bill-title-row">
                   <span className="bill-name">{b.name}</span>
                   <span className="bill-amount">${Number(b.amount).toFixed(2)}</span>
-        setProcessedBills(processed);
-      }
-    } catch (error) {
-      console.error('Error loading bills:', error);
-      
-      const mockBills = [
-        {
-          name: 'PiercePrime',
-          amount: 125.50,
-          category: 'Bills & Utilities',
-          recurrence: 'monthly',
-          dueDate: '2025-10-24',
-          nextDueDate: '2025-10-24',
-          status: 'pending',
-          account: 'bofa',
-          autopay: false
-        }
-      ];
-      
-      setBills(mockBills);
-      setProcessedBills(mockBills.map(bill => ({
-        ...bill,
-        category: migrateLegacyCategory(bill.category || 'Bills & Utilities')
-      })));
-    } finally {
-      setLoading(false);
-    }
-  };
+                </div>
+                <div className="bill-meta-row">
+                  <span className="bill-duedate">Due {new Date(b.dueDate).toLocaleDateString()}</span>
+                  {b.paid ? (
+                    <span className="bill-paid-badge">
+                      ✅ Paid {b.paidDate?.toDate?.() ? b.paidDate.toDate().toLocaleDateString() : (b.paidDate? new Date(b.paidDate).toLocaleDateString() : "")}
+                      {b.paidVia ? ` • ${b.paidVia}` : ""}
+                    </span>
+                  ) : null}
+                </div>
+                <div className="bill-actions">
+                  {!b.paid ? (
+                    <button className="btn btn-success" onClick={() => markPaid(b)}>Mark Paid</button>
+                  ) : (
+                    <button className="btn btn-muted" disabled>Paid {b.paidVia?`(${b.paidVia})`:""}</button>
+                  )}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </section>
+  );
 
   const loadAccounts = async () => {
     // ... rest of your loadAccounts function stays exactly the same
