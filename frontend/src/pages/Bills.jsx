@@ -1549,35 +1549,14 @@ export default function Bills() {
                     </div>
                   )}
                 </div>
-                <div className="bill-meta-row">
-                  <span className="bill-duedate">Due {new Date(b.dueDate).toLocaleDateString()}</span>
-                  {b.paid ? (
-                    <span className="bill-paid-badge">
-                      ✅ Paid {b.paidDate?.toDate?.() ? b.paidDate.toDate().toLocaleDateString() : (b.paidDate? new Date(b.paidDate).toLocaleDateString() : "")}
-                      {b.paidVia ? ` • ${b.paidVia}` : ""}
-                    </span>
-                  ) : null}
-                </div>
-                <div className="bill-actions">
-                  {!b.paid ? (
-                    <button className="btn btn-success" onClick={() => markPaid(b)}>Mark Paid</button>
-                  ) : (
-                    <button className="btn btn-muted" disabled>Paid {b.paidVia?`(${b.paidVia})`:""}</button>
-                  )}
-                </div>
               </div>
-            );
-          })}
+            ))
+          ) : (
+            <div className="bills-empty">No bills found</div>
+          )}
         </div>
-      )}
-    </section>
-  );
+      </div>
 
-  return (
-    <div className="bills-page">
-      <Section title="Overdue" items={overdue} emptyText="No overdue bills 🎉"/>
-      <Section title="Upcoming" items={upcoming} emptyText="No upcoming bills"/>
-      <Section title="Paid (this month)" items={paid} emptyText="Nothing paid yet"/>
     </div>
   );
 }
