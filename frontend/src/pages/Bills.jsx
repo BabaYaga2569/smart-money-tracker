@@ -96,7 +96,7 @@ const Bills = () => {
                   <span className="bill-amount">${Number(b.amount).toFixed(2)}</span>
               setProcessedBills(processed);
        setProcessedBills(processed);
-  }
+  
 } catch (error) {
   console.error('Error loading bills:', error);
 }
