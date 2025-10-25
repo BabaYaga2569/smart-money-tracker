@@ -106,34 +106,185 @@ export default function Bills() {
   };
 
   // Refresh Plaid transactions and match with bills - ADDED
-  const refreshPlaidTransactions = async () => {
-    if (!currentUser || refreshingTransactions) return;
+  // ENHANCED: Refresh Plaid transactions and match with bills (90 days historical)
+const refreshPlaidTransactions = async () => {
+  if (!currentUser || refreshingTransactions) return;
+  
+  setRefreshingTransactions(true);
+  
+  const loadingNotificationId = NotificationManager.showLoading(
+    'Syncing bank transactions and matching bills...'
+  );
+  
+  try {
+    // Step 1: Fetch Plaid transactions from backend (last 90 days)
+    const token = localStorage.getItem('token');
+    const apiUrl = import.meta.env.VITE_API_URL || 'https://smart-money-tracker-09ks.onrender.com';
     
-    setRefreshingTransactions(true);
-    try {
-      NotificationManager.showNotification({
-        type: 'info',
-        message: 'Checking for transaction matches...',
-        duration: 2000
+    const response = await fetch(`${apiUrl}/api/plaid/transactions?days=90`, {
+      headers: {
+        'Authorization': `Bearer ${token}`,
+        'Content-Type': 'application/json'
+      }
+    });
+    
+    if (!response.ok) {
+      throw new Error('Failed to fetch transactions from Plaid');
+    }
+    
+    const data = await response.json();
+    const plaidTransactions = data.transactions || [];
+    
+    console.log(`[Plaid Sync] Fetched ${plaidTransactions.length} transactions from last 90 days`);
+    
+    // Step 2: Store transactions in Firebase (avoid duplicates)
+    const transactionsRef = collection(db, 'users', currentUser.uid, 'transactions');
+    let newTransactionsCount = 0;
+    
+    for (const tx of plaidTransactions) {
+      const txId = tx.transaction_id;
+      if (!txId) continue;
+      
+      // Check if transaction already exists
+      const existingQuery = query(transactionsRef, where('transaction_id', '==', txId));
+      const existingDocs = await getDocs(existingQuery);
+      
+      if (existingDocs.empty) {
+        await addDoc(transactionsRef, {
+          transaction_id: txId,
+          name: tx.name || tx.merchant_name || 'Unknown',
+          merchant_name: tx.merchant_name,
+          amount: tx.amount,
+          date: tx.date,
+          category: tx.category?.[0] || 'Other',
+          pending: tx.pending || false,
+          account_id: tx.account_id,
+          synced_at: new Date().toISOString()
+        });
+        newTransactionsCount++;
+      }
+    }
+    
+    console.log(`[Plaid Sync] Added ${newTransactionsCount} new transactions to Firebase`);
+    
+    // Step 3: Get all transactions from Firebase
+    const allTransactionsSnap = await getDocs(transactionsRef);
+    const allTransactions = allTransactionsSnap.docs.map(d => ({
+      id: d.id,
+      ...d.data()
+    }));
+    
+    // Step 4: Get all bills
+    const settingsDocRef = doc(db, 'users', currentUser.uid, 'settings', 'personal');
+    const settingsDoc = await getDoc(settingsDocRef);
+    const billsData = settingsDoc.exists() ? settingsDoc.data().bills || [] : [];
+    
+    // Step 5: Match bills with transactions (including historical)
+    let matchedCount = 0;
+    const matchedBills = [];
+    
+    const updatedBills = billsData.map(bill => {
+      // Skip if already paid for current cycle
+      if (RecurringBillManager.isBillPaidForCurrentCycle(bill)) {
+        return bill;
+      }
+      
+      // Try to find matching transaction
+      const matchedTransaction = findMatchingTransactionForBill(bill, allTransactions);
+      
+      if (matchedTransaction && !matchedTransaction.pending) {
+        matchedCount++;
+        matchedBills.push({
+          name: bill.name,
+          amount: bill.amount,
+          transactionName: matchedTransaction.name || matchedTransaction.merchant_name,
+          transactionDate: matchedTransaction.date,
+          transactionId: matchedTransaction.transaction_id || matchedTransaction.id
+        });
+        
+        // Mark bill as paid with transaction details
+        return RecurringBillManager.markBillAsPaid(
+          bill,
+          new Date(matchedTransaction.date),
+          {
+            source: 'plaid',
+            method: 'auto',
+            transactionId: matchedTransaction.transaction_id || matchedTransaction.id,
+            accountId: matchedTransaction.account_id,
+            merchantName: matchedTransaction.merchant_name || matchedTransaction.name || bill.name,
+            amount: Math.abs(parseFloat(matchedTransaction.amount))
+          }
+        );
+      }
+      
+      return bill;
+    });
+    
+    // Step 6: Save updated bills
+    await updateDoc(settingsDocRef, {
+      bills: updatedBills
+    });
+    
+    // Step 7: Record payments in bill_payments collection
+    const paymentsRef = collection(db, 'users', currentUser.uid, 'bill_payments');
+    for (const match of matchedBills) {
+      const matchedBill = updatedBills.find(b => b.name === match.name);
+      if (!matchedBill) continue;
+      
+      const paidDate = match.transactionDate;
+      const dueDate = matchedBill.nextDueDate || matchedBill.dueDate;
+      const daysPastDue = Math.max(0, Math.floor((new Date(paidDate) - new Date(dueDate)) / (1000 * 60 * 60 * 24)));
+      
+      await addDoc(paymentsRef, {
+        billId: matchedBill.id,
+        billName: matchedBill.name,
+        amount: Math.abs(parseFloat(matchedBill.amount)),
+        dueDate: dueDate,
+        paidDate: paidDate,
+        paymentMonth: paidDate.slice(0, 7),
+        paymentMethod: 'Auto (Plaid)',
+        category: matchedBill.category || 'Bills & Utilities',
+        linkedTransactionId: match.transactionId,
+        isOverdue: daysPastDue > 0,
+        daysPastDue: daysPastDue,
+        createdAt: new Date()
       });
-      
-      // Simulate matching logic
-      await new Promise(resolve => setTimeout(resolve, 1500));
-      
-      await loadBills();
+    }
+    
+    // Step 8: Reload bills
+    await loadBills();
+    await loadPaidThisMonth();
+    
+    // Step 9: Show success notification
+    NotificationManager.removeNotification(loadingNotificationId);
+    
+    if (matchedCount > 0) {
+      // Show detailed match notification
+      const matchDetails = matchedBills.map(m => 
+        `✅ ${m.name} → ${m.transactionName} (${m.transactionDate})`
+      ).join('\n');
       
       NotificationManager.showNotification({
         type: 'success',
-        message: 'Transaction matching complete!',
-        duration: 3000
+        message: `🎉 Auto-matched ${matchedCount} bill${matchedCount !== 1 ? 's' : ''}!\n\n${matchDetails}`,
+        duration: 8000
       });
-    } catch (error) {
-      console.error('Error refreshing transactions:', error);
-      NotificationManager.showError('Error refreshing transactions', error);
-    } finally {
-      setRefreshingTransactions(false);
+    } else {
+      NotificationManager.showNotification({
+        type: 'info',
+        message: `Synced ${plaidTransactions.length} transactions. No new bill matches found.`,
+        duration: 4000
+      });
     }
-  };
+    
+  } catch (error) {
+    console.error('Error refreshing transactions:', error);
+    NotificationManager.removeNotification(loadingNotificationId);
+    NotificationManager.showError('Error syncing transactions', error.message || 'Failed to connect to Plaid');
+  } finally {
+    setRefreshingTransactions(false);
+  }
+};
 
   // Load bills on mount - ADDED
   useEffect(() => {
@@ -1630,6 +1781,60 @@ export default function Bills() {
                     </div>
                   )}
                   
+{/* Manual Mark as Paid Button */}
+{bill.status !== 'paid' && bill.status !== 'skipped' && (
+  <div style={{ marginTop: '12px' }}>
+    <button
+      onClick={() => handleMarkAsPaid(bill)}
+      disabled={payingBill === bill.name}
+      style={{
+        width: '100%',
+        padding: '10px 16px',
+        background: payingBill === bill.name 
+          ? 'rgba(0, 255, 136, 0.3)' 
+          : 'linear-gradient(135deg, #00ff88 0%, #00d4ff 100%)',
+        color: '#000',
+        border: 'none',
+        borderRadius: '8px',
+        fontSize: '13px',
+        fontWeight: '700',
+        cursor: payingBill === bill.name ? 'not-allowed' : 'pointer',
+        transition: 'all 0.2s ease',
+        opacity: payingBill === bill.name ? 0.6 : 1,
+        boxShadow: payingBill === bill.name 
+          ? 'none' 
+          : '0 4px 12px rgba(0, 255, 136, 0.3)',
+        textTransform: 'uppercase',
+        letterSpacing: '0.5px'
+      }}
+    >
+      {payingBill === bill.name ? '⏳ Processing...' : '💳 Mark as Paid'}
+    </button>
+    
+    {/* Skip Button */}
+    <button
+      onClick={() => handleToggleSkipBill(bill)}
+      style={{
+        marginTop: '8px',
+        width: '100%',
+        padding: '8px 12px',
+        background: bill.status === 'skipped' 
+          ? 'rgba(138, 43, 226, 0.2)' 
+          : 'rgba(156, 39, 176, 0.1)',
+        color: bill.status === 'skipped' ? '#ba68c8' : '#9c27b0',
+        border: '1px solid ' + (bill.status === 'skipped' ? '#ba68c8' : '#9c27b0'),
+        borderRadius: '6px',
+        fontSize: '11px',
+        fontWeight: '600',
+        cursor: 'pointer',
+        transition: 'all 0.2s ease'
+      }}
+    >
+      {bill.status === 'skipped' ? '↩️ Unskip Bill' : '⏭️ Skip This Month'}
+    </button>
+  </div>
+)}
+                  
                   {bill.lastPayment && bill.lastPayment.source === 'plaid' && bill.lastPayment.transactionId && (
                     <div className="matched-transaction-info" style={{
                       marginTop: '8px',
@@ -1664,6 +1869,42 @@ export default function Bills() {
                       textAlign: 'center'
                     }}>
                       ✅ PAID {formatDate(bill.lastPaidDate)}
+                      {bill.status === 'paid' && bill.lastPaidDate && (
+  <div className="paid-info" style={{
+    marginTop: '8px',
+    padding: '6px 10px',
+    background: 'rgba(0, 255, 136, 0.1)',
+    borderRadius: '6px',
+    border: '1px solid #00ff88',
+    fontSize: '11px',
+    color: '#00ff88',
+    fontWeight: 'bold',
+    textAlign: 'center'
+  }}>
+    ✅ PAID {formatDate(bill.lastPaidDate)}
+    
+    {/* Undo Payment Button */}
+    <button
+      onClick={() => handleUnmarkAsPaid(bill)}
+      style={{
+        marginTop: '6px',
+        width: '100%',
+        padding: '6px 10px',
+        background: 'rgba(255, 107, 0, 0.2)',
+        color: '#ff6b00',
+        border: '1px solid #ff6b00',
+        borderRadius: '4px',
+        fontSize: '10px',
+        fontWeight: '600',
+        cursor: 'pointer',
+        transition: 'all 0.2s ease',
+        textTransform: 'uppercase'
+      }}
+    >
+      ↩️ Undo Payment
+    </button>
+  </div>
+)}
                     </div>
                   )}
                 </div>
