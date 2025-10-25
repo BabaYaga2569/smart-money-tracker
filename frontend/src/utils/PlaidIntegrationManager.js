@@ -1,5 +1,5 @@
 import { findMatchingTransactionForBill } from './billMatcher';
-import { markBillAsPaid } from './billStorage';
+import { RecurringBillManager } from './RecurringBillManager';
 
 /**
  * Handles checking Plaid transactions against your bill list.
@@ -15,8 +15,13 @@ export async function autoMarkPaidBills(bills, transactions) {
 
     const match = findMatchingTransactionForBill(bill, transactions);
     if (match) {
-      await markBillAsPaid(bill.id, match);
-      updates.push({ billId: bill.id, txnId: match.id, amount: match.amount });
+      const updatedBill = RecurringBillManager.markBillAsPaid(bill, new Date(match.date), {
+        source: 'plaid',
+        transactionId: match.id,
+        method: 'auto',
+        accountId: match.accountId
+      });
+      updates.push({ billId: bill.id, txnId: match.id, amount: match.amount, updatedBill });
       console.log(`✅ Auto-marked ${bill.name} as paid via ${match.name}`);
     }
   }
