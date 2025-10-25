@@ -1,5 +1,5 @@
 import { findMatchingTransactionForBill } from './billMatcher';
-import { markBillAsPaid } from '../utils/billStorage';
+import { markBillAsPaid } from './billStorage';
 
 /**
  * Handles checking Plaid transactions against your bill list.
