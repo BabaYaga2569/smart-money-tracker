@@ -15,6 +15,15 @@ export class RecurringBillManager {
             return parseLocalDate(bill.dueDate);
         }
 
+        // Check if bill was paid for current cycle
+        const wasPaid = this.isBillPaidForCurrentCycle(bill);
+        
+        // If not paid and bill is overdue, keep at current due date
+        const currentDueDate = parseLocalDate(bill.dueDate);
+        if (!wasPaid && currentDueDate && currentDueDate < currentDate) {
+            return currentDueDate; // Keep overdue unpaid bills at their original due date
+        }
+
         const lastDue = parseLocalDate(bill.lastDueDate || bill.dueDate);
         
         if (!lastDue) {
@@ -62,7 +71,7 @@ export class RecurringBillManager {
         let nextDue = new Date(lastDue);
         const dayOfMonth = lastDue.getDate();
 
-        while (nextDue <= currentDate) {
+        while (nextDue < currentDate) {
             nextDue.setMonth(nextDue.getMonth() + 1);
             
             if (dayOfMonth > 28) {
@@ -85,7 +94,7 @@ export class RecurringBillManager {
         
         let nextDue = new Date(lastDue);
         
-        while (nextDue <= currentDate) {
+        while (nextDue < currentDate) {
             nextDue.setDate(nextDue.getDate() + 7);
         }
         
@@ -103,7 +112,7 @@ export class RecurringBillManager {
         
         let nextDue = new Date(lastDue);
         
-        while (nextDue <= currentDate) {
+        while (nextDue < currentDate) {
             nextDue.setDate(nextDue.getDate() + 14);
         }
         
@@ -122,7 +131,7 @@ export class RecurringBillManager {
         let nextDue = new Date(lastDue);
         const dayOfMonth = lastDue.getDate();
 
-        while (nextDue <= currentDate) {
+        while (nextDue < currentDate) {
             nextDue.setMonth(nextDue.getMonth() + 3);
             
             if (dayOfMonth > 28) {
@@ -145,7 +154,7 @@ export class RecurringBillManager {
         
         let nextDue = new Date(lastDue);
         
-        while (nextDue <= currentDate) {
+        while (nextDue < currentDate) {
             nextDue.setFullYear(nextDue.getFullYear() + 1);
         }
         
@@ -237,16 +246,6 @@ export class RecurringBillManager {
         const currentDueDate = bill.nextDueDate || bill.dueDate;
         const paidDate = paymentDate || getPacificTime();
         
-        const tempBill = {
-            ...bill,
-            lastDueDate: currentDueDate,
-            dueDate: currentDueDate
-        };
-        
-        // CRITICAL FIX: Always advance from the bill's due date, not the payment date
-        const currentDueDateObj = parseLocalDate(currentDueDate);
-        const nextDueDate = this.getNextDueDate(tempBill, currentDueDateObj);
-        
         const paymentRecord = {
             amount: parseFloat(bill.amount) || 0,
             paidDate: paidDate,
@@ -257,6 +256,21 @@ export class RecurringBillManager {
             accountId: paymentOptions.accountId || null,
             timestamp: Date.now()
         };
+        
+        const tempBill = {
+            ...bill,
+            lastDueDate: currentDueDate,
+            dueDate: currentDueDate,
+            lastPaidDate: paidDate,
+            lastPayment: paymentRecord
+        };
+        
+        // CRITICAL FIX: Always advance from one day after the bill's due date
+        // This ensures the bill gets advanced to next cycle when paid
+        const currentDueDateObj = parseLocalDate(currentDueDate);
+        const dayAfterDueDate = new Date(currentDueDateObj);
+        dayAfterDueDate.setDate(dayAfterDueDate.getDate() + 1);
+        const nextDueDate = this.getNextDueDate(tempBill, dayAfterDueDate);
         
         return {
             ...bill,
