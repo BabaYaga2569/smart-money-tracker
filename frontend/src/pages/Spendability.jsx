@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { doc, getDoc, updateDoc, collection, addDoc, getDocs } from 'firebase/firestore';
+import { doc, getDoc, updateDoc, collection, addDoc, getDocs, query, where } from 'firebase/firestore';
 import { db } from '../firebase';
 import { PayCycleCalculator } from '../utils/PayCycleCalculator';
 import { RecurringBillManager } from '../utils/RecurringBillManager';
@@ -177,8 +177,93 @@ console.log('📅 PAYDAY CALCULATION DEBUG:', {
 });
 }      
  
-      const bills = settingsData.bills || [];
-      const billsWithRecurrence = bills.map(bill => ({
+      // Load bills from ALL sources
+      const oneTimeBills = settingsData.bills || [];
+
+      // Load recurring bill instances from Firebase
+      let recurringBillInstances = [];
+      try {
+        const recurringBillsSnapshot = await getDocs(
+          query(
+            collection(db, 'users', currentUser.uid, 'billInstances'),
+            where('isPaid', '==', false),
+            where('status', '!=', 'skipped')
+          )
+        );
+        recurringBillInstances = recurringBillsSnapshot.docs.map(doc => ({
+          id: doc.id,
+          ...doc.data()
+        }));
+        console.log('Spendability: Loaded recurring bill instances', {
+          count: recurringBillInstances.length,
+          bills: recurringBillInstances.map(b => ({ name: b.name, amount: b.amount, dueDate: b.dueDate }))
+        });
+      } catch (error) {
+        console.log('Spendability: No recurring bill instances found or error loading:', error.message);
+      }
+
+      // Load subscription bills
+      let subscriptionBills = [];
+      try {
+        const subscriptionBillsSnapshot = await getDocs(
+          query(
+            collection(db, 'users', currentUser.uid, 'subscriptions'),
+            where('status', '==', 'active')
+          )
+        );
+        subscriptionBills = subscriptionBillsSnapshot.docs.map(doc => {
+          const data = doc.data();
+          return {
+            id: doc.id,
+            name: data.name,
+            amount: data.cost || data.amount,
+            dueDate: data.nextBillingDate,
+            category: data.category || 'Subscriptions',
+            recurrence: 'monthly',
+            isSubscription: true
+          };
+        });
+        console.log('Spendability: Loaded subscription bills', {
+          count: subscriptionBills.length,
+          bills: subscriptionBills.map(b => ({ name: b.name, amount: b.amount, dueDate: b.dueDate }))
+        });
+      } catch (error) {
+        console.log('Spendability: No subscription bills found or error loading:', error.message);
+      }
+
+      // Merge all bills
+      const allBills = [
+        ...oneTimeBills,
+        ...recurringBillInstances,
+        ...subscriptionBills
+      ];
+
+      console.log('Spendability: All bills before deduplication', {
+        total: allBills.length,
+        oneTime: oneTimeBills.length,
+        recurring: recurringBillInstances.length,
+        subscriptions: subscriptionBills.length
+      });
+
+      // Deduplicate (same name + same due date = duplicate)
+      const uniqueBills = [];
+      const seen = new Set();
+
+      for (const bill of allBills) {
+        const key = `${bill.name}-${bill.dueDate}`;
+        if (!seen.has(key)) {
+          seen.add(key);
+          uniqueBills.push(bill);
+        }
+      }
+
+      console.log('Spendability: Bills after deduplication', {
+        uniqueCount: uniqueBills.length,
+        duplicatesRemoved: allBills.length - uniqueBills.length
+      });
+
+      // Add default recurrence if missing
+      const billsWithRecurrence = uniqueBills.map(bill => ({
         ...bill,
         recurrence: bill.recurrence || 'monthly'
       }));
