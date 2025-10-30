@@ -190,7 +190,7 @@ export class RecurringBillManager {
             const dueDateValue = bill.nextDueDate || bill.dueDate;
             const dueDate = typeof dueDateValue === 'string' ? parseLocalDate(dueDateValue) : dueDateValue;
             
-            return dueDate && dueDate < beforeDate;
+            return dueDate && dueDate <= beforeDate;
         });
     }
 
