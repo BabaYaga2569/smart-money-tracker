@@ -200,7 +200,7 @@ export class RecurringBillManager {
             }
             
             const dueDateValue = bill.nextDueDate || bill.dueDate;
-            let dueDate = typeof dueDateValue === 'string' ? parseLocalDate(dueDateValue) : dueDateValue;
+            const dueDate = typeof dueDateValue === 'string' ? parseLocalDate(dueDateValue) : dueDateValue;
             
             if (!dueDate) return false;
             
@@ -230,7 +230,7 @@ export class RecurringBillManager {
             }
             
             const dueDateValue = bill.nextDueDate || bill.dueDate;
-            let dueDate = typeof dueDateValue === 'string' ? parseLocalDate(dueDateValue) : dueDateValue;
+            const dueDate = typeof dueDateValue === 'string' ? parseLocalDate(dueDateValue) : dueDateValue;
             
             if (!dueDate) return false;
             
