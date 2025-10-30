@@ -224,6 +224,41 @@ const runBillPaymentTests = () => {
         console.log('✅ Range filtering excludes paid bills correctly');
     });
 
+    // Test 7: Bills due on the exact payday date are included (spendability fix)
+    test('Bills due on exact payday date are included', () => {
+        const payday = new Date('2025-10-31');
+        
+        const bills = [
+            {
+                name: 'Food',
+                amount: '800',
+                dueDate: '2025-10-31',
+                nextDueDate: '2025-10-31',
+                recurrence: 'monthly',
+                status: 'pending'
+            },
+            {
+                name: 'Rent',
+                amount: '350',
+                dueDate: '2025-10-31',
+                nextDueDate: '2025-10-31',
+                recurrence: 'monthly',
+                status: 'pending'
+            }
+        ];
+        
+        const billsDue = RecurringBillManager.getBillsDueBefore(bills, payday);
+        
+        assert(billsDue.length === 2, 'Both bills due on payday should be included');
+        assert(billsDue[0].name === 'Food', 'Food bill should be included');
+        assert(billsDue[1].name === 'Rent', 'Rent bill should be included');
+        
+        const total = billsDue.reduce((sum, bill) => sum + parseFloat(bill.amount), 0);
+        assert(Math.abs(total - 1150) < 0.01, `Total should be $1,150.00, got $${total}`);
+        
+        console.log('✅ Bills due on exact payday date are included (spendability fix)');
+    });
+
     console.log('\n🎉 All comprehensive bill payment tests passed! Fix is working correctly.\n');
 };
 
