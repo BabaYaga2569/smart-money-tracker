@@ -191,15 +191,24 @@ export class RecurringBillManager {
      * @returns {Array} Filtered bills
      */
     static getBillsDueBefore(bills, beforeDate) {
+        // Normalize beforeDate to YYYY-MM-DD string to avoid timezone issues
+        const beforeDateStr = beforeDate.toISOString().split('T')[0]; // "2025-10-30"
+        
         return bills.filter(bill => {
             if (this.isBillPaidForCurrentCycle(bill)) {
                 return false;
             }
             
             const dueDateValue = bill.nextDueDate || bill.dueDate;
-            const dueDate = typeof dueDateValue === 'string' ? parseLocalDate(dueDateValue) : dueDateValue;
+            let dueDate = typeof dueDateValue === 'string' ? parseLocalDate(dueDateValue) : dueDateValue;
             
-            return dueDate && dueDate <= beforeDate;
+            if (!dueDate) return false;
+            
+            // Normalize dueDate to YYYY-MM-DD string to avoid timezone issues
+            const dueDateStr = dueDate.toISOString().split('T')[0]; // "2025-10-30"
+            
+            // Compare date strings (no timezone issues)
+            return dueDateStr <= beforeDateStr;
         });
     }
 
@@ -211,15 +220,25 @@ export class RecurringBillManager {
      * @returns {Array} Bills due within the range
      */
     static getBillsInRange(bills, startDate, endDate) {
+        // Normalize dates to YYYY-MM-DD strings to avoid timezone issues
+        const startDateStr = startDate.toISOString().split('T')[0];
+        const endDateStr = endDate.toISOString().split('T')[0];
+        
         return bills.filter(bill => {
             if (this.isBillPaidForCurrentCycle(bill)) {
                 return false;
             }
             
             const dueDateValue = bill.nextDueDate || bill.dueDate;
-            const dueDate = typeof dueDateValue === 'string' ? parseLocalDate(dueDateValue) : dueDateValue;
+            let dueDate = typeof dueDateValue === 'string' ? parseLocalDate(dueDateValue) : dueDateValue;
             
-            return dueDate && dueDate >= startDate && dueDate <= endDate;
+            if (!dueDate) return false;
+            
+            // Normalize dueDate to YYYY-MM-DD string to avoid timezone issues
+            const dueDateStr = dueDate.toISOString().split('T')[0];
+            
+            // Compare date strings (no timezone issues)
+            return dueDateStr >= startDateStr && dueDateStr <= endDateStr;
         });
     }
 
