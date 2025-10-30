@@ -42,17 +42,21 @@ export class RecurringManager {
 
     /**
      * Process recurring items with calculated next occurrence dates and status
+     * CRITICAL FIX: Does NOT auto-advance dates on page load
      * @param {Array} items - Raw recurring items
      * @returns {Array} Processed recurring items with status and dates
      */
     static processRecurringItems(items) {
         return items.map(item => {
-            const nextOccurrence = this.getNextOccurrence(item);
-            const status = this.determineStatus(item, nextOccurrence);
+            // FIXED: Use stored nextOccurrence as-is, don't auto-advance
+            // Only advance when bill is explicitly marked as paid
+            const nextOccurrenceStr = item.nextOccurrence || item.startDate;
+            const nextOccurrenceDate = parseLocalDate(nextOccurrenceStr);
+            const status = this.determineStatus(item, nextOccurrenceDate);
             
             return {
                 ...item,
-                nextOccurrence: nextOccurrence,
+                nextOccurrence: nextOccurrenceStr, // Keep as string
                 status: status,
                 amount: parseFloat(item.amount) || 0,
                 // Preserve existing history
@@ -170,22 +174,86 @@ export class RecurringManager {
     }
 
     /**
+     * Calculate the next occurrence date AFTER a bill is paid
+     * This method SHOULD advance the date forward from current occurrence
+     * @param {string} currentOccurrence - Current occurrence date string (YYYY-MM-DD)
+     * @param {string} frequency - Frequency type (weekly, monthly, etc.)
+     * @returns {Date} Next occurrence date
+     */
+    static calculateNextOccurrenceAfterPayment(currentOccurrence, frequency) {
+        const currentDate = parseLocalDate(currentOccurrence);
+        if (!currentDate) {
+            console.error('calculateNextOccurrenceAfterPayment: Invalid currentOccurrence', currentOccurrence);
+            return new Date();
+        }
+
+        // Always advance by one period from current occurrence
+        let nextDate = new Date(currentDate);
+        const dayOfMonth = currentDate.getDate();
+
+        switch (frequency) {
+            case 'weekly':
+                nextDate.setDate(nextDate.getDate() + 7);
+                break;
+            case 'bi-weekly':
+                nextDate.setDate(nextDate.getDate() + 14);
+                break;
+            case 'monthly':
+                // Handle month-end dates properly BEFORE advancing
+                if (dayOfMonth > 28) {
+                    // Calculate next month
+                    const targetMonth = (currentDate.getMonth() + 1) % 12;
+                    const targetYear = currentDate.getMonth() === 11 ? currentDate.getFullYear() + 1 : currentDate.getFullYear();
+                    const lastDayOfTargetMonth = new Date(targetYear, targetMonth + 1, 0).getDate();
+                    nextDate = new Date(targetYear, targetMonth, Math.min(dayOfMonth, lastDayOfTargetMonth));
+                } else {
+                    nextDate.setMonth(nextDate.getMonth() + 1);
+                }
+                break;
+            case 'quarterly':
+                // Handle month-end dates properly BEFORE advancing
+                if (dayOfMonth > 28) {
+                    // Calculate next quarter (3 months ahead)
+                    const targetMonth = (currentDate.getMonth() + 3) % 12;
+                    const yearsToAdd = Math.floor((currentDate.getMonth() + 3) / 12);
+                    const targetYear = currentDate.getFullYear() + yearsToAdd;
+                    const lastDayOfTargetMonth = new Date(targetYear, targetMonth + 1, 0).getDate();
+                    nextDate = new Date(targetYear, targetMonth, Math.min(dayOfMonth, lastDayOfTargetMonth));
+                } else {
+                    nextDate.setMonth(nextDate.getMonth() + 3);
+                }
+                break;
+            case 'annually':
+                nextDate.setFullYear(nextDate.getFullYear() + 1);
+                break;
+            default:
+                // If frequency is unknown, advance by 1 month as default
+                nextDate.setMonth(nextDate.getMonth() + 1);
+        }
+
+        return nextDate;
+    }
+
+    /**
      * Mark a recurring item as processed and update next occurrence
+     * This method advances the recurring template to next occurrence after payment
      * @param {Object} item - Recurring item
      * @param {Date} processedDate - Date it was processed
      * @param {string} status - Status: success, failed, skipped
      * @returns {Object} Updated item
      */
     static markAsProcessed(item, processedDate = new Date(), status = 'success') {
-        const nextOccurrence = this.getNextOccurrence({
-            ...item,
-            lastOccurrence: processedDate
-        });
+        // Use the new payment-specific method to advance date
+        const currentOccurrenceStr = formatDateForInput(item.nextOccurrence || processedDate);
+        const nextOccurrence = this.calculateNextOccurrenceAfterPayment(
+            currentOccurrenceStr, 
+            item.frequency
+        );
 
         return {
             ...item,
             lastOccurrence: processedDate,
-            nextOccurrence: nextOccurrence,
+            nextOccurrence: formatDateForInput(nextOccurrence),
             lastPaymentStatus: status,
             history: [
                 ...(item.history || []),

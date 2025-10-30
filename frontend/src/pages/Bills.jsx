@@ -4,6 +4,7 @@ import { db } from "../firebase";
 import { useAuth } from "../contexts/AuthContext";
 import { findMatchingTransactionForBill } from "../utils/billMatcher";
 import { RecurringBillManager } from '../utils/RecurringBillManager';
+import { RecurringManager } from '../utils/RecurringManager';
 import { BillSortingManager } from '../utils/BillSortingManager';
 import { NotificationManager } from '../utils/NotificationManager';
 import { BillAnimationManager } from '../utils/BillAnimationManager';
@@ -220,12 +221,49 @@ const refreshPlaidTransactions = async () => {
       return bill;
     });
     
-    // Step 6: Save updated bills
-    await updateDoc(settingsDocRef, {
-      bills: updatedBills
+    // Step 6: Update recurring templates for bills that were auto-matched
+    const currentData = settingsDoc.exists() ? settingsDoc.data() : {};
+    const recurringItems = currentData.recurringItems || [];
+    let updatedRecurringItems = recurringItems;
+    
+    // Advance recurring templates for matched bills
+    matchedBills.forEach(match => {
+      const matchedBill = updatedBills.find(b => b.name === match.name);
+      if (matchedBill && matchedBill.recurringTemplateId) {
+        updatedRecurringItems = updatedRecurringItems.map(template => {
+          if (template.id === matchedBill.recurringTemplateId) {
+            const billDueDate = matchedBill.dueDate || matchedBill.nextDueDate;
+            const templateNextOccurrence = template.nextOccurrence;
+            
+            // Only advance if bill's due date matches template's current nextOccurrence
+            if (billDueDate === templateNextOccurrence) {
+              const nextOccurrence = RecurringManager.calculateNextOccurrenceAfterPayment(
+                templateNextOccurrence,
+                template.frequency
+              );
+              
+              console.log(`[Plaid Auto-Pay] Advancing recurring template "${template.name}" from ${templateNextOccurrence} to ${nextOccurrence.toISOString().split('T')[0]}`);
+              
+              return {
+                ...template,
+                nextOccurrence: nextOccurrence.toISOString().split('T')[0],
+                lastPaidDate: match.transactionDate,
+                updatedAt: new Date().toISOString()
+              };
+            }
+          }
+          return template;
+        });
+      }
     });
     
-    // Step 7: Record payments in bill_payments collection
+    // Step 7: Save updated bills and recurring items
+    await updateDoc(settingsDocRef, {
+      bills: updatedBills,
+      recurringItems: updatedRecurringItems
+    });
+    
+    // Step 8: Record payments in bill_payments collection
     const paymentsRef = collection(db, 'users', currentUser.uid, 'bill_payments');
     for (const match of matchedBills) {
       const matchedBill = updatedBills.find(b => b.name === match.name);
@@ -251,11 +289,11 @@ const refreshPlaidTransactions = async () => {
       });
     }
     
-    // Step 8: Reload bills
+    // Step 9: Reload bills
     await loadBills();
     await loadPaidThisMonth();
     
-    // Step 9: Show success notification
+    // Step 10: Show success notification
     NotificationManager.removeNotification(loadingNotificationId);
     
     if (matchedCount > 0) {
@@ -796,6 +834,7 @@ const refreshPlaidTransactions = async () => {
       const currentData = currentDoc.exists() ? currentDoc.data() : {};
       
       const bills = currentData.bills || [];
+      const recurringItems = currentData.recurringItems || [];
       
       const updatedBills = bills.map(b => {
         if (b.id === bill.id) {
@@ -808,9 +847,41 @@ const refreshPlaidTransactions = async () => {
         return b;
       });
       
+      // CRITICAL FIX: If bill was generated from recurring template, advance template's nextOccurrence
+      let updatedRecurringItems = recurringItems;
+      if (bill.recurringTemplateId) {
+        updatedRecurringItems = recurringItems.map(template => {
+          if (template.id === bill.recurringTemplateId) {
+            // Check if bill's due date matches template's nextOccurrence
+            const billDueDate = bill.dueDate || bill.nextDueDate;
+            const templateNextOccurrence = template.nextOccurrence;
+            
+            // Only advance if this bill's due date matches the template's current nextOccurrence
+            if (billDueDate === templateNextOccurrence) {
+              // Advance recurring template to next occurrence
+              const nextOccurrence = RecurringManager.calculateNextOccurrenceAfterPayment(
+                templateNextOccurrence,
+                template.frequency
+              );
+              
+              console.log(`[Bill Payment] Advancing recurring template "${template.name}" from ${templateNextOccurrence} to ${nextOccurrence.toISOString().split('T')[0]}`);
+              
+              return {
+                ...template,
+                nextOccurrence: nextOccurrence.toISOString().split('T')[0],
+                lastPaidDate: paidDate || getPacificTime(),
+                updatedAt: new Date().toISOString()
+              };
+            }
+          }
+          return template;
+        });
+      }
+      
       await updateDoc(settingsDocRef, {
         ...currentData,
-        bills: updatedBills
+        bills: updatedBills,
+        recurringItems: updatedRecurringItems
       });
     } catch (error) {
       console.error('Error updating bill status:', error);
