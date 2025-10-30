@@ -20,7 +20,7 @@ const test = (name, fn) => {
     }
 };
 
-// Mock bill merging and deduplication logic (extracted from Spendability.jsx)
+// Mock bill merging and deduplication logic (mirrors the actual logic in Spendability.jsx)
 const mergeBills = (oneTimeBills, recurringBills, subscriptionBills) => {
     // Merge all bills
     const allBills = [
@@ -156,10 +156,12 @@ const runBillMergingTests = () => {
     console.log('\n✅ All bill merging tests passed!\n');
 };
 
-// Run the tests
-runBillMergingTests();
+// Run the tests only when executed directly (not when imported)
+// In ES modules, we check if import.meta.url matches the entry point
+const isMainModule = import.meta.url === `file://${process.argv[1]}`;
+if (isMainModule) {
+    runBillMergingTests();
+}
 
 // Export for use in other test files (if needed)
-if (typeof module !== 'undefined' && module.exports) {
-    module.exports = { runBillMergingTests, mergeBills };
-}
+export { runBillMergingTests, mergeBills };
