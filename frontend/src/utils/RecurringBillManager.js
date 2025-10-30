@@ -20,7 +20,7 @@ export class RecurringBillManager {
         
         // If not paid and bill is overdue, keep at current due date
         const currentDueDate = parseLocalDate(bill.dueDate);
-        if (!wasPaid && currentDueDate && currentDueDate < currentDate) {
+        if (!wasPaid && currentDueDate && currentDueDate <= currentDate) {
             return currentDueDate; // Keep overdue unpaid bills at their original due date
         }
 

@@ -117,6 +117,7 @@ export class PayCycleCalculator {
      */
     static getWifeNextPayday() {
         const today = getPacificTime();
+        today.setHours(0, 0, 0, 0); // Start of day for comparison
         const currentYear = today.getFullYear();
         const currentMonth = today.getMonth();
         
@@ -130,12 +131,12 @@ export class PayCycleCalculator {
         const adjustedMonthEnd = this.adjustForWeekend(monthEnd);
         
         // If both dates this month are in the future, return the earlier one
-        if (adjustedFifteenth > today && adjustedMonthEnd > today) {
+        if (adjustedFifteenth >= today && adjustedMonthEnd >= today) {
             return adjustedFifteenth < adjustedMonthEnd ? adjustedFifteenth : adjustedMonthEnd;
         }
         
         // If only 30th is in the future this month
-        if (adjustedMonthEnd > today) {
+        if (adjustedMonthEnd >= today) {
             return adjustedMonthEnd;
         }
         
