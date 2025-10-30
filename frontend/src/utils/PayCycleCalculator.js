@@ -116,7 +116,8 @@ export class PayCycleCalculator {
      * @returns {Date} Next payday for wife
      */
     static getWifeNextPayday() {
-        const today = getPacificTime();
+        const now = getPacificTime();
+        const today = new Date(now);
         today.setHours(0, 0, 0, 0); // Start of day for comparison
         const currentYear = today.getFullYear();
         const currentMonth = today.getMonth();
