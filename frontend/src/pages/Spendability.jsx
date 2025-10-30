@@ -217,7 +217,7 @@ console.log('📅 PAYDAY CALCULATION DEBUG:', {
             id: doc.id,
             name: data.name,
             amount: data.cost || data.amount,
-            dueDate: data.nextBillingDate,
+            dueDate: data.nextRenewal || data.nextBillingDate,
             category: data.category || 'Subscriptions',
             recurrence: 'monthly',
             isSubscription: true
