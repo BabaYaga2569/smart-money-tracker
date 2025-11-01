@@ -19,7 +19,8 @@ const test = (name, fn) => {
     } catch (error) {
         console.error(`❌ ${name}`);
         console.error(error.message);
-        if (typeof process !== 'undefined') {
+        // eslint-disable-next-line no-undef
+        if (typeof process !== 'undefined' && process.exit) {
             // eslint-disable-next-line no-undef
             process.exit(1);
         }
@@ -202,7 +203,7 @@ const runOverdueBillsTests = () => {
         // Bills from problem statement
         const overdueBills = [
             { name: 'google one', amount: 9.99, nextDueDate: '2025-10-25' },
-            { name: 'sirusxm', amount: 12.99, nextDueDate: '2025-10-28' },
+            { name: 'siriusxm', amount: 12.99, nextDueDate: '2025-10-28' },
             { name: 'CVS', amount: 5.00, nextDueDate: '2025-10-30' },
             { name: 'claude.ai', amount: 20.00, nextDueDate: '2025-10-31' },
             { name: 'southwest gas', amount: 23.43, nextDueDate: '2025-10-29' }
