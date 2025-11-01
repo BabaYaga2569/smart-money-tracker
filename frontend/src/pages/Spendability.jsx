@@ -291,10 +291,10 @@ console.log('🔍 PAYDAY CALCULATION DEBUG:', {
       }));
 
       const processedBills = RecurringBillManager.processBills(billsWithRecurrence);
-      let billsDueBeforePayday = RecurringBillManager.getBillsDueBefore(processedBills, new Date(nextPayday));
+      const unsortedBillsDueBeforePayday = RecurringBillManager.getBillsDueBefore(processedBills, new Date(nextPayday));
       
       // Add status info to each bill and sort by priority (overdue bills first)
-      billsDueBeforePayday = billsDueBeforePayday
+      const billsDueBeforePayday = unsortedBillsDueBeforePayday
         .map(bill => ({
           ...bill,
           statusInfo: RecurringBillManager.determineBillStatus(bill)
