@@ -98,14 +98,7 @@ const runOverdueBillsTests = () => {
         
         // Combine and deduplicate
         const combinedBills = [...billsDueBeforePayday, ...overdueBills];
-        const uniqueBillsMap = new Map();
-        combinedBills.forEach(bill => {
-            const key = bill.id || `${bill.name}-${bill.nextDueDate || bill.dueDate}`;
-            if (!uniqueBillsMap.has(key)) {
-                uniqueBillsMap.set(key, bill);
-            }
-        });
-        const uniqueBills = Array.from(uniqueBillsMap.values());
+        const uniqueBills = RecurringBillManager.deduplicateBills(combinedBills);
         
         assert(uniqueBills.length === 2, `Should have 2 unique bills, got ${uniqueBills.length}`);
         assert(uniqueBills.some(b => b.name === 'Google One'), 'Should include overdue Google One');
@@ -143,14 +136,7 @@ const runOverdueBillsTests = () => {
         
         // Combine and deduplicate
         const combinedBills = [...billsDueBeforePayday, ...overdueBills];
-        const uniqueBillsMap = new Map();
-        combinedBills.forEach(bill => {
-            const key = bill.id || `${bill.name}-${bill.nextDueDate || bill.dueDate}`;
-            if (!uniqueBillsMap.has(key)) {
-                uniqueBillsMap.set(key, bill);
-            }
-        });
-        const uniqueBills = Array.from(uniqueBillsMap.values());
+        const uniqueBills = RecurringBillManager.deduplicateBills(combinedBills);
         
         assert(uniqueBills.length === 1, `Should have 1 unique bill after deduplication, got ${uniqueBills.length}`);
         assert(uniqueBills[0].name === 'Overdue Bill', 'Should preserve the bill');
@@ -224,14 +210,7 @@ const runOverdueBillsTests = () => {
         
         // Combine and deduplicate
         const combinedBills = [...billsDueBeforePayday, ...overdueBills];
-        const uniqueBillsMap = new Map();
-        combinedBills.forEach(bill => {
-            const key = bill.id || `${bill.name}-${bill.nextDueDate || bill.dueDate}`;
-            if (!uniqueBillsMap.has(key)) {
-                uniqueBillsMap.set(key, bill);
-            }
-        });
-        const uniqueBills = Array.from(uniqueBillsMap.values());
+        const uniqueBills = RecurringBillManager.deduplicateBills(combinedBills);
         
         const total = uniqueBills.reduce((sum, bill) => sum + parseFloat(bill.amount), 0);
         const expectedTotal = 9.18 + 12.99 + 5.00 + 20.00 + 23.43 + 1301.71; // 1372.31
