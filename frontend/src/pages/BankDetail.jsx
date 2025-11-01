@@ -143,16 +143,37 @@ const BankDetail = () => {
     
     // Apply type filter
     if (filters.type) {
-      filtered = filtered.filter(t => t.type === filters.type);
+      if (filters.type === 'income') {
+        filtered = filtered.filter(t => {
+          const amount = parseFloat(t.amount) || 0;
+          return amount > 0;
+        });
+      } else if (filters.type === 'expense') {
+        filtered = filtered.filter(t => {
+          const amount = parseFloat(t.amount) || 0;
+          return amount < 0;
+        });
+      }
     }
     
     // Apply date filters
     if (filters.dateFrom) {
-      filtered = filtered.filter(t => t.date >= filters.dateFrom);
+      const fromDate = new Date(filters.dateFrom);
+      fromDate.setHours(0, 0, 0, 0);
+      filtered = filtered.filter(t => {
+        const txDate = new Date(t.date);
+        txDate.setHours(0, 0, 0, 0);
+        return txDate >= fromDate;
+      });
     }
     
     if (filters.dateTo) {
-      filtered = filtered.filter(t => t.date <= filters.dateTo);
+      const toDate = new Date(filters.dateTo);
+      toDate.setHours(23, 59, 59, 999);
+      filtered = filtered.filter(t => {
+        const txDate = new Date(t.date);
+        return txDate <= toDate;
+      });
     }
     
     setFilteredTransactions(filtered);
