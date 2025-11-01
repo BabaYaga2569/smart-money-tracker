@@ -175,6 +175,28 @@ console.log('📅 PAYDAY CALCULATION DEBUG:', {
   daysUntilPayday: daysUntilPayday,
   source: result.source || 'Check what PayCycleCalculator returned'
 });
+
+// Add comprehensive logging for debugging
+console.log('🔍 PAYDAY CALCULATION DEBUG:', {
+  currentDate: new Date().toISOString(),
+  currentDatePacific: getPacificTime().toISOString(),
+  nextPaydayOverride: settingsData.nextPaydayOverride,
+  payCycleDataExists: !!payCycleData,
+  payCycleDate: payCycleData?.date,
+  paySchedules: {
+    yours: {
+      lastPaydate: settingsData.paySchedules?.yours?.lastPaydate,
+      type: settingsData.paySchedules?.yours?.type,
+      amount: settingsData.paySchedules?.yours?.amount
+    },
+    spouse: {
+      type: settingsData.paySchedules?.spouse?.type,
+      amount: settingsData.paySchedules?.spouse?.amount,
+      dates: settingsData.paySchedules?.spouse?.dates
+    }
+  },
+  calculatedResult: result
+});
 }      
  
       // Load bills from ALL sources
@@ -501,6 +523,10 @@ console.log('📅 PAYDAY CALCULATION DEBUG:', {
       // Update bill status in Firebase and get updated bill data
       const updatedBill = await updateBillAsPaid(bill);
 
+      // TODO: Known Issue - Bill doesn't visually disappear immediately after payment
+      // Root cause: setRefreshTrigger() reloads all data but doesn't force immediate UI update
+      // Will be fixed in comprehensive Spendability refactor (see PR #XX)
+      // Workaround: User can reload page to see updated state
       // Trigger full refresh to update UI
       setRefreshTrigger(prev => prev + 1);
 
