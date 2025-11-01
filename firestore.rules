@@ -26,6 +26,7 @@ service cloud.firestore {
           && request.resource.data.amount is number
           && request.resource.data.isPaid is bool
           && request.resource.data.status is string
+          && request.resource.data.status in ['pending', 'overdue', 'paid', 'skipped']
           && request.resource.data.dueDate is timestamp;
       }
       
