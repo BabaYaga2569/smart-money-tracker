@@ -822,3 +822,4 @@ console.log('🔍 PAYDAY CALCULATION DEBUG:', {
 };
 
 export default Spendability;
+ 
