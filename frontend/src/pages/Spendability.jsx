@@ -291,7 +291,16 @@ console.log('🔍 PAYDAY CALCULATION DEBUG:', {
       }));
 
       const processedBills = RecurringBillManager.processBills(billsWithRecurrence);
-      const unsortedBillsDueBeforePayday = RecurringBillManager.getBillsDueBefore(processedBills, new Date(nextPayday));
+      
+      // Get bills due before payday
+      const billsDueBeforeNextPayday = RecurringBillManager.getBillsDueBefore(processedBills, new Date(nextPayday));
+      
+      // ALSO get overdue bills that haven't been paid yet
+      const overdueBills = RecurringBillManager.getOverdueBills(processedBills);
+      
+      // Combine both arrays and remove duplicates
+      const combinedBills = [...billsDueBeforeNextPayday, ...overdueBills];
+      const unsortedBillsDueBeforePayday = RecurringBillManager.deduplicateBills(combinedBills);
       
       // Add status info to each bill and sort by priority (overdue bills first)
       const billsDueBeforePayday = unsortedBillsDueBeforePayday
