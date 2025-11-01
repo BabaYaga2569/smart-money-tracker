@@ -351,9 +351,26 @@
   }
 }
 
+@media (min-width: 769px) and (max-width: 1199px) {
+  .tiles-grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+  
+  /* Position Next Payday tile on the right side, below Calculation Breakdown */
+  .payday-tile {
+    grid-column: 2;
+  }
+}
+
 @media (min-width: 1200px) {
   .tiles-grid {
     grid-template-columns: repeat(3, 1fr);
+  }
+  
+  /* Position Next Payday tile below Calculation Breakdown on the right */
+  .payday-tile {
+    grid-column: 2;
+    grid-row: 3;
   }
 }
 
