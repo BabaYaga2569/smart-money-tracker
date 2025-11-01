@@ -139,16 +139,16 @@ if (settingsData.nextPaydayOverride) {
 
 // ✅ FIX: Read from the ACTUAL Settings data structure
 // Check multiple possible locations for lastPayDate for backward compatibility
-const lastPayDateValue = settingsData.lastPayDate || settingsData.yoursSchedule?.lastPaydate;
+const lastPayDateValue = settingsData.paySchedules?.yours?.lastPaydate || settingsData.lastPayDate || settingsData.yoursSchedule?.lastPaydate;
 const yoursSchedule = {
   lastPaydate: lastPayDateValue,
-  amount: parseFloat(settingsData.payAmount || settingsData.yoursSchedule?.amount) || 0
+  amount: parseFloat(settingsData.paySchedules?.yours?.amount || settingsData.payAmount || settingsData.yoursSchedule?.amount) || 0
 };
 
 const spouseSchedule = {
-  type: 'bi-monthly',  // 15th & 30th
-  amount: parseFloat(settingsData.spousePayAmount) || 0,
-  dates: [15, 30]
+  type: settingsData.paySchedules?.spouse?.type || 'bi-monthly',  // 15th & 30th
+  amount: parseFloat(settingsData.paySchedules?.spouse?.amount || settingsData.spousePayAmount) || 0,
+  dates: settingsData.paySchedules?.spouse?.dates || [15, 30]
 };
 
 console.log('Spendability: Using schedules', {
@@ -501,8 +501,8 @@ console.log('📅 PAYDAY CALCULATION DEBUG:', {
       // Update bill status in Firebase and get updated bill data
       const updatedBill = await updateBillAsPaid(bill);
 
-      // Refresh the financial data
-      await fetchFinancialData();
+      // Trigger full refresh to update UI
+      setRefreshTrigger(prev => prev + 1);
 
       // Show enhanced notification with next due date
       const nextDueDateStr = updatedBill && updatedBill.nextDueDate 

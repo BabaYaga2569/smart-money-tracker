@@ -1195,9 +1195,16 @@ useEffect(() => {
           t.pending === 'true' || 
           t.status === 'pending'
         );
-      } else {
-        // Filter by transaction type (income/expense)
-        filtered = filtered.filter(t => t.type === filters.type);
+      } else if (filters.type === 'income') {
+        filtered = filtered.filter(t => {
+          const amount = parseFloat(t.amount) || 0;
+          return amount > 0;
+        });
+      } else if (filters.type === 'expense') {
+        filtered = filtered.filter(t => {
+          const amount = parseFloat(t.amount) || 0;
+          return amount < 0;
+        });
       }
     }
     
