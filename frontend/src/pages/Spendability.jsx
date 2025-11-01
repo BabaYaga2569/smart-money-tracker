@@ -291,7 +291,22 @@ console.log('🔍 PAYDAY CALCULATION DEBUG:', {
       }));
 
       const processedBills = RecurringBillManager.processBills(billsWithRecurrence);
-      const billsDueBeforePayday = RecurringBillManager.getBillsDueBefore(processedBills, new Date(nextPayday));
+      let billsDueBeforePayday = RecurringBillManager.getBillsDueBefore(processedBills, new Date(nextPayday));
+      
+      // Add status info to each bill and sort by priority (overdue bills first)
+      billsDueBeforePayday = billsDueBeforePayday
+        .map(bill => ({
+          ...bill,
+          statusInfo: RecurringBillManager.determineBillStatus(bill)
+        }))
+        .sort((a, b) => {
+          // Overdue bills ALWAYS at top
+          if (a.statusInfo.priority !== b.statusInfo.priority) {
+            return b.statusInfo.priority - a.statusInfo.priority;
+          }
+          // Then by due date
+          return new Date(a.nextDueDate) - new Date(b.nextDueDate);
+        });
       
       const totalBillsDue = billsDueBeforePayday.reduce((sum, bill) => {
         return sum + (parseFloat(bill.amount) || 0);
@@ -700,11 +715,16 @@ console.log('🔍 PAYDAY CALCULATION DEBUG:', {
           <div className="bills-list">
             {financialData.billsBeforePayday.length > 0 ? (
               financialData.billsBeforePayday.map((bill, index) => (
-                <div key={index} className="bill-item">
+                <div key={index} className={`bill-item ${bill.statusInfo?.status === 'overdue' ? 'overdue' : ''}`}>
                   <div className="bill-info">
                     <span className="bill-name">{bill.name}</span>
                     <span className="bill-due-date">Due: {formatDate(bill.nextDueDate)}</span>
                     <span className="bill-amount">{formatCurrency(bill.amount)}</span>
+                    {bill.statusInfo?.status === 'overdue' && (
+                      <div className="overdue-warning">
+                        🚨 OVERDUE by {bill.statusInfo.daysOverdue} day{bill.statusInfo.daysOverdue !== 1 ? 's' : ''} - LATE FEES MAY APPLY!
+                      </div>
+                    )}
                   </div>
                   <div className="bill-actions">
                     <button 
