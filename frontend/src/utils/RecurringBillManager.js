@@ -241,6 +241,25 @@ export class RecurringBillManager {
     }
 
     /**
+     * Deduplicate bills by ID or name+dueDate
+     * @param {Array} bills - Array of bills (may contain duplicates)
+     * @returns {Array} Deduplicated bills
+     */
+    static deduplicateBills(bills) {
+        const uniqueBillsMap = new Map();
+        
+        bills.forEach(bill => {
+            // Use bill ID if available, otherwise use name+dueDate as key
+            const key = bill.id || `${bill.name}-${bill.nextDueDate || bill.dueDate}`;
+            if (!uniqueBillsMap.has(key)) {
+                uniqueBillsMap.set(key, bill);
+            }
+        });
+        
+        return Array.from(uniqueBillsMap.values());
+    }
+
+    /**
      * Get bills due within a date range
      * @param {Array} bills - Array of processed bills
      * @param {Date} startDate - Start of range
