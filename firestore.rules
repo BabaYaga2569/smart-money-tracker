@@ -1,0 +1,69 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Helper function - check if user is authenticated and accessing their own data
+    function isOwner(userId) {
+      return request.auth != null && request.auth.uid == userId;
+    }
+    
+    // User data - only accessible by the user themselves
+    match /users/{userId} {
+      allow read, write: if isOwner(userId);
+      
+      // Settings subcollection
+      match /settings/{document=**} {
+        allow read, write: if isOwner(userId);
+      }
+      
+      // Bill Instances subcollection
+      match /billInstances/{billId} {
+        allow read, write: if isOwner(userId);
+        
+        // Validate structure on create
+        allow create: if request.resource.data.keys().hasAll([
+          'name', 'amount', 'dueDate', 'status', 'isPaid'
+        ]) && request.resource.data.amount is number;
+      }
+      
+      // Subscriptions subcollection
+      match /subscriptions/{subId} {
+        allow read, write: if isOwner(userId);
+      }
+      
+      // Transactions subcollection
+      match /transactions/{transId} {
+        allow read, write: if isOwner(userId);
+      }
+      
+      // Bill Payments subcollection
+      match /bill_payments/{paymentId} {
+        allow read, write: if isOwner(userId);
+      }
+      
+      // Financial subcollection
+      match /financial/{document=**} {
+        allow read, write: if isOwner(userId);
+      }
+      
+      // Plaid Items subcollection
+      match /plaid_items/{itemId} {
+        allow read, write: if isOwner(userId);
+      }
+      
+      // Metadata subcollection
+      match /metadata/{document=**} {
+        allow read, write: if isOwner(userId);
+      }
+      
+      // Goals subcollection
+      match /goals/{goalId} {
+        allow read, write: if isOwner(userId);
+      }
+      
+      // Income Sources subcollection
+      match /incomeSources/{sourceId} {
+        allow read, write: if isOwner(userId);
+      }
+    }
+  }
+}
