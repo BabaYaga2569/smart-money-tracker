@@ -17,10 +17,10 @@ service cloud.firestore {
       
       // Bill Instances subcollection
       match /billInstances/{billId} {
-        allow read, write: if isOwner(userId);
+        allow read, update, delete: if isOwner(userId);
         
         // Validate structure on create
-        allow create: if request.resource.data.keys().hasAll([
+        allow create: if isOwner(userId) && request.resource.data.keys().hasAll([
           'name', 'amount', 'dueDate', 'status', 'isPaid'
         ]) && request.resource.data.amount is number;
       }
