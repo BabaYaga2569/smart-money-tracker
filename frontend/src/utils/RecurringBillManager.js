@@ -213,6 +213,34 @@ export class RecurringBillManager {
     }
 
     /**
+     * Get overdue bills that haven't been paid yet
+     * @param {Array} bills - Array of processed bills (with nextDueDate)
+     * @param {Date} currentDate - Current date (defaults to today)
+     * @returns {Array} Overdue unpaid bills
+     */
+    static getOverdueBills(bills, currentDate = new Date()) {
+        // Normalize currentDate to YYYY-MM-DD string to avoid timezone issues
+        const currentDateStr = currentDate.toISOString().split('T')[0];
+        
+        return bills.filter(bill => {
+            if (this.isBillPaidForCurrentCycle(bill)) {
+                return false;
+            }
+            
+            const dueDateValue = bill.nextDueDate || bill.dueDate;
+            const dueDate = typeof dueDateValue === 'string' ? parseLocalDate(dueDateValue) : dueDateValue;
+            
+            if (!dueDate) return false;
+            
+            // Normalize dueDate to YYYY-MM-DD string to avoid timezone issues
+            const dueDateStr = dueDate.toISOString().split('T')[0];
+            
+            // Bill is overdue if due date is before current date
+            return dueDateStr < currentDateStr;
+        });
+    }
+
+    /**
      * Get bills due within a date range
      * @param {Array} bills - Array of processed bills
      * @param {Date} startDate - Start of range
