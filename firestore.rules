@@ -20,9 +20,12 @@ service cloud.firestore {
         allow read, update, delete: if isOwner(userId);
         
         // Validate structure on create
-        allow create: if isOwner(userId) && request.resource.data.keys().hasAll([
-          'name', 'amount', 'dueDate', 'status', 'isPaid'
-        ]) && request.resource.data.amount is number;
+        allow create: if isOwner(userId) 
+          && request.resource.data.keys().hasAll(['name', 'amount', 'dueDate', 'status', 'isPaid'])
+          && request.resource.data.amount is number
+          && request.resource.data.isPaid is bool
+          && request.resource.data.status is string
+          && request.resource.data.dueDate is timestamp;
       }
       
       // Subscriptions subcollection
