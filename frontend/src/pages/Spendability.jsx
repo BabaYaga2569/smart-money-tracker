@@ -525,7 +525,7 @@ console.log('🔍 PAYDAY CALCULATION DEBUG:', {
 
       // TODO: Known Issue - Bill doesn't visually disappear immediately after payment
       // Root cause: setRefreshTrigger() reloads all data but doesn't force immediate UI update
-      // Will be fixed in comprehensive Spendability refactor (see PR #XX)
+      // Will be fixed in comprehensive Spendability refactor
       // Workaround: User can reload page to see updated state
       // Trigger full refresh to update UI
       setRefreshTrigger(prev => prev + 1);
