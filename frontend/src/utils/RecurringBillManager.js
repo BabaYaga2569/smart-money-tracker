@@ -338,6 +338,52 @@ static isBillPaidForCurrentCycle(bill) {
 }
 
     /**
+     * Determine the status of a bill (overdue, due-soon, upcoming, paid)
+     * @param {Object} bill - Bill object with nextDueDate or dueDate
+     * @param {Date} today - Current date (defaults to Pacific Time)
+     * @returns {Object} Status info with status, priority, daysOverdue, and urgency
+     */
+    static determineBillStatus(bill, today = getPacificTime()) {
+        // Check if bill is paid for current cycle
+        if (this.isBillPaidForCurrentCycle(bill)) {
+            return { status: 'paid', priority: 0 };
+        }
+
+        // Parse the due date
+        const dueDateValue = bill.nextDueDate || bill.dueDate;
+        const dueDate = typeof dueDateValue === 'string' ? parseLocalDate(dueDateValue) : dueDateValue;
+        
+        if (!dueDate) {
+            return { status: 'unknown', priority: 0 };
+        }
+
+        // Normalize dates to start of day for accurate comparison
+        const todayStart = new Date(today.getFullYear(), today.getMonth(), today.getDate());
+        const dueDateStart = new Date(dueDate.getFullYear(), dueDate.getMonth(), dueDate.getDate());
+        
+        // Calculate days difference
+        const daysDiff = Math.floor((dueDateStart - todayStart) / (1000 * 60 * 60 * 24));
+        
+        if (daysDiff < 0) {
+            // Bill is overdue
+            return {
+                status: 'overdue',
+                daysOverdue: Math.abs(daysDiff),
+                priority: 999,  // Always sort to top
+                urgency: 'critical'
+            };
+        }
+        
+        if (daysDiff <= 7) {
+            // Bill is due within 7 days
+            return { status: 'due-soon', priority: 10 };
+        }
+        
+        // Bill is upcoming (more than 7 days away)
+        return { status: 'upcoming', priority: 1 };
+    }
+
+    /**
      * Check if a bill can be paid (not already paid by another transaction)
      * @param {Object} bill - Bill object
      * @returns {Object} { canPay: boolean, reason: string }
