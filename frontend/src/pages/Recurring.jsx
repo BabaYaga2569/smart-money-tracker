@@ -12,7 +12,17 @@ import { format, addMonths } from 'date-fns';
 import './Recurring.css';
 import { useAuth } from '../contexts/AuthContext';
 
-// Helper function to build update data without undefined values
+/**
+ * Helper function to build update data without undefined values for Firebase updateDoc.
+ * Firebase Firestore rejects updates containing undefined values, so this function filters them out.
+ * 
+ * @param {Object} currentData - The current document data from Firestore
+ * @param {Array} recurringItems - Array of recurring items to save (may contain undefined values)
+ * @param {Object} additionalFields - Optional additional fields to include in the update (e.g., {bills: updatedBills})
+ * @returns {Object} Object containing:
+ *   - updateData: Clean object ready for Firebase updateDoc (no undefined values)
+ *   - cleanedItems: Recurring items array with undefined values filtered out
+ */
 const buildUpdateData = (currentData, recurringItems, additionalFields = {}) => {
   // Clean undefined values from items
   const cleanedItems = recurringItems.map(item => 
@@ -23,10 +33,10 @@ const buildUpdateData = (currentData, recurringItems, additionalFields = {}) => 
 
   // Build update data without undefined values
   const updateData = { recurringItems: cleanedItems };
-  if (currentData.plaidAccounts) updateData.plaidAccounts = currentData.plaidAccounts;
-  if (currentData.bankAccounts) updateData.bankAccounts = currentData.bankAccounts;
-  if (currentData.institutionMapping) updateData.institutionMapping = currentData.institutionMapping;
-  if (currentData.bills) updateData.bills = currentData.bills;
+  if (currentData.plaidAccounts !== undefined) updateData.plaidAccounts = currentData.plaidAccounts;
+  if (currentData.bankAccounts !== undefined) updateData.bankAccounts = currentData.bankAccounts;
+  if (currentData.institutionMapping !== undefined) updateData.institutionMapping = currentData.institutionMapping;
+  if (currentData.bills !== undefined) updateData.bills = currentData.bills;
   
   // Merge additional fields (e.g., when updating bills alongside recurringItems)
   Object.assign(updateData, additionalFields);
