@@ -76,3 +76,50 @@ This project uses [Sentry](https://sentry.io) for error monitoring and performan
 - Check your Sentry dashboard to verify
 
 **Note:** Errors in development mode are logged but not sent to Sentry by default.
+
+## 📱 PWA Features
+
+Smart Money Tracker is a Progressive Web App (PWA) that can be installed on your device and works offline!
+
+### Installation
+
+#### Desktop (Chrome, Edge, Brave)
+1. Visit the app in your browser
+2. Look for the install icon in the address bar (⊕ or install button)
+3. Click "Install" when prompted
+4. The app will be added to your applications
+
+#### Mobile (Android - Chrome)
+1. Open the app in Chrome
+2. Tap the menu (⋮) in the top-right
+3. Select "Install app" or "Add to Home Screen"
+4. Follow the prompts
+
+#### Mobile (iOS - Safari)
+1. Open the app in Safari
+2. Tap the Share button (square with arrow)
+3. Scroll down and tap "Add to Home Screen"
+4. Tap "Add" to confirm
+
+### Offline Capabilities
+
+The app works offline with these features:
+- **Static Assets Cached**: All app files are cached for instant loading
+- **Smart Caching**: Google Fonts and Firebase Storage assets are cached intelligently
+- **Offline Fallback**: See a helpful offline page when disconnected
+- **Auto-Update**: Service worker updates automatically with new versions
+
+### Service Worker Caching Strategy
+
+- **Static Assets** (JS, CSS, HTML): Cached on install for offline access
+- **Google Fonts**: Cache-First strategy with 1-year expiration
+- **Firebase Storage**: Stale-While-Revalidate for fresh data with offline fallback
+- **Firebase API**: Not cached to ensure data consistency
+
+### Testing PWA Features
+
+See [docs/PWA.md](docs/PWA.md) for detailed testing instructions including:
+- Testing PWA installation
+- Testing offline mode
+- Running Lighthouse PWA audits
+- Platform-specific tips

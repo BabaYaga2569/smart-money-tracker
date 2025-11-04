@@ -7,6 +7,7 @@ import MobileNav from './components/MobileNav';
 import LoadingSpinner from './components/LoadingSpinner';
 import DebugButton from './components/DebugButton';
 import SentryTestButton from './components/SentryTestButton';
+import PWAInstallPrompt from './components/PWAInstallPrompt';
 import { useWindowSize } from './hooks/useWindowSize';
 import './App.css';
 
@@ -109,6 +110,7 @@ function App() {
       <ErrorBoundary>
         <Router>
           <AuthProvider>
+            <PWAInstallPrompt />
             <Suspense fallback={<LoadingSpinner />}>
               <Routes>
               {/* Public route - Login */}
