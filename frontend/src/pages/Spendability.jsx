@@ -339,12 +339,13 @@ console.log('🔍 PAYDAY CALCULATION DEBUG:', {
       const totalBillsDue = (billsDueBeforePayday || []).reduce((sum, bill) => {
         const amount = Number(bill.amount ?? bill.cost) || 0;
         if (amount === 0 && bill.isSubscription) {
-          console.warn(`Spendability: Subscription bill ${bill.name} has zero/invalid amount`, {
-            amount: bill.amount,
-            cost: bill.cost,
-            amountType: typeof bill.amount,
-            costType: typeof bill.cost
-          });
+          console.warn(
+            `Spendability: Subscription bill ${bill.name} has zero/invalid amount`,
+            'amount:', bill.amount,
+            'type:', typeof bill.amount,
+            'cost:', bill.cost,
+            'costType:', typeof bill.cost
+          );
         }
         return sum + amount;
       }, 0);
