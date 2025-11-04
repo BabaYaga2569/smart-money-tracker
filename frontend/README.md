@@ -49,6 +49,26 @@ See [src/test/README.md](src/test/README.md) for comprehensive testing guideline
 - Focus on testing user behavior, not implementation details
 - Use accessible queries that reflect how users interact with the app
 
+## 📚 Component Documentation
+
+View the component library with Storybook:
+
+```bash
+npm run storybook
+```
+
+This opens an interactive component explorer at http://localhost:6006
+
+### Building Storybook
+
+To build a static version of Storybook:
+
+```bash
+npm run build-storybook
+```
+
+The static site will be generated in the `storybook-static/` directory.
+
 ## 🐛 Error Monitoring (Sentry)
 
 This project uses [Sentry](https://sentry.io) for error monitoring and performance tracking.
