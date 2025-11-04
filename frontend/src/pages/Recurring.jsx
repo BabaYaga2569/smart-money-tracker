@@ -12,6 +12,38 @@ import { format, addMonths } from 'date-fns';
 import './Recurring.css';
 import { useAuth } from '../contexts/AuthContext';
 
+/**
+ * Helper function to build update data without undefined values for Firebase updateDoc.
+ * Firebase Firestore rejects updates containing undefined values, so this function filters them out.
+ * 
+ * @param {Object} currentData - The current document data from Firestore
+ * @param {Array} recurringItems - Array of recurring items to save (may contain undefined values)
+ * @param {Object} additionalFields - Optional additional fields to include in the update (e.g., {bills: updatedBills})
+ * @returns {Object} Object containing:
+ *   - updateData: Clean object ready for Firebase updateDoc (no undefined values)
+ *   - cleanedItems: Recurring items array with undefined values filtered out
+ */
+const buildUpdateData = (currentData, recurringItems, additionalFields = {}) => {
+  // Clean undefined values from items
+  const cleanedItems = recurringItems.map(item => 
+    Object.fromEntries(
+      Object.entries(item).filter(([, value]) => value !== undefined)
+    )
+  );
+
+  // Build update data without undefined values
+  const updateData = { recurringItems: cleanedItems };
+  if (currentData.plaidAccounts !== undefined) updateData.plaidAccounts = currentData.plaidAccounts;
+  if (currentData.bankAccounts !== undefined) updateData.bankAccounts = currentData.bankAccounts;
+  if (currentData.institutionMapping !== undefined) updateData.institutionMapping = currentData.institutionMapping;
+  if (currentData.bills !== undefined) updateData.bills = currentData.bills;
+  
+  // Merge additional fields (e.g., when updating bills alongside recurringItems)
+  Object.assign(updateData, additionalFields);
+
+  return { updateData, cleanedItems };
+};
+
 const Recurring = () => {
   const { currentUser } = useAuth();
   const [loading, setLoading] = useState(true);
@@ -543,12 +575,10 @@ const Recurring = () => {
       }
       
       // Save recurring template to settings (keep for backward compatibility)
-      await updateDoc(settingsDocRef, {
-        ...currentData,
-        recurringItems: updatedItems
-      });
+      const { updateData, cleanedItems } = buildUpdateData(currentData, updatedItems);
+      await updateDoc(settingsDocRef, updateData);
       
-      setRecurringItems(updatedItems);
+      setRecurringItems(cleanedItems);
       setShowModal(false);
       
       // Show success notification with bill sync details
@@ -604,12 +634,10 @@ const Recurring = () => {
         }
         
         // Update recurring items
-        await updateDoc(settingsDocRef, {
-          ...currentData,
-          recurringItems: updatedItems
-        });
+        const { updateData, cleanedItems } = buildUpdateData(currentData, updatedItems);
+        await updateDoc(settingsDocRef, updateData);
         
-        setRecurringItems(updatedItems);
+        setRecurringItems(cleanedItems);
         
         let message = 'Recurring item deleted';
         if (deletedCount > 0 || preservedCount > 0) {
@@ -621,12 +649,10 @@ const Recurring = () => {
         
         showNotification(message, 'success');
       } else {
-        await updateDoc(settingsDocRef, {
-          ...currentData,
-          recurringItems: updatedItems
-        });
+        const { updateData, cleanedItems } = buildUpdateData(currentData, updatedItems);
+        await updateDoc(settingsDocRef, updateData);
         
-        setRecurringItems(updatedItems);
+        setRecurringItems(cleanedItems);
         showNotification('Recurring item deleted', 'success');
       }
     } catch (error) {
@@ -652,10 +678,8 @@ const Recurring = () => {
       setDeletedItems(itemsToDelete);
       
       // Clear all items
-      await updateDoc(settingsDocRef, {
-        ...currentData,
-        recurringItems: []
-      });
+      const { updateData } = buildUpdateData(currentData, []);
+      await updateDoc(settingsDocRef, updateData);
       
       setRecurringItems([]);
       showNotification(
@@ -680,12 +704,10 @@ const Recurring = () => {
       const currentDoc = await getDoc(settingsDocRef);
       const currentData = currentDoc.exists() ? currentDoc.data() : {};
       
-      await updateDoc(settingsDocRef, {
-        ...currentData,
-        recurringItems: deletedItems
-      });
+      const { updateData, cleanedItems } = buildUpdateData(currentData, deletedItems);
+      await updateDoc(settingsDocRef, updateData);
       
-      setRecurringItems(deletedItems);
+      setRecurringItems(cleanedItems);
       setDeletedItems([]);
       showNotification('Items restored successfully!', 'success');
     } catch (error) {
@@ -845,13 +867,10 @@ const Recurring = () => {
         }
       }
       
-      await updateDoc(settingsDocRef, {
-        ...currentData,
-        recurringItems: updatedItems,
-        bills: updatedBills
-      });
+      const { updateData, cleanedItems } = buildUpdateData(currentData, updatedItems, { bills: updatedBills });
+      await updateDoc(settingsDocRef, updateData);
       
-      setRecurringItems(updatedItems);
+      setRecurringItems(cleanedItems);
       
       // Show notification with bill sync details
       let message = newStatus === 'paused' ? 'Item paused' : 'Item resumed';
