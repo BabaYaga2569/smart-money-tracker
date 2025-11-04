@@ -317,9 +317,8 @@ console.log('🔍 PAYDAY CALCULATION DEBUG:', {
           return new Date(a.nextDueDate) - new Date(b.nextDueDate);
         });
       
-      const totalBillsDue = billsDueBeforePayday.reduce((sum, bill) => {
-        return sum + (parseFloat(bill.amount) || 0);
-      }, 0);
+      const totalBillsDue = (billsDueBeforePayday || []).reduce((sum, bill) => 
+        sum + (Number(bill.amount ?? bill.cost) || 0), 0);
 
       const preferences = settingsData.preferences || {};
       const weeklyEssentials = preferences.weeklyEssentials || 0;
@@ -336,6 +335,8 @@ console.log('🔍 PAYDAY CALCULATION DEBUG:', {
         nextPayday,
         daysUntilPayday,
         finalDaysUntilPayday,
+        totalBillsDue,
+        billsCount: billsDueBeforePayday.length,
         willDisplayAs: finalDaysUntilPayday > 0 ? `${finalDaysUntilPayday} days` : 'Today!'
       });
 
@@ -519,7 +520,7 @@ console.log('🔍 PAYDAY CALCULATION DEBUG:', {
       return;
     }
 
-    if (!window.confirm(`Mark ${bill.name} bill ($${bill.amount}) as paid?`)) {
+    if (!window.confirm(`Mark ${bill.name} bill ($${bill.amount ?? bill.cost}) as paid?`)) {
       return;
     }
 
@@ -528,7 +529,7 @@ console.log('🔍 PAYDAY CALCULATION DEBUG:', {
       
       // Create transaction for the bill payment
       const transaction = {
-        amount: -Math.abs(parseFloat(bill.amount)),
+        amount: -Math.abs(parseFloat(bill.amount ?? bill.cost)),
         description: `${bill.name} Payment`,
         category: 'Bills & Utilities',
         account: 'bofa', // Default to main account - could be made configurable
@@ -728,7 +729,7 @@ console.log('🔍 PAYDAY CALCULATION DEBUG:', {
                   <div className="bill-info">
                     <span className="bill-name">{bill.name}</span>
                     <span className="bill-due-date">Due: {formatDate(bill.nextDueDate)}</span>
-                    <span className="bill-amount">{formatCurrency(bill.amount)}</span>
+                    <span className="bill-amount">{formatCurrency(bill.amount ?? bill.cost)}</span>
                     {bill.statusInfo?.status === 'overdue' && (
                       <div className="overdue-warning">
                         🚨 OVERDUE by {bill.statusInfo.daysOverdue} day{bill.statusInfo.daysOverdue !== 1 ? 's' : ''} - LATE FEES MAY APPLY!
