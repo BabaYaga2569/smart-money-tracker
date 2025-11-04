@@ -12,10 +12,12 @@ frontend/dist/
 .vite/
 .netlify/
 
-# Environment
+# Environment variables
 .env
 .env.local
+.env.*.local
 .env.production
+.env.development
 
 # OS
 .DS_Store
