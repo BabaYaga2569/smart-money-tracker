@@ -1,5 +1,16 @@
 import React, { useState, useEffect } from 'react';
-import { doc, getDoc, updateDoc, collection, setDoc, serverTimestamp, query, where, getDocs, deleteDoc } from 'firebase/firestore';
+import {
+  doc,
+  getDoc,
+  updateDoc,
+  collection,
+  setDoc,
+  serverTimestamp,
+  query,
+  where,
+  getDocs,
+  deleteDoc,
+} from 'firebase/firestore';
 import { db } from '../firebase';
 import { RecurringManager } from '../utils/RecurringManager';
 import { RecurringBillManager } from '../utils/RecurringBillManager';
@@ -15,7 +26,7 @@ import { useAuth } from '../contexts/AuthContext';
 /**
  * Helper function to build update data without undefined values for Firebase updateDoc.
  * Firebase Firestore rejects updates containing undefined values, so this function filters them out.
- * 
+ *
  * @param {Object} currentData - The current document data from Firestore
  * @param {Array} recurringItems - Array of recurring items to save (may contain undefined values)
  * @param {Object} additionalFields - Optional additional fields to include in the update (e.g., {bills: updatedBills})
@@ -25,19 +36,18 @@ import { useAuth } from '../contexts/AuthContext';
  */
 const buildUpdateData = (currentData, recurringItems, additionalFields = {}) => {
   // Clean undefined values from items
-  const cleanedItems = recurringItems.map(item => 
-    Object.fromEntries(
-      Object.entries(item).filter(([, value]) => value !== undefined)
-    )
+  const cleanedItems = recurringItems.map((item) =>
+    Object.fromEntries(Object.entries(item).filter(([, value]) => value !== undefined))
   );
 
   // Build update data without undefined values
   const updateData = { recurringItems: cleanedItems };
   if (currentData.plaidAccounts !== undefined) updateData.plaidAccounts = currentData.plaidAccounts;
   if (currentData.bankAccounts !== undefined) updateData.bankAccounts = currentData.bankAccounts;
-  if (currentData.institutionMapping !== undefined) updateData.institutionMapping = currentData.institutionMapping;
+  if (currentData.institutionMapping !== undefined)
+    updateData.institutionMapping = currentData.institutionMapping;
   if (currentData.bills !== undefined) updateData.bills = currentData.bills;
-  
+
   // Merge additional fields (e.g., when updating bills alongside recurringItems)
   Object.assign(updateData, additionalFields);
 
@@ -57,14 +67,14 @@ const Recurring = () => {
   const [showHistoryModal, setShowHistoryModal] = useState(false);
   const [selectedItem, setSelectedItem] = useState(null);
   const [showCSVImport, setShowCSVImport] = useState(false);
-  
+
   // Filters and search
   const [filterType, setFilterType] = useState('all');
   const [filterCategory, setFilterCategory] = useState('all');
   const [filterStatus, setFilterStatus] = useState('all');
   const [searchTerm, setSearchTerm] = useState('');
   const [sortOrder, setSortOrder] = useState('dueDate'); // dueDate, alphabetical, amount
-  
+
   // Form state
   const [newItem, setNewItem] = useState({
     name: '',
@@ -78,21 +88,21 @@ const Recurring = () => {
     description: '',
     status: 'active',
     customRecurrence: false,
-    activeMonths: []
+    activeMonths: [],
   });
 
   // Notification state
   const [notification, setNotification] = useState({ message: '', type: '' });
-  
+
   // Bulk delete state
   const [deletedItems, setDeletedItems] = useState([]);
   const [showBulkDeleteModal, setShowBulkDeleteModal] = useState(false);
-  
+
   // Single item delete with options
   const [itemToDelete, setItemToDelete] = useState(null);
   const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [deleteGeneratedBills, setDeleteGeneratedBills] = useState(false);
-  
+
   // Cleanup menu
   const [showCleanupMenu, setShowCleanupMenu] = useState(false);
 
@@ -108,11 +118,15 @@ const Recurring = () => {
   // Close cleanup menu when clicking outside
   useEffect(() => {
     const handleClickOutside = (event) => {
-      if (showCleanupMenu && !event.target.closest('.cleanup-menu-button') && !event.target.closest('.cleanup-dropdown')) {
+      if (
+        showCleanupMenu &&
+        !event.target.closest('.cleanup-menu-button') &&
+        !event.target.closest('.cleanup-dropdown')
+      ) {
         setShowCleanupMenu(false);
       }
     };
-    
+
     document.addEventListener('mousedown', handleClickOutside);
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, [showCleanupMenu]);
@@ -134,7 +148,7 @@ const Recurring = () => {
     try {
       const settingsDocRef = doc(db, 'users', currentUser.uid, 'settings', 'personal');
       const settingsDocSnap = await getDoc(settingsDocRef);
-      
+
       if (settingsDocSnap.exists()) {
         const data = settingsDocSnap.data();
         setRecurringItems(data.recurringItems || []);
@@ -149,30 +163,36 @@ const Recurring = () => {
   const loadAccounts = async () => {
     try {
       const token = localStorage.getItem('token');
-      
+
       // Try to load from Plaid API first
       if (token) {
         try {
-          const response = await fetch('https://smart-money-tracker-09ks.onrender.com/api/accounts', {
-            headers: {
-              'Authorization': `Bearer ${token}`,
-              'Content-Type': 'application/json'
+          const response = await fetch(
+            'https://smart-money-tracker-09ks.onrender.com/api/accounts',
+            {
+              headers: {
+                Authorization: `Bearer ${token}`,
+                'Content-Type': 'application/json',
+              },
             }
-          });
-          
+          );
+
           if (response.ok) {
             const data = await response.json();
-            
+
             // Check if API returned success flag
             if (data.success === false) {
-              console.log('Plaid API returned no accounts:', data.message || 'No accounts available');
+              console.log(
+                'Plaid API returned no accounts:',
+                data.message || 'No accounts available'
+              );
               // Fall through to Firebase fallback
             } else {
               const accountsList = data.accounts || data;
-              
+
               if (Array.isArray(accountsList) && accountsList.length > 0) {
                 const accountsMap = {};
-                accountsList.forEach(account => {
+                accountsList.forEach((account) => {
                   const accountId = account.account_id || account.id || account._id;
                   let balance = 0;
                   if (account.balances) {
@@ -182,13 +202,13 @@ const Recurring = () => {
                   } else if (account.balance !== undefined) {
                     balance = account.balance;
                   }
-                  
+
                   accountsMap[accountId] = {
                     name: account.name || account.official_name || 'Unknown Account',
                     type: account.subtype || account.type || 'checking',
                     balance: balance.toString(),
                     mask: account.mask || '',
-                    institution: account.institution_name || ''
+                    institution: account.institution_name || '',
                   };
                 });
                 setAccounts(accountsMap);
@@ -203,27 +223,27 @@ const Recurring = () => {
           console.log('Plaid API not available, trying Firebase...', apiError.message || '');
         }
       }
-      
+
       // Fallback to Firebase
       const settingsDocRef = doc(db, 'users', currentUser.uid, 'settings', 'personal');
       const settingsDocSnap = await getDoc(settingsDocRef);
-      
+
       if (settingsDocSnap.exists()) {
         const data = settingsDocSnap.data();
         const plaidAccountsList = data.plaidAccounts || [];
         const bankAccounts = data.bankAccounts || {};
-        
+
         // Prioritize Plaid accounts if they exist
         if (plaidAccountsList.length > 0) {
           const accountsMap = {};
-          plaidAccountsList.forEach(account => {
+          plaidAccountsList.forEach((account) => {
             const accountId = account.account_id;
             accountsMap[accountId] = {
               name: account.official_name || account.name,
               type: account.type,
               balance: account.balance,
               mask: account.mask || '',
-              institution: ''
+              institution: '',
             };
           });
           setAccounts(accountsMap);
@@ -236,9 +256,9 @@ const Recurring = () => {
       console.error('Error loading accounts:', error);
       // Fallback accounts
       setAccounts({
-        bofa: { name: "Bank of America", type: "checking" },
-        usaa: { name: "USAA", type: "checking" },
-        capone: { name: "Capital One", type: "credit" }
+        bofa: { name: 'Bank of America', type: 'checking' },
+        usaa: { name: 'USAA', type: 'checking' },
+        capone: { name: 'Capital One', type: 'credit' },
       });
     }
   };
@@ -261,8 +281,8 @@ const Recurring = () => {
         history: [
           { date: '2025-09-01', status: 'success', amount: 2500 },
           { date: '2025-08-01', status: 'success', amount: 2500 },
-          { date: '2025-07-01', status: 'success', amount: 2500 }
-        ]
+          { date: '2025-07-01', status: 'success', amount: 2500 },
+        ],
       },
       {
         id: 'netflix-1',
@@ -282,8 +302,8 @@ const Recurring = () => {
           { date: '2025-08-03', status: 'success', amount: 15.99 },
           { date: '2025-07-03', status: 'success', amount: 15.99 },
           { date: '2025-06-03', status: 'failed', amount: 15.99 },
-          { date: '2025-05-03', status: 'success', amount: 15.99 }
-        ]
+          { date: '2025-05-03', status: 'success', amount: 15.99 },
+        ],
       },
       {
         id: 'rent-1',
@@ -301,8 +321,8 @@ const Recurring = () => {
         history: [
           { date: '2025-09-01', status: 'success', amount: 1200 },
           { date: '2025-08-01', status: 'success', amount: 1200 },
-          { date: '2025-07-01', status: 'success', amount: 1200 }
-        ]
+          { date: '2025-07-01', status: 'success', amount: 1200 },
+        ],
       },
       {
         id: 'spotify-1',
@@ -321,8 +341,8 @@ const Recurring = () => {
           { date: '2025-09-15', status: 'success', amount: 9.99 },
           { date: '2025-08-15', status: 'success', amount: 9.99 },
           { date: '2025-07-15', status: 'skipped', amount: 9.99 },
-          { date: '2025-06-15', status: 'success', amount: 9.99 }
-        ]
+          { date: '2025-06-15', status: 'success', amount: 9.99 },
+        ],
       },
       {
         id: 'insurance-1',
@@ -340,9 +360,9 @@ const Recurring = () => {
         history: [
           { date: '2025-09-12', status: 'success', amount: 125 },
           { date: '2025-08-12', status: 'success', amount: 125 },
-          { date: '2025-07-12', status: 'success', amount: 125 }
-        ]
-      }
+          { date: '2025-07-12', status: 'success', amount: 125 },
+        ],
+      },
     ];
     setRecurringItems(sampleItems);
   };
@@ -355,7 +375,7 @@ const Recurring = () => {
   const formatCurrency = (amount) => {
     return new Intl.NumberFormat('en-US', {
       style: 'currency',
-      currency: 'USD'
+      currency: 'USD',
     }).format(amount);
   };
 
@@ -363,31 +383,39 @@ const Recurring = () => {
     return new Date(dateString).toLocaleDateString('en-US', {
       month: 'short',
       day: 'numeric',
-      year: 'numeric'
+      year: 'numeric',
     });
   };
 
   const calculateMetrics = () => {
     const totals = RecurringManager.calculateMonthlyTotals(processedItems);
-    const activeItems = processedItems.filter(item => item.status === 'active');
-    
+    const activeItems = processedItems.filter((item) => item.status === 'active');
+
     // Get upcoming items (next 30 days)
     const thirtyDaysFromNow = new Date();
     thirtyDaysFromNow.setDate(thirtyDaysFromNow.getDate() + 30);
-    const upcomingItems = RecurringManager.getItemsInRange(activeItems, new Date(), thirtyDaysFromNow);
-    
+    const upcomingItems = RecurringManager.getItemsInRange(
+      activeItems,
+      new Date(),
+      thirtyDaysFromNow
+    );
+
     // Get items due in next 7 days
     const sevenDaysFromNow = new Date();
     sevenDaysFromNow.setDate(sevenDaysFromNow.getDate() + 7);
-    const dueSoonItems = RecurringManager.getItemsInRange(activeItems, new Date(), sevenDaysFromNow);
-    
+    const dueSoonItems = RecurringManager.getItemsInRange(
+      activeItems,
+      new Date(),
+      sevenDaysFromNow
+    );
+
     // Get failed/missed items
-    const failedItems = processedItems.filter(item => item.status === 'failed');
-    
+    const failedItems = processedItems.filter((item) => item.status === 'failed');
+
     // Add urgency statistics using BillSortingManager
     const processedWithUrgency = BillSortingManager.processBillsWithUrgency(activeItems);
     const urgencySummary = BillSortingManager.getBillsUrgencySummary(processedWithUrgency);
-    
+
     return {
       ...totals,
       totalActive: activeItems.length,
@@ -397,7 +425,7 @@ const Recurring = () => {
       upcomingItems,
       dueSoonItems,
       failedItems,
-      urgency: urgencySummary
+      urgency: urgencySummary,
     };
   };
 
@@ -405,14 +433,14 @@ const Recurring = () => {
 
   // Filter items based on search and filters, then apply smart sorting
   const filteredItems = (() => {
-    const filtered = processedItems.filter(item => {
+    const filtered = processedItems.filter((item) => {
       const matchesSearch = item.name.toLowerCase().includes(searchTerm.toLowerCase());
       const matchesType = filterType === 'all' || item.type === filterType;
       const matchesCategory = filterCategory === 'all' || item.category === filterCategory;
       const matchesStatus = filterStatus === 'all' || item.status === filterStatus;
       return matchesSearch && matchesType && matchesCategory && matchesStatus;
     });
-    
+
     // Apply smart sorting with urgency information
     return BillSortingManager.processBillsWithUrgency(filtered, sortOrder);
   })();
@@ -431,7 +459,7 @@ const Recurring = () => {
       description: '',
       status: 'active',
       customRecurrence: false,
-      activeMonths: []
+      activeMonths: [],
     });
     setShowModal(true);
   };
@@ -442,7 +470,7 @@ const Recurring = () => {
       ...item,
       nextOccurrence: formatDateForInput(new Date(item.nextOccurrence)),
       customRecurrence: item.activeMonths && item.activeMonths.length > 0,
-      activeMonths: item.activeMonths || []
+      activeMonths: item.activeMonths || [],
     });
     setShowModal(true);
   };
@@ -452,7 +480,7 @@ const Recurring = () => {
       showNotification('Please fill in required fields', 'error');
       return;
     }
-    
+
     // Validate custom recurrence
     if (newItem.customRecurrence && (!newItem.activeMonths || newItem.activeMonths.length === 0)) {
       showNotification('Please select at least one month for custom recurrence', 'error');
@@ -461,7 +489,7 @@ const Recurring = () => {
 
     try {
       setSaving(true);
-      
+
       const itemData = {
         ...newItem,
         id: editingItem ? editingItem.id : `recurring-${Date.now()}`,
@@ -470,70 +498,74 @@ const Recurring = () => {
         updatedAt: new Date().toISOString(),
         // Only include activeMonths if customRecurrence is enabled
         activeMonths: newItem.customRecurrence ? newItem.activeMonths : undefined,
-        customRecurrence: newItem.customRecurrence || undefined
+        customRecurrence: newItem.customRecurrence || undefined,
       };
 
       const settingsDocRef = doc(db, 'users', currentUser.uid, 'settings', 'personal');
       const currentDoc = await getDoc(settingsDocRef);
       const currentData = currentDoc.exists() ? currentDoc.data() : {};
-      
+
       const existingItems = currentData.recurringItems || [];
       let updatedItems;
-      
+
       if (editingItem) {
-        updatedItems = existingItems.map(item => 
-          item.id === editingItem.id ? itemData : item
-        );
+        updatedItems = existingItems.map((item) => (item.id === editingItem.id ? itemData : item));
       } else {
         // Check for potential duplicates before adding
-        const isDuplicate = existingItems.some(item => {
+        const isDuplicate = existingItems.some((item) => {
           // Exact duplicate: same name, amount, and next occurrence
-          const exactMatch = item.name.toLowerCase() === itemData.name.toLowerCase() && 
-                             parseFloat(item.amount) === parseFloat(itemData.amount) &&
-                             item.nextOccurrence === itemData.nextOccurrence &&
-                             item.frequency === itemData.frequency;
-          
+          const exactMatch =
+            item.name.toLowerCase() === itemData.name.toLowerCase() &&
+            parseFloat(item.amount) === parseFloat(itemData.amount) &&
+            item.nextOccurrence === itemData.nextOccurrence &&
+            item.frequency === itemData.frequency;
+
           return exactMatch;
         });
-        
+
         if (isDuplicate) {
-          showNotification('A recurring item with the same name, amount, frequency, and date already exists!', 'error');
+          showNotification(
+            'A recurring item with the same name, amount, frequency, and date already exists!',
+            'error'
+          );
           setSaving(false);
           return;
         }
-        
+
         // Check for similar items (same name and amount but different date/frequency)
-        const similarItem = existingItems.find(item => 
-          item.name.toLowerCase() === itemData.name.toLowerCase() && 
-          parseFloat(item.amount) === parseFloat(itemData.amount) &&
-          (item.nextOccurrence !== itemData.nextOccurrence || item.frequency !== itemData.frequency)
+        const similarItem = existingItems.find(
+          (item) =>
+            item.name.toLowerCase() === itemData.name.toLowerCase() &&
+            parseFloat(item.amount) === parseFloat(itemData.amount) &&
+            (item.nextOccurrence !== itemData.nextOccurrence ||
+              item.frequency !== itemData.frequency)
         );
-        
+
         if (similarItem) {
           const proceed = window.confirm(
             `A recurring item named "${similarItem.name}" with amount $${similarItem.amount} already exists.\n\n` +
-            `Existing: ${similarItem.frequency} on ${similarItem.nextOccurrence}\n` +
-            `New: ${itemData.frequency} on ${itemData.nextOccurrence}\n\n` +
-            `This might be legitimate if you have multiple similar recurring items.\n\n` +
-            `Do you want to proceed?`
+              `Existing: ${similarItem.frequency} on ${similarItem.nextOccurrence}\n` +
+              `New: ${itemData.frequency} on ${itemData.nextOccurrence}\n\n` +
+              `This might be legitimate if you have multiple similar recurring items.\n\n` +
+              `Do you want to proceed?`
           );
-          
+
           if (!proceed) {
             setSaving(false);
             return;
           }
         }
-        
+
         updatedItems = [...existingItems, itemData];
       }
-      
+
       // ✅ NEW: Save to billInstances collection instead of old bills array
       let billSyncStats = null;
-      
+
       if (itemData.type === 'expense' && itemData.status === 'active') {
         try {
           const billId = `bill_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
-          
+
           // Create bill instance with proper structure
           const billInstance = {
             id: billId,
@@ -550,22 +582,25 @@ const Recurring = () => {
             paymentHistory: [],
             linkedTransactionIds: [],
             description: itemData.description || '',
-            accountId: itemData.linkedAccount !== 'Select Account' && itemData.linkedAccount ? itemData.linkedAccount : null,
+            accountId:
+              itemData.linkedAccount !== 'Select Account' && itemData.linkedAccount
+                ? itemData.linkedAccount
+                : null,
             autoPayEnabled: itemData.autoPay || false,
             merchantNames: [
               itemData.name.toLowerCase(),
-              itemData.name.toLowerCase().replace(/[^a-z0-9]/g, '')
+              itemData.name.toLowerCase().replace(/[^a-z0-9]/g, ''),
             ],
             recurringTemplateId: itemData.id,
             createdAt: serverTimestamp(),
             updatedAt: serverTimestamp(),
-            createdFrom: 'recurring-page'
+            createdFrom: 'recurring-page',
           };
-          
+
           // Save to billInstances collection
           const billRef = doc(db, 'users', currentUser.uid, 'billInstances', billId);
           await setDoc(billRef, billInstance);
-          
+
           console.log('✅ Recurring bill saved to billInstances:', billInstance);
           billSyncStats = { added: 1 };
         } catch (error) {
@@ -573,20 +608,20 @@ const Recurring = () => {
           // Continue with template save even if bill sync fails
         }
       }
-      
+
       // Save recurring template to settings (keep for backward compatibility)
       const { updateData, cleanedItems } = buildUpdateData(currentData, updatedItems);
       await updateDoc(settingsDocRef, updateData);
-      
+
       setRecurringItems(cleanedItems);
       setShowModal(false);
-      
+
       // Show success notification with bill sync details
       let message = editingItem ? 'Recurring item updated!' : 'Recurring item added!';
       if (billSyncStats && billSyncStats.added > 0) {
         message += ` Bill instance created in Bills Management.`;
       }
-      
+
       showNotification(message, 'success');
     } catch (error) {
       console.error('❌ Error saving recurring item:', error);
@@ -599,17 +634,17 @@ const Recurring = () => {
   const handleDeleteItem = async (item, alsoDeleteGeneratedBills = false) => {
     try {
       setSaving(true);
-      
+
       const settingsDocRef = doc(db, 'users', currentUser.uid, 'settings', 'personal');
       const currentDoc = await getDoc(settingsDocRef);
       const currentData = currentDoc.exists() ? currentDoc.data() : {};
-      
-      const updatedItems = (currentData.recurringItems || []).filter(i => i.id !== item.id);
-      
+
+      const updatedItems = (currentData.recurringItems || []).filter((i) => i.id !== item.id);
+
       // ✅ NEW: Delete bills from billInstances collection if requested
       let deletedCount = 0;
       let preservedCount = 0;
-      
+
       if (alsoDeleteGeneratedBills && item.id) {
         // Query billInstances for bills from this template
         const billsQuery = query(
@@ -617,12 +652,12 @@ const Recurring = () => {
           where('recurringTemplateId', '==', item.id)
         );
         const billsSnapshot = await getDocs(billsQuery);
-        
+
         // Delete unpaid bills, preserve paid ones
         for (const billDoc of billsSnapshot.docs) {
           const billData = billDoc.data();
           const isPaid = billData.isPaid || billData.status === 'paid';
-          
+
           if (isPaid) {
             preservedCount++;
             // Keep paid bills for history
@@ -632,13 +667,13 @@ const Recurring = () => {
             await deleteDoc(doc(db, 'users', currentUser.uid, 'billInstances', billDoc.id));
           }
         }
-        
+
         // Update recurring items
         const { updateData, cleanedItems } = buildUpdateData(currentData, updatedItems);
         await updateDoc(settingsDocRef, updateData);
-        
+
         setRecurringItems(cleanedItems);
-        
+
         let message = 'Recurring item deleted';
         if (deletedCount > 0 || preservedCount > 0) {
           const parts = [];
@@ -646,12 +681,12 @@ const Recurring = () => {
           if (preservedCount > 0) parts.push(`${preservedCount} paid bill(s) preserved`);
           message += ` (${parts.join(', ')})`;
         }
-        
+
         showNotification(message, 'success');
       } else {
         const { updateData, cleanedItems } = buildUpdateData(currentData, updatedItems);
         await updateDoc(settingsDocRef, updateData);
-        
+
         setRecurringItems(cleanedItems);
         showNotification('Recurring item deleted', 'success');
       }
@@ -665,27 +700,24 @@ const Recurring = () => {
 
   const handleBulkDelete = async () => {
     setShowBulkDeleteModal(false);
-    
+
     try {
       setSaving(true);
-      
+
       const settingsDocRef = doc(db, 'users', currentUser.uid, 'settings', 'personal');
       const currentDoc = await getDoc(settingsDocRef);
       const currentData = currentDoc.exists() ? currentDoc.data() : {};
-      
+
       // Store current items for undo
       const itemsToDelete = currentData.recurringItems || [];
       setDeletedItems(itemsToDelete);
-      
+
       // Clear all items
       const { updateData } = buildUpdateData(currentData, []);
       await updateDoc(settingsDocRef, updateData);
-      
+
       setRecurringItems([]);
-      showNotification(
-        `Deleted ${itemsToDelete.length} items. Click Undo to restore.`, 
-        'success'
-      );
+      showNotification(`Deleted ${itemsToDelete.length} items. Click Undo to restore.`, 'success');
     } catch (error) {
       console.error('Error bulk deleting items:', error);
       showNotification('Error deleting items', 'error');
@@ -696,17 +728,17 @@ const Recurring = () => {
 
   const handleUndoBulkDelete = async () => {
     if (deletedItems.length === 0) return;
-    
+
     try {
       setSaving(true);
-      
+
       const settingsDocRef = doc(db, 'users', currentUser.uid, 'settings', 'personal');
       const currentDoc = await getDoc(settingsDocRef);
       const currentData = currentDoc.exists() ? currentDoc.data() : {};
-      
+
       const { updateData, cleanedItems } = buildUpdateData(currentData, deletedItems);
       await updateDoc(settingsDocRef, updateData);
-      
+
       setRecurringItems(cleanedItems);
       setDeletedItems([]);
       showNotification('Items restored successfully!', 'success');
@@ -719,31 +751,35 @@ const Recurring = () => {
   };
 
   const handleDeleteAllGeneratedBills = async () => {
-    if (!window.confirm('Delete all bills generated from recurring templates? This cannot be undone.')) {
+    if (
+      !window.confirm('Delete all bills generated from recurring templates? This cannot be undone.')
+    ) {
       return;
     }
-    
+
     try {
       setSaving(true);
       setShowCleanupMenu(false);
-      
+
       const settingsDocRef = doc(db, 'users', currentUser.uid, 'settings', 'personal');
       const currentDoc = await getDoc(settingsDocRef);
       const currentData = currentDoc.exists() ? currentDoc.data() : {};
-      
+
       const bills = currentData.bills || [];
-      const recurringTemplateIds = new Set(recurringItems.map(item => item.id));
-      
+      const recurringTemplateIds = new Set(recurringItems.map((item) => item.id));
+
       // Filter out bills that have a recurringTemplateId matching any current recurring item
       const initialCount = bills.length;
-      const updatedBills = bills.filter(bill => !bill.recurringTemplateId || !recurringTemplateIds.has(bill.recurringTemplateId));
+      const updatedBills = bills.filter(
+        (bill) => !bill.recurringTemplateId || !recurringTemplateIds.has(bill.recurringTemplateId)
+      );
       const deletedCount = initialCount - updatedBills.length;
-      
+
       await updateDoc(settingsDocRef, {
         ...currentData,
-        bills: updatedBills
+        bills: updatedBills,
       });
-      
+
       showNotification(`Deleted ${deletedCount} auto-generated bill(s)`, 'success');
     } catch (error) {
       console.error('Error deleting generated bills:', error);
@@ -757,59 +793,69 @@ const Recurring = () => {
     try {
       setSaving(true);
       setShowCleanupMenu(false);
-      
+
       const settingsDocRef = doc(db, 'users', currentUser.uid, 'settings', 'personal');
       const currentDoc = await getDoc(settingsDocRef);
       const currentData = currentDoc.exists() ? currentDoc.data() : {};
-      
+
       const bills = currentData.bills || [];
       const generateBillId = () => `bill_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
-      
+
       // Generate bills from active recurring templates
-      const activeTemplates = recurringItems.filter(item => item.status === 'active' && item.type === 'expense');
+      const activeTemplates = recurringItems.filter(
+        (item) => item.status === 'active' && item.type === 'expense'
+      );
       let newBills = [];
-      
-      activeTemplates.forEach(template => {
+
+      activeTemplates.forEach((template) => {
         try {
           // Generate 3 months of bills from each template
-          const generatedBills = RecurringBillManager.generateBillsFromTemplate(template, 3, generateBillId);
-          
+          const generatedBills = RecurringBillManager.generateBillsFromTemplate(
+            template,
+            3,
+            generateBillId
+          );
+
           // Filter out bills that already exist (same template ID and due date)
-          const uniqueBills = generatedBills.filter(newBill => {
-            return !bills.some(existingBill => 
-              existingBill.recurringTemplateId === newBill.recurringTemplateId &&
-              existingBill.dueDate === newBill.dueDate
+          const uniqueBills = generatedBills.filter((newBill) => {
+            return !bills.some(
+              (existingBill) =>
+                existingBill.recurringTemplateId === newBill.recurringTemplateId &&
+                existingBill.dueDate === newBill.dueDate
             );
           });
-          
+
           newBills = [...newBills, ...uniqueBills];
         } catch (error) {
           console.error(`Error generating bills from template ${template.name}:`, error);
         }
       });
-      
+
       if (newBills.length === 0) {
         showNotification('No new bills to generate (all bills already exist)', 'info');
         return;
       }
-      
+
       // Add new bills to existing bills
       let updatedBills = [...bills, ...newBills];
-      
+
       // DEDUPLICATION: Remove any duplicates that might have been created
       const deduplicationResult = BillDeduplicationManager.removeDuplicates(updatedBills);
       if (deduplicationResult.stats.duplicates > 0) {
         console.log('[Bill Generation] Removed duplicates:', deduplicationResult.stats.duplicates);
         updatedBills = deduplicationResult.cleanedBills;
       }
-      
+
       await updateDoc(settingsDocRef, {
         ...currentData,
-        bills: updatedBills
+        bills: updatedBills,
       });
-      
+
       const finalCount = updatedBills.length - bills.length;
-      showNotification(`Generated ${finalCount} bill(s) from ${activeTemplates.length} template(s)`, 'success');
+      showNotification(
+        `Generated ${finalCount} bill(s) from ${activeTemplates.length} template(s)`,
+        'success'
+      );
     } catch (error) {
       console.error('Error generating bills:', error);
       showNotification('Error generating bills from templates', 'error');
@@ -820,27 +866,28 @@ const Recurring = () => {
 
   const handleTogglePause = async (item) => {
     const newStatus = item.status === 'paused' ? 'active' : 'paused';
-    
+
     try {
       setSaving(true);
-      
+
       const settingsDocRef = doc(db, 'users', currentUser.uid, 'settings', 'personal');
       const currentDoc = await getDoc(settingsDocRef);
       const currentData = currentDoc.exists() ? currentDoc.data() : {};
-      
+
       const updatedItem = { ...item, status: newStatus, updatedAt: new Date().toISOString() };
-      const updatedItems = (currentData.recurringItems || []).map(i => 
+      const updatedItems = (currentData.recurringItems || []).map((i) =>
         i.id === item.id ? updatedItem : i
       );
-      
+
       // Auto-sync bills when toggling pause/active status
       let billSyncStats = null;
       let updatedBills = currentData.bills || [];
-      
+
       if (item.type === 'expense') {
         try {
-          const generateBillId = () => `bill_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
-          
+          const generateBillId = () =>
+            `bill_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+
           if (newStatus === 'active') {
             // When activating, generate bills for the template
             const syncResult = RecurringBillManager.syncBillsWithTemplate(
@@ -853,9 +900,10 @@ const Recurring = () => {
             billSyncStats = syncResult.stats;
           } else {
             // When pausing, remove unpaid bills but preserve paid ones
-            const billsToPreserve = updatedBills.filter(bill => {
+            const billsToPreserve = updatedBills.filter((bill) => {
               if (bill.recurringTemplateId !== item.id) return true; // Keep bills from other templates
-              const isPaid = bill.status === 'paid' || RecurringBillManager.isBillPaidForCurrentCycle(bill);
+              const isPaid =
+                bill.status === 'paid' || RecurringBillManager.isBillPaidForCurrentCycle(bill);
               return isPaid; // Only keep paid bills from this template
             });
             const removedCount = updatedBills.length - billsToPreserve.length;
@@ -866,12 +914,14 @@ const Recurring = () => {
           console.error('Error syncing bills on pause toggle:', error);
         }
       }
-      
-      const { updateData, cleanedItems } = buildUpdateData(currentData, updatedItems, { bills: updatedBills });
+
+      const { updateData, cleanedItems } = buildUpdateData(currentData, updatedItems, {
+        bills: updatedBills,
+      });
       await updateDoc(settingsDocRef, updateData);
-      
+
       setRecurringItems(cleanedItems);
-      
+
       // Show notification with bill sync details
       let message = newStatus === 'paused' ? 'Item paused' : 'Item resumed';
       if (billSyncStats) {
@@ -881,7 +931,7 @@ const Recurring = () => {
           message += ` (${billSyncStats.removed} future bills removed)`;
         }
       }
-      
+
       showNotification(message, 'success');
     } catch (error) {
       console.error('Error toggling pause:', error);
@@ -894,18 +944,18 @@ const Recurring = () => {
   const handleCSVImport = async (importedItems, conflicts, updatedCustomMapping) => {
     try {
       setSaving(true);
-      
+
       const settingsDocRef = doc(db, 'users', currentUser.uid, 'settings', 'personal');
       const currentDoc = await getDoc(settingsDocRef);
       const currentData = currentDoc.exists() ? currentDoc.data() : {};
-      
+
       const existingItems = currentData.recurringItems || [];
-      
+
       // Process conflicts - merge items where resolution is 'merge'
       const mergeUpdates = [];
-      conflicts.forEach(conflict => {
+      conflicts.forEach((conflict) => {
         if (conflict.resolution === 'merge') {
-          const existingIndex = existingItems.findIndex(item => item.id === conflict.existing.id);
+          const existingIndex = existingItems.findIndex((item) => item.id === conflict.existing.id);
           if (existingIndex !== -1) {
             // Update existing item with new data, keeping original creation date
             const mergedItem = {
@@ -915,110 +965,129 @@ const Recurring = () => {
               createdAt: existingItems[existingIndex].createdAt, // Keep original creation date
               updatedAt: new Date().toISOString(),
               dataSource: 'csv_import_merged',
-              mergedFrom: conflict.incoming.id
+              mergedFrom: conflict.incoming.id,
             };
             mergeUpdates.push({ index: existingIndex, item: mergedItem });
           }
         }
       });
-      
+
       // Apply merge updates
       let updatedItems = [...existingItems];
-      mergeUpdates.forEach(update => {
+      mergeUpdates.forEach((update) => {
         updatedItems[update.index] = update.item;
       });
-      
+
       // Add new items (excluding those that were merged or skipped)
-      const itemsToAdd = importedItems.filter(item => {
-        const conflict = conflicts.find(c => c.incoming.id === item.id);
+      const itemsToAdd = importedItems.filter((item) => {
+        const conflict = conflicts.find((c) => c.incoming.id === item.id);
         return !conflict || (conflict.resolution !== 'merge' && conflict.resolution !== 'skip');
       });
-      
+
       updatedItems = [...updatedItems, ...itemsToAdd];
-      
+
       // Update Firebase with items and custom mapping
       const updateData = {
         ...currentData,
-        recurringItems: updatedItems
+        recurringItems: updatedItems,
       };
-      
+
       // Save custom mapping if provided
       if (updatedCustomMapping && Object.keys(updatedCustomMapping).length > 0) {
         updateData.institutionMapping = updatedCustomMapping;
         setCustomMapping(updatedCustomMapping);
       }
-      
+
       await updateDoc(settingsDocRef, updateData);
-      
+
       setRecurringItems(updatedItems);
       setShowCSVImport(false);
-      
+
       const importCount = itemsToAdd.length;
       const mergeCount = mergeUpdates.length;
       let message = `Successfully imported ${importCount} recurring items`;
       if (mergeCount > 0) {
         message += ` and merged ${mergeCount} existing items`;
       }
-      
+
       showNotification(message, 'success');
-      
+
       // AUTO-GENERATE BILLS: Automatically generate bill instances from newly imported recurring templates
       console.log('[CSV Import] Auto-generating bills from imported recurring templates...');
       try {
         const bills = currentData.bills || [];
-        const generateBillId = () => `bill_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
-        
+        const generateBillId = () =>
+          `bill_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+
         // Generate bills only from newly imported active expense templates
-        const newActiveExpenses = itemsToAdd.filter(item => item.status === 'active' && item.type === 'expense');
+        const newActiveExpenses = itemsToAdd.filter(
+          (item) => item.status === 'active' && item.type === 'expense'
+        );
         let newBills = [];
-        
-        newActiveExpenses.forEach(template => {
+
+        newActiveExpenses.forEach((template) => {
           try {
             // Generate 3 months of bills from each template
-            const generatedBills = RecurringBillManager.generateBillsFromTemplate(template, 3, generateBillId);
-            
+            const generatedBills = RecurringBillManager.generateBillsFromTemplate(
+              template,
+              3,
+              generateBillId
+            );
+
             // Filter out bills that already exist (same template ID and due date)
-            const uniqueBills = generatedBills.filter(newBill => {
-              return !bills.some(existingBill => 
-                existingBill.recurringTemplateId === newBill.recurringTemplateId &&
-                existingBill.dueDate === newBill.dueDate
+            const uniqueBills = generatedBills.filter((newBill) => {
+              return !bills.some(
+                (existingBill) =>
+                  existingBill.recurringTemplateId === newBill.recurringTemplateId &&
+                  existingBill.dueDate === newBill.dueDate
               );
             });
-            
+
             newBills = [...newBills, ...uniqueBills];
-            console.log(`[CSV Import] Generated ${uniqueBills.length} bills from template: ${template.name}`);
+            console.log(
+              `[CSV Import] Generated ${uniqueBills.length} bills from template: ${template.name}`
+            );
           } catch (error) {
-            console.error(`[CSV Import] Error generating bills from template ${template.name}:`, error);
+            console.error(
+              `[CSV Import] Error generating bills from template ${template.name}:`,
+              error
+            );
           }
         });
-        
+
         if (newBills.length > 0) {
           // Add new bills to existing bills
           let updatedBills = [...bills, ...newBills];
-          
+
           // DEDUPLICATION: Remove any duplicates that might have been created during CSV import
           const deduplicationResult = BillDeduplicationManager.removeDuplicates(updatedBills);
           if (deduplicationResult.stats.duplicates > 0) {
-            console.log('[CSV Import] Removed duplicates during bill generation:', deduplicationResult.stats.duplicates);
+            console.log(
+              '[CSV Import] Removed duplicates during bill generation:',
+              deduplicationResult.stats.duplicates
+            );
             BillDeduplicationManager.logDeduplication(deduplicationResult, 'csv-import');
             updatedBills = deduplicationResult.cleanedBills;
           }
-          
+
           // Update Firebase with the new bills
           await updateDoc(settingsDocRef, {
             ...currentData,
             recurringItems: updatedItems,
-            bills: updatedBills
+            bills: updatedBills,
           });
-          
+
           const finalBillCount = updatedBills.length - bills.length;
           console.log(`[CSV Import] Successfully generated ${finalBillCount} bill instances`);
-          
+
           // Update notification to include bill generation info
-          let finalMessage = message + `. Auto-generated ${finalBillCount} bill instance(s) for Bills Management.`;
+          const finalMessage =
+            message + `. Auto-generated ${finalBillCount} bill instance(s) for Bills Management.`;
           showNotification(finalMessage, 'success');
         } else {
-          console.log('[CSV Import] No new bills to generate (templates already have bills or no active expense templates)');
+          console.log(
+            '[CSV Import] No new bills to generate (templates already have bills or no active expense templates)'
+          );
         }
       } catch (billError) {
         console.error('[CSV Import] Error auto-generating bills:', billError);
@@ -1035,17 +1104,17 @@ const Recurring = () => {
 
   const handleShowHistory = (item) => {
     // Find the item from processedItems which includes history data
-    const itemWithHistory = processedItems.find(i => i.id === item.id) || item;
+    const itemWithHistory = processedItems.find((i) => i.id === item.id) || item;
     setSelectedItem(itemWithHistory);
     setShowHistoryModal(true);
   };
 
   const getStatusBadgeClass = (status) => {
     const statusClasses = {
-      'active': 'status-active',
-      'paused': 'status-paused', 
-      'ended': 'status-ended',
-      'failed': 'status-failed'
+      active: 'status-active',
+      paused: 'status-paused',
+      ended: 'status-ended',
+      failed: 'status-failed',
     };
     return `status-badge ${statusClasses[status] || 'status-active'}`;
   };
@@ -1069,9 +1138,7 @@ const Recurring = () => {
     <div className="recurring-container">
       {/* Notification */}
       {notification.message && (
-        <div className={`notification ${notification.type}`}>
-          {notification.message}
-        </div>
+        <div className={`notification ${notification.type}`}>{notification.message}</div>
       )}
 
       {/* Page Header */}
@@ -1089,7 +1156,7 @@ const Recurring = () => {
             <div className="summary-label">Monthly Income</div>
           </div>
         </div>
-        
+
         <div className="summary-card expense">
           <div className="summary-icon">💸</div>
           <div className="summary-content">
@@ -1097,7 +1164,7 @@ const Recurring = () => {
             <div className="summary-label">Monthly Expenses</div>
           </div>
         </div>
-        
+
         <div className={`summary-card net ${metrics.netRecurring >= 0 ? 'positive' : 'negative'}`}>
           <div className="summary-icon">📊</div>
           <div className="summary-content">
@@ -1105,7 +1172,7 @@ const Recurring = () => {
             <div className="summary-label">Net Recurring</div>
           </div>
         </div>
-        
+
         <div className="summary-card upcoming">
           <div className="summary-icon">
             {metrics.urgency?.overdue > 0 ? '🔴' : metrics.urgency?.urgent > 0 ? '🟠' : '⏰'}
@@ -1141,9 +1208,9 @@ const Recurring = () => {
             onChange={(e) => setSearchTerm(e.target.value)}
             className="search-input"
           />
-          
-          <select 
-            value={filterType} 
+
+          <select
+            value={filterType}
             onChange={(e) => setFilterType(e.target.value)}
             className="filter-select"
           >
@@ -1151,20 +1218,22 @@ const Recurring = () => {
             <option value="income">Income</option>
             <option value="expense">Expenses</option>
           </select>
-          
-          <select 
-            value={filterCategory} 
+
+          <select
+            value={filterCategory}
             onChange={(e) => setFilterCategory(e.target.value)}
             className="filter-select"
           >
             <option value="all">All Categories</option>
-            {TRANSACTION_CATEGORIES.map(category => (
-              <option key={category} value={category}>{category}</option>
+            {TRANSACTION_CATEGORIES.map((category) => (
+              <option key={category} value={category}>
+                {category}
+              </option>
             ))}
           </select>
-          
-          <select 
-            value={filterStatus} 
+
+          <select
+            value={filterStatus}
             onChange={(e) => setFilterStatus(e.target.value)}
             className="filter-select"
           >
@@ -1173,9 +1242,9 @@ const Recurring = () => {
             <option value="paused">Paused</option>
             <option value="failed">Failed</option>
           </select>
-          
-          <select 
-            value={sortOrder} 
+
+          <select
+            value={sortOrder}
             onChange={(e) => setSortOrder(e.target.value)}
             className="filter-select sort-select"
           >
@@ -1184,10 +1253,10 @@ const Recurring = () => {
             <option value="amount">💰 By Amount</option>
           </select>
         </div>
-        
+
         <div className="action-buttons">
           {deletedItems.length > 0 && (
-            <button 
+            <button
               className="undo-button"
               onClick={handleUndoBulkDelete}
               disabled={saving}
@@ -1198,7 +1267,7 @@ const Recurring = () => {
           )}
           {recurringItems.length > 0 && (
             <>
-              <button 
+              <button
                 className="delete-all-button"
                 onClick={() => setShowBulkDeleteModal(true)}
                 disabled={saving}
@@ -1207,7 +1276,7 @@ const Recurring = () => {
                 🗑️ Delete All
               </button>
               <div style={{ position: 'relative' }}>
-                <button 
+                <button
                   className="cleanup-menu-button"
                   onClick={() => setShowCleanupMenu(!showCleanupMenu)}
                   disabled={saving}
@@ -1221,13 +1290,13 @@ const Recurring = () => {
                     fontWeight: '600',
                     cursor: 'pointer',
                     transition: 'all 0.2s ease',
-                    whiteSpace: 'nowrap'
+                    whiteSpace: 'nowrap',
                   }}
                 >
                   🔧 Cleanup
                 </button>
                 {showCleanupMenu && (
-                  <div 
+                  <div
                     className="cleanup-dropdown"
                     style={{
                       position: 'absolute',
@@ -1240,7 +1309,7 @@ const Recurring = () => {
                       padding: '8px',
                       minWidth: '250px',
                       zIndex: 1000,
-                      boxShadow: '0 4px 12px rgba(0,0,0,0.3)'
+                      boxShadow: '0 4px 12px rgba(0,0,0,0.3)',
                     }}
                   >
                     <button
@@ -1257,10 +1326,10 @@ const Recurring = () => {
                         borderRadius: '4px',
                         transition: 'background 0.2s',
                         fontSize: '14px',
-                        borderBottom: '1px solid #333'
+                        borderBottom: '1px solid #333',
                       }}
-                      onMouseEnter={(e) => e.target.style.background = '#2a2a2a'}
-                      onMouseLeave={(e) => e.target.style.background = 'transparent'}
+                      onMouseEnter={(e) => (e.target.style.background = '#2a2a2a')}
+                      onMouseLeave={(e) => (e.target.style.background = 'transparent')}
                     >
                       ➕ Generate Bills from Templates
                       <div style={{ fontSize: '12px', color: '#888', marginTop: '4px' }}>
@@ -1280,10 +1349,10 @@ const Recurring = () => {
                         cursor: 'pointer',
                         borderRadius: '4px',
                         transition: 'background 0.2s',
-                        fontSize: '14px'
+                        fontSize: '14px',
                       }}
-                      onMouseEnter={(e) => e.target.style.background = '#2a2a2a'}
-                      onMouseLeave={(e) => e.target.style.background = 'transparent'}
+                      onMouseEnter={(e) => (e.target.style.background = '#2a2a2a')}
+                      onMouseLeave={(e) => (e.target.style.background = 'transparent')}
                     >
                       🗑️ Delete All Generated Bills
                       <div style={{ fontSize: '12px', color: '#888', marginTop: '4px' }}>
@@ -1295,18 +1364,14 @@ const Recurring = () => {
               </div>
             </>
           )}
-          <button 
+          <button
             className="import-button"
             onClick={() => setShowCSVImport(true)}
             disabled={saving}
           >
             📊 Import from CSV
           </button>
-          <button 
-            className="add-button"
-            onClick={handleAddItem}
-            disabled={saving}
-          >
+          <button className="add-button" onClick={handleAddItem} disabled={saving}>
             ➕ Add Recurring Item
           </button>
         </div>
@@ -1318,11 +1383,12 @@ const Recurring = () => {
         <div className="recurring-table">
           {filteredItems.length > 0 ? (
             filteredItems.map((item) => (
-              <div key={item.id} className={`recurring-item ${getTypeClass(item.type)} ${item.urgencyInfo?.className || ''}`}>
+              <div
+                key={item.id}
+                className={`recurring-item ${getTypeClass(item.type)} ${item.urgencyInfo?.className || ''}`}
+              >
                 <div className="item-main-info">
-                  <div className="item-icon">
-                    {getCategoryIcon(item.category)}
-                  </div>
+                  <div className="item-icon">{getCategoryIcon(item.category)}</div>
                   <div className="item-details">
                     <h4>
                       {item.urgencyInfo && (
@@ -1340,16 +1406,16 @@ const Recurring = () => {
                       <span className="item-frequency">
                         {item.frequency}
                         {item.activeMonths && item.activeMonths.length > 0 && (
-                          <span 
-                            style={{ 
-                              marginLeft: '5px', 
-                              fontSize: '11px', 
+                          <span
+                            style={{
+                              marginLeft: '5px',
+                              fontSize: '11px',
                               background: 'rgba(138, 43, 226, 0.2)',
                               padding: '2px 6px',
                               borderRadius: '4px',
-                              fontWeight: '600'
+                              fontWeight: '600',
                             }}
-                            title={`Active in: ${item.activeMonths.map(m => ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'][m]).join(', ')}`}
+                            title={`Active in: ${item.activeMonths.map((m) => ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'][m]).join(', ')}`}
                           >
                             📅 {item.activeMonths.length}mo
                           </span>
@@ -1358,10 +1424,11 @@ const Recurring = () => {
                     </div>
                   </div>
                 </div>
-                
+
                 <div className="item-amount-section">
                   <div className={`item-amount ${item.type}`}>
-                    {item.type === 'income' ? '+' : '-'}{formatCurrency(Math.abs(item.amount))}
+                    {item.type === 'income' ? '+' : '-'}
+                    {formatCurrency(Math.abs(item.amount))}
                   </div>
                   <div className="item-next-date">
                     {item.formattedDueDate || `Next: ${formatDate(item.nextOccurrence)}`}
@@ -1372,42 +1439,38 @@ const Recurring = () => {
                     </div>
                   )}
                 </div>
-                
+
                 <div className="item-status-section">
-                  <span className={getStatusBadgeClass(item.status)}>
-                    {item.status}
-                  </span>
+                  <span className={getStatusBadgeClass(item.status)}>{item.status}</span>
                   <div className="item-account">
                     {accounts[item.linkedAccount]?.name || 'No Account'}
                   </div>
-                  <div className="item-autopay">
-                    {item.autoPay ? '🔄 Auto' : '👤 Manual'}
-                  </div>
+                  <div className="item-autopay">{item.autoPay ? '🔄 Auto' : '👤 Manual'}</div>
                 </div>
-                
+
                 <div className="item-actions">
-                  <button 
+                  <button
                     className="action-btn edit"
                     onClick={() => handleEditItem(item)}
                     title="Edit"
                   >
                     ✏️
                   </button>
-                  <button 
+                  <button
                     className={`action-btn ${item.status === 'paused' ? 'resume' : 'pause'}`}
                     onClick={() => handleTogglePause(item)}
                     title={item.status === 'paused' ? 'Resume' : 'Pause'}
                   >
                     {item.status === 'paused' ? '▶️' : '⏸️'}
                   </button>
-                  <button 
+                  <button
                     className="action-btn history"
                     onClick={() => handleShowHistory(item)}
                     title="History"
                   >
                     📋
                   </button>
-                  <button 
+                  <button
                     className="action-btn delete"
                     onClick={() => {
                       setItemToDelete(item);
@@ -1438,9 +1501,11 @@ const Recurring = () => {
           <div className="modal" onClick={(e) => e.stopPropagation()}>
             <div className="modal-header">
               <h3>{editingItem ? 'Edit Recurring Item' : 'Add Recurring Item'}</h3>
-              <button className="close-btn" onClick={() => setShowModal(false)}>×</button>
+              <button className="close-btn" onClick={() => setShowModal(false)}>
+                ×
+              </button>
             </div>
-            
+
             <div className="modal-body">
               <div className="form-row">
                 <div className="form-group">
@@ -1448,7 +1513,7 @@ const Recurring = () => {
                   <input
                     type="text"
                     value={newItem.name}
-                    onChange={(e) => setNewItem({...newItem, name: e.target.value})}
+                    onChange={(e) => setNewItem({ ...newItem, name: e.target.value })}
                     placeholder="Netflix, Salary, Rent..."
                   />
                 </div>
@@ -1456,14 +1521,14 @@ const Recurring = () => {
                   <label>Type *</label>
                   <select
                     value={newItem.type}
-                    onChange={(e) => setNewItem({...newItem, type: e.target.value})}
+                    onChange={(e) => setNewItem({ ...newItem, type: e.target.value })}
                   >
                     <option value="expense">Expense</option>
                     <option value="income">Income</option>
                   </select>
                 </div>
               </div>
-              
+
               <div className="form-row">
                 <div className="form-group">
                   <label>Amount *</label>
@@ -1471,7 +1536,7 @@ const Recurring = () => {
                     type="number"
                     step="0.01"
                     value={newItem.amount}
-                    onChange={(e) => setNewItem({...newItem, amount: e.target.value})}
+                    onChange={(e) => setNewItem({ ...newItem, amount: e.target.value })}
                     placeholder="0.00"
                   />
                 </div>
@@ -1479,22 +1544,24 @@ const Recurring = () => {
                   <label>Category</label>
                   <select
                     value={newItem.category}
-                    onChange={(e) => setNewItem({...newItem, category: e.target.value})}
+                    onChange={(e) => setNewItem({ ...newItem, category: e.target.value })}
                   >
                     <option value="">Select Category</option>
-                    {TRANSACTION_CATEGORIES.map(category => (
-                      <option key={category} value={category}>{category}</option>
+                    {TRANSACTION_CATEGORIES.map((category) => (
+                      <option key={category} value={category}>
+                        {category}
+                      </option>
                     ))}
                   </select>
                 </div>
               </div>
-              
+
               <div className="form-row">
                 <div className="form-group">
                   <label>Frequency</label>
                   <select
                     value={newItem.frequency}
-                    onChange={(e) => setNewItem({...newItem, frequency: e.target.value})}
+                    onChange={(e) => setNewItem({ ...newItem, frequency: e.target.value })}
                   >
                     <option value="weekly">Weekly</option>
                     <option value="bi-weekly">Bi-weekly</option>
@@ -1508,50 +1575,82 @@ const Recurring = () => {
                   <input
                     type="date"
                     value={newItem.nextOccurrence}
-                    onChange={(e) => setNewItem({...newItem, nextOccurrence: e.target.value})}
+                    onChange={(e) => setNewItem({ ...newItem, nextOccurrence: e.target.value })}
                   />
                 </div>
               </div>
-              
+
               {newItem.frequency === 'monthly' && (
                 <div className="form-group">
                   <label style={{ display: 'flex', alignItems: 'center', marginBottom: '10px' }}>
                     <input
                       type="checkbox"
                       checked={newItem.customRecurrence}
-                      onChange={(e) => setNewItem({...newItem, customRecurrence: e.target.checked, activeMonths: e.target.checked ? [] : []})}
-                      style={{ marginRight: '10px', width: '18px', height: '18px', cursor: 'pointer' }}
+                      onChange={(e) =>
+                        setNewItem({
+                          ...newItem,
+                          customRecurrence: e.target.checked,
+                          activeMonths: e.target.checked ? [] : [],
+                        })
+                      }
+                      style={{
+                        marginRight: '10px',
+                        width: '18px',
+                        height: '18px',
+                        cursor: 'pointer',
+                      }}
                     />
                     <span>Custom monthly recurrence (select specific months)</span>
                   </label>
-                  
+
                   {newItem.customRecurrence && (
-                    <div style={{ 
-                      padding: '15px', 
-                      background: 'rgba(138, 43, 226, 0.05)', 
-                      borderRadius: '8px', 
-                      border: '1px solid rgba(138, 43, 226, 0.2)' 
-                    }}>
+                    <div
+                      style={{
+                        padding: '15px',
+                        background: 'rgba(138, 43, 226, 0.05)',
+                        borderRadius: '8px',
+                        border: '1px solid rgba(138, 43, 226, 0.2)',
+                      }}
+                    >
                       <div style={{ marginBottom: '10px', fontSize: '14px', color: '#666' }}>
                         Select the months when this bill should be generated:
                       </div>
-                      <div style={{ 
-                        display: 'grid', 
-                        gridTemplateColumns: 'repeat(4, 1fr)', 
-                        gap: '10px' 
-                      }}>
-                        {['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'].map((month, index) => (
-                          <label 
+                      <div
+                        style={{
+                          display: 'grid',
+                          gridTemplateColumns: 'repeat(4, 1fr)',
+                          gap: '10px',
+                        }}
+                      >
+                        {[
+                          'Jan',
+                          'Feb',
+                          'Mar',
+                          'Apr',
+                          'May',
+                          'Jun',
+                          'Jul',
+                          'Aug',
+                          'Sep',
+                          'Oct',
+                          'Nov',
+                          'Dec',
+                        ].map((month, index) => (
+                          <label
                             key={month}
-                            style={{ 
-                              display: 'flex', 
-                              alignItems: 'center', 
-                              padding: '8px', 
-                              background: newItem.activeMonths.includes(index) ? 'rgba(138, 43, 226, 0.2)' : 'rgba(255, 255, 255, 0.5)',
+                            style={{
+                              display: 'flex',
+                              alignItems: 'center',
+                              padding: '8px',
+                              background: newItem.activeMonths.includes(index)
+                                ? 'rgba(138, 43, 226, 0.2)'
+                                : 'rgba(255, 255, 255, 0.5)',
                               borderRadius: '6px',
                               cursor: 'pointer',
-                              border: newItem.activeMonths.includes(index) ? '2px solid #8a2be2' : '1px solid rgba(0, 0, 0, 0.1)',
-                              transition: 'all 0.2s ease'
+                              border: newItem.activeMonths.includes(index)
+                                ? '2px solid #8a2be2'
+                                : '1px solid rgba(0, 0, 0, 0.1)',
+                              transition: 'all 0.2s ease',
                             }}
                           >
                             <input
@@ -1560,38 +1659,55 @@ const Recurring = () => {
                               onChange={(e) => {
                                 const updatedMonths = e.target.checked
                                   ? [...newItem.activeMonths, index]
-                                  : newItem.activeMonths.filter(m => m !== index);
-                                setNewItem({...newItem, activeMonths: updatedMonths.sort((a, b) => a - b)});
+                                  : newItem.activeMonths.filter((m) => m !== index);
+                                setNewItem({
+                                  ...newItem,
+                                  activeMonths: updatedMonths.sort((a, b) => a - b),
+                                });
                               }}
                               style={{ marginRight: '8px', cursor: 'pointer' }}
                             />
-                            <span style={{ fontSize: '14px', fontWeight: newItem.activeMonths.includes(index) ? '600' : '400' }}>
+                            <span
+                              style={{
+                                fontSize: '14px',
+                                fontWeight: newItem.activeMonths.includes(index) ? '600' : '400',
+                              }}
+                            >
                               {month}
                             </span>
                           </label>
                         ))}
                       </div>
                       {newItem.activeMonths.length > 0 && (
-                        <div style={{ marginTop: '10px', fontSize: '13px', color: '#8a2be2', fontWeight: '500' }}>
-                          ✓ Active in {newItem.activeMonths.length} month{newItem.activeMonths.length !== 1 ? 's' : ''}
+                        <div
+                          style={{
+                            marginTop: '10px',
+                            fontSize: '13px',
+                            color: '#8a2be2',
+                            fontWeight: '500',
+                          }}
+                        >
+                          ✓ Active in {newItem.activeMonths.length} month
+                          {newItem.activeMonths.length !== 1 ? 's' : ''}
                         </div>
                       )}
                     </div>
                   )}
                 </div>
               )}
-              
+
               <div className="form-row">
                 <div className="form-group">
                   <label>Account</label>
                   <select
                     value={newItem.linkedAccount}
-                    onChange={(e) => setNewItem({...newItem, linkedAccount: e.target.value})}
+                    onChange={(e) => setNewItem({ ...newItem, linkedAccount: e.target.value })}
                   >
                     <option value="">Select Account</option>
                     {Object.entries(accounts).map(([key, account]) => (
                       <option key={key} value={key}>
-                        {account.name} {account.mask ? `(****${account.mask})` : ''} - {account.type}
+                        {account.name} {account.mask ? `(****${account.mask})` : ''} -{' '}
+                        {account.type}
                       </option>
                     ))}
                   </select>
@@ -1601,33 +1717,29 @@ const Recurring = () => {
                     <input
                       type="checkbox"
                       checked={newItem.autoPay}
-                      onChange={(e) => setNewItem({...newItem, autoPay: e.target.checked})}
+                      onChange={(e) => setNewItem({ ...newItem, autoPay: e.target.checked })}
                     />
                     Auto-pay enabled
                   </label>
                 </div>
               </div>
-              
+
               <div className="form-group">
                 <label>Description</label>
                 <textarea
                   value={newItem.description}
-                  onChange={(e) => setNewItem({...newItem, description: e.target.value})}
+                  onChange={(e) => setNewItem({ ...newItem, description: e.target.value })}
                   placeholder="Optional description..."
                   rows="3"
                 />
               </div>
             </div>
-            
+
             <div className="modal-footer">
               <button className="cancel-btn" onClick={() => setShowModal(false)}>
                 Cancel
               </button>
-              <button 
-                className="save-btn" 
-                onClick={handleSaveItem}
-                disabled={saving}
-              >
+              <button className="save-btn" onClick={handleSaveItem} disabled={saving}>
                 {saving ? 'Saving...' : editingItem ? 'Update' : 'Add'} Item
               </button>
             </div>
@@ -1641,9 +1753,11 @@ const Recurring = () => {
           <div className="modal" onClick={(e) => e.stopPropagation()}>
             <div className="modal-header">
               <h3>History: {selectedItem.name}</h3>
-              <button className="close-btn" onClick={() => setShowHistoryModal(false)}>×</button>
+              <button className="close-btn" onClick={() => setShowHistoryModal(false)}>
+                ×
+              </button>
             </div>
-            
+
             <div className="modal-body">
               <div className="history-list">
                 {selectedItem.history && selectedItem.history.length > 0 ? (
@@ -1680,41 +1794,67 @@ const Recurring = () => {
           <div className="modal" onClick={(e) => e.stopPropagation()}>
             <div className="modal-header">
               <h3>⚠️ Delete "{itemToDelete.name}"?</h3>
-              <button className="close-btn" onClick={() => setShowDeleteModal(false)}>×</button>
+              <button className="close-btn" onClick={() => setShowDeleteModal(false)}>
+                ×
+              </button>
             </div>
-            
+
             <div className="modal-body">
               <p style={{ marginBottom: '20px', fontSize: '16px' }}>
                 Are you sure you want to delete this recurring item?
               </p>
-              
-              <div style={{ marginBottom: '20px', padding: '12px', background: 'rgba(138, 43, 226, 0.1)', borderRadius: '8px', border: '1px solid rgba(138, 43, 226, 0.3)' }}>
-                <label style={{ display: 'flex', alignItems: 'center', cursor: 'pointer', fontSize: '14px' }}>
+
+              <div
+                style={{
+                  marginBottom: '20px',
+                  padding: '12px',
+                  background: 'rgba(138, 43, 226, 0.1)',
+                  borderRadius: '8px',
+                  border: '1px solid rgba(138, 43, 226, 0.3)',
+                }}
+              >
+                <label
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    cursor: 'pointer',
+                    fontSize: '14px',
+                  }}
+                >
                   <input
                     type="checkbox"
                     checked={deleteGeneratedBills}
                     onChange={(e) => setDeleteGeneratedBills(e.target.checked)}
-                    style={{ marginRight: '10px', width: '18px', height: '18px', cursor: 'pointer' }}
+                    style={{
+                      marginRight: '10px',
+                      width: '18px',
+                      height: '18px',
+                      cursor: 'pointer',
+                    }}
                   />
                   <span>
                     <strong>Also delete bills generated from this template</strong>
                     <br />
                     <small style={{ color: '#ba68c8', marginTop: '4px', display: 'block' }}>
-                      This will remove any bills in the Bills page that were auto-generated from this recurring template
+                      This will remove any bills in the Bills page that were auto-generated from
+                      this recurring template
                     </small>
                   </span>
                 </label>
               </div>
-              
-              <div className="modal-actions" style={{ display: 'flex', gap: '10px', justifyContent: 'flex-end' }}>
-                <button 
+
+              <div
+                className="modal-actions"
+                style={{ display: 'flex', gap: '10px', justifyContent: 'flex-end' }}
+              >
+                <button
                   onClick={() => setShowDeleteModal(false)}
                   className="cancel-btn"
                   style={{ padding: '10px 20px' }}
                 >
                   Cancel
                 </button>
-                <button 
+                <button
                   onClick={() => {
                     setShowDeleteModal(false);
                     handleDeleteItem(itemToDelete, deleteGeneratedBills);
@@ -1737,29 +1877,37 @@ const Recurring = () => {
           <div className="modal" onClick={(e) => e.stopPropagation()}>
             <div className="modal-header">
               <h3>⚠️ Delete All Recurring Items?</h3>
-              <button className="close-btn" onClick={() => setShowBulkDeleteModal(false)}>×</button>
+              <button className="close-btn" onClick={() => setShowBulkDeleteModal(false)}>
+                ×
+              </button>
             </div>
-            
+
             <div className="modal-body">
               <p style={{ marginBottom: '20px', fontSize: '16px' }}>
-                Are you sure you want to delete <strong>all {recurringItems.length} recurring items</strong>?
+                Are you sure you want to delete{' '}
+                <strong>all {recurringItems.length} recurring items</strong>?
               </p>
               <p style={{ marginBottom: '20px', color: '#ff9800' }}>
-                ⚠️ This will permanently delete all your recurring incomes, expenses, and subscriptions.
+                ⚠️ This will permanently delete all your recurring incomes, expenses, and
+                subscriptions.
               </p>
               <p style={{ marginBottom: '20px', color: '#00ff88' }}>
-                ✓ Don't worry! You can undo this action using the "Undo Delete" button that will appear after deletion.
+                ✓ Don't worry! You can undo this action using the "Undo Delete" button that will
+                appear after deletion.
               </p>
-              
-              <div className="modal-actions" style={{ display: 'flex', gap: '10px', justifyContent: 'flex-end' }}>
-                <button 
+
+              <div
+                className="modal-actions"
+                style={{ display: 'flex', gap: '10px', justifyContent: 'flex-end' }}
+              >
+                <button
                   onClick={() => setShowBulkDeleteModal(false)}
                   className="cancel-btn"
                   style={{ padding: '10px 20px' }}
                 >
                   Cancel
                 </button>
-                <button 
+                <button
                   onClick={handleBulkDelete}
                   className="delete-btn"
                   disabled={saving}

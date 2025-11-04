@@ -1,0 +1,22 @@
+# Dependencies
+node_modules/
+
+# Build outputs
+dist/
+build/
+.netlify/
+
+# Config files
+*.config.js
+vite.config.js
+netlify.toml
+
+# Environment files
+.env
+.env.local
+
+# Git
+.git/
+
+# Cache
+.cache/
