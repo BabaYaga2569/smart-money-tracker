@@ -237,14 +237,26 @@ console.log('🔍 PAYDAY CALCULATION DEBUG:', {
           const data = doc.data();
           // Ensure amount is properly parsed as a number
           const rawAmount = data.cost || data.amount;
-          const parsedAmount = typeof rawAmount === 'string' 
-            ? parseFloat(rawAmount.replace(/[^0-9.-]/g, '')) 
-            : parseFloat(rawAmount);
+          let parsedAmount = 0;
+          
+          if (typeof rawAmount === 'number') {
+            parsedAmount = rawAmount;
+          } else if (typeof rawAmount === 'string') {
+            // Remove currency symbols and commas, then parse
+            const cleanedAmount = rawAmount.replace(/[$,\s]/g, '');
+            parsedAmount = parseFloat(cleanedAmount);
+          }
+          
+          // Validate and default to 0 for invalid amounts
+          if (isNaN(parsedAmount) || parsedAmount < 0) {
+            console.warn(`Invalid subscription amount for ${data.name}: ${rawAmount}`);
+            parsedAmount = 0;
+          }
           
           return {
             id: doc.id,
             name: data.name,
-            amount: parsedAmount || 0,
+            amount: parsedAmount,
             dueDate: data.nextRenewal || data.nextBillingDate,
             category: data.category || 'Subscriptions',
             recurrence: 'monthly',
@@ -253,7 +265,7 @@ console.log('🔍 PAYDAY CALCULATION DEBUG:', {
         });
         console.log('Spendability: Loaded subscription bills', {
           count: subscriptionBills.length,
-          bills: subscriptionBills.map(b => ({ name: b.name, amount: b.amount, amountType: typeof b.amount, dueDate: b.dueDate }))
+          totalAmount: subscriptionBills.reduce((sum, b) => sum + b.amount, 0)
         });
       } catch (error) {
         console.log('Spendability: No subscription bills found or error loading:', error.message);
