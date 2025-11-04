@@ -113,7 +113,7 @@ export function matchTransactionToBill(transaction, bill) {
   const confidence = matchCount / 3;
   
   // Require at least 2 of 3 criteria (67% confidence threshold)
-  // Use matchCount >= 2 to avoid floating point precision issues
+  // Use matchCount >= 2 for clarity and consistency
   if (matchCount < 2) return null;
   
   return {

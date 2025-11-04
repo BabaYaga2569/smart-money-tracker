@@ -62,7 +62,8 @@ export async function generateNextBill(userId, bill) {
     nextDueDate.setMonth(nextDueDate.getMonth() + 1);
     
     // Create next bill instance
-    const nextBillId = `bill_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+    // Generate unique ID using timestamp + random string for sufficient uniqueness
+    const nextBillId = `bill_${Date.now()}_${Math.random().toString(36).substring(2, 15)}`;
     const nextBillInstance = {
       id: nextBillId,
       name: bill.name,

@@ -143,8 +143,8 @@ const runStringUtilsTests = () => {
   console.log('\n✅ All StringUtils tests passed!');
 };
 
-// Run tests if executed directly
-if (import.meta.url === `file://${process.argv[1]}`) {
+// Run tests if executed directly (Node.js)
+if (typeof process !== 'undefined' && process.argv && import.meta.url.endsWith(process.argv[1])) {
   runStringUtilsTests();
 }
 
