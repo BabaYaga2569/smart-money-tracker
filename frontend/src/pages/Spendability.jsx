@@ -235,10 +235,28 @@ console.log('🔍 PAYDAY CALCULATION DEBUG:', {
         );
         subscriptionBills = subscriptionBillsSnapshot.docs.map(doc => {
           const data = doc.data();
+          // Ensure amount is properly parsed as a number
+          const rawAmount = data.cost || data.amount;
+          let parsedAmount = 0;
+          
+          if (typeof rawAmount === 'number') {
+            parsedAmount = rawAmount;
+          } else if (typeof rawAmount === 'string') {
+            // Remove currency symbols and commas, then parse
+            const cleanedAmount = rawAmount.replace(/[$,\s]/g, '');
+            parsedAmount = parseFloat(cleanedAmount);
+          }
+          
+          // Validate and default to 0 for invalid amounts
+          if (isNaN(parsedAmount) || parsedAmount < 0) {
+            console.warn(`Invalid subscription amount for ${data.name}: ${rawAmount}`);
+            parsedAmount = 0;
+          }
+          
           return {
             id: doc.id,
             name: data.name,
-            amount: data.cost || data.amount,
+            amount: parsedAmount,
             dueDate: data.nextRenewal || data.nextBillingDate,
             category: data.category || 'Subscriptions',
             recurrence: 'monthly',
@@ -247,7 +265,7 @@ console.log('🔍 PAYDAY CALCULATION DEBUG:', {
         });
         console.log('Spendability: Loaded subscription bills', {
           count: subscriptionBills.length,
-          bills: subscriptionBills.map(b => ({ name: b.name, amount: b.amount, dueDate: b.dueDate }))
+          totalAmount: subscriptionBills.reduce((sum, b) => sum + b.amount, 0)
         });
       } catch (error) {
         console.log('Spendability: No subscription bills found or error loading:', error.message);
@@ -317,8 +335,20 @@ console.log('🔍 PAYDAY CALCULATION DEBUG:', {
           return new Date(a.nextDueDate) - new Date(b.nextDueDate);
         });
       
-      const totalBillsDue = (billsDueBeforePayday || []).reduce((sum, bill) => 
-        sum + (Number(bill.amount ?? bill.cost) || 0), 0);
+      // Calculate total with detailed logging
+      const totalBillsDue = (billsDueBeforePayday || []).reduce((sum, bill) => {
+        const amount = Number(bill.amount ?? bill.cost) || 0;
+        if (amount === 0 && bill.isSubscription) {
+          console.warn(
+            `Spendability: Subscription bill ${bill.name} has zero/invalid amount`,
+            'amount:', bill.amount,
+            'type:', typeof bill.amount,
+            'cost:', bill.cost,
+            'costType:', typeof bill.cost
+          );
+        }
+        return sum + amount;
+      }, 0);
 
       const preferences = settingsData.preferences || {};
       const weeklyEssentials = preferences.weeklyEssentials || 0;
