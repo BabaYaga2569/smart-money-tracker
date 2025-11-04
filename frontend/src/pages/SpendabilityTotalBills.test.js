@@ -1,5 +1,6 @@
 // SpendabilityTotalBills.test.js - Test for totalBillsDue calculation
 // This test verifies the fix for including overdue/subscription bills in Total Bills calculation
+// Tests ensure subscriptions with 'cost' field and regular bills with 'amount' field are both included
 
 // Simple assertion helper
 const assert = (condition, message) => {
