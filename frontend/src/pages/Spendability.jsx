@@ -6,6 +6,7 @@ import { RecurringBillManager } from '../utils/RecurringBillManager';
 import { formatDateForDisplay, formatDateForInput, getDaysUntilDateInPacific, getPacificTime, getManualPacificDaysUntilPayday } from '../utils/DateUtils';
 import { calculateProjectedBalance, calculateTotalProjectedBalance } from '../utils/BalanceCalculator';
 import { autoMigrateBills } from '../utils/FirebaseMigration';
+import { runAutoDetection } from '../utils/AutoBillDetection';
 import './Spendability.css';
 import { useAuth } from '../contexts/AuthContext';
 
@@ -239,6 +240,53 @@ console.log('🔍 PAYDAY CALCULATION DEBUG:', {
         });
       } catch (error) {
         console.log('Spendability: Error loading bill instances:', error.message);
+      }
+
+      // Run auto-detection for bill payments
+      try {
+        const autoDetectionResult = await runAutoDetection(currentUser.uid, transactions, allBills);
+        
+        if (autoDetectionResult.success && autoDetectionResult.matchCount > 0) {
+          // Show notification to user
+          const message = `✅ Auto-detected ${autoDetectionResult.paidBills.length} paid bill(s)!`;
+          setNotification({ message, type: 'success' });
+          setTimeout(() => setNotification({ message: '', type: '' }), 4000);
+          
+          // Reload bills after auto-detection marked some as paid
+          const refreshedBillsSnapshot = await getDocs(
+            query(
+              collection(db, 'users', currentUser.uid, 'billInstances'),
+              where('isPaid', '==', false),
+              where('status', '!=', 'skipped')
+            )
+          );
+          allBills = refreshedBillsSnapshot.docs.map(doc => {
+            const data = doc.data();
+            return {
+              id: doc.id,
+              name: data.name,
+              amount: data.amount,
+              dueDate: data.dueDate,
+              nextDueDate: data.dueDate,
+              category: data.category,
+              recurrence: data.recurrence || 'monthly',
+              isPaid: data.isPaid,
+              status: data.status,
+              isSubscription: data.isSubscription || false,
+              subscriptionId: data.subscriptionId,
+              paymentHistory: data.paymentHistory || [],
+              linkedTransactionIds: data.linkedTransactionIds || [],
+              merchantNames: data.merchantNames || [],
+              originalDueDate: data.originalDueDate
+            };
+          });
+          console.log('Spendability: Reloaded bills after auto-detection', {
+            count: allBills.length
+          });
+        }
+      } catch (error) {
+        console.error('Spendability: Error running auto-detection:', error);
+        // Don't fail the whole page if auto-detection fails
       }
 
       // Add default recurrence if missing
