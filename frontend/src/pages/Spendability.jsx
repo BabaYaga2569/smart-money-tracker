@@ -1,10 +1,11 @@
 import React, { useState, useEffect } from 'react';
-import { doc, getDoc, updateDoc, collection, addDoc, getDocs, query, where } from 'firebase/firestore';
+import { doc, getDoc, updateDoc, collection, addDoc, getDocs, query, where, serverTimestamp, arrayUnion, setDoc } from 'firebase/firestore';
 import { db } from '../firebase';
 import { PayCycleCalculator } from '../utils/PayCycleCalculator';
 import { RecurringBillManager } from '../utils/RecurringBillManager';
 import { formatDateForDisplay, formatDateForInput, getDaysUntilDateInPacific, getPacificTime, getManualPacificDaysUntilPayday } from '../utils/DateUtils';
 import { calculateProjectedBalance, calculateTotalProjectedBalance } from '../utils/BalanceCalculator';
+import { autoMigrateBills } from '../utils/FirebaseMigration';
 import './Spendability.css';
 import { useAuth } from '../contexts/AuthContext';
 
@@ -64,6 +65,9 @@ const Spendability = () => {
     try {
       setLoading(true);
       setError(null);
+
+      // Auto-migrate bills to unified structure (runs once per user)
+      await autoMigrateBills(currentUser.uid);
 
       const settingsDocRef = doc(db, 'users', currentUser.uid, 'settings', 'personal');
       const settingsDocSnap = await getDoc(settingsDocRef);
@@ -199,111 +203,46 @@ console.log('🔍 PAYDAY CALCULATION DEBUG:', {
 });
 }      
  
-      // Load bills from ALL sources
-      const oneTimeBills = settingsData.bills || [];
-
-      // Load recurring bill instances from Firebase
-      let recurringBillInstances = [];
+      // Load bills from unified billInstances collection ONLY
+      let allBills = [];
       try {
-        const recurringBillsSnapshot = await getDocs(
+        const billInstancesSnapshot = await getDocs(
           query(
             collection(db, 'users', currentUser.uid, 'billInstances'),
             where('isPaid', '==', false),
             where('status', '!=', 'skipped')
           )
         );
-        recurringBillInstances = recurringBillsSnapshot.docs.map(doc => ({
-          id: doc.id,
-          ...doc.data()
-        }));
-        console.log('Spendability: Loaded recurring bill instances', {
-          count: recurringBillInstances.length,
-          bills: recurringBillInstances.map(b => ({ name: b.name, amount: b.amount, dueDate: b.dueDate }))
-        });
-      } catch (error) {
-        console.log('Spendability: No recurring bill instances found or error loading:', error.message);
-      }
-
-      // Load subscription bills
-      let subscriptionBills = [];
-      try {
-        const subscriptionBillsSnapshot = await getDocs(
-          query(
-            collection(db, 'users', currentUser.uid, 'subscriptions'),
-            where('status', '==', 'active')
-          )
-        );
-        subscriptionBills = subscriptionBillsSnapshot.docs.map(doc => {
+        allBills = billInstancesSnapshot.docs.map(doc => {
           const data = doc.data();
-          // Ensure amount is properly parsed as a number
-          const rawAmount = data.cost || data.amount;
-          let parsedAmount = 0;
-          
-          if (typeof rawAmount === 'number') {
-            parsedAmount = rawAmount;
-          } else if (typeof rawAmount === 'string') {
-            // Remove currency symbols and commas, then parse
-            const cleanedAmount = rawAmount.replace(/[$,\s]/g, '');
-            parsedAmount = parseFloat(cleanedAmount);
-          }
-          
-          // Validate and default to 0 for invalid amounts
-          if (isNaN(parsedAmount) || parsedAmount < 0) {
-            console.warn(`Invalid subscription amount for ${data.name}: ${rawAmount}`);
-            parsedAmount = 0;
-          }
-          
           return {
             id: doc.id,
             name: data.name,
-            amount: parsedAmount,
-            dueDate: data.nextRenewal || data.nextBillingDate,
-            category: data.category || 'Subscriptions',
-            recurrence: 'monthly',
-            isSubscription: true
+            amount: data.amount,
+            dueDate: data.dueDate,
+            nextDueDate: data.dueDate,
+            category: data.category,
+            recurrence: data.recurrence || 'monthly',
+            isPaid: data.isPaid,
+            status: data.status,
+            isSubscription: data.isSubscription || false,
+            subscriptionId: data.subscriptionId,
+            paymentHistory: data.paymentHistory || [],
+            linkedTransactionIds: data.linkedTransactionIds || [],
+            merchantNames: data.merchantNames || [],
+            originalDueDate: data.originalDueDate
           };
         });
-        console.log('Spendability: Loaded subscription bills', {
-          count: subscriptionBills.length,
-          totalAmount: subscriptionBills.reduce((sum, b) => sum + b.amount, 0)
+        console.log('Spendability: Loaded bills from unified billInstances', {
+          count: allBills.length,
+          bills: allBills.map(b => ({ name: b.name, amount: b.amount, dueDate: b.dueDate, status: b.status }))
         });
       } catch (error) {
-        console.log('Spendability: No subscription bills found or error loading:', error.message);
+        console.log('Spendability: Error loading bill instances:', error.message);
       }
-
-      // Merge all bills
-      const allBills = [
-        ...oneTimeBills,
-        ...recurringBillInstances,
-        ...subscriptionBills
-      ];
-
-      console.log('Spendability: All bills before deduplication', {
-        total: allBills.length,
-        oneTime: oneTimeBills.length,
-        recurring: recurringBillInstances.length,
-        subscriptions: subscriptionBills.length
-      });
-
-      // Deduplicate (same name + same due date = duplicate)
-      const uniqueBills = [];
-      const seen = new Set();
-
-      for (const bill of allBills) {
-        const key = `${bill.name}-${bill.dueDate}`;
-        if (!seen.has(key)) {
-          seen.add(key);
-          uniqueBills.push(bill);
-        }
-      }
-
-      console.log('Spendability: Bills after deduplication', {
-        uniqueCount: uniqueBills.length,
-        duplicatesRemoved: allBills.length - uniqueBills.length
-      });
 
       // Add default recurrence if missing
-      const billsWithRecurrence = uniqueBills.map(bill => ({
+      const billsWithRecurrence = allBills.map(bill => ({
         ...bill,
         recurrence: bill.recurrence || 'monthly'
       }));
@@ -632,28 +571,63 @@ console.log('🔍 PAYDAY CALCULATION DEBUG:', {
 
   const updateBillAsPaid = async (bill) => {
     try {
-      const settingsDocRef = doc(db, 'users', currentUser.uid, 'settings', 'personal'); 
-      const currentDoc = await getDoc(settingsDocRef);
-      const currentData = currentDoc.exists() ? currentDoc.data() : {};
+      // Update bill in billInstances collection
+      const billRef = doc(db, 'users', currentUser.uid, 'billInstances', bill.id);
       
-      const bills = currentData.bills || [];
-      let updatedBill = null;
-      
-      const updatedBills = bills.map(b => {
-        if (b.name === bill.name && b.amount === bill.amount) {
-          // Mark as paid and update last payment date using Pacific Time  
-          updatedBill = RecurringBillManager.markBillAsPaid(b, getPacificTime());
-          return updatedBill;
-        }
-        return b;
+      await updateDoc(billRef, {
+        isPaid: true,
+        status: 'paid',
+        lastPaidDate: serverTimestamp(),
+        updatedAt: serverTimestamp(),
+        paymentHistory: arrayUnion({
+          paidDate: new Date().toISOString(),
+          amount: bill.amount,
+          transactionId: null,
+          paymentMethod: 'manual',
+          source: 'manual'
+        })
       });
       
-      await updateDoc(settingsDocRef, {
-        ...currentData,
-        bills: updatedBills
-      });
+      // Generate next month's bill if recurring or subscription
+      if (bill.recurrence === 'monthly' || bill.isSubscription) {
+        const currentDueDate = new Date(bill.dueDate);
+        const nextDueDate = new Date(currentDueDate);
+        nextDueDate.setMonth(nextDueDate.getMonth() + 1);
+        
+        const nextBillId = `bill_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+        const nextBillInstance = {
+          id: nextBillId,
+          name: bill.name,
+          amount: bill.amount,
+          dueDate: formatDateForInput(nextDueDate),
+          originalDueDate: bill.originalDueDate || bill.dueDate,
+          isPaid: false,
+          status: 'pending',
+          category: bill.category,
+          recurrence: bill.recurrence,
+          isSubscription: bill.isSubscription || false,
+          subscriptionId: bill.subscriptionId,
+          paymentHistory: [],
+          linkedTransactionIds: [],
+          merchantNames: bill.merchantNames || [],
+          createdAt: serverTimestamp(),
+          updatedAt: serverTimestamp()
+        };
+        
+        await setDoc(
+          doc(db, 'users', currentUser.uid, 'billInstances', nextBillId),
+          nextBillInstance
+        );
+        
+        console.log(`✅ Generated next bill for ${bill.name} due ${formatDateForInput(nextDueDate)}`);
+        
+        return {
+          ...bill,
+          nextDueDate: formatDateForInput(nextDueDate)
+        };
+      }
       
-      return updatedBill;
+      return bill;
     } catch (error) {
       console.error('Error updating bill status:', error);
       throw error;
