@@ -1,0 +1,150 @@
+.error-boundary {
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: linear-gradient(135deg, #1a1a1a 0%, #2d2d2d 100%);
+  padding: 20px;
+}
+
+.error-boundary-content {
+  max-width: 600px;
+  text-align: center;
+  background: #1a1a1a;
+  border: 2px solid #ff073a;
+  border-radius: 16px;
+  padding: 48px 32px;
+  box-shadow: 0 8px 32px rgba(255, 7, 58, 0.3);
+}
+
+.error-icon {
+  font-size: 80px;
+  margin-bottom: 24px;
+  animation: pulse 2s ease-in-out infinite;
+}
+
+@keyframes pulse {
+  0%, 100% { transform: scale(1); }
+  50% { transform: scale(1.1); }
+}
+
+.error-boundary-content h1 {
+  color: #ff073a;
+  font-size: 32px;
+  margin: 0 0 16px 0;
+  font-weight: 800;
+}
+
+.error-message {
+  color: #d1d5db;
+  font-size: 18px;
+  line-height: 1.6;
+  margin: 0 0 32px 0;
+}
+
+.error-actions {
+  display: flex;
+  gap: 16px;
+  justify-content: center;
+  flex-wrap: wrap;
+}
+
+.error-btn {
+  padding: 14px 28px;
+  font-size: 16px;
+  font-weight: 700;
+  border: none;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  min-width: 160px;
+}
+
+.error-btn.primary {
+  background: #00ff88;
+  color: #000;
+}
+
+.error-btn.primary:hover {
+  background: #00dd77;
+  transform: translateY(-2px);
+  box-shadow: 0 4px 12px rgba(0, 255, 136, 0.4);
+}
+
+.error-btn.secondary {
+  background: transparent;
+  color: #00ff88;
+  border: 2px solid #00ff88;
+}
+
+.error-btn.secondary:hover {
+  background: rgba(0, 255, 136, 0.1);
+  transform: translateY(-2px);
+}
+
+/* Error details (dev mode only) */
+.error-details {
+  margin-top: 32px;
+  text-align: left;
+  background: #0a0a0a;
+  border: 1px solid #333;
+  border-radius: 8px;
+  padding: 16px;
+}
+
+.error-details summary {
+  color: #ff073a;
+  cursor: pointer;
+  font-weight: 600;
+  padding: 8px;
+  user-select: none;
+}
+
+.error-details summary:hover {
+  background: rgba(255, 7, 58, 0.1);
+  border-radius: 4px;
+}
+
+.error-stack {
+  padding: 16px;
+}
+
+.error-stack h3 {
+  color: #00ff88;
+  font-size: 14px;
+  margin: 16px 0 8px 0;
+}
+
+.error-stack pre {
+  background: #000;
+  color: #ff6b6b;
+  padding: 12px;
+  border-radius: 4px;
+  overflow-x: auto;
+  font-size: 12px;
+  line-height: 1.5;
+  border: 1px solid #333;
+}
+
+/* Mobile responsive */
+@media (max-width: 768px) {
+  .error-boundary-content {
+    padding: 32px 20px;
+  }
+
+  .error-boundary-content h1 {
+    font-size: 24px;
+  }
+
+  .error-message {
+    font-size: 16px;
+  }
+
+  .error-actions {
+    flex-direction: column;
+  }
+
+  .error-btn {
+    width: 100%;
+  }
+}

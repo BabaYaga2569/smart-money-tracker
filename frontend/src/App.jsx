@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
+import ErrorBoundary from './components/ErrorBoundary';
 import Sidebar from './components/Sidebar';
 import MobileNav from './components/MobileNav';
 import Dashboard from './pages/Dashboard';
@@ -101,11 +102,12 @@ function App() {
   }, []);
 
   return (
-    <Router>
-      <AuthProvider>
-        <Routes>
-          {/* Public route - Login */}
-          <Route path="/login" element={<Login />} />
+    <ErrorBoundary>
+      <Router>
+        <AuthProvider>
+          <Routes>
+            {/* Public route - Login */}
+            <Route path="/login" element={<Login />} />
           
           {/* Protected routes - require authentication */}
           <Route path="/" element={
@@ -222,6 +224,7 @@ function App() {
         </Routes>
       </AuthProvider>
     </Router>
+    </ErrorBoundary>
   );
 }
 
