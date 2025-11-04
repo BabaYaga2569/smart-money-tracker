@@ -4,12 +4,19 @@ import './PWAInstallPrompt.css';
 export default function PWAInstallPrompt() {
   const [deferredPrompt, setDeferredPrompt] = useState(null);
   const [showInstallPrompt, setShowInstallPrompt] = useState(false);
+  const [isDismissed, setIsDismissed] = useState(false);
 
   useEffect(() => {
+    // Check if user previously dismissed the prompt
+    const dismissed = localStorage.getItem('pwa-install-dismissed') === 'true';
+    setIsDismissed(dismissed);
+
     const handler = (e) => {
       e.preventDefault();
       setDeferredPrompt(e);
-      setShowInstallPrompt(true);
+      if (!dismissed) {
+        setShowInstallPrompt(true);
+      }
     };
 
     window.addEventListener('beforeinstallprompt', handler);
@@ -32,10 +39,11 @@ export default function PWAInstallPrompt() {
 
   const handleDismiss = () => {
     setShowInstallPrompt(false);
+    setIsDismissed(true);
     localStorage.setItem('pwa-install-dismissed', 'true');
   };
 
-  if (!showInstallPrompt || localStorage.getItem('pwa-install-dismissed')) {
+  if (!showInstallPrompt || isDismissed) {
     return null;
   }
 

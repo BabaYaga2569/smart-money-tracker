@@ -31,6 +31,8 @@ export default defineConfig({
             sizes: '512x512',
             type: 'image/png'
           },
+          // Same icon reused for maskable - allows adaptive icons on Android
+          // In production, create a separate maskable icon with safe zone padding
           {
             src: 'pwa-512x512.png',
             sizes: '512x512',
