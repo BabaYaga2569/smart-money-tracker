@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { doc, getDoc, updateDoc } from 'firebase/firestore';
+import { doc, getDoc, updateDoc, collection, setDoc, serverTimestamp, query, where, getDocs, deleteDoc } from 'firebase/firestore';
 import { db } from '../firebase';
 import { RecurringManager } from '../utils/RecurringManager';
 import { RecurringBillManager } from '../utils/RecurringBillManager';
@@ -8,6 +8,7 @@ import { TRANSACTION_CATEGORIES, getCategoryIcon } from '../constants/categories
 import CSVImportModal from '../components/CSVImportModal';
 import { BillSortingManager } from '../utils/BillSortingManager';
 import { BillDeduplicationManager } from '../utils/BillDeduplicationManager';
+import { format, addMonths } from 'date-fns';
 import './Recurring.css';
 import { useAuth } from '../contexts/AuthContext';
 
@@ -494,31 +495,57 @@ const Recurring = () => {
         updatedItems = [...existingItems, itemData];
       }
       
-      // Auto-sync bills if this is an expense template with status active
+      // ✅ NEW: Save to billInstances collection instead of old bills array
       let billSyncStats = null;
-      let updatedBills = currentData.bills || [];
       
       if (itemData.type === 'expense' && itemData.status === 'active') {
         try {
-          const generateBillId = () => `bill_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
-          const syncResult = RecurringBillManager.syncBillsWithTemplate(
-            itemData,
-            updatedBills,
-            3, // Generate 3 months ahead
-            generateBillId
-          );
-          updatedBills = syncResult.updatedBills;
-          billSyncStats = syncResult.stats;
+          const billId = `bill_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+          
+          // Create bill instance with proper structure
+          const billInstance = {
+            id: billId,
+            name: itemData.name,
+            amount: parseFloat(itemData.amount),
+            dueDate: format(new Date(itemData.nextOccurrence), 'yyyy-MM-dd'),
+            originalDueDate: format(new Date(itemData.nextOccurrence), 'yyyy-MM-dd'),
+            isPaid: false,
+            status: 'pending',
+            category: itemData.category || 'Other',
+            recurrence: itemData.frequency.toLowerCase(),
+            type: itemData.type,
+            isSubscription: false,
+            paymentHistory: [],
+            linkedTransactionIds: [],
+            description: itemData.description || '',
+            accountId: itemData.linkedAccount !== 'Select Account' && itemData.linkedAccount ? itemData.linkedAccount : null,
+            autoPayEnabled: itemData.autoPay || false,
+            merchantNames: [
+              itemData.name.toLowerCase(),
+              itemData.name.toLowerCase().replace(/[^a-z0-9]/g, '')
+            ],
+            recurringTemplateId: itemData.id,
+            createdAt: serverTimestamp(),
+            updatedAt: serverTimestamp(),
+            createdFrom: 'recurring-page'
+          };
+          
+          // Save to billInstances collection
+          const billRef = doc(db, 'users', currentUser.uid, 'billInstances', billId);
+          await setDoc(billRef, billInstance);
+          
+          console.log('✅ Recurring bill saved to billInstances:', billInstance);
+          billSyncStats = { added: 1 };
         } catch (error) {
-          console.error('Error syncing bills with template:', error);
+          console.error('❌ Error saving bill to billInstances:', error);
           // Continue with template save even if bill sync fails
         }
       }
       
+      // Save recurring template to settings (keep for backward compatibility)
       await updateDoc(settingsDocRef, {
         ...currentData,
-        recurringItems: updatedItems,
-        bills: updatedBills
+        recurringItems: updatedItems
       });
       
       setRecurringItems(updatedItems);
@@ -526,22 +553,14 @@ const Recurring = () => {
       
       // Show success notification with bill sync details
       let message = editingItem ? 'Recurring item updated!' : 'Recurring item added!';
-      if (billSyncStats) {
-        const parts = [];
-        if (billSyncStats.added > 0) parts.push(`${billSyncStats.added} added`);
-        if (billSyncStats.updated > 0) parts.push(`${billSyncStats.updated} updated`);
-        if (billSyncStats.removed > 0) parts.push(`${billSyncStats.removed} removed`);
-        if (billSyncStats.preserved > 0) parts.push(`${billSyncStats.preserved} preserved`);
-        
-        if (parts.length > 0) {
-          message += ` Bills: ${parts.join(', ')}`;
-        }
+      if (billSyncStats && billSyncStats.added > 0) {
+        message += ` Bill instance created in Bills Management.`;
       }
       
       showNotification(message, 'success');
     } catch (error) {
-      console.error('Error saving recurring item:', error);
-      showNotification('Error saving item', 'error');
+      console.error('❌ Error saving recurring item:', error);
+      showNotification('Error saving item: ' + error.message, 'error');
     } finally {
       setSaving(false);
     }
@@ -557,32 +576,37 @@ const Recurring = () => {
       
       const updatedItems = (currentData.recurringItems || []).filter(i => i.id !== item.id);
       
-      // If requested, also delete bills generated from this template
-      let updatedBills = currentData.bills || [];
+      // ✅ NEW: Delete bills from billInstances collection if requested
       let deletedCount = 0;
       let preservedCount = 0;
       
       if (alsoDeleteGeneratedBills && item.id) {
-        const initialCount = updatedBills.length;
+        // Query billInstances for bills from this template
+        const billsQuery = query(
+          collection(db, 'users', currentUser.uid, 'billInstances'),
+          where('recurringTemplateId', '==', item.id)
+        );
+        const billsSnapshot = await getDocs(billsQuery);
         
-        // Filter bills: preserve paid bills, remove unpaid bills from this template
-        updatedBills = updatedBills.filter(bill => {
-          if (bill.recurringTemplateId !== item.id) return true; // Keep bills from other templates
+        // Delete unpaid bills, preserve paid ones
+        for (const billDoc of billsSnapshot.docs) {
+          const billData = billDoc.data();
+          const isPaid = billData.isPaid || billData.status === 'paid';
           
-          const isPaid = bill.status === 'paid' || RecurringBillManager.isBillPaidForCurrentCycle(bill);
           if (isPaid) {
             preservedCount++;
-            return true; // Preserve paid bills for history
+            // Keep paid bills for history
+          } else {
+            deletedCount++;
+            // Delete unpaid bill
+            await deleteDoc(doc(db, 'users', currentUser.uid, 'billInstances', billDoc.id));
           }
-          
-          deletedCount++;
-          return false; // Remove unpaid bills
-        });
+        }
         
+        // Update recurring items
         await updateDoc(settingsDocRef, {
           ...currentData,
-          recurringItems: updatedItems,
-          bills: updatedBills
+          recurringItems: updatedItems
         });
         
         setRecurringItems(updatedItems);
@@ -606,8 +630,8 @@ const Recurring = () => {
         showNotification('Recurring item deleted', 'success');
       }
     } catch (error) {
-      console.error('Error deleting recurring item:', error);
-      showNotification('Error deleting item', 'error');
+      console.error('❌ Error deleting recurring item:', error);
+      showNotification('Error deleting item: ' + error.message, 'error');
     } finally {
       setSaving(false);
     }

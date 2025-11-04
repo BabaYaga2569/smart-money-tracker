@@ -1,5 +1,5 @@
 import React, { useMemo, useState, useEffect } from "react";
-import { collection, doc, onSnapshot, orderBy, query, updateDoc, Timestamp, getDoc, addDoc, where, getDocs } from "firebase/firestore";
+import { collection, doc, onSnapshot, orderBy, query, updateDoc, Timestamp, getDoc, addDoc, where, getDocs, setDoc, deleteDoc, serverTimestamp, arrayUnion } from "firebase/firestore";
 import { db } from "../firebase";
 import { useAuth } from "../contexts/AuthContext";
 import { findMatchingTransactionForBill } from "../utils/billMatcher";
@@ -54,31 +54,49 @@ export default function Bills() {
   const [paidThisMonth, setPaidThisMonth] = useState(0);
   const [paidBillsCount, setPaidBillsCount] = useState(0);
 
-  // Load bills from Firebase - ADDED
+  // ✅ NEW: Load bills from billInstances collection
   const loadBills = async () => {
     if (!currentUser) return;
     try {
-      const settingsDocRef = doc(db, 'users', currentUser.uid, 'settings', 'personal');
-      const settingsDoc = await getDoc(settingsDocRef);
+      // Load all bills from billInstances collection
+      const billsSnapshot = await getDocs(
+        collection(db, 'users', currentUser.uid, 'billInstances')
+      );
       
-      if (settingsDoc.exists()) {
-        const data = settingsDoc.data();
-        const billsData = data.bills || [];
-        
-        // Process bills with status
-        const processed = billsData.map(bill => ({
-          ...bill,
-          status: determineBillStatus(bill)
-        }));
-        
-        setProcessedBills(processed);
-        setImportHistory(data.importHistory || []);
-      } else {
-        setProcessedBills([]);
+      const allBills = billsSnapshot.docs.map(doc => ({
+        id: doc.id,
+        ...doc.data()
+      }));
+      
+      // Process bills with status
+      const processed = allBills.map(bill => ({
+        ...bill,
+        status: determineBillStatus(bill)
+      }));
+      
+      console.log('✅ Loaded bills from billInstances:', {
+        total: allBills.length,
+        unpaid: processed.filter(b => !b.isPaid).length,
+        paid: processed.filter(b => b.isPaid).length
+      });
+      
+      setProcessedBills(processed);
+      
+      // Also load import history from settings (for backward compatibility)
+      try {
+        const settingsDocRef = doc(db, 'users', currentUser.uid, 'settings', 'personal');
+        const settingsDoc = await getDoc(settingsDocRef);
+        if (settingsDoc.exists()) {
+          setImportHistory(settingsDoc.data().importHistory || []);
+        }
+      } catch (err) {
+        console.log('No import history found');
       }
+      
       setLoading(false);
     } catch (error) {
-      console.error('Error loading bills:', error);
+      console.error('❌ Error loading bills:', error);
+      setProcessedBills([]);
       setLoading(false);
     }
   };
@@ -829,28 +847,31 @@ const refreshPlaidTransactions = async () => {
 
   const updateBillAsPaid = async (bill, paidDate = null, paymentOptions = {}) => {
     try {
-      const settingsDocRef = doc(db, 'users', currentUser.uid, 'settings', 'personal'); 
-      const currentDoc = await getDoc(settingsDocRef);
-      const currentData = currentDoc.exists() ? currentDoc.data() : {};
+      // ✅ NEW: Update bill in billInstances collection
+      const billRef = doc(db, 'users', currentUser.uid, 'billInstances', bill.id);
       
-      const bills = currentData.bills || [];
-      const recurringItems = currentData.recurringItems || [];
-      
-      const updatedBills = bills.map(b => {
-        if (b.id === bill.id) {
-          return RecurringBillManager.markBillAsPaid(
-            b, 
-            paidDate || getPacificTime(),
-            paymentOptions
-          );
-        }
-        return b;
+      await updateDoc(billRef, {
+        isPaid: true,
+        status: 'paid',
+        lastPaidDate: serverTimestamp(),
+        updatedAt: serverTimestamp(),
+        paymentHistory: arrayUnion({
+          paidDate: (paidDate || getPacificTime()).toISOString(),
+          amount: bill.amount,
+          paymentMethod: paymentOptions.method || 'manual',
+          source: paymentOptions.source || 'manual',
+          transactionId: paymentOptions.transactionId || null
+        })
       });
       
-      // CRITICAL FIX: If bill was generated from recurring template, advance template's nextOccurrence
-      let updatedRecurringItems = recurringItems;
+      // If bill was generated from recurring template, advance template's nextOccurrence
       if (bill.recurringTemplateId) {
-        updatedRecurringItems = recurringItems.map(template => {
+        const settingsDocRef = doc(db, 'users', currentUser.uid, 'settings', 'personal');
+        const currentDoc = await getDoc(settingsDocRef);
+        const currentData = currentDoc.exists() ? currentDoc.data() : {};
+        const recurringItems = currentData.recurringItems || [];
+        
+        const updatedRecurringItems = recurringItems.map(template => {
           if (template.id === bill.recurringTemplateId) {
             // Check if bill's due date matches template's nextOccurrence
             const billDueDate = bill.dueDate || bill.nextDueDate;
@@ -876,15 +897,17 @@ const refreshPlaidTransactions = async () => {
           }
           return template;
         });
+        
+        // Update recurring templates
+        await updateDoc(settingsDocRef, {
+          ...currentData,
+          recurringItems: updatedRecurringItems
+        });
       }
       
-      await updateDoc(settingsDocRef, {
-        ...currentData,
-        bills: updatedBills,
-        recurringItems: updatedRecurringItems
-      });
+      console.log('✅ Bill marked as paid in billInstances:', bill.id);
     } catch (error) {
-      console.error('Error updating bill status:', error);
+      console.error('❌ Error updating bill status:', error);
       throw error;
     }
   };
@@ -920,28 +943,24 @@ const refreshPlaidTransactions = async () => {
 
   const handleSaveBill = async (billData) => {
     try {
-      const settingsDocRef = doc(db, 'users', currentUser.uid, 'settings', 'personal');
-      const currentDoc = await getDoc(settingsDocRef);
-      const currentData = currentDoc.exists() ? currentDoc.data() : {};
-      
-      const bills = currentData.bills || [];
-      
       if (editingBill) {
-        const updatedBills = bills.map(bill => {
-          if (bill.id === editingBill.id) {
-            return { ...billData, id: editingBill.id, originalDueDate: billData.dueDate };
-          }
-          return bill;
-        });
-        
-        await updateDoc(settingsDocRef, {
-          ...currentData,
-          bills: updatedBills
+        // ✅ Update existing bill in billInstances
+        const billRef = doc(db, 'users', currentUser.uid, 'billInstances', editingBill.id);
+        await updateDoc(billRef, {
+          ...billData,
+          originalDueDate: billData.dueDate,
+          updatedAt: serverTimestamp()
         });
         
         showNotification('Bill updated successfully!', 'success');
       } else {
-        const isDuplicate = bills.some(bill => {
+        // ✅ Check for duplicates in billInstances
+        const billsSnapshot = await getDocs(
+          collection(db, 'users', currentUser.uid, 'billInstances')
+        );
+        const existingBills = billsSnapshot.docs.map(doc => doc.data());
+        
+        const isDuplicate = existingBills.some(bill => {
           const exactMatch = bill.name.toLowerCase() === billData.name.toLowerCase() && 
                              parseFloat(bill.amount) === parseFloat(billData.amount) &&
                              bill.dueDate === billData.dueDate &&
@@ -955,7 +974,7 @@ const refreshPlaidTransactions = async () => {
           return;
         }
         
-        const similarBill = bills.find(bill => 
+        const similarBill = existingBills.find(bill => 
           bill.name.toLowerCase() === billData.name.toLowerCase() && 
           parseFloat(bill.amount) === parseFloat(billData.amount) &&
           (bill.dueDate !== billData.dueDate || bill.recurrence !== billData.recurrence)
@@ -974,18 +993,28 @@ const refreshPlaidTransactions = async () => {
           }
         }
         
+        // ✅ Add new bill to billInstances
+        const billId = generateBillId();
         const newBill = {
           ...billData,
-          id: generateBillId(),
+          id: billId,
           originalDueDate: billData.dueDate,
-          status: 'pending'
+          isPaid: false,
+          status: 'pending',
+          paymentHistory: [],
+          linkedTransactionIds: [],
+          merchantNames: [
+            billData.name.toLowerCase(),
+            billData.name.toLowerCase().replace(/[^a-z0-9]/g, '')
+          ],
+          createdAt: serverTimestamp(),
+          updatedAt: serverTimestamp(),
+          createdFrom: 'bills-page'
         };
         
-        await updateDoc(settingsDocRef, {
-          ...currentData,
-          bills: [...bills, newBill]
-        });
+        await setDoc(doc(db, 'users', currentUser.uid, 'billInstances', billId), newBill);
         
+        console.log('✅ Bill saved to billInstances:', newBill);
         showNotification('Bill added successfully!', 'success');
       }
       
@@ -998,8 +1027,8 @@ const refreshPlaidTransactions = async () => {
       setShowModal(false);
       setEditingBill(null);
     } catch (error) {
-      console.error('Error saving bill:', error);
-      showNotification('Error saving bill', 'error');
+      console.error('❌ Error saving bill:', error);
+      showNotification('Error saving bill: ' + error.message, 'error');
     }
   };
 
@@ -1009,44 +1038,28 @@ const refreshPlaidTransactions = async () => {
     }
 
     try {
-      const settingsDocRef = doc(db, 'users', currentUser.uid, 'settings', 'personal');
-      const currentDoc = await getDoc(settingsDocRef);
-      const currentData = currentDoc.exists() ? currentDoc.data() : {};
+      // ✅ Delete bill from billInstances collection
+      await deleteDoc(doc(db, 'users', currentUser.uid, 'billInstances', billToDelete.id));
       
-      const bills = currentData.bills || [];
-      const updatedBills = bills.filter(bill => bill.id !== billToDelete.id);
-      
-      await updateDoc(settingsDocRef, {
-        ...currentData,
-        bills: updatedBills
-      });
-      
+      console.log('✅ Bill deleted from billInstances:', billToDelete.id);
       await loadBills();
       showNotification('Bill deleted successfully!', 'success');
     } catch (error) {
-      console.error('Error deleting bill:', error);
-      showNotification('Error deleting bill', 'error');
+      console.error('❌ Error deleting bill:', error);
+      showNotification('Error deleting bill: ' + error.message, 'error');
     }
   };
 
   const handleToggleSkipBill = async (bill) => {
     try {
-      const settingsDocRef = doc(db, 'users', currentUser.uid, 'settings', 'personal');
-      const currentDoc = await getDoc(settingsDocRef);
-      const currentData = currentDoc.exists() ? currentDoc.data() : {};
-      
-      const bills = currentData.bills || [];
+      // ✅ Update bill in billInstances collection
       const newStatus = bill.status === 'skipped' ? 'pending' : 'skipped';
+      const billRef = doc(db, 'users', currentUser.uid, 'billInstances', bill.id);
       
-      const updatedBills = bills.map(b => 
-        b.id === bill.id 
-          ? { ...b, status: newStatus, skippedAt: newStatus === 'skipped' ? new Date().toISOString() : null }
-          : b
-      );
-      
-      await updateDoc(settingsDocRef, {
-        ...currentData,
-        bills: updatedBills
+      await updateDoc(billRef, {
+        status: newStatus,
+        skippedAt: newStatus === 'skipped' ? new Date().toISOString() : null,
+        updatedAt: serverTimestamp()
       });
       
       await loadBills();
@@ -1055,8 +1068,8 @@ const refreshPlaidTransactions = async () => {
         'success'
       );
     } catch (error) {
-      console.error('Error toggling skip status:', error);
-      showNotification('Error updating bill', 'error');
+      console.error('❌ Error toggling skip status:', error);
+      showNotification('Error updating bill: ' + error.message, 'error');
     }
   };
 
@@ -1066,17 +1079,22 @@ const refreshPlaidTransactions = async () => {
     try {
       setLoading(true);
       
-      const settingsDocRef = doc(db, 'users', currentUser.uid, 'settings', 'personal');
-      const currentDoc = await getDoc(settingsDocRef);
-      const currentData = currentDoc.exists() ? currentDoc.data() : {};
+      // ✅ Get all bills from billInstances
+      const billsSnapshot = await getDocs(
+        collection(db, 'users', currentUser.uid, 'billInstances')
+      );
       
-      const billsToDelete = currentData.bills || [];
+      const billsToDelete = billsSnapshot.docs.map(doc => ({
+        id: doc.id,
+        ...doc.data()
+      }));
+      
       setDeletedBills(billsToDelete);
       
-      await updateDoc(settingsDocRef, {
-        ...currentData,
-        bills: []
-      });
+      // ✅ Delete all bills from billInstances
+      for (const billDoc of billsSnapshot.docs) {
+        await deleteDoc(doc(db, 'users', currentUser.uid, 'billInstances', billDoc.id));
+      }
       
       await loadBills();
       showNotification(
@@ -1084,8 +1102,8 @@ const refreshPlaidTransactions = async () => {
         'success'
       );
     } catch (error) {
-      console.error('Error bulk deleting bills:', error);
-      showNotification('Error deleting bills', 'error');
+      console.error('❌ Error bulk deleting bills:', error);
+      showNotification('Error deleting bills: ' + error.message, 'error');
     } finally {
       setLoading(false);
     }
@@ -1097,21 +1115,17 @@ const refreshPlaidTransactions = async () => {
     try {
       setLoading(true);
       
-      const settingsDocRef = doc(db, 'users', currentUser.uid, 'settings', 'personal');
-      const currentDoc = await getDoc(settingsDocRef);
-      const currentData = currentDoc.exists() ? currentDoc.data() : {};
-      
-      await updateDoc(settingsDocRef, {
-        ...currentData,
-        bills: deletedBills
-      });
+      // ✅ Restore all bills to billInstances
+      for (const bill of deletedBills) {
+        await setDoc(doc(db, 'users', currentUser.uid, 'billInstances', bill.id), bill);
+      }
       
       await loadBills();
       setDeletedBills([]);
       showNotification('Bills restored successfully!', 'success');
     } catch (error) {
-      console.error('Error undoing bulk delete:', error);
-      showNotification('Error restoring bills', 'error');
+      console.error('❌ Error undoing bulk delete:', error);
+      showNotification('Error restoring bills: ' + error.message, 'error');
     } finally {
       setLoading(false);
     }
@@ -1125,11 +1139,15 @@ const refreshPlaidTransactions = async () => {
     try {
       setDeduplicating(true);
       
-      const settingsDocRef = doc(db, 'users', currentUser.uid, 'settings', 'personal');
-      const currentDoc = await getDoc(settingsDocRef);
-      const currentData = currentDoc.exists() ? currentDoc.data() : {};
+      // ✅ Load all bills from billInstances
+      const billsSnapshot = await getDocs(
+        collection(db, 'users', currentUser.uid, 'billInstances')
+      );
       
-      const existingBills = currentData.bills || [];
+      const existingBills = billsSnapshot.docs.map(doc => ({
+        id: doc.id,
+        ...doc.data()
+      }));
       
       const report = BillDeduplicationManager.generateDuplicateReport(existingBills);
       
@@ -1143,10 +1161,10 @@ const refreshPlaidTransactions = async () => {
       
       BillDeduplicationManager.logDeduplication(result, 'manual');
       
-      await updateDoc(settingsDocRef, {
-        ...currentData,
-        bills: result.cleanedBills
-      });
+      // ✅ Delete duplicate bills from billInstances
+      for (const removedBill of result.removedBills) {
+        await deleteDoc(doc(db, 'users', currentUser.uid, 'billInstances', removedBill.id));
+      }
       
       await loadBills();
       
@@ -1163,8 +1181,8 @@ const refreshPlaidTransactions = async () => {
       }
       
     } catch (error) {
-      console.error('Error deduplicating bills:', error);
-      showNotification('Error deduplicating bills', 'error');
+      console.error('❌ Error deduplicating bills:', error);
+      showNotification('Error deduplicating bills: ' + error.message, 'error');
     } finally {
       setDeduplicating(false);
     }
@@ -1174,22 +1192,34 @@ const refreshPlaidTransactions = async () => {
     try {
       setLoading(true);
       
-      const settingsDocRef = doc(db, 'users', currentUser.uid, 'settings', 'personal');
-      const currentDoc = await getDoc(settingsDocRef);
-      const currentData = currentDoc.exists() ? currentDoc.data() : {};
-      
-      const existingBills = currentData.bills || [];
-      
       const cleanedBills = importedBills.map(bill => {
         const { dateError, dateWarning, rowNumber, isDuplicate, ...cleanBill } = bill;
-        return cleanBill;
+        // Ensure bill has all required fields
+        return {
+          ...cleanBill,
+          isPaid: false,
+          status: 'pending',
+          paymentHistory: [],
+          linkedTransactionIds: [],
+          merchantNames: [
+            cleanBill.name.toLowerCase(),
+            cleanBill.name.toLowerCase().replace(/[^a-z0-9]/g, '')
+          ],
+          createdAt: serverTimestamp(),
+          updatedAt: serverTimestamp(),
+          createdFrom: 'csv-import'
+        };
       });
       
-      const updatedBills = [...existingBills, ...cleanedBills];
+      // ✅ Save all bills to billInstances collection
+      for (const bill of cleanedBills) {
+        await setDoc(doc(db, 'users', currentUser.uid, 'billInstances', bill.id), bill);
+      }
       
       const errorsCount = importedBills.filter(b => b.dateError).length;
       const warningsCount = importedBills.filter(b => b.dateWarning && !b.dateError).length;
       
+      // Save import history to settings
       const importEntry = {
         id: `import_${Date.now()}`,
         timestamp: new Date().toISOString(),
@@ -1210,11 +1240,16 @@ const refreshPlaidTransactions = async () => {
       const newHistory = [importEntry, ...importHistory].slice(0, 10);
       setImportHistory(newHistory);
       
+      const settingsDocRef = doc(db, 'users', currentUser.uid, 'settings', 'personal');
+      const currentDoc = await getDoc(settingsDocRef);
+      const currentData = currentDoc.exists() ? currentDoc.data() : {};
+      
       await updateDoc(settingsDocRef, {
         ...currentData,
-        bills: updatedBills,
         importHistory: newHistory
       });
+      
+      console.log('✅ CSV import: Saved', cleanedBills.length, 'bills to billInstances');
       
       await loadBills();
       setShowCSVImport(false);
@@ -1224,8 +1259,8 @@ const refreshPlaidTransactions = async () => {
       if (warningsCount > 0) message += ` (${warningsCount} with warnings)`;
       showNotification(message, errorsCount > 0 ? 'warning' : 'success');
     } catch (error) {
-      console.error('Error importing bills:', error);
-      showNotification('Error importing bills', 'error');
+      console.error('❌ Error importing bills:', error);
+      showNotification('Error importing bills: ' + error.message, 'error');
     } finally {
       setLoading(false);
     }
@@ -1238,28 +1273,34 @@ const refreshPlaidTransactions = async () => {
       setLoading(true);
       const lastImport = importHistory[0];
       
-      const settingsDocRef = doc(db, 'users', currentUser.uid, 'settings', 'personal');
-      const currentDoc = await getDoc(settingsDocRef);
-      const currentData = currentDoc.exists() ? currentDoc.data() : {};
-      
-      const existingBills = currentData.bills || [];
+      // ✅ Delete bills from billInstances collection
       const importedBillIds = new Set(lastImport.bills.map(b => b.id));
-      const updatedBills = existingBills.filter(bill => !importedBillIds.has(bill.id));
+      for (const billId of importedBillIds) {
+        try {
+          await deleteDoc(doc(db, 'users', currentUser.uid, 'billInstances', billId));
+        } catch (err) {
+          console.log('Bill already deleted:', billId);
+        }
+      }
       
       const newHistory = importHistory.slice(1);
       setImportHistory(newHistory);
       
+      // Update import history in settings
+      const settingsDocRef = doc(db, 'users', currentUser.uid, 'settings', 'personal');
+      const currentDoc = await getDoc(settingsDocRef);
+      const currentData = currentDoc.exists() ? currentDoc.data() : {};
+      
       await updateDoc(settingsDocRef, {
         ...currentData,
-        bills: updatedBills,
         importHistory: newHistory
       });
       
       await loadBills();
       showNotification(`Undid import of ${lastImport.billCount} bills`, 'success');
     } catch (error) {
-      console.error('Error undoing import:', error);
-      showNotification('Error undoing import', 'error');
+      console.error('❌ Error undoing import:', error);
+      showNotification('Error undoing import: ' + error.message, 'error');
     } finally {
       setLoading(false);
     }
