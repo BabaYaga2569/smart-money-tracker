@@ -6,6 +6,7 @@ import Sidebar from './components/Sidebar';
 import MobileNav from './components/MobileNav';
 import LoadingSpinner from './components/LoadingSpinner';
 import DebugButton from './components/DebugButton';
+import SentryTestButton from './components/SentryTestButton';
 import { useWindowSize } from './hooks/useWindowSize';
 import './App.css';
 
@@ -104,11 +105,12 @@ function App() {
   }, []);
 
   return (
-    <ErrorBoundary>
-      <Router>
-        <AuthProvider>
-          <Suspense fallback={<LoadingSpinner />}>
-            <Routes>
+    <>
+      <ErrorBoundary>
+        <Router>
+          <AuthProvider>
+            <Suspense fallback={<LoadingSpinner />}>
+              <Routes>
               {/* Public route - Login */}
               <Route path="/login" element={<Login />} />
           
@@ -224,11 +226,13 @@ function App() {
               </AppLayout>
             </PrivateRoute>
           } />
-            </Routes>
-          </Suspense>
-        </AuthProvider>
-      </Router>
-    </ErrorBoundary>
+              </Routes>
+            </Suspense>
+          </AuthProvider>
+        </Router>
+      </ErrorBoundary>
+      <SentryTestButton />
+    </>
   );
 }
 
