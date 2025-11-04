@@ -14,7 +14,9 @@
     "prepare": "husky",
     "test": "vitest",
     "test:ui": "vitest --ui",
-    "test:coverage": "vitest --coverage"
+    "test:coverage": "vitest --coverage",
+    "storybook": "storybook dev -p 6006",
+    "build-storybook": "storybook build"
   },
   "dependencies": {
     "@sentry/react": "^10.22.0",
@@ -33,6 +35,11 @@
     "react-router-dom": "^7.9.1"
   },
   "devDependencies": {
+    "@storybook/addon-essentials": "^8.6.14",
+    "@storybook/addon-interactions": "^8.6.14",
+    "@storybook/addon-links": "^8.6.14",
+    "@storybook/blocks": "^8.6.14",
+    "@storybook/react-vite": "^8.6.14",
     "@testing-library/jest-dom": "^6.9.1",
     "@testing-library/react": "^16.3.0",
     "@testing-library/user-event": "^14.6.1",
@@ -52,6 +59,8 @@
     "jsdom": "^27.1.0",
     "lint-staged": "^15.2.2",
     "prettier": "^3.2.5",
+    "prop-types": "^15.8.1",
+    "storybook": "^8.6.14",
     "vite": "^7.1.7",
     "vite-plugin-pwa": "^1.1.0",
     "vitest": "^4.0.7"

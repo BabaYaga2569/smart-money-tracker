@@ -10,6 +10,7 @@ lerna-debug.log*
 node_modules
 dist
 dist-ssr
+dev-dist
 *.local
 
 # Test coverage
@@ -26,3 +27,6 @@ coverage
 *.njsproj
 *.sln
 *.sw?
+
+*storybook.log
+storybook-static
