@@ -1,5 +1,5 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { collection, getDocs, doc, updateDoc, addDoc, deleteDoc } from 'firebase/firestore';
+import { collection, getDocs, doc, updateDoc, addDoc, deleteDoc, query as firestoreQuery, orderBy as firestoreOrderBy, limit as firestoreLimit } from 'firebase/firestore';
 import { db } from '../firebase';
 
 // Query keys for cache management
@@ -33,9 +33,6 @@ export const useTransactionsQuery = (userId, options = {}) => {
     queryKey: QUERY_KEYS.transactions(userId),
     queryFn: async () => {
       if (!userId) return [];
-      
-      // Import necessary Firestore functions dynamically
-      const { query: firestoreQuery, orderBy: firestoreOrderBy, limit: firestoreLimit } = await import('firebase/firestore');
       
       const transactionsRef = collection(db, `users/${userId}/transactions`);
       const q = firestoreQuery(

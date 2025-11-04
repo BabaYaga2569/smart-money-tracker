@@ -17,9 +17,6 @@ export const queryClient = new QueryClient({
       
       // Don't retry failed queries immediately
       retry: 1,
-      
-      // Show cached data while fetching new data
-      refetchOnMount: 'always',
     },
     mutations: {
       // Retry failed mutations once
