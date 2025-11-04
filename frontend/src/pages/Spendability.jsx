@@ -317,9 +317,8 @@ console.log('🔍 PAYDAY CALCULATION DEBUG:', {
           return new Date(a.nextDueDate) - new Date(b.nextDueDate);
         });
       
-      const totalBillsDue = billsDueBeforePayday.reduce((sum, bill) => {
-        return sum + (parseFloat(bill.amount) || 0);
-      }, 0);
+      const totalBillsDue = (billsDueBeforePayday || []).reduce((sum, bill) => 
+        sum + (Number(bill.amount ?? bill.cost) || 0), 0);
 
       const preferences = settingsData.preferences || {};
       const weeklyEssentials = preferences.weeklyEssentials || 0;
@@ -336,6 +335,8 @@ console.log('🔍 PAYDAY CALCULATION DEBUG:', {
         nextPayday,
         daysUntilPayday,
         finalDaysUntilPayday,
+        totalBillsDue,
+        billsCount: billsDueBeforePayday.length,
         willDisplayAs: finalDaysUntilPayday > 0 ? `${finalDaysUntilPayday} days` : 'Today!'
       });
 
