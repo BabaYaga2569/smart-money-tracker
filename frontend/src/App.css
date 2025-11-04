@@ -4,23 +4,29 @@
 .layout {
   display: flex;
   min-height: 100vh;
-  background: #000;
-  color: #00ff99;
+  background: var(--bg);
+  color: var(--neon-green);
 }
 
 /* Sidebar */
 .sidebar {
-  width: 220px;
+  width: var(--sidebar-width); /* Use CSS variable! */
   background: #0a0a0a;
-  padding: 1rem;
-  border-right: 1px solid #00ff99;
+  padding: var(--spacing-md);
+  border-right: 1px solid var(--neon-green);
   flex-shrink: 0;
+  position: fixed;
+  left: 0;
+  top: 0;
+  height: 100vh;
+  z-index: 1000;
+  transition: width var(--transition-normal);
 }
 
 .sidebar-title {
   font-size: 1.5rem;
-  margin-bottom: 1rem;
-  color: #00ff99;
+  margin-bottom: var(--spacing-md);
+  color: var(--neon-green);
 }
 
 .sidebar ul {
@@ -29,37 +35,44 @@
 }
 
 .sidebar li {
-  margin: 0.8rem 0;
+  margin: var(--spacing-sm) 0;
 }
 
 .sidebar a {
   color: #fff;
   text-decoration: none;
+  transition: var(--transition-fast);
 }
 
 .sidebar a:hover {
-  color: #00ff99;
+  color: var(--neon-green);
+}
+
+.sidebar a.active {
+  color: var(--neon-green);
+  background: rgba(0, 255, 153, 0.1);
+  padding: var(--spacing-sm);
+  border-radius: var(--radius-sm);
 }
 
 /* Main content */
 .main-content {
   flex: 1;
+  margin-left: var(--sidebar-width); /* Use CSS variable! */
   padding: 0;
   overflow-y: auto;
   background: #0d0d0d;
 }
 
-/* Active navigation state */
-.sidebar a.active {
-  color: #00ff99;
-  background: rgba(0, 255, 153, 0.1);
-  padding: 0.5rem;
-  border-radius: 4px;
+/* App container */
+.app {
+  display: flex;
+  min-height: 100vh;
 }
 
 /* Placeholder page styling */
 .placeholder-page {
-  padding: 2rem;
+  padding: var(--spacing-xl);
   text-align: center;
   color: #ffffff;
 }
@@ -67,34 +80,12 @@
 .placeholder-page h1 {
   color: #00ff88;
   font-size: 2.5rem;
-  margin-bottom: 1rem;
+  margin-bottom: var(--spacing-md);
 }
 
 .placeholder-page p {
   color: #888;
   font-size: 1.2rem;
-}
-/* Add these rules to your existing App.css */
-.app {
-  display: flex;
-  min-height: 100vh;
-}
-
-.main-content {
-  flex: 1;
-  margin-left: 250px; /* Adjust based on your sidebar width */
-  padding: 0; /* Remove padding to let Dashboard control its own padding */
-  background: #000;
-}
-
-/* Make sure sidebar has fixed positioning */
-.sidebar {
-  position: fixed;
-  left: 0;
-  top: 0;
-  width: 250px; /* Match the margin-left above */
-  height: 100vh;
-  z-index: 1000;
 }
 
 /* Mobile Responsive Styles */
@@ -103,9 +94,17 @@
     flex-direction: column;
   }
 
+  .sidebar {
+    width: 100%;
+    height: var(--mobile-nav-height);
+    position: fixed;
+    top: 0;
+    left: 0;
+  }
+
   .main-content {
     margin-left: 0;
-    padding-top: 70px; /* Space for hamburger menu */
+    padding-top: var(--mobile-nav-height);
     width: 100%;
   }
 }

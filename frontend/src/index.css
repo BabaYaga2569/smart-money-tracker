@@ -1,4 +1,5 @@
 :root {
+  /* Color Palette */
   --green: #00ff99;
   --green-dark: #073;
   --bg: #000;
@@ -15,6 +16,37 @@
   --text-primary: #f9fafb;
   --text-secondary: #d1d5db;
   --text-muted: #9ca3af;
+  --text-bright: #ffffff;
+  
+  /* Layout Variables - NEW! */
+  --sidebar-width: 250px;
+  --sidebar-collapsed-width: 60px;
+  --mobile-nav-height: 70px;
+  --header-height: 80px;
+  
+  /* Spacing Variables - NEW! */
+  --spacing-xs: 4px;
+  --spacing-sm: 8px;
+  --spacing-md: 16px;
+  --spacing-lg: 24px;
+  --spacing-xl: 32px;
+  
+  /* Border Radius Variables - NEW! */
+  --radius-sm: 4px;
+  --radius-md: 8px;
+  --radius-lg: 12px;
+  --radius-xl: 16px;
+  
+  /* Shadow Variables - NEW! */
+  --shadow-sm: 0 2px 4px rgba(0, 0, 0, 0.1);
+  --shadow-md: 0 4px 8px rgba(0, 0, 0, 0.2);
+  --shadow-lg: 0 8px 16px rgba(0, 0, 0, 0.3);
+  --shadow-glow: 0 0 20px rgba(0, 255, 153, 0.3);
+  
+  /* Transition Variables - NEW! */
+  --transition-fast: 0.15s ease;
+  --transition-normal: 0.3s ease;
+  --transition-slow: 0.5s ease;
 }
 
 * { box-sizing: border-box; }
@@ -23,22 +55,7 @@ html, body, #root {
   height: 100%;
 }
 
-body {
-  margin: 0;
-  background: var(--bg);
-  color: var(--green);
-  font-family: system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, sans-serif;
-}
-
-a {
-  font-weight: 500;
-  color: #646cff;
-  text-decoration: inherit;
-}
-a:hover {
-  color: #535bf2;
-}
-
+/* CONSOLIDATED body styles (remove duplicates) */
 body {
   margin: 0;
   background: var(--bg);
@@ -48,13 +65,27 @@ body {
   min-height: 100vh;
 }
 
+/* Links */
+a {
+  font-weight: 500;
+  color: #646cff;
+  text-decoration: inherit;
+  transition: var(--transition-fast);
+}
+
+a:hover {
+  color: #535bf2;
+}
+
+/* Headings */
 h1 {
   font-size: 3.2em;
   line-height: 1.1;
 }
 
+/* Buttons */
 button {
-  border-radius: 8px;
+  border-radius: var(--radius-md);
   border: 1px solid transparent;
   padding: 0.6em 1.2em;
   font-size: 1em;
@@ -62,7 +93,7 @@ button {
   font-family: inherit;
   background-color: #1a1a1a;
   cursor: pointer;
-  transition: border-color 0.25s;
+  transition: var(--transition-normal);
 }
 button:hover {
   border-color: #646cff;
@@ -70,6 +101,11 @@ button:hover {
 button:focus,
 button:focus-visible {
   outline: 4px auto -webkit-focus-ring-color;
+}
+
+/* Remove horizontal scrolling */
+html, body {
+  overflow-x: hidden;
 }
 
 @media (prefers-color-scheme: light) {
@@ -114,7 +150,7 @@ button:focus-visible {
     font-size: 16px !important;
     min-height: 48px;
     padding: 12px 16px;
-    border-radius: 8px;
+    border-radius: var(--radius-md);
   }
 
   input:focus, 
@@ -127,10 +163,7 @@ button:focus-visible {
     min-height: 100px;
   }
 
-  /* Prevent horizontal scrolling */
-  body {
-    overflow-x: hidden;
-  }
+
 
   /* Larger headings on mobile */
   h1 {
