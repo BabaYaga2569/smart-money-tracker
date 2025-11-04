@@ -18,6 +18,14 @@
       ]
     },
     {
+      "collectionGroup": "billInstances",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "subscriptionId", "order": "ASCENDING" },
+        { "fieldPath": "isPaid", "order": "ASCENDING" }
+      ]
+    },
+    {
       "collectionGroup": "subscriptions",
       "queryScope": "COLLECTION",
       "fields": [
