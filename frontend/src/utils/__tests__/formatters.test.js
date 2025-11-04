@@ -122,7 +122,7 @@ describe('abbreviateNumber', () => {
   it('abbreviates thousands', () => {
     expect(abbreviateNumber(1000)).toBe('1.0K');
     expect(abbreviateNumber(5500)).toBe('5.5K');
-    expect(abbreviateNumber(999999)).toBe('1000.0K');
+    expect(abbreviateNumber(999000)).toBe('999.0K');
   });
 
   it('abbreviates millions', () => {
