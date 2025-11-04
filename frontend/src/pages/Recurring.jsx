@@ -543,12 +543,23 @@ const Recurring = () => {
       }
       
       // Save recurring template to settings (keep for backward compatibility)
-      await updateDoc(settingsDocRef, {
-        ...currentData,
-        recurringItems: updatedItems
-      });
+      // Clean undefined values from items
+      const cleanedItems = updatedItems.map(item => 
+        Object.fromEntries(
+          Object.entries(item).filter(([, value]) => value !== undefined)
+        )
+      );
+
+      // Build update data without undefined values
+      const updateData = { recurringItems: cleanedItems };
+      if (currentData.plaidAccounts) updateData.plaidAccounts = currentData.plaidAccounts;
+      if (currentData.bankAccounts) updateData.bankAccounts = currentData.bankAccounts;
+      if (currentData.institutionMapping) updateData.institutionMapping = currentData.institutionMapping;
+      if (currentData.bills) updateData.bills = currentData.bills;
+
+      await updateDoc(settingsDocRef, updateData);
       
-      setRecurringItems(updatedItems);
+      setRecurringItems(cleanedItems);
       setShowModal(false);
       
       // Show success notification with bill sync details
