@@ -6,52 +6,7 @@ import { getDaysUntilDateInPacific } from '../utils/DateUtils';
 import { Link } from 'react-router-dom';
 import './Settings.css';
 import { useAuth } from '../contexts/AuthContext';
-import * as Sentry from '@sentry/react';
 
-const SentryTestButton = () => {
-  // Only render in development mode
-  if (!import.meta.env.DEV) {
-    return null;
-  }
-
-  const handleTestError = () => {
-    const error = new Error('Sentry Test Error - ' + new Date().toISOString());
-    Sentry.captureException(error);
-    alert('Test error sent to Sentry! Check your Sentry dashboard.');
-  };
-
-  return (
-    <div style={{
-      border: '2px dashed #ff6b6b',
-      backgroundColor: '#fff5f5',
-      borderRadius: '8px',
-      padding: '1rem',
-      marginTop: '2rem'
-    }}>
-      <h4 style={{ color: '#c92a2a', marginTop: 0 }}>🐛 Developer Tools</h4>
-      <p style={{ color: '#666', fontSize: '14px' }}>
-        This section is only visible in development mode.
-      </p>
-      <button
-        onClick={handleTestError}
-        style={{
-          backgroundColor: '#ff6b6b',
-          color: 'white',
-          padding: '0.75rem 1.5rem',
-          borderRadius: '6px',
-          border: 'none',
-          fontWeight: 'bold',
-          cursor: 'pointer',
-          transition: 'background-color 0.2s'
-        }}
-        onMouseEnter={(e) => e.target.style.backgroundColor = '#fa5252'}
-        onMouseLeave={(e) => e.target.style.backgroundColor = '#ff6b6b'}
-      >
-        Test Sentry Error Tracking
-      </button>
-    </div>
-  );
-};
 
 const Settings = () => {
   const [loading, setLoading] = useState(true);
@@ -636,8 +591,54 @@ const Settings = () => {
 
       </div>
 
-      {/* Developer Tools Section - Only visible in development mode */}
-      <SentryTestButton />
+      {/* Sentry Testing Section */}
+      <div className="settings-section">
+        <h2 className="settings-section-title">🔍 Sentry Testing</h2>
+        <div className="settings-card">
+          <p className="settings-description">
+            Test Sentry error reporting to ensure errors are being tracked correctly.
+          </p>
+          
+          <div className="button-group" style={{ display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
+            <button 
+              className="btn btn-secondary"
+              onClick={() => {
+                if (window.Sentry) {
+                  window.Sentry.captureMessage('🧪 Test message from Settings page!', 'info');
+                  alert('Test message sent to Sentry! Check your Sentry dashboard.');
+                } else {
+                  alert('Sentry is not initialized. Please check your Sentry configuration.');
+                }
+              }}
+            >
+              🧪 Test Sentry Message
+            </button>
+            
+            <button 
+              className="btn btn-secondary"
+              onClick={() => {
+                if (window.Sentry) {
+                  window.Sentry.captureException(new Error('🧪 Test error from Settings page!'));
+                  alert('Test error sent to Sentry! Check your Sentry dashboard.');
+                } else {
+                  alert('Sentry is not initialized. Please check your Sentry configuration.');
+                }
+              }}
+            >
+              ❌ Test Sentry Error
+            </button>
+            
+            <button 
+              className="btn btn-danger"
+              onClick={() => {
+                throw new Error('🧪 Test error to trigger ErrorBoundary!');
+              }}
+            >
+              💥 Test Error Boundary
+            </button>
+          </div>
+        </div>
+      </div>
     </div>
   );
 };
