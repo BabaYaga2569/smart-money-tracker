@@ -1,7 +1,7 @@
 import * as Sentry from "@sentry/react";
 
 Sentry.init({
-  dsn: "https://7796e78145df42f3b715d7c5414dc951@o4510309743525889.ingest.us.sentry.io/4510309753880576",
+  dsn: import.meta.env.VITE_SENTRY_DSN,
   integrations: [
     Sentry.browserTracingIntegration(),
     Sentry.replayIntegration(),
@@ -10,6 +10,11 @@ Sentry.init({
   replaysSessionSampleRate: 0.1,
   replaysOnErrorSampleRate: 1.0,
 });
+
+// Expose Sentry to window for debugging in production
+if (import.meta.env.PROD) {
+  window.Sentry = Sentry;
+}
 
 import { StrictMode } from 'react'
 import { createRoot } from 'react-dom/client'
