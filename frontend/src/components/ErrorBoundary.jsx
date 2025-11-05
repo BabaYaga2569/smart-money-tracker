@@ -1,4 +1,5 @@
 import React from 'react';
+import * as Sentry from '@sentry/react';
 import './ErrorBoundary.css';
 
 class ErrorBoundary extends React.Component {
@@ -27,8 +28,8 @@ class ErrorBoundary extends React.Component {
     });
 
     // Optional: Send to error tracking service like Sentry
-    if (window.Sentry) {
-      window.Sentry.captureException(error, { extra: errorInfo });
+    if (Sentry && Sentry.captureException) {
+      Sentry.captureException(error, { extra: errorInfo });
     }
   }
 
