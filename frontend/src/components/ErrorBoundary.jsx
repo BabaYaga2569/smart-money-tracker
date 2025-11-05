@@ -27,9 +27,9 @@ class ErrorBoundary extends React.Component {
     });
 
     // Optional: Send to error tracking service like Sentry
-    // if (window.Sentry) {
-    //   window.Sentry.captureException(error, { extra: errorInfo });
-    // }
+    if (window.Sentry) {
+      window.Sentry.captureException(error, { extra: errorInfo });
+    }
   }
 
   handleReload = () => {
