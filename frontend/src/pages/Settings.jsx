@@ -603,8 +603,12 @@ const Settings = () => {
             <button 
               className="btn btn-secondary"
               onClick={() => {
-                window.Sentry.captureMessage('🧪 Test message from Settings page!', 'info');
-                alert('Test message sent to Sentry! Check your Sentry dashboard.');
+                if (window.Sentry) {
+                  window.Sentry.captureMessage('🧪 Test message from Settings page!', 'info');
+                  alert('Test message sent to Sentry! Check your Sentry dashboard.');
+                } else {
+                  alert('Sentry is not initialized. Please check your Sentry configuration.');
+                }
               }}
             >
               🧪 Test Sentry Message
@@ -613,8 +617,12 @@ const Settings = () => {
             <button 
               className="btn btn-secondary"
               onClick={() => {
-                window.Sentry.captureException(new Error('🧪 Test error from Settings page!'));
-                alert('Test error sent to Sentry! Check your Sentry dashboard.');
+                if (window.Sentry) {
+                  window.Sentry.captureException(new Error('🧪 Test error from Settings page!'));
+                  alert('Test error sent to Sentry! Check your Sentry dashboard.');
+                } else {
+                  alert('Sentry is not initialized. Please check your Sentry configuration.');
+                }
               }}
             >
               ❌ Test Sentry Error
