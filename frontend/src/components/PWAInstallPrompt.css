@@ -1,0 +1,105 @@
+.pwa-install-prompt {
+  position: fixed;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  background: linear-gradient(135deg, #1a1a1a 0%, #2d2d2d 100%);
+  border-top: 2px solid #4CAF50;
+  box-shadow: 0 -4px 20px rgba(0, 0, 0, 0.3);
+  z-index: 9999;
+  animation: slideUp 0.3s ease-out;
+}
+
+@keyframes slideUp {
+  from {
+    transform: translateY(100%);
+  }
+  to {
+    transform: translateY(0);
+  }
+}
+
+.pwa-install-content {
+  padding: 1.5rem;
+  max-width: 600px;
+  margin: 0 auto;
+  text-align: center;
+}
+
+.pwa-install-content h3 {
+  margin: 0 0 0.5rem 0;
+  color: #4CAF50;
+  font-size: 1.2rem;
+  font-weight: 600;
+}
+
+.pwa-install-content p {
+  margin: 0 0 1rem 0;
+  color: #e0e0e0;
+  font-size: 0.95rem;
+}
+
+.pwa-install-buttons {
+  display: flex;
+  gap: 1rem;
+  justify-content: center;
+  flex-wrap: wrap;
+}
+
+.pwa-install-buttons button {
+  padding: 0.75rem 2rem;
+  border: none;
+  border-radius: 6px;
+  font-size: 1rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  min-width: 120px;
+}
+
+.pwa-install-buttons button:first-child {
+  background: #4CAF50;
+  color: white;
+}
+
+.pwa-install-buttons button:first-child:hover {
+  background: #45a049;
+  transform: translateY(-2px);
+  box-shadow: 0 4px 12px rgba(76, 175, 80, 0.3);
+}
+
+.pwa-install-buttons button:last-child {
+  background: transparent;
+  color: #e0e0e0;
+  border: 1px solid #555;
+}
+
+.pwa-install-buttons button:last-child:hover {
+  background: rgba(255, 255, 255, 0.05);
+  border-color: #777;
+}
+
+.pwa-install-buttons button:active {
+  transform: scale(0.98);
+}
+
+/* Mobile responsive */
+@media (max-width: 640px) {
+  .pwa-install-content {
+    padding: 1rem;
+  }
+  
+  .pwa-install-content h3 {
+    font-size: 1.1rem;
+  }
+  
+  .pwa-install-content p {
+    font-size: 0.9rem;
+  }
+  
+  .pwa-install-buttons button {
+    padding: 0.6rem 1.5rem;
+    font-size: 0.95rem;
+    min-width: 100px;
+  }
+}

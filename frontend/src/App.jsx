@@ -1,28 +1,32 @@
-import React,{useState,useEffect}from"react"
+import React, { useState, useEffect, lazy, Suspense } from 'react';
 import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
 import ErrorBoundary from './components/ErrorBoundary';
 import Sidebar from './components/Sidebar';
 import MobileNav from './components/MobileNav';
-import Dashboard from './pages/Dashboard';
-import Accounts from './pages/Accounts';
-import Transactions from './pages/Transactions';
-import Spendability from './pages/Spendability';
-import Bills from './pages/Bills';
-import Recurring from './pages/Recurring';
-import Subscriptions from './pages/Subscriptions';
-import Goals from './pages/Goals';
-import Categories from './pages/Categories';
-import Cashflow from './pages/Cashflow';
-import Paycycle from './pages/Paycycle';
-import Settings from './pages/Settings';
-import BankDetail from './pages/BankDetail';
-import CreditCards from './pages/CreditCards';
-
-import Login from './pages/Login';
+import LoadingSpinner from './components/LoadingSpinner';
 import DebugButton from './components/DebugButton';
+import SentryTestButton from './components/SentryTestButton';
+import PWAInstallPrompt from './components/PWAInstallPrompt';
 import { useWindowSize } from './hooks/useWindowSize';
 import './App.css';
+
+// Lazy load all page components
+const Dashboard = lazy(() => import('./pages/Dashboard'));
+const Accounts = lazy(() => import('./pages/Accounts'));
+const Transactions = lazy(() => import('./pages/Transactions'));
+const Spendability = lazy(() => import('./pages/Spendability'));
+const Bills = lazy(() => import('./pages/Bills'));
+const Recurring = lazy(() => import('./pages/Recurring'));
+const Subscriptions = lazy(() => import('./pages/Subscriptions'));
+const Goals = lazy(() => import('./pages/Goals'));
+const Categories = lazy(() => import('./pages/Categories'));
+const Cashflow = lazy(() => import('./pages/Cashflow'));
+const Paycycle = lazy(() => import('./pages/Paycycle'));
+const Settings = lazy(() => import('./pages/Settings'));
+const BankDetail = lazy(() => import('./pages/BankDetail'));
+const CreditCards = lazy(() => import('./pages/CreditCards'));
+const Login = lazy(() => import('./pages/Login'));
 
 // Force bundle hash change to deploy pending fixes
 export const APP_VERSION = '2.0.1-' + Date.now();
@@ -102,12 +106,15 @@ function App() {
   }, []);
 
   return (
-    <ErrorBoundary>
-      <Router>
-        <AuthProvider>
-          <Routes>
-            {/* Public route - Login */}
-            <Route path="/login" element={<Login />} />
+    <>
+      <ErrorBoundary>
+        <Router>
+          <AuthProvider>
+            <PWAInstallPrompt />
+            <Suspense fallback={<LoadingSpinner />}>
+              <Routes>
+              {/* Public route - Login */}
+              <Route path="/login" element={<Login />} />
           
           {/* Protected routes - require authentication */}
           <Route path="/" element={
@@ -221,10 +228,13 @@ function App() {
               </AppLayout>
             </PrivateRoute>
           } />
-        </Routes>
-      </AuthProvider>
-    </Router>
-    </ErrorBoundary>
+              </Routes>
+            </Suspense>
+          </AuthProvider>
+        </Router>
+      </ErrorBoundary>
+      <SentryTestButton />
+    </>
   );
 }
 

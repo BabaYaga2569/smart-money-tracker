@@ -1,6 +1,12 @@
 import { createContext, useContext, useState, useEffect } from 'react';
 import { auth } from '../firebase';
-import { onAuthStateChanged, signInWithEmailAndPassword, createUserWithEmailAndPassword, signOut } from 'firebase/auth';
+import {
+  onAuthStateChanged,
+  signInWithEmailAndPassword,
+  createUserWithEmailAndPassword,
+  signOut,
+} from 'firebase/auth';
+import { setSentryUser } from '../config/sentry';
 
 const AuthContext = createContext();
 
@@ -14,6 +20,9 @@ export const AuthProvider = ({ children }) => {
     const unsubscribe = onAuthStateChanged(auth, (user) => {
       setCurrentUser(user);
       setLoading(false);
+
+      // Set Sentry user context
+      setSentryUser(user);
     });
     return unsubscribe;
   }, []);
