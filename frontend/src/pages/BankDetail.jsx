@@ -72,8 +72,16 @@ const BankDetail = () => {
         if (data.success && data.accounts) {
           const matchingAccount = data.accounts.find(acc => acc.account_id === accountId);
           if (matchingAccount) {
-            console.log('✅ [BankDetail] Fresh balance fetched:', matchingAccount.balances.available);
-            setLiveBalance(matchingAccount.balances.available);
+            // Prefer available_balance, fall back to balances.available, then current
+            const freshAvailable = matchingAccount.available_balance || 
+                                  matchingAccount.balances?.available || 
+                                  matchingAccount.current_balance ||
+                                  matchingAccount.balances?.current;
+            console.log('✅ [BankDetail] Fresh balance fetched:', freshAvailable);
+            console.log('✅ [BankDetail] Available:', freshAvailable, 'Current:', matchingAccount.current_balance || matchingAccount.balances?.current);
+            setLiveBalance(freshAvailable);
+          } else {
+            console.log('❌ [BankDetail] Fresh balance fetched: null');
           }
         }
       } catch (error) {

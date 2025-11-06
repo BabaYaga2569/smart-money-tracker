@@ -313,11 +313,20 @@ async function deduplicateAndSaveAccounts(userId, newAccounts, institutionName, 
     mask: account.mask,
     type: account.type,
     subtype: account.subtype,
-    balance: account.balances.available || account.balances.current || 0,
-current_balance: account.balances.current || 0,
-available_balance: account.balances.available || 0,
-institution_name: institutionName,
-item_id: itemId
+    // Primary balance fields
+    available_balance: account.balances.available || account.balances.current || 0,
+    current_balance: account.balances.current || 0,
+    balance: account.balances.available || account.balances.current || 0, // For backwards compatibility
+    // Full balances object for flexibility
+    balances: {
+      available: account.balances.available,
+      current: account.balances.current,
+      limit: account.balances.limit,
+      iso_currency_code: account.balances.iso_currency_code,
+      unofficial_currency_code: account.balances.unofficial_currency_code
+    },
+    institution_name: institutionName,
+    item_id: itemId
   }));
 
   // Deduplicate by institution + mask
@@ -417,24 +426,46 @@ async function updateAccountBalances(userId, accounts) {
     if (freshAccount) {
       updatedCount++;
       const balances = freshAccount.balances || {};
-      const oldBalance = existingAcc.balance;
-      const newBalance = balances.available || balances.current || 0;
       
-      // 🔍 NEW: Log successful match with balance change
+      // Track both available and current balances
+      const oldAvailable = existingAcc.available_balance || existingAcc.available || existingAcc.balance || 0;
+      const oldCurrent = existingAcc.current_balance || existingAcc.current || existingAcc.balance || 0;
+      const newAvailable = balances.available || balances.current || 0;
+      const newCurrent = balances.current || 0;
+      
+      // Calculate changes
+      const availableChange = newAvailable - oldAvailable;
+      const currentChange = newCurrent - oldCurrent;
+      const pendingAmount = newCurrent - newAvailable;
+      
+      // 🔍 Enhanced logging with both balance types
       logDiagnostic.info('UPDATE_BALANCES_MATCH', `✅ Matched and updated: ${existingAcc.name}`, {
         account_id: existingAcc.account_id,
         institution: existingAcc.institution_name,
-        old_balance: oldBalance,
-        new_balance: newBalance,
-        balance_change: newBalance - oldBalance
+        old_available: oldAvailable,
+        new_available: newAvailable,
+        available_change: availableChange,
+        old_current: oldCurrent,
+        new_current: newCurrent,
+        current_change: currentChange,
+        pending_amount: pendingAmount
       });
       
       // Update balance fields with fresh data
       return {
         ...existingAcc,
-        balance: newBalance,
-        current_balance: balances.current || 0,
-        available_balance: balances.available || 0,
+        balance: newAvailable, // Primary balance = available (what you can spend)
+        available_balance: newAvailable,
+        current_balance: newCurrent,
+        available: newAvailable, // For compatibility
+        current: newCurrent, // For compatibility
+        balances: {
+          available: balances.available,
+          current: balances.current,
+          limit: balances.limit,
+          iso_currency_code: balances.iso_currency_code,
+          unofficial_currency_code: balances.unofficial_currency_code
+        },
         lastUpdated: new Date().toISOString()
       };
     }
@@ -756,9 +787,12 @@ app.post("/api/plaid/exchange_token", async (req, res) => {
 
     logDiagnostic.info('EXCHANGE_TOKEN', `Account deduplication complete:`, deduplicationResult);
 
-    // Enhance accounts with institution name for frontend display
+    // Enhance accounts with institution name and balance fields for frontend display
     const accountsWithInstitution = balanceResponse.data.accounts.map(account => ({
       ...account,
+      // Primary balance fields
+      available_balance: account.balances.available || account.balances.current || 0,
+      current_balance: account.balances.current || 0,
       institution_name: institutionName
     }));
 
@@ -831,6 +865,10 @@ app.post("/api/plaid/get_balances", async (req, res) => {
           type: account.type,
           subtype: account.subtype,
           mask: account.mask,
+          // Primary balance fields
+          available_balance: account.balances.available || account.balances.current || 0,
+          current_balance: account.balances.current || 0,
+          // Full balances object for flexibility
           balances: account.balances,
           institution_name: item.institutionName,
           institution_id: item.institutionId,
@@ -926,6 +964,10 @@ app.get("/api/accounts", async (req, res) => {
           type: account.type,
           subtype: account.subtype,
           mask: account.mask,
+          // Primary balance fields
+          available_balance: account.balances.available || account.balances.current || 0,
+          current_balance: account.balances.current || 0,
+          // Full balances object for flexibility
           balances: account.balances, // This balance is FRESH from transaction sync!
           institution_name: item.institutionName,
           institution_id: item.institutionId,
