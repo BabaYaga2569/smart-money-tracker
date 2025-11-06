@@ -507,6 +507,10 @@ const formattedPlaidAccounts = data.accounts.map(account => {
   const liveBalance = availableBalance; // available includes pending
   const pendingAdjustment = availableBalance - currentBalance; // difference = total pending (positive for deposits, negative for expenses)
 
+  // Check if balance changed compared to existing account
+  const existingAccount = plaidAccounts.find(acc => acc.account_id === account.account_id);
+  const balanceChanged = !existingAccount || existingAccount.balance !== liveBalance.toFixed(2);
+
   return {
     account_id: account.account_id ?? '',
     name: account.name ?? 'Unknown Account',
@@ -521,6 +525,8 @@ const formattedPlaidAccounts = data.accounts.map(account => {
     item_id: account.item_id ?? '',
     institution_name: account.institution_name ?? data?.institution_name ?? '',
     institution_id: account.institution_id ?? '',
+    lastBalanceUpdate: balanceChanged ? Date.now() : (existingAccount?.lastBalanceUpdate || Date.now()),
+    previousBalance: existingAccount?.balance
   };
 });
 
@@ -1086,6 +1092,13 @@ const formattedPlaidAccounts = data.accounts.map(account => {
     const minutes = Math.floor((Date.now() - timestamp) / 1000 / 60);
     return minutes > 10;
   };
+  
+  // Helper function to check if balance data is stale (>24 hours without update)
+  const isBalanceStale = (lastBalanceUpdate) => {
+    if (!lastBalanceUpdate) return false;
+    const hoursSinceUpdate = (Date.now() - lastBalanceUpdate) / (1000 * 60 * 60);
+    return hoursSinceUpdate > 24;
+  };
 
   if (loading) {
     return (
@@ -1403,6 +1416,12 @@ const formattedPlaidAccounts = data.accounts.map(account => {
                       ⚠️ Reconnection Required
                     </span>
                   )}
+                  {/* Show "Stale Data" badge if balance hasn't updated in >24 hours */}
+                  {isBalanceStale(account.lastBalanceUpdate) && (
+                    <span className="stale-badge" title="Balance hasn't updated in over 24 hours">
+                      ⚠️ Stale Data
+                    </span>
+                  )}
                 </div>
                 <span className="account-type">{account.type} {account.mask ? `••${account.mask}` : ''}</span>
               </div>
@@ -1437,43 +1456,19 @@ const formattedPlaidAccounts = data.accounts.map(account => {
               </div>
               
               <div className="account-actions">
-                {healthStatus?.items?.find(item => 
-                  item.itemId === account.item_id && item.needsReauth
-                ) ? (
-                  <button 
-                    className="action-btn"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      handleReconnectAccount(account.item_id);
-                    }}
-                    disabled={saving}
-                    title="Reconnect this bank account to refresh data"
-                    style={{
-                      background: 'linear-gradient(135deg, #f59e0b 0%, #d97706 100%)',
-                      color: '#fff',
-                      fontWeight: '600'
-                    }}
-                  >
-                    🔄 Reconnect
-                  </button>
-                ) : plaidStatus.isConnected ? (
-                  <button 
-                    className="action-btn"
-                    disabled
-                    title="Balance is synced automatically via Plaid"
-                  >
-                    🔄 Auto-synced
-                  </button>
-                ) : (
-                  <button 
-                    className="action-btn"
-                    disabled
-                    title="Plaid connection required for auto-sync"
-                    style={{ opacity: 0.6 }}
-                  >
-                    ⏸️ Sync Paused
-                  </button>
-                )}
+                <button 
+                  className={`action-btn reconnect-btn ${isBalanceStale(account.lastBalanceUpdate) ? 'stale' : ''}`}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    handleReconnectAccount(account.item_id);
+                  }}
+                  disabled={saving}
+                  title={isBalanceStale(account.lastBalanceUpdate) 
+                    ? "⚠️ Balance is stale - click to refresh connection" 
+                    : "Refresh bank connection and update balance"}
+                >
+                  🔄 Reconnect
+                </button>
                 <button 
                   className="action-btn delete-btn"
                   onClick={(e) => {
