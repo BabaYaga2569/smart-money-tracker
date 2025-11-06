@@ -436,6 +436,7 @@ async function updateAccountBalances(userId, accounts) {
       // Calculate changes
       const availableChange = newAvailable - oldAvailable;
       const currentChange = newCurrent - oldCurrent;
+      // Pending amount = current - available (when positive, means pending debits reducing available)
       const pendingAmount = newCurrent - newAvailable;
       
       // 🔍 Enhanced logging with both balance types
