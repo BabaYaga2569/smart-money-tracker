@@ -502,8 +502,9 @@ const Accounts = () => {
        // ✅ Improved mapping logic – reflects pending (uses available first) and safely handles null balances
 const formattedPlaidAccounts = data.accounts.map(account => {
   const balances = account.balances || {}; // 👈 prevents null crash
-  const currentBalance = parseFloat(balances.current ?? 0);
-  const availableBalance = parseFloat(balances.available ?? currentBalance);
+  // Prefer top-level fields from backend, fall back to balances object
+  const currentBalance = parseFloat(account.current_balance ?? balances.current ?? 0);
+  const availableBalance = parseFloat(account.available_balance ?? balances.available ?? currentBalance);
   const liveBalance = availableBalance; // available includes pending
   const pendingAdjustment = availableBalance - currentBalance; // difference = total pending (positive for deposits, negative for expenses)
 
@@ -931,8 +932,9 @@ const formattedPlaidAccounts = data.accounts.map(account => {
         // ✅ Improved mapping logic – reflects pending (uses available first) and safely handles null balances
 const formattedPlaidAccounts = data.accounts.map(account => {
   const balances = account.balances || {}; // 👈 prevents null crash
-  const currentBalance = parseFloat(balances.current ?? 0);
-  const availableBalance = parseFloat(balances.available ?? currentBalance);
+  // Prefer top-level fields from backend, fall back to balances object
+  const currentBalance = parseFloat(account.current_balance ?? balances.current ?? 0);
+  const availableBalance = parseFloat(account.available_balance ?? balances.available ?? currentBalance);
   const liveBalance = availableBalance; // available includes pending
   const pendingAdjustment = availableBalance - currentBalance; // difference = total pending (positive for deposits, negative for expenses)
 
