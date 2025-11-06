@@ -8,7 +8,8 @@ class ErrorBoundary extends React.Component {
     this.state = { 
       hasError: false, 
       error: null, 
-      errorInfo: null 
+      errorInfo: null,
+      errorCount: 0
     };
   }
 
@@ -19,12 +20,17 @@ class ErrorBoundary extends React.Component {
   }
 
   componentDidCatch(error, errorInfo) {
-    // Log error details for debugging
-    console.error('ErrorBoundary caught an error:', error, errorInfo);
+    // Log error details with timestamp
+    console.error('[ErrorBoundary] Caught error:', {
+      error: error.toString(),
+      componentStack: errorInfo.componentStack,
+      timestamp: new Date().toISOString()
+    });
     
     this.setState({
       error: error,
-      errorInfo: errorInfo
+      errorInfo: errorInfo,
+      errorCount: this.state.errorCount + 1
     });
 
     // Optional: Send to error tracking service like Sentry
@@ -38,6 +44,19 @@ class ErrorBoundary extends React.Component {
     }
   }
 
+  handleReset = () => {
+    this.setState({
+      hasError: false,
+      error: null,
+      errorInfo: null
+    });
+    
+    // Reload the page if errors persist
+    if (this.state.errorCount > 2) {
+      window.location.reload();
+    }
+  };
+
   handleReload = () => {
     window.location.reload();
   };
@@ -48,48 +67,45 @@ class ErrorBoundary extends React.Component {
 
   render() {
     if (this.state.hasError) {
+      // Custom fallback UI
+      if (this.props.fallback) {
+        return this.props.fallback;
+      }
+
+      // Default error UI
       return (
         <div className="error-boundary">
           <div className="error-boundary-content">
             <div className="error-icon">⚠️</div>
             <h1>Oops! Something went wrong</h1>
             <p className="error-message">
-              We're sorry, but something unexpected happened. 
-              Don't worry, your data is safe!
+              {this.state.errorCount > 2 
+                ? "We're having persistent issues. The page will reload to fix this."
+                : "Don't worry, your data is safe. Try refreshing the page."}
             </p>
             
-            <div className="error-actions">
-              <button 
-                className="error-btn primary" 
-                onClick={this.handleReload}
-              >
-                🔄 Reload Page
-              </button>
-              <button 
-                className="error-btn secondary" 
-                onClick={this.handleGoHome}
-              >
-                🏠 Go to Dashboard
-              </button>
-            </div>
-
-            {/* Show error details in development mode */}
             {import.meta.env.DEV && this.state.error && (
               <details className="error-details">
-                <summary>Technical Details (Dev Mode Only)</summary>
-                <div className="error-stack">
-                  <h3>Error:</h3>
-                  <pre>{this.state.error.toString()}</pre>
-                  
-                  {this.state.errorInfo && (
-                    <>
-                      <h3>Component Stack:</h3>
-                      <pre>{this.state.errorInfo.componentStack}</pre>
-                    </>
-                  )}
-                </div>
+                <summary>Error Details (Dev Only)</summary>
+                <pre>{this.state.error.toString()}</pre>
+                <pre>{this.state.errorInfo?.componentStack}</pre>
               </details>
             )}
+
+            <div className="error-actions">
+              <button 
+                className="btn-primary"
+                onClick={this.handleReset}
+              >
+                {this.state.errorCount > 2 ? 'Reload Page' : 'Try Again'}
+              </button>
+              <button 
+                className="btn-secondary"
+                onClick={this.handleGoHome}
+              >
+                Go to Dashboard
+              </button>
+            </div>
           </div>
         </div>
       );
