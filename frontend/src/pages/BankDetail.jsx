@@ -72,8 +72,8 @@ const BankDetail = () => {
         if (data.success && data.accounts) {
           const matchingAccount = data.accounts.find(acc => acc.account_id === accountId);
           if (matchingAccount) {
-            console.log('✅ [BankDetail] Fresh balance fetched:', matchingAccount.balances.current);
-            setLiveBalance(matchingAccount.balances.current);
+            console.log('✅ [BankDetail] Fresh balance fetched:', matchingAccount.balances.available);
+            setLiveBalance(matchingAccount.balances.available);
           }
         }
       } catch (error) {
@@ -191,14 +191,32 @@ const BankDetail = () => {
     let income = 0;
     let expenses = 0;
     
+    console.log('[BankDetail] Monthly transactions:', monthlyTransactions.length);
+    
+    // Debug logging for first few transactions (to avoid performance impact with large datasets)
+    if (monthlyTransactions.length > 0 && monthlyTransactions.length <= 5) {
+      monthlyTransactions.forEach(t => {
+        console.log('[BankDetail] Transaction sample:', {
+          name: t.name,
+          amount: t.amount,
+          type: typeof t.amount,
+          parsed: parseFloat(t.amount) || 0
+        });
+      });
+    }
+    
     monthlyTransactions.forEach(t => {
       const amount = parseFloat(t.amount) || 0;
+      
+      // Plaid: positive = income, negative = expense
       if (amount > 0) {
         income += amount;
-      } else {
+      } else if (amount < 0) {
         expenses += Math.abs(amount);
       }
     });
+    
+    console.log('[BankDetail] Monthly stats calculated:', { income, expenses, net: income - expenses });
     
     setMonthlyStats({
       income,
@@ -302,8 +320,8 @@ const BankDetail = () => {
             </div>
           </div>
           <div className="bank-balance">
-            <span className="balance-label">Current Balance</span>
-            <div className="balance-amount">{formatCurrency(liveBalance ?? (parseFloat(account.balance) || 0))}</div>
+            <span className="balance-label">Available Balance</span>
+            <div className="balance-amount">{formatCurrency(liveBalance ?? (parseFloat(account.available || account.balance) || 0))}</div>
           </div>
         </div>
       </div>
