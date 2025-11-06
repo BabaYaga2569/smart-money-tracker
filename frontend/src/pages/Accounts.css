@@ -383,11 +383,11 @@
 .stale-badge {
   background: linear-gradient(135deg, #f59e0b 0%, #d97706 100%);
   color: #fff;
-  fontSize: 11px;
+  font-size: 11px;
   padding: 3px 8px;
-  borderRadius: 4px;
-  marginLeft: 8px;
-  fontWeight: 600;
+  border-radius: 4px;
+  margin-left: 8px;
+  font-weight: 600;
   display: inline-block;
   animation: pulse 2s infinite;
 }
