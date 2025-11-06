@@ -29,6 +29,9 @@ const logDiagnostic = {
       stack: error.stack?.split('\n').slice(0, 3).join('\n')
     });
   },
+  warn: (category, message, data = {}) => {
+    console.warn(`[WARN] [${category}] ${message}`, data);
+  },
   request: (endpoint, body = {}) => {
     const sanitizedBody = { ...body };
     if (sanitizedBody.access_token) sanitizedBody.access_token = '[REDACTED]';
@@ -358,7 +361,7 @@ item_id: itemId
  * This function only updates balances for existing accounts, doesn't add/remove accounts
  * @param {string} userId - User's UID
  * @param {Array} accounts - Array of accounts with fresh balance data from Plaid
- * @returns {Promise<Object>} Result with updated count
+ * @returns {Promise<Object>} Result with { updated, total, unmatched } counts
  */
 async function updateAccountBalances(userId, accounts) {
   if (!userId || !Array.isArray(accounts)) {
@@ -377,10 +380,34 @@ async function updateAccountBalances(userId, accounts) {
 
   if (existingPlaidAccounts.length === 0) {
     logDiagnostic.info('UPDATE_BALANCES', 'No existing accounts to update');
-    return { updated: 0, total: 0 };
+    return { updated: 0, total: 0, unmatched: 0 };
   }
 
+  // 🔍 NEW: Log all account IDs from Plaid
+  logDiagnostic.info('UPDATE_BALANCES_PLAID_ACCOUNTS', 'Fresh account data from Plaid:', {
+    count: accounts.length,
+    accounts: accounts.map(a => ({
+      account_id: a.account_id,
+      name: a.name,
+      institution: a.institution_name || 'Unknown',
+      balance_available: a.balances?.available,
+      balance_current: a.balances?.current
+    }))
+  });
+
+  // 🔍 NEW: Log all account IDs in Firebase
+  logDiagnostic.info('UPDATE_BALANCES_FIREBASE_ACCOUNTS', 'Existing accounts in Firebase:', {
+    count: existingPlaidAccounts.length,
+    accounts: existingPlaidAccounts.map(a => ({
+      account_id: a.account_id,
+      name: a.name,
+      institution: a.institution_name || 'Unknown',
+      current_balance: a.balance
+    }))
+  });
+
   let updatedCount = 0;
+  let unmatchedAccounts = [];
 
   // Update balances for matching accounts
   const updatedPlaidAccounts = existingPlaidAccounts.map(existingAcc => {
@@ -389,23 +416,55 @@ async function updateAccountBalances(userId, accounts) {
     
     if (freshAccount) {
       updatedCount++;
-      logDiagnostic.info('UPDATE_BALANCES', `Updating balance for account: ${existingAcc.name} (...${existingAcc.mask})`);
-      
-      // Safely access balances (handle null/undefined)
       const balances = freshAccount.balances || {};
+      const oldBalance = existingAcc.balance;
+      const newBalance = balances.available || balances.current || 0;
+      
+      // 🔍 NEW: Log successful match with balance change
+      logDiagnostic.info('UPDATE_BALANCES_MATCH', `✅ Matched and updated: ${existingAcc.name}`, {
+        account_id: existingAcc.account_id,
+        institution: existingAcc.institution_name,
+        old_balance: oldBalance,
+        new_balance: newBalance,
+        balance_change: newBalance - oldBalance
+      });
       
       // Update balance fields with fresh data
       return {
         ...existingAcc,
-        balance: balances.available || balances.current || 0,
+        balance: newBalance,
         current_balance: balances.current || 0,
         available_balance: balances.available || 0,
         lastUpdated: new Date().toISOString()
       };
     }
     
+    // 🚨 NEW: Track and log unmatched accounts
+    unmatchedAccounts.push({
+      account_id: existingAcc.account_id,
+      name: existingAcc.name,
+      institution: existingAcc.institution_name,
+      balance: existingAcc.balance
+    });
+    
+    logDiagnostic.warn('UPDATE_BALANCES_NO_MATCH', `❌ No fresh data found for account: ${existingAcc.name}`, {
+      account_id: existingAcc.account_id,
+      institution: existingAcc.institution_name,
+      stored_balance: existingAcc.balance,
+      action: 'Keeping old balance (DATA MAY BE STALE!)'
+    });
+    
     // Keep existing account unchanged if no fresh data
     return existingAcc;
+  });
+
+  // 🔍 NEW: Log final summary
+  logDiagnostic.info('UPDATE_BALANCES_SUMMARY', `Balance update complete`, {
+    total_accounts: existingPlaidAccounts.length,
+    updated: updatedCount,
+    unmatched: unmatchedAccounts.length,
+    success_rate: `${Math.round((updatedCount / existingPlaidAccounts.length) * 100)}%`,
+    unmatched_accounts: unmatchedAccounts
   });
 
   // Update settings/personal with fresh balances
@@ -415,11 +474,12 @@ async function updateAccountBalances(userId, accounts) {
     lastBalanceUpdate: admin.firestore.FieldValue.serverTimestamp()
   }, { merge: true });
 
-  logDiagnostic.info('UPDATE_BALANCES', `Updated ${updatedCount} account balances`);
+  logDiagnostic.info('UPDATE_BALANCES', `Persisted to Firebase: ${updatedCount} accounts updated`);
 
   return {
     updated: updatedCount,
-    total: updatedPlaidAccounts.length
+    total: updatedPlaidAccounts.length,
+    unmatched: unmatchedAccounts.length
   };
 }
 
