@@ -30,7 +30,7 @@ const logDiagnostic = {
     });
   },
   warn: (category, message, data = {}) => {
-    console.error(`[ERROR] [${category}] ${message}`, data);
+    console.warn(`[WARN] [${category}] ${message}`, data);
   },
   request: (endpoint, body = {}) => {
     const sanitizedBody = { ...body };
@@ -361,7 +361,7 @@ item_id: itemId
  * This function only updates balances for existing accounts, doesn't add/remove accounts
  * @param {string} userId - User's UID
  * @param {Array} accounts - Array of accounts with fresh balance data from Plaid
- * @returns {Promise<Object>} Result with updated count
+ * @returns {Promise<Object>} Result with { updated, total, unmatched } counts
  */
 async function updateAccountBalances(userId, accounts) {
   if (!userId || !Array.isArray(accounts)) {
