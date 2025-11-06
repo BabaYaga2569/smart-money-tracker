@@ -192,14 +192,21 @@ const BankDetail = () => {
     let expenses = 0;
     
     console.log('[BankDetail] Monthly transactions:', monthlyTransactions.length);
+    
+    // Debug logging for first few transactions (to avoid performance impact with large datasets)
+    if (monthlyTransactions.length > 0 && monthlyTransactions.length <= 5) {
+      monthlyTransactions.forEach(t => {
+        console.log('[BankDetail] Transaction sample:', {
+          name: t.name,
+          amount: t.amount,
+          type: typeof t.amount,
+          parsed: parseFloat(t.amount) || 0
+        });
+      });
+    }
+    
     monthlyTransactions.forEach(t => {
       const amount = parseFloat(t.amount) || 0;
-      console.log('[BankDetail] Transaction:', {
-        name: t.name,
-        amount: t.amount,
-        type: typeof t.amount,
-        parsed: amount
-      });
       
       // Plaid: positive = income, negative = expense
       if (amount > 0) {
