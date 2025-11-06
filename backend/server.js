@@ -49,6 +49,26 @@ const logDiagnostic = {
 };
 
 // ============================================================================
+// ERROR HANDLING HELPERS
+// ============================================================================
+
+/**
+ * Check if an error is a Firebase error based on error code
+ * Firebase errors have numeric codes in the range 1-16
+ */
+const isFirebaseError = (error) => {
+  return error.code && typeof error.code === 'number' && error.code >= 1 && error.code <= 16;
+};
+
+/**
+ * Determine if a Plaid error should be retryable
+ * INVALID_REQUEST errors are typically not retryable
+ */
+const shouldRetryPlaidError = (errorType) => {
+  return errorType !== 'INVALID_REQUEST';
+};
+
+// ============================================================================
 // AUTO-CATEGORIZATION KEYWORDS & FUNCTION
 // ============================================================================
 
@@ -716,7 +736,7 @@ app.post("/api/plaid/create_link_token", async (req, res, next) => {
       const plaidError = error.response.data;
       return next(createError.plaidError(
         plaidError.error_message || 'Plaid API error',
-        plaidError.error_type !== 'INVALID_REQUEST'
+        shouldRetryPlaidError(plaidError.error_type)
       ));
     }
     
@@ -840,7 +860,7 @@ app.post("/api/plaid/exchange_token", async (req, res, next) => {
       const plaidError = error.response.data;
       return next(createError.plaidError(
         plaidError.error_message || 'Plaid API error',
-        plaidError.error_type !== 'INVALID_REQUEST'
+        shouldRetryPlaidError(plaidError.error_type)
       ));
     }
     
@@ -939,7 +959,7 @@ app.post("/api/plaid/get_balances", async (req, res, next) => {
       const plaidError = error.response.data;
       return next(createError.plaidError(
         plaidError.error_message || 'Plaid API error',
-        plaidError.error_type !== 'INVALID_REQUEST'
+        shouldRetryPlaidError(plaidError.error_type)
       ));
     }
     
@@ -1049,7 +1069,7 @@ app.get("/api/accounts", async (req, res, next) => {
       const plaidError = error.response.data;
       return next(createError.plaidError(
         plaidError.error_message || 'Unable to fetch accounts. Please reconnect your bank account.',
-        plaidError.error_type !== 'INVALID_REQUEST'
+        shouldRetryPlaidError(plaidError.error_type)
       ));
     }
     
@@ -1191,7 +1211,7 @@ app.post("/api/plaid/get_transactions", async (req, res, next) => {
         return next(createError.plaidError(errorMessage, true));
       } else if (plaidError.error_message) {
         errorMessage = `Bank error: ${plaidError.error_message}`;
-        return next(createError.plaidError(errorMessage, plaidError.error_type !== 'INVALID_REQUEST'));
+        return next(createError.plaidError(errorMessage, shouldRetryPlaidError(plaidError.error_type)));
       }
     }
     
@@ -1530,7 +1550,7 @@ app.post("/api/plaid/sync_transactions", async (req, res, next) => {
         return next(createError.plaidError(errorMessage, true));
       } else if (plaidError.error_message) {
         errorMessage = `Bank error: ${plaidError.error_message}`;
-        return next(createError.plaidError(errorMessage, plaidError.error_type !== 'INVALID_REQUEST'));
+        return next(createError.plaidError(errorMessage, shouldRetryPlaidError(plaidError.error_type)));
       }
     }
     
@@ -1621,7 +1641,7 @@ app.post("/api/plaid/refresh_transactions", async (req, res, next) => {
       const plaidError = error.response.data;
       return next(createError.plaidError(
         plaidError.error_message || 'Plaid API error',
-        plaidError.error_type !== 'INVALID_REQUEST'
+        shouldRetryPlaidError(plaidError.error_type)
       ));
     }
     
@@ -1863,7 +1883,7 @@ app.post("/api/plaid/webhook", async (req, res, next) => {
     }
     
     // Handle Firebase errors
-    if (error.code && error.code >= 1 && error.code <= 16) {
+    if (isFirebaseError(error)) {
       return next(createError.firebaseError(error.message || 'Firebase error processing webhook'));
     }
     
@@ -2064,7 +2084,7 @@ app.post("/api/plaid/health_check", async (req, res, next) => {
     }
     
     // Handle Firebase errors
-    if (error.code && error.code >= 1 && error.code <= 16) {
+    if (isFirebaseError(error)) {
       return next(createError.firebaseError(error.message || 'Firebase error during health check'));
     }
     
@@ -2124,7 +2144,7 @@ app.post('/api/plaid/reset_cursors', async (req, res, next) => {
     }
     
     // Handle Firebase errors
-    if (error.code && error.code >= 1 && error.code <= 16) {
+    if (isFirebaseError(error)) {
       return next(createError.firebaseError(error.message || 'Firebase error resetting cursors'));
     }
     
@@ -2208,7 +2228,7 @@ app.put("/api/transactions/:transactionId", async (req, res, next) => {
     }
     
     // Handle Firebase errors
-    if (error.code && error.code >= 1 && error.code <= 16) {
+    if (isFirebaseError(error)) {
       return next(createError.firebaseError(error.message || 'Firebase error updating transaction'));
     }
     
@@ -2271,7 +2291,7 @@ app.post("/api/transactions/bulk-categorize", async (req, res, next) => {
     }
     
     // Handle Firebase errors
-    if (error.code && error.code >= 1 && error.code <= 16) {
+    if (isFirebaseError(error)) {
       return next(createError.firebaseError(error.message || 'Firebase error during bulk categorization'));
     }
     
@@ -2318,7 +2338,7 @@ app.get("/api/subscriptions", async (req, res, next) => {
     }
     
     // Handle Firebase errors
-    if (error.code && error.code >= 1 && error.code <= 16) {
+    if (isFirebaseError(error)) {
       return next(createError.firebaseError(error.message || 'Firebase error fetching subscriptions'));
     }
     
@@ -2366,7 +2386,7 @@ app.post("/api/subscriptions", async (req, res, next) => {
     }
     
     // Handle Firebase errors
-    if (error.code && error.code >= 1 && error.code <= 16) {
+    if (isFirebaseError(error)) {
       return next(createError.firebaseError(error.message || 'Firebase error creating subscription'));
     }
     
@@ -2413,7 +2433,7 @@ app.put("/api/subscriptions/:id", async (req, res, next) => {
     }
     
     // Handle Firebase errors
-    if (error.code && error.code >= 1 && error.code <= 16) {
+    if (isFirebaseError(error)) {
       return next(createError.firebaseError(error.message || 'Firebase error updating subscription'));
     }
     
@@ -2455,7 +2475,7 @@ app.delete("/api/subscriptions/:id", async (req, res, next) => {
     }
     
     // Handle Firebase errors
-    if (error.code && error.code >= 1 && error.code <= 16) {
+    if (isFirebaseError(error)) {
       return next(createError.firebaseError(error.message || 'Firebase error deleting subscription'));
     }
     
@@ -2501,7 +2521,7 @@ app.post("/api/subscriptions/:id/cancel", async (req, res, next) => {
     }
     
     // Handle Firebase errors
-    if (error.code && error.code >= 1 && error.code <= 16) {
+    if (isFirebaseError(error)) {
       return next(createError.firebaseError(error.message || 'Firebase error cancelling subscription'));
     }
     
