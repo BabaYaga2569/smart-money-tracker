@@ -548,6 +548,24 @@ const formattedPlaidAccounts = data.accounts.map(account => {
         setTotalProjectedBalance(projectedTotal);
         
         console.log('✅ Loaded fresh balances from backend API:', formattedPlaidAccounts.length, 'accounts');
+        
+        // Persist accounts with lastBalanceUpdate to Firebase
+        try {
+          const settingsDocRef = doc(db, 'users', currentUser.uid, 'settings', 'personal');
+          const currentDoc = await getDoc(settingsDocRef);
+          const currentData = currentDoc.exists() ? currentDoc.data() : {};
+          
+          await updateDoc(settingsDocRef, {
+            ...currentData,
+            plaidAccounts: formattedPlaidAccounts,
+            lastUpdated: new Date().toISOString()
+          });
+          
+          console.log('✅ Persisted accounts with lastBalanceUpdate to Firebase');
+        } catch (fbError) {
+          console.warn('Failed to persist accounts to Firebase:', fbError);
+          // Not critical - continue with cached data
+        }
       } else {
         // Fallback to Firebase if API fails or returns no accounts
         console.warn('⚠️ Backend returned no accounts, falling back to Firebase');
