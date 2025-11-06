@@ -168,7 +168,7 @@ const runBillPaymentMatcherTests = () => {
     assert(result.matches.name === false, 'Expected no name match');
   });
 
-  test('matchTransactionToBill: skips pending transactions', () => {
+  test('matchTransactionToBill: matches pending transactions', () => {
     const transaction = {
       id: 'tx1',
       name: 'Netflix',
@@ -185,7 +185,32 @@ const runBillPaymentMatcherTests = () => {
     };
     
     const result = matchTransactionToBill(transaction, bill);
-    assert(result === null, 'Expected no match for pending transaction');
+    assert(result !== null, 'Expected match for pending transaction');
+    assert(result.confidence === 1, `Expected confidence 1, got ${result.confidence}`);
+  });
+
+  test('matchTransactionToBill: matches pending ACH payment (real-world example)', () => {
+    const transaction = {
+      id: 'tx1',
+      name: 'ACH HOLD ALLY ALLY PAYMT ON 11/05',
+      amount: -571.32,
+      date: '2024-11-04',
+      pending: true
+    };
+    
+    const bill = {
+      id: 'bill1',
+      name: 'Charger Payment',
+      amount: 571.32,
+      dueDate: '2024-11-01'
+    };
+    
+    const result = matchTransactionToBill(transaction, bill);
+    // Should match based on amount and date (2 of 3 criteria)
+    assert(result !== null, 'Expected match for pending ACH transaction');
+    assert(result.confidence >= 0.66, `Expected confidence >= 0.66, got ${result.confidence}`);
+    assert(result.matches.amount === true, 'Expected amount match');
+    assert(result.matches.date === true, 'Expected date match (within 7 days)');
   });
 
   test('matchTransactionToBill: skips positive amounts (deposits)', () => {

@@ -82,8 +82,10 @@ export function isDateMatch(txDate, billDueDate, daysTolerance = 7) {
  * @returns {Object|null} - Match result with confidence or null if no match
  */
 export function matchTransactionToBill(transaction, bill) {
-  // Skip pending transactions
-  if (transaction.pending) return null;
+  // Include pending transactions in matching
+  // Pending transactions represent valid payments that have already left the user's account
+  // Users expect bills to be marked as paid immediately when the payment shows up
+  // This matches the behavior of projected balance calculations which already account for pending transactions
   
   // Only match negative transactions (payments, not deposits)
   if (parseFloat(transaction.amount) >= 0) return null;
