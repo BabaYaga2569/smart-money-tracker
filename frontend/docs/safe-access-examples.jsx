@@ -89,15 +89,15 @@ function DashboardStats({ stats }) {
     <div className="dashboard-stats">
       <div className="stat">
         <label>Accounts</label>
-        <value>{totalAccounts}</value>
+        <span className="value">{totalAccounts}</span>
       </div>
       <div className="stat">
         <label>Total Balance</label>
-        <value>{safeCurrency(totalBalance)}</value>
+        <span className="value">{safeCurrency(totalBalance)}</span>
       </div>
       <div className="stat">
         <label>Monthly Spending</label>
-        <value>{safeCurrency(monthlySpending)}</value>
+        <span className="value">{safeCurrency(monthlySpending)}</span>
       </div>
     </div>
   );

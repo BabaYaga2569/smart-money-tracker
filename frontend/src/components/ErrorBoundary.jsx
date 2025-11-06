@@ -45,15 +45,17 @@ class ErrorBoundary extends React.Component {
   }
 
   handleReset = () => {
-    this.setState({
-      hasError: false,
-      error: null,
-      errorInfo: null
-    });
-    
-    // Reload the page if errors persist
+    // Reload the page if errors persist (3+ consecutive errors)
     if (this.state.errorCount > 2) {
       window.location.reload();
+    } else {
+      // Reset error state and try again
+      this.setState({
+        hasError: false,
+        error: null,
+        errorInfo: null
+        // Keep errorCount to track consecutive failures
+      });
     }
   };
 
@@ -64,6 +66,13 @@ class ErrorBoundary extends React.Component {
   handleGoHome = () => {
     window.location.href = '/';
   };
+
+  componentDidUpdate(prevProps, prevState) {
+    // Reset error count if we successfully recovered from an error
+    if (prevState.hasError && !this.state.hasError) {
+      this.setState({ errorCount: 0 });
+    }
+  }
 
   render() {
     if (this.state.hasError) {
