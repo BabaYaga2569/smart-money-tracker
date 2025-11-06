@@ -2,6 +2,7 @@ import express from "express";
 import cors from "cors";
 import { Configuration, PlaidApi, PlaidEnvironments } from "plaid";
 import admin from "firebase-admin";
+import { errorHandler } from './middleware/errorHandler.js';
 
 const app = express();
 app.use(cors({
@@ -2315,10 +2316,9 @@ app.get("/healthz", (req, res) => res.send("ok"));
 // ============================================================================
 // ERROR HANDLER (Must be last!)
 // ============================================================================
-import { errorHandler } from './middleware/errorHandler.js';
 
 // 404 handler for unknown routes
-app.use((req, res, next) => {
+app.use((req, res) => {
   res.status(404).json({
     error: true,
     code: 'NOT_FOUND',
