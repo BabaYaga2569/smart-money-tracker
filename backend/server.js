@@ -377,7 +377,7 @@ async function updateAccountBalances(userId, accounts) {
 
   if (existingPlaidAccounts.length === 0) {
     logDiagnostic.info('UPDATE_BALANCES', 'No existing accounts to update');
-    return { updated: 0, total: 0 };
+    return { updated: 0, total: 0, unmatched: 0 };
   }
 
   // 🔍 NEW: Log all account IDs from Plaid
