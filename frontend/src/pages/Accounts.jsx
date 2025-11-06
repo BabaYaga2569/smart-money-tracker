@@ -49,6 +49,9 @@ const Accounts = () => {
   
   // Health check state
   const [healthStatus, setHealthStatus] = useState(null);
+  
+  // Reconnect state
+  const [reconnectingItemId, setReconnectingItemId] = useState(null);
 
  // eslint-disable-next-line react-hooks/exhaustive-deps
  useEffect(() => {
@@ -470,6 +473,13 @@ const Accounts = () => {
   const loadAccountsAndTransactions = async () => {
     // Real-time listener handles transactions, just load accounts
     await loadAccounts();
+    
+    // Check connection health after accounts are loaded
+    if (currentUser) {
+      checkConnectionHealth().catch(err => {
+        console.error('Health check failed:', err);
+      });
+    }
   };
 
   const loadAccounts = async () => {
@@ -970,6 +980,58 @@ const formattedPlaidAccounts = data.accounts.map(account => {
     }
   };
 
+  const handleReconnectAccount = (itemId) => {
+    console.log('🔄 [Accounts] Starting reconnect for item:', itemId);
+    showNotification('Opening reconnection flow...', 'info');
+    setReconnectingItemId(itemId);
+  };
+
+  const handleReconnectSuccess = async (publicToken, metadata) => {
+    try {
+      console.log('✅ [Accounts] Reconnection successful for:', metadata.institution?.name);
+      showNotification('Reconnection successful! Refreshing balances...', 'success');
+      
+      const apiUrl = import.meta.env.VITE_API_URL || 'https://smart-money-tracker-09ks.onrender.com';
+      
+      // Exchange the public token (Plaid requires this even for update mode)
+      const response = await fetch(`${apiUrl}/api/plaid/exchange_token`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ 
+          public_token: publicToken,
+          userId: currentUser.uid 
+        }),
+      });
+
+      const data = await response.json();
+
+      if (data?.success) {
+        // Refresh balances after reconnection
+        await loadAccounts();
+        
+        // Refresh health check to remove the warning badge
+        await checkConnectionHealth();
+        
+        showNotification('Bank connection updated successfully!', 'success');
+      } else {
+        showNotification('Reconnection completed but balance update failed', 'error');
+      }
+      
+      setReconnectingItemId(null);
+    } catch (error) {
+      console.error('❌ [Accounts] Error completing reconnection:', error);
+      showNotification('Reconnection failed. Please try again.', 'error');
+      setReconnectingItemId(null);
+    }
+  };
+
+  const handleReconnectExit = () => {
+    console.log('🔄 [Accounts] Reconnection cancelled');
+    setReconnectingItemId(null);
+  };
+
   const getAccountTypeIcon = (type) => {
   switch ((type || 'checking').toLowerCase()) {
     case 'checking': return '🦁';
@@ -1375,7 +1437,26 @@ const formattedPlaidAccounts = data.accounts.map(account => {
               </div>
               
               <div className="account-actions">
-                {plaidStatus.isConnected ? (
+                {healthStatus?.items?.find(item => 
+                  item.itemId === account.item_id && item.needsReauth
+                ) ? (
+                  <button 
+                    className="action-btn"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      handleReconnectAccount(account.item_id);
+                    }}
+                    disabled={saving}
+                    title="Reconnect this bank account to refresh data"
+                    style={{
+                      background: 'linear-gradient(135deg, #f59e0b 0%, #d97706 100%)',
+                      color: '#fff',
+                      fontWeight: '600'
+                    }}
+                  >
+                    🔄 Reconnect
+                  </button>
+                ) : plaidStatus.isConnected ? (
                   <button 
                     className="action-btn"
                     disabled
@@ -1574,6 +1655,19 @@ const formattedPlaidAccounts = data.accounts.map(account => {
           checkPlaidConnection();
         }}
       />
+
+      {/* PlaidLink for reconnection flow - renders nothing but auto-opens dialog */}
+      {reconnectingItemId && (
+        <PlaidLink
+          onSuccess={handleReconnectSuccess}
+          onExit={handleReconnectExit}
+          userId={currentUser.uid}
+          mode="update"
+          itemId={reconnectingItemId}
+          buttonText="Reconnect"
+          autoOpen={true}
+        />
+      )}
     </div>
   );
 };

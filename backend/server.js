@@ -593,19 +593,65 @@ app.post("/api/plaid/create_link_token", async (req, res) => {
   logDiagnostic.request(endpoint, req.body);
   
   try {
-    const { userId } = req.body;
-    logDiagnostic.info('CREATE_LINK_TOKEN', `Creating link token for user: ${userId || 'default'}`);
+    const { userId, mode, itemId } = req.body;
+    logDiagnostic.info('CREATE_LINK_TOKEN', `Creating link token for user: ${userId || 'default'}, mode: ${mode || 'default'}`);
     
-    const request = {
-      user: {
-        client_user_id: userId || "user-id",
-      },
-      client_name: "Smart Money Tracker",
-      products: ["auth", "transactions"],
-      country_codes: ["US"],
-      language: "en",
-      webhook: "https://smart-money-tracker-09ks.onrender.com/api/plaid/webhook",
-    };
+    let request;
+    
+    // If mode is 'update', retrieve access token for the item and create update request
+    if (mode === 'update' && itemId) {
+      logDiagnostic.info('CREATE_LINK_TOKEN', `Update mode: fetching access token for item: ${itemId}`);
+      
+      const itemDoc = await db
+        .collection('users')
+        .doc(userId)
+        .collection('plaid_items')
+        .doc(itemId)
+        .get();
+
+      if (!itemDoc.exists) {
+        logDiagnostic.error('CREATE_LINK_TOKEN', `Item not found: ${itemId}`);
+        return res.status(404).json({ 
+          error: 'Bank connection not found',
+          error_type: 'not_found'
+        });
+      }
+
+      const accessToken = itemDoc.data().accessToken;
+      if (!accessToken) {
+        logDiagnostic.error('CREATE_LINK_TOKEN', `No access token for item: ${itemId}`);
+        return res.status(400).json({ 
+          error: 'Access token not found for this connection',
+          error_type: 'missing_token'
+        });
+      }
+
+      // For update mode, use access_token instead of products
+      request = {
+        user: {
+          client_user_id: userId || "user-id",
+        },
+        client_name: "Smart Money Tracker",
+        access_token: accessToken,
+        country_codes: ["US"],
+        language: "en",
+        webhook: "https://smart-money-tracker-09ks.onrender.com/api/plaid/webhook",
+      };
+      
+      logDiagnostic.info('CREATE_LINK_TOKEN', `Update mode configured for item: ${itemId}`);
+    } else {
+      // Default mode for new connections
+      request = {
+        user: {
+          client_user_id: userId || "user-id",
+        },
+        client_name: "Smart Money Tracker",
+        products: ["auth", "transactions"],
+        country_codes: ["US"],
+        language: "en",
+        webhook: "https://smart-money-tracker-09ks.onrender.com/api/plaid/webhook",
+      };
+    }
 
     const createTokenResponse = await plaidClient.linkTokenCreate(request);
     

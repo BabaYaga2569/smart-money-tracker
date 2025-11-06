@@ -2,7 +2,7 @@ import React, { useCallback, useEffect, useState } from 'react';
 import { usePlaidLink } from 'react-plaid-link';
 import PlaidConnectionManager from '../utils/PlaidConnectionManager';
 
-const PlaidLink = ({ onSuccess, onExit, userId, buttonText = "Connect Bank" }) => {
+const PlaidLink = ({ onSuccess, onExit, userId, buttonText = "Connect Bank", mode = "default", itemId = null, autoOpen = false }) => {
   const [linkToken, setLinkToken] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -20,7 +20,7 @@ const PlaidLink = ({ onSuccess, onExit, userId, buttonText = "Connect Bank" }) =
         setError(null);
         setErrorType(null);
         
-        console.log('[PlaidLink] Creating link token for user:', userId || 'steve-colburn');
+        console.log('[PlaidLink] Creating link token for user:', userId || 'steve-colburn', 'mode:', mode);
         
         // Add timeout to prevent infinite loading
         const controller = new AbortController();
@@ -35,12 +35,18 @@ const PlaidLink = ({ onSuccess, onExit, userId, buttonText = "Connect Bank" }) =
         
         console.log('[PlaidLink] Backend API URL:', apiUrl);
         
+        const requestBody = { userId: userId || 'steve-colburn' };
+        if (mode === 'update' && itemId) {
+          requestBody.mode = 'update';
+          requestBody.itemId = itemId;
+        }
+        
         const response = await fetch(`${apiUrl}/api/plaid/create_link_token`, {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
           },
-          body: JSON.stringify({ userId: userId || 'steve-colburn' }),
+          body: JSON.stringify(requestBody),
           signal: controller.signal
         });
 
@@ -112,7 +118,7 @@ const PlaidLink = ({ onSuccess, onExit, userId, buttonText = "Connect Bank" }) =
     };
 
     createLinkToken();
-  }, [userId, retryCount]);
+  }, [userId, retryCount, mode, itemId]);
 
   const onSuccessCallback = useCallback(
     (public_token, metadata) => {
@@ -130,6 +136,14 @@ const PlaidLink = ({ onSuccess, onExit, userId, buttonText = "Connect Bank" }) =
   };
 
   const { open, ready } = usePlaidLink(config);
+
+  // Auto-open effect for reconnection flow
+  useEffect(() => {
+    if (autoOpen && ready && linkToken) {
+      console.log('[PlaidLink] Auto-opening Plaid Link in', mode, 'mode');
+      open();
+    }
+  }, [autoOpen, ready, linkToken, open, mode]);
 
   const handleRetry = () => {
     console.log('[PlaidLink] Retrying link token creation (attempt:', retryCount + 1, ')');
@@ -182,6 +196,11 @@ const PlaidLink = ({ onSuccess, onExit, userId, buttonText = "Connect Bank" }) =
   };
 
   if (loading) {
+    // Don't render anything if auto-opening (reconnect flow)
+    if (autoOpen) {
+      return null;
+    }
+    
     return (
       <div style={{
         display: 'flex',
@@ -281,6 +300,11 @@ const PlaidLink = ({ onSuccess, onExit, userId, buttonText = "Connect Bank" }) =
     );
   }
 
+  // Don't render a button if auto-opening (reconnect flow)
+  if (autoOpen) {
+    return null;
+  }
+  
   return (
     <button
       className="btn-primary"
