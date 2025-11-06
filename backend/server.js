@@ -29,6 +29,9 @@ const logDiagnostic = {
       stack: error.stack?.split('\n').slice(0, 3).join('\n')
     });
   },
+  warn: (category, message, data = {}) => {
+    console.error(`[ERROR] [${category}] ${message}`, data);
+  },
   request: (endpoint, body = {}) => {
     const sanitizedBody = { ...body };
     if (sanitizedBody.access_token) sanitizedBody.access_token = '[REDACTED]';
@@ -444,7 +447,7 @@ async function updateAccountBalances(userId, accounts) {
       balance: existingAcc.balance
     });
     
-    console.error(`[ERROR] [UPDATE_BALANCES_NO_MATCH] ❌ No fresh data found for account: ${existingAcc.name}`, {
+    logDiagnostic.warn('UPDATE_BALANCES_NO_MATCH', `❌ No fresh data found for account: ${existingAcc.name}`, {
       account_id: existingAcc.account_id,
       institution: existingAcc.institution_name,
       stored_balance: existingAcc.balance,
