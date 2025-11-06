@@ -27,6 +27,16 @@ const BankDetail = () => {
     net: 0
   });
 
+  // Helper function to extract available balance from account object
+  const getPreferredBalance = (account) => {
+    if (!account) return null;
+    // Prefer available_balance, fall back to balances.available, then current
+    return account.available_balance || 
+           account.balances?.available || 
+           account.current_balance ||
+           account.balances?.current;
+  };
+
   // Load account details from Firebase settings
   useEffect(() => {
     const loadAccountDetails = async () => {
@@ -72,8 +82,13 @@ const BankDetail = () => {
         if (data.success && data.accounts) {
           const matchingAccount = data.accounts.find(acc => acc.account_id === accountId);
           if (matchingAccount) {
-            console.log('✅ [BankDetail] Fresh balance fetched:', matchingAccount.balances.available);
-            setLiveBalance(matchingAccount.balances.available);
+            const freshAvailable = getPreferredBalance(matchingAccount);
+            const currentBalance = matchingAccount.current_balance || matchingAccount.balances?.current;
+            console.log('✅ [BankDetail] Fresh balance fetched:', freshAvailable);
+            console.log('✅ [BankDetail] Available:', freshAvailable, 'Current:', currentBalance);
+            setLiveBalance(freshAvailable);
+          } else {
+            console.log('❌ [BankDetail] Fresh balance fetched: null');
           }
         }
       } catch (error) {

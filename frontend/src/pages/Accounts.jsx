@@ -18,6 +18,18 @@ const Accounts = () => {
   useSmartBalanceSync(currentUser?.uid);
   
   const [loading, setLoading] = useState(true);
+
+  // Helper function to extract balance data from account object
+  // Prefers top-level fields from backend, falls back to balances object
+  const extractBalances = (account) => {
+    const balances = account.balances || {};
+    const currentBalance = parseFloat(account.current_balance ?? balances.current ?? 0);
+    const availableBalance = parseFloat(account.available_balance ?? balances.available ?? currentBalance);
+    const liveBalance = availableBalance; // available includes pending
+    const pendingAdjustment = availableBalance - currentBalance;
+    
+    return { currentBalance, availableBalance, liveBalance, pendingAdjustment };
+  };
   const [accounts, setAccounts] = useState({});
   const [totalBalance, setTotalBalance] = useState(0);
   const [totalProjectedBalance, setTotalProjectedBalance] = useState(0);
@@ -501,11 +513,7 @@ const Accounts = () => {
         // Format backend accounts for frontend display
        // ✅ Improved mapping logic – reflects pending (uses available first) and safely handles null balances
 const formattedPlaidAccounts = data.accounts.map(account => {
-  const balances = account.balances || {}; // 👈 prevents null crash
-  const currentBalance = parseFloat(balances.current ?? 0);
-  const availableBalance = parseFloat(balances.available ?? currentBalance);
-  const liveBalance = availableBalance; // available includes pending
-  const pendingAdjustment = availableBalance - currentBalance; // difference = total pending (positive for deposits, negative for expenses)
+  const { currentBalance, availableBalance, liveBalance, pendingAdjustment } = extractBalances(account);
 
   // Check if balance changed compared to existing account
   const existingAccount = plaidAccounts.find(acc => acc.account_id === account.account_id);
@@ -930,11 +938,7 @@ const formattedPlaidAccounts = data.accounts.map(account => {
         // IMPORTANT: Do NOT store access_token - it's now stored securely server-side
         // ✅ Improved mapping logic – reflects pending (uses available first) and safely handles null balances
 const formattedPlaidAccounts = data.accounts.map(account => {
-  const balances = account.balances || {}; // 👈 prevents null crash
-  const currentBalance = parseFloat(balances.current ?? 0);
-  const availableBalance = parseFloat(balances.available ?? currentBalance);
-  const liveBalance = availableBalance; // available includes pending
-  const pendingAdjustment = availableBalance - currentBalance; // difference = total pending (positive for deposits, negative for expenses)
+  const { currentBalance, availableBalance, liveBalance, pendingAdjustment } = extractBalances(account);
 
   return {
     account_id: account.account_id ?? '',
