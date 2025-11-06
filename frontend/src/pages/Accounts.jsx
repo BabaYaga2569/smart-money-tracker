@@ -1656,19 +1656,17 @@ const formattedPlaidAccounts = data.accounts.map(account => {
         }}
       />
 
-      {/* Hidden PlaidLink for reconnection flow */}
+      {/* PlaidLink for reconnection flow - renders nothing but auto-opens dialog */}
       {reconnectingItemId && (
-        <div style={{ display: 'none' }}>
-          <PlaidLink
-            onSuccess={handleReconnectSuccess}
-            onExit={handleReconnectExit}
-            userId={currentUser.uid}
-            mode="update"
-            itemId={reconnectingItemId}
-            buttonText="Reconnect"
-            autoOpen={true}
-          />
-        </div>
+        <PlaidLink
+          onSuccess={handleReconnectSuccess}
+          onExit={handleReconnectExit}
+          userId={currentUser.uid}
+          mode="update"
+          itemId={reconnectingItemId}
+          buttonText="Reconnect"
+          autoOpen={true}
+        />
       )}
     </div>
   );

@@ -196,6 +196,11 @@ const PlaidLink = ({ onSuccess, onExit, userId, buttonText = "Connect Bank", mod
   };
 
   if (loading) {
+    // Don't render anything if auto-opening (reconnect flow)
+    if (autoOpen) {
+      return null;
+    }
+    
     return (
       <div style={{
         display: 'flex',
@@ -295,6 +300,11 @@ const PlaidLink = ({ onSuccess, onExit, userId, buttonText = "Connect Bank", mod
     );
   }
 
+  // Don't render a button if auto-opening (reconnect flow)
+  if (autoOpen) {
+    return null;
+  }
+  
   return (
     <button
       className="btn-primary"

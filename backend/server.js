@@ -596,18 +596,9 @@ app.post("/api/plaid/create_link_token", async (req, res) => {
     const { userId, mode, itemId } = req.body;
     logDiagnostic.info('CREATE_LINK_TOKEN', `Creating link token for user: ${userId || 'default'}, mode: ${mode || 'default'}`);
     
-    const request = {
-      user: {
-        client_user_id: userId || "user-id",
-      },
-      client_name: "Smart Money Tracker",
-      products: ["auth", "transactions"],
-      country_codes: ["US"],
-      language: "en",
-      webhook: "https://smart-money-tracker-09ks.onrender.com/api/plaid/webhook",
-    };
-
-    // If mode is 'update', retrieve access token for the item and add it to request
+    let request;
+    
+    // If mode is 'update', retrieve access token for the item and create update request
     if (mode === 'update' && itemId) {
       logDiagnostic.info('CREATE_LINK_TOKEN', `Update mode: fetching access token for item: ${itemId}`);
       
@@ -636,10 +627,30 @@ app.post("/api/plaid/create_link_token", async (req, res) => {
       }
 
       // For update mode, use access_token instead of products
-      delete request.products;
-      request.access_token = accessToken;
+      request = {
+        user: {
+          client_user_id: userId || "user-id",
+        },
+        client_name: "Smart Money Tracker",
+        access_token: accessToken,
+        country_codes: ["US"],
+        language: "en",
+        webhook: "https://smart-money-tracker-09ks.onrender.com/api/plaid/webhook",
+      };
       
       logDiagnostic.info('CREATE_LINK_TOKEN', `Update mode configured for item: ${itemId}`);
+    } else {
+      // Default mode for new connections
+      request = {
+        user: {
+          client_user_id: userId || "user-id",
+        },
+        client_name: "Smart Money Tracker",
+        products: ["auth", "transactions"],
+        country_codes: ["US"],
+        language: "en",
+        webhook: "https://smart-money-tracker-09ks.onrender.com/api/plaid/webhook",
+      };
     }
 
     const createTokenResponse = await plaidClient.linkTokenCreate(request);
