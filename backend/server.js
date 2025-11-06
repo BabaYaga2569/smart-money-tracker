@@ -2312,5 +2312,23 @@ app.post("/api/subscriptions/:id/cancel", async (req, res) => {
 
 app.get("/healthz", (req, res) => res.send("ok"));
 
+// ============================================================================
+// ERROR HANDLER (Must be last!)
+// ============================================================================
+import { errorHandler } from './middleware/errorHandler.js';
+
+// 404 handler for unknown routes
+app.use((req, res, next) => {
+  res.status(404).json({
+    error: true,
+    code: 'NOT_FOUND',
+    message: `Route ${req.method} ${req.path} not found`,
+    timestamp: Date.now()
+  });
+});
+
+// Error handler must be added AFTER all routes
+app.use(errorHandler);
+
 const PORT = process.env.PORT || 5000;
 app.listen(PORT, () => console.log(`Server running on ${PORT}`));
