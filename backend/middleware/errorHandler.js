@@ -35,6 +35,11 @@ const errorHandler = (err, req, res, next) => {
     retryable: err.retryable || false
   };
 
+  // Include validation errors if present
+  if (err.errors) {
+    errorResponse.errors = err.errors;
+  }
+
   // Only include stack trace in development
   if (process.env.NODE_ENV === 'development') {
     errorResponse.stack = err.stack;
