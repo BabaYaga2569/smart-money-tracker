@@ -1114,8 +1114,11 @@ useEffect(() => {
   // Category filtering handlers
   const handleCategoryClick = (categoryName) => {
     setSelectedCategory(categoryName);
-    // Scroll to transactions list
-    window.scrollTo({ top: 0, behavior: 'smooth' });
+    // Scroll to transactions list section
+    const transactionsSection = document.querySelector('.transactions-list');
+    if (transactionsSection) {
+      transactionsSection.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }
   };
 
   const handleClearFilter = () => {
@@ -2176,7 +2179,6 @@ useEffect(() => {
                 key={category} 
                 className="category-item clickable"
                 onClick={() => handleCategoryClick(category)}
-                style={{ cursor: 'pointer' }}
               >
                 <span className="category-name">{category}</span>
                 <span className="category-amount">{formatCurrency(amount)}</span>

@@ -330,10 +330,12 @@
   overflow: hidden; /* Prevent text overflow */
 }
 
-.transaction-item > * {
-  max-width: 100%;
+.transaction-item .transaction-merchant,
+.transaction-item .transaction-category-inline,
+.transaction-item .transaction-account-inline {
   overflow: hidden;
   text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .transaction-item:hover {
