@@ -34,6 +34,9 @@ const Transactions = () => {
   const [healthStatus, setHealthStatus] = useState(null);
   const [showHealthBanner, setShowHealthBanner] = useState(false);
   
+  // Category filtering state
+  const [selectedCategory, setSelectedCategory] = useState(null);
+  
   // Analytics state
   const [analytics, setAnalytics] = useState({
     totalIncome: 0,
@@ -146,7 +149,7 @@ const Transactions = () => {
 
   useEffect(() => {
     applyFilters(accounts);  // ← Pass accounts explicitly to avoid stale closure!
-  }, [transactions, filters, accounts]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [transactions, filters, accounts, selectedCategory]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     calculateAnalytics();
@@ -1108,6 +1111,17 @@ useEffect(() => {
     }
   };
 
+  // Category filtering handlers
+  const handleCategoryClick = (categoryName) => {
+    setSelectedCategory(categoryName);
+    // Scroll to transactions list
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  };
+
+  const handleClearFilter = () => {
+    setSelectedCategory(null);
+  };
+
   const applyFilters = (currentAccounts = accounts) => {
     console.log('🔍 [applyFilters] Running with:', {
       transactionsCount: transactions.length,
@@ -1116,6 +1130,11 @@ useEffect(() => {
     });
     
     let filtered = [...transactions];
+    
+    // Apply category filter from top categories section
+    if (selectedCategory) {
+      filtered = filtered.filter(t => t.category === selectedCategory);
+    }
     
     if (filters.search) {
       const searchLower = filters.search.toLowerCase();
@@ -1989,6 +2008,18 @@ useEffect(() => {
           <p>Showing {filteredTransactions.length} of {transactions.length} transactions</p>
         </div>
         
+        {/* Filter banner */}
+        {selectedCategory && (
+          <div className="filter-banner">
+            <span>
+              Showing {filteredTransactions.length} {selectedCategory} transaction{filteredTransactions.length !== 1 ? 's' : ''}
+            </span>
+            <button onClick={handleClearFilter} className="clear-filter-btn">
+              Clear Filter ✕
+            </button>
+          </div>
+        )}
+        
         {filteredTransactions.length === 0 ? (
           <div className="no-transactions">
             {transactions.length === 0 ? (
@@ -2141,7 +2172,12 @@ useEffect(() => {
           <h3>Top Spending Categories This Month</h3>
           <div className="categories-list">
             {analytics.topCategories.map(([category, amount]) => (
-              <div key={category} className="category-item">
+              <div 
+                key={category} 
+                className="category-item clickable"
+                onClick={() => handleCategoryClick(category)}
+                style={{ cursor: 'pointer' }}
+              >
                 <span className="category-name">{category}</span>
                 <span className="category-amount">{formatCurrency(amount)}</span>
               </div>

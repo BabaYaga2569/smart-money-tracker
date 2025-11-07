@@ -314,18 +314,26 @@
   min-height: 800px; /* Increased to show 8-10 transactions without scrolling */
 }
 
+/* Fix transaction card overflow */
 .transaction-item {
   display: flex;
   flex-direction: column;
   gap: 8px;
   min-height: 60px;
   max-height: 80px;
-  padding: 12px 16px;
+  padding: 16px;
   background: #1a1a1a;
   border: 1px solid #333;
   border-radius: 8px;
-  margin-bottom: 8px;
+  margin-bottom: 12px;
   transition: all 0.3s ease;
+  overflow: hidden; /* Prevent text overflow */
+}
+
+.transaction-item > * {
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .transaction-item:hover {
@@ -553,13 +561,26 @@
   gap: 10px;
 }
 
+/* Make categories clickable */
 .category-item {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  padding: 10px;
+  padding: 12px 16px;
   background: #333;
   border-radius: 6px;
+  transition: all 0.2s;
+}
+
+.category-item.clickable {
+  cursor: pointer;
+  user-select: none;
+}
+
+.category-item.clickable:hover {
+  background: rgba(16, 185, 129, 0.1);
+  transform: translateX(4px);
+  border: 1px solid rgba(16, 185, 129, 0.3);
 }
 
 .category-name {
@@ -883,4 +904,51 @@
   padding: 8px 12px;
   border-radius: 6px;
   margin-bottom: 12px;
+}
+
+/* Filter banner */
+.filter-banner {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  background: #10b981;
+  color: white;
+  padding: 12px 20px;
+  border-radius: 8px;
+  margin-bottom: 16px;
+  font-weight: 600;
+  animation: slideDown 0.3s ease;
+}
+
+@keyframes slideDown {
+  from {
+    opacity: 0;
+    transform: translateY(-10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.clear-filter-btn {
+  background: rgba(255, 255, 255, 0.2);
+  border: 1px solid rgba(255, 255, 255, 0.3);
+  color: white;
+  padding: 6px 12px;
+  border-radius: 6px;
+  cursor: pointer;
+  font-weight: 600;
+  transition: all 0.2s;
+}
+
+.clear-filter-btn:hover {
+  background: rgba(255, 255, 255, 0.3);
+  transform: scale(1.05);
+}
+
+/* Add pointer cursor hint */
+.clickable {
+  cursor: pointer;
+  user-select: none;
 }
