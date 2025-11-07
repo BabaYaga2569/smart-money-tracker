@@ -947,7 +947,7 @@ app.post("/api/plaid/get_balances", async (req, res, next) => {
       throw createError.notFound('No Plaid connection found. Please connect your bank account first.');
     }
 
-    logger.info('PLAID_ACCOUNTS', 'Fetching account balances for bank connections', { userId, itemCount: allItems.length });
+    logger.info('PLAID_ACCOUNTS', 'Fetching account balances for bank connections', { userId, itemCount: items.length });
     logDiagnostic.info('GET_BALANCES', `Fetching account balances for ${items.length} bank connections`);
 
     // Fetch balances from all items
@@ -1176,7 +1176,7 @@ app.post("/api/plaid/get_transactions", async (req, res, next) => {
     const endDate = end_date || new Date().toISOString().split('T')[0];
     const startDate = start_date || new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
 
-    logger.info('PLAID_SYNC', 'Fetching transactions from bank connections using transactio', {});
+    logger.info('PLAID_SYNC', 'Fetching transactions from bank connections', { userId, itemCount: items.length });
     logDiagnostic.info('GET_TRANSACTIONS', `Fetching transactions from ${items.length} bank connections using transactionsSync API`);
 
     // Fetch transactions from all items
@@ -1232,7 +1232,7 @@ app.post("/api/plaid/get_transactions", async (req, res, next) => {
 
     const txCount = allTransactions.length;
     const totalTx = allTransactions.length;
-    logger.info('PLAID_SYNC', 'Successfully fetched transactions from banks via transaction', {});
+    logger.info('PLAID_SYNC', 'Successfully fetched transactions from banks', { userId, transactionCount: txCount, bankCount: items.length });
     logDiagnostic.info('GET_TRANSACTIONS', `Successfully fetched ${txCount} transactions from ${items.length} banks via transactionsSync`);
     logDiagnostic.response(endpoint, 200, { 
       success: true, 
@@ -1328,7 +1328,7 @@ app.post("/api/plaid/sync_transactions", async (req, res, next) => {
     const endDate = end_date || new Date().toISOString().split('T')[0];
     const startDate = start_date || new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
 
-    logger.info('PLAID_SYNC', 'Syncing transactions from bank connections using transaction', {});
+    logger.info('PLAID_SYNC', 'Syncing transactions from bank connections', { userId, itemCount: items.length });
     logDiagnostic.info('SYNC_TRANSACTIONS', `Syncing transactions from ${items.length} bank connections using transactionsSync API`);
 
     // Fetch all transaction changes from all items
@@ -1422,7 +1422,7 @@ app.post("/api/plaid/sync_transactions", async (req, res, next) => {
     const txCount = plaidTransactions.length;
     const totalTx = plaidTransactions.length;
     
-    logger.info('PLAID_SYNC', 'Fetched total: new, modified, removed transactions from Plai', {});
+    logger.info('PLAID_SYNC', 'Fetched transactions from Plaid', { userId, added: allAdded.length, modified: allModified.length, removed: allRemoved.length });
     logDiagnostic.info('SYNC_TRANSACTIONS', `Fetched total: ${allAdded.length} new, ${allModified.length} modified, ${allRemoved.length} removed transactions from Plaid`);
 
     // Load existing manual pending charges for deduplication
@@ -1552,7 +1552,7 @@ app.post("/api/plaid/sync_transactions", async (req, res, next) => {
     // Commit the batch
     await batch.commit();
 
-    logger.info('PLAID_SYNC', 'Synced new, updated, pending, deduplicated, removed transact', {});
+    logger.info('PLAID_SYNC', 'Synced transactions', { userId, added: addedCount, updated: updatedCount, pending: pendingCount, deduplicated: deduplicatedCount, removed: allRemoved.length });
     logDiagnostic.info('SYNC_TRANSACTIONS', `Synced ${addedCount} new, ${updatedCount} updated, ${pendingCount} pending, ${deduplicatedCount} deduplicated, ${allRemoved.length} removed transactions`);
     logDiagnostic.response(endpoint, 200, { 
       success: true, 
