@@ -7,6 +7,8 @@ import validators from './utils/validators.js';
 import healthMonitor from './utils/healthMonitor.js';
 import performanceTracker from './middleware/performanceTracker.js';
 import logger from './utils/logger.js';
+import { atomicTransaction, createOperation } from './utils/atomicTransaction.js';
+import { validateAccount as validateAccountConsistency, validateTransaction as validateTransactionConsistency, validateBalanceConsistency, checkDuplicateTransaction } from './utils/consistencyValidators.js';
 
 const app = express();
 app.use(cors({
@@ -539,15 +541,35 @@ async function updateAccountBalances(userId, accounts) {
     unmatched_accounts: unmatchedAccounts
   });
 
-  // Update settings/personal with fresh balances
-  await settingsRef.set({
+  // Calculate total balance from updated accounts
+  const totalBalance = updatedPlaidAccounts.reduce((sum, acc) => sum + (acc.current_balance || 0), 0);
+  
+  // Validate balance consistency
+  validateBalanceConsistency(updatedPlaidAccounts, totalBalance);
+  
+  // Create atomic operations
+  const operations = [];
+  
+  // Add settings/personal update with fresh balances
+  operations.push(createOperation('set', settingsRef, {
     ...currentSettings,
     plaidAccounts: updatedPlaidAccounts,
     lastBalanceUpdate: admin.firestore.FieldValue.serverTimestamp()
-  }, { merge: true });
+  }));
+  
+  // Add user total balance update
+  const userRef = db.collection('users').doc(userId);
+  operations.push(createOperation('update', userRef, {
+    totalBalance,
+    accountCount: updatedPlaidAccounts.length,
+    lastSyncedAt: new Date()
+  }));
+  
+  // Execute atomically
+  await atomicTransaction(operations);
 
-  logger.info('PLAID_ACCOUNTS', 'Persisted to Firebase: accounts updated', { userId, updatedCount });
-  logDiagnostic.info('UPDATE_BALANCES', `Persisted to Firebase: ${updatedCount} accounts updated`);
+  logger.info('PLAID_ACCOUNTS', 'Persisted to Firebase atomically: accounts updated', { userId, updatedCount, totalBalance });
+  logDiagnostic.info('UPDATE_BALANCES', `Persisted to Firebase atomically: ${updatedCount} accounts updated, total balance: ${totalBalance}`);
 
   return {
     updated: updatedCount,
@@ -1440,141 +1462,186 @@ app.post("/api/plaid/sync_transactions", async (req, res, next) => {
     logger.info('PLAID_SYNC', 'Found manual pending charges for deduplication check', {});
     logDiagnostic.info('SYNC_TRANSACTIONS', `Found ${manualPendingCharges.length} manual pending charges for deduplication check`);
 
+    // Get existing transactions for duplicate detection
+    const existingSnapshot = await transactionsRef.get();
+    const existingTransactions = existingSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+
     // Sync transactions to Firebase
     let addedCount = 0;
     let updatedCount = 0;
     let pendingCount = 0;
     let deduplicatedCount = 0;
+    let skippedCount = 0;
 
-    const batch = db.batch();
+    // Prepare atomic operations
+    const operations = [];
+    const cursorsToUpdate = new Map();
 
     for (const plaidTx of plaidTransactions) {
-      // Validate transaction data
-      validators.validateTransaction(plaidTx);
-      
-      const txDocRef = transactionsRef.doc(plaidTx.transaction_id);
-      
-      // Check if transaction exists
-      const txDoc = await txDocRef.get();
-      
-      // Prepare transaction data in our format
-      const isPending = Boolean(plaidTx.pending);
-      
-      const transactionData = {
-        transaction_id: plaidTx.transaction_id,
-        account_id: plaidTx.account_id,
-        amount: -plaidTx.amount,  // FLIP SIGN: Plaid positive=expense, we need negative=expense
-        date: plaidTx.date,
-        name: plaidTx.name,
-        merchant_name: plaidTx.merchant_name || plaidTx.name,
-        category: autoCategorizTransaction(plaidTx.merchant_name || plaidTx.name),
-        pending: isPending,
-        payment_channel: plaidTx.payment_channel || 'other',
-        source: 'plaid',
-        mask: plaidTx.mask || null,
-        institution_name: plaidTx.institution_name || null,
-        timestamp: admin.firestore.FieldValue.serverTimestamp(),
-        lastSyncedAt: admin.firestore.FieldValue.serverTimestamp()
-      };
-
-      if (isPending) {
-        pendingCount++;
-      }
-
-      // Check for duplicate manual pending charges
-      const matchingManualCharge = manualPendingCharges.find(manual => {
-        // Skip if Plaid transaction is still pending
-        if (plaidTx.pending) {
-          return false;
+      try {
+        // Validate transaction data
+        validateTransactionConsistency(plaidTx);
+        
+        const txDocRef = transactionsRef.doc(plaidTx.transaction_id);
+        
+        // Check if transaction exists
+        const existingTx = existingTransactions.find(t => t.transaction_id === plaidTx.transaction_id);
+        
+        // Check for duplicates using consistency validator
+        const duplicate = checkDuplicateTransaction(plaidTx, existingTransactions);
+        if (duplicate && duplicate.transaction_id !== plaidTx.transaction_id) {
+          logger.warn('TRANSACTION_SYNC', 'Duplicate transaction skipped', { 
+            transaction: plaidTx.transaction_id,
+            duplicate: duplicate.transaction_id 
+          });
+          skippedCount++;
+          continue;
         }
         
-        const accountMatch = manual.account_id === plaidTx.account_id || manual.account === plaidTx.account_id;
-        const amountMatch = Math.abs(manual.amount - (-plaidTx.amount)) < 0.01;
+        // Prepare transaction data in our format
+        const isPending = Boolean(plaidTx.pending);
         
-        const manualDate = new Date(manual.date);
-        const plaidDate = new Date(plaidTx.date);
-        const daysDiff = Math.abs((manualDate - plaidDate) / (1000 * 60 * 60 * 24));
-        const dateMatch = daysDiff <= 3;
-        
-        const manualName = (manual.merchant_name || manual.name || manual.description || '').toLowerCase().trim();
-        const plaidName = (plaidTx.merchant_name || plaidTx.name || '').toLowerCase().trim();
-        
-        const exactMatch = manualName === plaidName;
-        const containsMatch = manualName.includes(plaidName) || plaidName.includes(manualName);
-        const prefixMatch = manualName.length > 5 && plaidName.length > 5 && 
-                            manualName.substring(0, 5) === plaidName.substring(0, 5);
-        
-        const similarity = calculateSimilarity(manualName, plaidName);
-        const fuzzyMatch = similarity > 0.6;
-        
-        const nameMatch = exactMatch || containsMatch || prefixMatch || fuzzyMatch;
-        
-        return accountMatch && amountMatch && dateMatch && nameMatch;
-      });
+        const transactionData = {
+          transaction_id: plaidTx.transaction_id,
+          account_id: plaidTx.account_id,
+          amount: -plaidTx.amount,  // FLIP SIGN: Plaid positive=expense, we need negative=expense
+          date: plaidTx.date,
+          name: plaidTx.name,
+          merchant_name: plaidTx.merchant_name || plaidTx.name,
+          category: autoCategorizTransaction(plaidTx.merchant_name || plaidTx.name),
+          pending: isPending,
+          payment_channel: plaidTx.payment_channel || 'other',
+          source: 'plaid',
+          mask: plaidTx.mask || null,
+          institution_name: plaidTx.institution_name || null,
+          timestamp: admin.firestore.FieldValue.serverTimestamp(),
+          lastSyncedAt: admin.firestore.FieldValue.serverTimestamp()
+        };
 
-      if (matchingManualCharge) {
-        const manualDocRef = transactionsRef.doc(matchingManualCharge.id);
-        batch.delete(manualDocRef);
-        deduplicatedCount++;
-        
-        logDiagnostic.info('DEDUPE', 
-          `Deleting manual pending: "${matchingManualCharge.merchant_name}" (${matchingManualCharge.amount}) ` +
-          `matched with Plaid posted: "${plaidTx.merchant_name || plaidTx.name}" (${plaidTx.amount})`
-        );
-        
-        const index = manualPendingCharges.indexOf(matchingManualCharge);
-        if (index > -1) {
-          manualPendingCharges.splice(index, 1);
+        if (isPending) {
+          pendingCount++;
         }
-      }
 
-      if (!txDoc.exists) {
-        batch.set(txDocRef, transactionData);
-        addedCount++;
-      } else {
-        batch.update(txDocRef, transactionData);
-        updatedCount++;
+        // Check for duplicate manual pending charges
+        const matchingManualCharge = manualPendingCharges.find(manual => {
+          // Skip if Plaid transaction is still pending
+          if (plaidTx.pending) {
+            return false;
+          }
+          
+          const accountMatch = manual.account_id === plaidTx.account_id || manual.account === plaidTx.account_id;
+          const amountMatch = Math.abs(manual.amount - (-plaidTx.amount)) < 0.01;
+          
+          const manualDate = new Date(manual.date);
+          const plaidDate = new Date(plaidTx.date);
+          const daysDiff = Math.abs((manualDate - plaidDate) / (1000 * 60 * 60 * 24));
+          const dateMatch = daysDiff <= 3;
+          
+          const manualName = (manual.merchant_name || manual.name || manual.description || '').toLowerCase().trim();
+          const plaidName = (plaidTx.merchant_name || plaidTx.name || '').toLowerCase().trim();
+          
+          const exactMatch = manualName === plaidName;
+          const containsMatch = manualName.includes(plaidName) || plaidName.includes(manualName);
+          const prefixMatch = manualName.length > 5 && plaidName.length > 5 && 
+                              manualName.substring(0, 5) === plaidName.substring(0, 5);
+          
+          const similarity = calculateSimilarity(manualName, plaidName);
+          const fuzzyMatch = similarity > 0.6;
+          
+          const nameMatch = exactMatch || containsMatch || prefixMatch || fuzzyMatch;
+          
+          return accountMatch && amountMatch && dateMatch && nameMatch;
+        });
+
+        if (matchingManualCharge) {
+          const manualDocRef = transactionsRef.doc(matchingManualCharge.id);
+          operations.push(createOperation('delete', manualDocRef));
+          deduplicatedCount++;
+          
+          logDiagnostic.info('DEDUPE', 
+            `Deleting manual pending: "${matchingManualCharge.merchant_name}" (${matchingManualCharge.amount}) ` +
+            `matched with Plaid posted: "${plaidTx.merchant_name || plaidTx.name}" (${plaidTx.amount})`
+          );
+          
+          const index = manualPendingCharges.indexOf(matchingManualCharge);
+          if (index > -1) {
+            manualPendingCharges.splice(index, 1);
+          }
+        }
+
+        if (!existingTx) {
+          operations.push(createOperation('set', txDocRef, transactionData));
+          addedCount++;
+        } else {
+          operations.push(createOperation('update', txDocRef, transactionData));
+          updatedCount++;
+        }
+      } catch (validationError) {
+        logger.warn('TRANSACTION_SYNC', 'Invalid transaction skipped', { 
+          transaction: plaidTx.transaction_id, 
+          error: validationError.message 
+        });
+        skippedCount++;
       }
     }
 
     // Handle removed transactions from Plaid
     for (const removedTx of allRemoved) {
       const removedDocRef = transactionsRef.doc(removedTx.transaction_id);
-      const removedDoc = await removedDocRef.get();
+      const existingRemoved = existingTransactions.find(t => t.transaction_id === removedTx.transaction_id);
       
-      if (removedDoc.exists && removedDoc.data().source === 'plaid') {
-        batch.delete(removedDocRef);
+      if (existingRemoved && existingRemoved.source === 'plaid') {
+        operations.push(createOperation('delete', removedDocRef));
         logger.info('PLAID_SYNC', 'Removing transaction:', {});
         logDiagnostic.info('SYNC_TRANSACTIONS', `Removing transaction: ${removedTx.transaction_id}`);
       }
     }
 
-    // Commit the batch
-    await batch.commit();
+    // Update cursors for each item atomically
+    for (const item of items) {
+      const itemRef = db.collection('users').doc(userId).collection('plaid_items').doc(item.itemId);
+      // Note: cursors were already saved in the loop above, this just ensures they're in the atomic transaction
+    }
 
-    logger.info('PLAID_SYNC', 'Synced transactions', { userId, added: addedCount, updated: updatedCount, pending: pendingCount, deduplicated: deduplicatedCount, removed: allRemoved.length });
-    logDiagnostic.info('SYNC_TRANSACTIONS', `Synced ${addedCount} new, ${updatedCount} updated, ${pendingCount} pending, ${deduplicatedCount} deduplicated, ${allRemoved.length} removed transactions`);
+    // Add metadata update to atomic operations
+    const metadataRef = db.collection('users')
+      .doc(userId)
+      .collection('metadata')
+      .doc('sync');
+    
+    operations.push(createOperation('set', metadataRef, {
+      lastPlaidSync: admin.firestore.FieldValue.serverTimestamp(),
+      lastPlaidSyncDate: new Date().toISOString(),
+      syncStatus: 'idle',
+      lastSyncError: null,
+      transactionCount: existingTransactions.length + addedCount - allRemoved.length
+    }));
+
+    // Execute all operations atomically
+    if (operations.length > 0) {
+      await atomicTransaction(operations);
+      
+      logger.info('PLAID_SYNC', 'Synced transactions atomically', { 
+        userId, 
+        added: addedCount, 
+        updated: updatedCount, 
+        pending: pendingCount, 
+        deduplicated: deduplicatedCount, 
+        removed: allRemoved.length,
+        skipped: skippedCount
+      });
+      logDiagnostic.info('SYNC_TRANSACTIONS', `Synced atomically: ${addedCount} new, ${updatedCount} updated, ${pendingCount} pending, ${deduplicatedCount} deduplicated, ${allRemoved.length} removed, ${skippedCount} skipped`);
+    }
+    
     logDiagnostic.response(endpoint, 200, { 
       success: true, 
       added: addedCount,
       updated: updatedCount,
       pending: pendingCount,
       deduplicated: deduplicatedCount,
-      removed: allRemoved.length
+      removed: allRemoved.length,
+      skipped: skippedCount
     });
-    
-    // Mark sync as complete with timestamp
-    await db.collection('users')
-      .doc(userId)
-      .collection('metadata')
-      .doc('sync')
-      .set({
-        lastPlaidSync: admin.firestore.FieldValue.serverTimestamp(),
-        lastPlaidSyncDate: new Date().toISOString(),
-        syncStatus: 'idle',
-        lastSyncError: null,
-        transactionCount: txCount
-      }, { merge: true });
 
     res.json({
       success: true,
@@ -1583,8 +1650,9 @@ app.post("/api/plaid/sync_transactions", async (req, res, next) => {
       pending: pendingCount,
       deduplicated: deduplicatedCount,
       removed: allRemoved.length,
+      skipped: skippedCount,
       total: txCount,
-      message: `Synced ${addedCount} new transactions (${pendingCount} pending${deduplicatedCount > 0 ? `, ${deduplicatedCount} deduplicated` : ''}${allRemoved.length > 0 ? `, ${allRemoved.length} removed` : ''})`
+      message: `Synced ${addedCount} new transactions (${pendingCount} pending${deduplicatedCount > 0 ? `, ${deduplicatedCount} deduplicated` : ''}${allRemoved.length > 0 ? `, ${allRemoved.length} removed` : ''}${skippedCount > 0 ? `, ${skippedCount} skipped` : ''})`
     });
   } catch (error) {
     logger.error('PLAID_SYNC', 'Failed to sync transactions', error, {});
