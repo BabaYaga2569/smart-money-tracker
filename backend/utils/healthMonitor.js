@@ -59,8 +59,8 @@ class HealthMonitor {
     const startTime = Date.now();
     try {
       const db = admin.firestore();
-      // Simple read to test connection
-      await db.collection('_health').doc('test').get();
+      // Simple read to test connection using system health check collection
+      await db.collection('_system_health_check').doc('test').get();
       
       return {
         status: 'healthy',

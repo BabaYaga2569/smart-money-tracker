@@ -8,10 +8,8 @@ import healthMonitor from '../utils/healthMonitor.js';
 const performanceTracker = (req, res, next) => {
   const startTime = Date.now();
 
-  // Override res.json to capture when response is sent
-  const originalJson = res.json.bind(res);
-  
-  res.json = (body) => {
+  // Use 'finish' event to capture all responses regardless of content type
+  res.on('finish', () => {
     const responseTime = Date.now() - startTime;
     
     // Track the request
@@ -26,9 +24,7 @@ const performanceTracker = (req, res, next) => {
         timestamp: new Date().toISOString()
       });
     }
-    
-    return originalJson(body);
-  };
+  });
 
   next();
 };
