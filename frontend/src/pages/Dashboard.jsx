@@ -491,13 +491,7 @@ setDashboardData({
       </div>
 
       {/* Health Status Widget */}
-      <div style={{ 
-        display: 'flex', 
-        justifyContent: 'center', 
-        marginBottom: '30px',
-        maxWidth: '1400px',
-        margin: '0 auto 30px auto'
-      }}>
+      <div className="health-status-container">
         <HealthStatus />
       </div>
 

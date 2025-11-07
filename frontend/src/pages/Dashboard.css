@@ -43,6 +43,15 @@
   box-shadow: 0 0 10px rgba(0, 255, 136, 0.5);
 }
 
+/* Health Status Container */
+.health-status-container {
+  display: flex;
+  justify-content: center;
+  margin-bottom: 30px;
+  max-width: 1400px;
+  margin: 0 auto 30px auto;
+}
+
 /* Dashboard Tiles Grid */
 .dashboard-tiles-grid {
   display: grid;

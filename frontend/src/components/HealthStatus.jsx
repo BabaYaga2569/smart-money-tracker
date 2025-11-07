@@ -1,6 +1,10 @@
 import { useState, useEffect } from 'react';
 import './HealthStatus.css';
 
+// Configuration constants
+const REFRESH_INTERVAL_MS = 60000; // 60 seconds
+const DEFAULT_API_URL = 'https://smart-money-tracker-09ks.onrender.com';
+
 const HealthStatus = () => {
   const [healthData, setHealthData] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -10,7 +14,7 @@ const HealthStatus = () => {
   const fetchHealthStatus = async () => {
     try {
       setLoading(true);
-      const apiUrl = import.meta.env.VITE_API_URL || 'https://smart-money-tracker-09ks.onrender.com';
+      const apiUrl = import.meta.env.VITE_API_URL || DEFAULT_API_URL;
       const response = await fetch(`${apiUrl}/api/health`);
       
       if (!response.ok) {
@@ -32,10 +36,10 @@ const HealthStatus = () => {
     // Fetch immediately on mount
     fetchHealthStatus();
 
-    // Set up auto-refresh every 60 seconds
+    // Set up auto-refresh
     const intervalId = setInterval(() => {
       fetchHealthStatus();
-    }, 60000);
+    }, REFRESH_INTERVAL_MS);
 
     // Cleanup interval on unmount
     return () => clearInterval(intervalId);
