@@ -948,9 +948,3 @@
   background: rgba(255, 255, 255, 0.3);
   transform: scale(1.05);
 }
-
-/* Add pointer cursor hint */
-.clickable {
-  cursor: pointer;
-  user-select: none;
-}

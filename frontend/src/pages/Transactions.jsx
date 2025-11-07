@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { doc, getDoc, collection, addDoc, deleteDoc, query, orderBy, limit, getDocs, writeBatch, onSnapshot } from 'firebase/firestore';
 import { db } from '../firebase';
 import { formatDateForDisplay, formatDateForInput } from '../utils/DateUtils';
@@ -36,6 +36,9 @@ const Transactions = () => {
   
   // Category filtering state
   const [selectedCategory, setSelectedCategory] = useState(null);
+  
+  // Ref for scrolling to transactions section
+  const transactionsListRef = useRef(null);
   
   // Analytics state
   const [analytics, setAnalytics] = useState({
@@ -1114,10 +1117,9 @@ useEffect(() => {
   // Category filtering handlers
   const handleCategoryClick = (categoryName) => {
     setSelectedCategory(categoryName);
-    // Scroll to transactions list section
-    const transactionsSection = document.querySelector('.transactions-list');
-    if (transactionsSection) {
-      transactionsSection.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    // Scroll to transactions list section using ref
+    if (transactionsListRef.current) {
+      transactionsListRef.current.scrollIntoView({ behavior: 'smooth', block: 'start' });
     }
   };
 
@@ -2005,7 +2007,7 @@ useEffect(() => {
       </div>
 
       {/* Transactions List */}
-      <div className="transactions-list">
+      <div className="transactions-list" ref={transactionsListRef}>
         <div className="transactions-header">
           <h3>Recent Transactions</h3>
           <p>Showing {filteredTransactions.length} of {transactions.length} transactions</p>
