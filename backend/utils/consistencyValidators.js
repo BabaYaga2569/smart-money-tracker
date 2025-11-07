@@ -16,7 +16,7 @@ export function validateAccount(account) {
   const errors = [];
   
   if (!account.account_id) errors.push('Missing account_id');
-  if (!account.institution_name) errors.push('Missing institution');
+  // Institution name is optional for some accounts
   if (typeof account.balances?.current !== 'number') errors.push('Invalid balance');
   
   if (errors.length > 0) {

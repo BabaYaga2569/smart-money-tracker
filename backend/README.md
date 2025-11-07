@@ -121,6 +121,82 @@ Get account list for a user.
 }
 ```
 
+## Atomic Operations & Data Consistency
+
+### Overview
+
+The backend implements atomic operations to ensure data consistency across all database writes. This prevents partial updates and data corruption.
+
+### Key Features
+
+- **All-or-Nothing Updates**: All database operations succeed together or fail together
+- **Automatic Retry**: Transient errors are automatically retried (up to 3 attempts)
+- **Transaction Versioning**: Each transaction has a unique ID for tracking
+- **Data Validation**: All data is validated before writes
+- **Duplicate Prevention**: Transactions are checked for duplicates
+- **Balance Consistency**: Account balances are validated before updates
+
+### Atomic Transaction Wrapper
+
+```javascript
+import { atomicTransaction, createOperation } from './utils/atomicTransaction.js';
+
+// Create operations
+const operations = [
+  createOperation('set', accountRef, accountData),
+  createOperation('update', userRef, { totalBalance: 1000 }),
+  createOperation('delete', oldTransactionRef)
+];
+
+// Execute atomically
+await atomicTransaction(operations);
+```
+
+### Data Validators
+
+```javascript
+import { 
+  validateAccount, 
+  validateTransaction, 
+  validateBalanceConsistency,
+  checkDuplicateTransaction 
+} from './utils/consistencyValidators.js';
+
+// Validate account before save
+validateAccount(account);
+
+// Validate transaction before save
+validateTransaction(transaction);
+
+// Check balance consistency
+validateBalanceConsistency(accounts, expectedTotal);
+
+// Check for duplicates
+const duplicate = checkDuplicateTransaction(newTx, existingTxs);
+```
+
+### Atomic Endpoints
+
+The following endpoints use atomic operations:
+
+1. **GET /api/accounts** - Atomically updates account balances and user totals
+2. **POST /api/plaid/sync_transactions** - Atomically syncs all transactions
+
+### Error Handling
+
+If any operation in an atomic transaction fails:
+- All operations are rolled back automatically
+- No partial updates are saved
+- Error is logged with transaction ID
+- Client receives error response
+
+### Retry Logic
+
+For transient errors (e.g., network timeouts):
+- Automatic retry up to 3 times
+- Exponential backoff (1 second initial delay)
+- Only retries `UNAVAILABLE` error codes
+
 ## Helper Functions
 
 ### `storePlaidCredentials(userId, accessToken, itemId)`
@@ -265,6 +341,17 @@ If migrating from localStorage-based token storage:
 7. ✅ Validate userId matches authenticated user
 
 ## Changelog
+
+### v3.0.0 - Atomic Operations & Data Consistency
+- Implemented atomic transaction wrapper for all-or-nothing updates
+- Added data consistency validators for accounts and transactions
+- Integrated automatic retry logic for transient errors
+- Added transaction versioning for tracking
+- Implemented duplicate transaction detection
+- Added balance consistency validation
+- Updated account sync endpoint to use atomic operations
+- Updated transaction sync endpoint to use atomic operations
+- Ensures no partial updates or data corruption
 
 ### v2.0.0 - Secure Token Storage
 - Moved all Plaid tokens to server-side Firestore storage
