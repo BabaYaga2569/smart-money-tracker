@@ -8,6 +8,7 @@ import './Dashboard.css';
 import { useAuth } from '../contexts/AuthContext';
 import DashboardTileCreditCard from "../components/DashboardTileCreditCard";
 import { useTransactionsQuery } from '../hooks/useFirebaseQuery';
+import HealthStatus from '../components/HealthStatus';
 
 
 const Dashboard = () => {
@@ -487,6 +488,11 @@ setDashboardData({
             )}
           </div>
         </div>
+      </div>
+
+      {/* Health Status Widget */}
+      <div className="health-status-container">
+        <HealthStatus />
       </div>
 
       <div className="dashboard-tiles-grid">

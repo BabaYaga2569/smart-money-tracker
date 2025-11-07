@@ -1,0 +1,349 @@
+/* Health Status Widget */
+.health-status-widget {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  background: #1a1a1a;
+  border: 2px solid #333;
+  border-radius: 12px;
+  padding: 16px 20px;
+  cursor: pointer;
+  transition: all 0.3s ease;
+  position: relative;
+  overflow: hidden;
+  min-width: 280px;
+}
+
+.health-status-widget:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 8px 16px rgba(0, 255, 136, 0.2);
+  border-color: #00ff88;
+}
+
+.health-status-widget.healthy {
+  border-color: #00ff88;
+}
+
+.health-status-widget.degraded {
+  border-color: #f59e0b;
+}
+
+.health-status-widget.unhealthy,
+.health-status-widget.error {
+  border-color: #ef4444;
+}
+
+.health-status-widget.loading {
+  border-color: #6b7280;
+  cursor: wait;
+}
+
+.health-status-icon {
+  font-size: 2rem;
+  line-height: 1;
+}
+
+.health-status-text {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.health-status-title {
+  font-size: 0.9rem;
+  font-weight: 600;
+  color: #ccc;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.health-status-subtitle {
+  font-size: 0.85rem;
+  color: #999;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.service-indicator {
+  font-weight: 500;
+}
+
+.health-status-badge {
+  padding: 4px 12px;
+  border-radius: 6px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  color: #000;
+  letter-spacing: 0.5px;
+}
+
+/* Modal Overlay */
+.health-status-modal-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.8);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+  padding: 20px;
+  backdrop-filter: blur(4px);
+}
+
+/* Modal */
+.health-status-modal {
+  background: #1a1a1a;
+  border: 2px solid #333;
+  border-radius: 16px;
+  width: 100%;
+  max-width: 600px;
+  max-height: 90vh;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  box-shadow: 0 20px 40px rgba(0, 0, 0, 0.5);
+}
+
+/* Modal Header */
+.health-status-modal-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 20px 24px;
+  border-bottom: 2px solid #333;
+}
+
+.health-status-modal-header h2 {
+  color: #00ff88;
+  margin: 0;
+  font-size: 1.5rem;
+  font-weight: 700;
+}
+
+.health-status-modal-close {
+  background: none;
+  border: none;
+  color: #999;
+  font-size: 2rem;
+  cursor: pointer;
+  width: 36px;
+  height: 36px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 8px;
+  transition: all 0.2s ease;
+  line-height: 1;
+}
+
+.health-status-modal-close:hover {
+  background: #333;
+  color: #fff;
+}
+
+/* Modal Body */
+.health-status-modal-body {
+  flex: 1;
+  overflow-y: auto;
+  padding: 24px;
+}
+
+.health-section {
+  margin-bottom: 24px;
+}
+
+.health-section:last-child {
+  margin-bottom: 0;
+}
+
+.health-section h3 {
+  color: #00ff88;
+  margin: 0 0 16px 0;
+  font-size: 1.1rem;
+  font-weight: 600;
+  padding-bottom: 8px;
+  border-bottom: 1px solid #333;
+}
+
+.health-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 10px 0;
+  border-bottom: 1px solid #2a2a2a;
+}
+
+.health-item:last-child {
+  border-bottom: none;
+}
+
+.health-label {
+  color: #999;
+  font-size: 0.9rem;
+  font-weight: 500;
+}
+
+.health-value {
+  color: #fff;
+  font-size: 0.9rem;
+  font-weight: 600;
+  text-align: right;
+}
+
+/* Service Cards */
+.service-card {
+  background: #0f0f0f;
+  border: 1px solid #333;
+  border-radius: 10px;
+  padding: 16px;
+  margin-bottom: 12px;
+}
+
+.service-card:last-child {
+  margin-bottom: 0;
+}
+
+.service-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 12px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid #2a2a2a;
+}
+
+.service-name {
+  font-size: 1rem;
+  font-weight: 600;
+  color: #fff;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.service-status {
+  font-size: 0.85rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.service-details {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+}
+
+.service-details .health-item {
+  padding: 8px 0;
+}
+
+/* Modal Footer */
+.health-status-modal-footer {
+  display: flex;
+  gap: 12px;
+  padding: 20px 24px;
+  border-top: 2px solid #333;
+  justify-content: flex-end;
+}
+
+.refresh-button,
+.close-button {
+  padding: 10px 20px;
+  border: none;
+  border-radius: 8px;
+  font-size: 0.9rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.refresh-button {
+  background: #00ff88;
+  color: #000;
+}
+
+.refresh-button:hover:not(:disabled) {
+  background: #00cc6a;
+  transform: translateY(-1px);
+}
+
+.refresh-button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.close-button {
+  background: #333;
+  color: #fff;
+}
+
+.close-button:hover {
+  background: #444;
+}
+
+/* Responsive Design */
+@media (max-width: 768px) {
+  .health-status-widget {
+    min-width: auto;
+    width: 100%;
+  }
+
+  .health-status-modal {
+    max-width: 100%;
+    border-radius: 12px;
+  }
+
+  .health-status-modal-header {
+    padding: 16px 20px;
+  }
+
+  .health-status-modal-body {
+    padding: 20px;
+  }
+
+  .health-status-modal-footer {
+    padding: 16px 20px;
+    flex-direction: column;
+  }
+
+  .refresh-button,
+  .close-button {
+    width: 100%;
+  }
+
+  .health-item {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 4px;
+  }
+
+  .health-value {
+    text-align: left;
+  }
+}
+
+/* Scrollbar Styling for Modal */
+.health-status-modal-body::-webkit-scrollbar {
+  width: 8px;
+}
+
+.health-status-modal-body::-webkit-scrollbar-track {
+  background: #0f0f0f;
+  border-radius: 4px;
+}
+
+.health-status-modal-body::-webkit-scrollbar-thumb {
+  background: #333;
+  border-radius: 4px;
+}
+
+.health-status-modal-body::-webkit-scrollbar-thumb:hover {
+  background: #444;
+}
