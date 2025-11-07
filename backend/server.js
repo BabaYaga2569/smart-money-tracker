@@ -299,7 +299,7 @@ async function getAllPlaidItems(userId) {
     throw new Error('userId is required to retrieve Plaid items');
   }
 
-  logger.info('FIREBASE', 'Retrieving all items for user:', {});
+  logger.info('FIREBASE', 'Retrieving all items for user', { userId });
   logDiagnostic.info('GET_ALL_ITEMS', `Retrieving all items for user: ${userId}`);
 
   const itemsSnapshot = await db
@@ -310,7 +310,7 @@ async function getAllPlaidItems(userId) {
     .get();
   
   const items = itemsSnapshot.docs.map(doc => doc.data());
-  logger.info('FIREBASE', 'Retrieved active items', {});
+  logger.info('FIREBASE', 'Retrieved active items', { userId, itemCount: items.length });
   logDiagnostic.info('GET_ALL_ITEMS', `Retrieved ${items.length} active items`);
   
   return items;
@@ -330,7 +330,7 @@ async function deduplicateAndSaveAccounts(userId, newAccounts, institutionName, 
     throw new Error('Invalid parameters for deduplicateAndSaveAccounts');
   }
 
-  logger.info('FIREBASE', 'Deduplicating accounts for user:', {});
+  logger.info('FIREBASE', 'Deduplicating accounts for user', { userId, newAccountCount: newAccounts.length });
   logDiagnostic.info('DEDUPLICATE_ACCOUNTS', `Deduplicating ${newAccounts.length} accounts for user: ${userId}`);
 
   const settingsRef = db.collection('users').doc(userId)
@@ -376,7 +376,7 @@ async function deduplicateAndSaveAccounts(userId, newAccounts, institutionName, 
     
     if (isDuplicate) {
       deduplicatedCount++;
-      logger.info('FIREBASE', 'Removing duplicate account: ...', {});
+      logger.info('FIREBASE', 'Removing duplicate account', { userId, institution: existingAcc.institution_name, mask: existingAcc.mask });
       logDiagnostic.info('DEDUPLICATE_ACCOUNTS', `Removing duplicate account: ${existingAcc.institution_name} ...${existingAcc.mask}`);
     }
     
@@ -393,7 +393,7 @@ async function deduplicateAndSaveAccounts(userId, newAccounts, institutionName, 
     lastUpdated: admin.firestore.FieldValue.serverTimestamp()
   }, { merge: true });
 
-  logger.info('FIREBASE', 'Saved accounts, deduplicated', {});
+  logger.info('FIREBASE', 'Saved accounts, deduplicated', { userId, saved: accountsToAdd.length, deduplicated: deduplicatedCount });
   logDiagnostic.info('DEDUPLICATE_ACCOUNTS', `Saved ${accountsToAdd.length} accounts, deduplicated ${deduplicatedCount}`);
 
   return {
@@ -415,7 +415,7 @@ async function updateAccountBalances(userId, accounts) {
     throw new Error('Invalid parameters for updateAccountBalances');
   }
 
-  logger.info('PLAID_ACCOUNTS', 'Updating balances for accounts for user:', {});
+  logger.info('PLAID_ACCOUNTS', 'Updating balances for accounts for user', { userId, accountCount: accounts.length });
   logDiagnostic.info('UPDATE_BALANCES', `Updating balances for ${accounts.length} accounts for user: ${userId}`);
 
   const settingsRef = db.collection('users').doc(userId)
@@ -427,7 +427,7 @@ async function updateAccountBalances(userId, accounts) {
   const existingPlaidAccounts = currentSettings.plaidAccounts || [];
 
   if (existingPlaidAccounts.length === 0) {
-    logger.info('PLAID_ACCOUNTS', 'No existing accounts to update', {});
+    logger.info('PLAID_ACCOUNTS', 'No existing accounts to update', { userId });
     logDiagnostic.info('UPDATE_BALANCES', 'No existing accounts to update');
     return { updated: 0, total: 0, unmatched: 0 };
   }
@@ -546,7 +546,7 @@ async function updateAccountBalances(userId, accounts) {
     lastBalanceUpdate: admin.firestore.FieldValue.serverTimestamp()
   }, { merge: true });
 
-  logger.info('PLAID_ACCOUNTS', 'Persisted to Firebase: accounts updated', {});
+  logger.info('PLAID_ACCOUNTS', 'Persisted to Firebase: accounts updated', { userId, updatedCount });
   logDiagnostic.info('UPDATE_BALANCES', `Persisted to Firebase: ${updatedCount} accounts updated`);
 
   return {
@@ -569,15 +569,15 @@ async function deletePlaidCredentials(userId, itemId = null) {
 
   if (itemId) {
     // Delete specific item
-    logger.info('FIREBASE', 'Deleting credentials for user: , item:', {});
+    logger.info('FIREBASE', 'Deleting credentials for user', { userId, itemId });
     logDiagnostic.info('DELETE_CREDENTIALS', `Deleting credentials for user: ${userId}, item: ${itemId}`);
     const userPlaidRef = db.collection('users').doc(userId).collection('plaid_items').doc(itemId);
     await userPlaidRef.delete();
-    logger.info('FIREBASE', 'Credentials deleted successfully', {});
+    logger.info('FIREBASE', 'Credentials deleted successfully', { userId, itemId });
     logDiagnostic.info('DELETE_CREDENTIALS', 'Credentials deleted successfully');
   } else {
     // Delete all items
-    logger.info('FIREBASE', 'Deleting all credentials for user:', {});
+    logger.info('FIREBASE', 'Deleting all credentials for user', { userId });
     logDiagnostic.info('DELETE_CREDENTIALS', `Deleting all credentials for user: ${userId}`);
     const itemsSnapshot = await db.collection('users').doc(userId).collection('plaid_items').get();
     const batch = db.batch();
@@ -585,7 +585,7 @@ async function deletePlaidCredentials(userId, itemId = null) {
       batch.delete(doc.ref);
     });
     await batch.commit();
-    logger.info('FIREBASE', 'Deleted items successfully', {});
+    logger.info('FIREBASE', 'Deleted items successfully', { userId, deletedCount: itemsSnapshot.docs.length });
     logDiagnostic.info('DELETE_CREDENTIALS', `Deleted ${itemsSnapshot.docs.length} items successfully`);
   }
 }
@@ -866,7 +866,7 @@ app.post("/api/plaid/exchange_token", async (req, res, next) => {
     });
 
     // Use deduplicateAndSaveAccounts to prevent duplicates on reconnection
-    logger.info('PLAID_AUTH', 'Updating settings/personal with account display data', {});
+    logger.info('PLAID_AUTH', 'Updating settings/personal with account display data', { userId, itemId });
     logDiagnostic.info('EXCHANGE_TOKEN', 'Updating settings/personal with account display data');
     const deduplicationResult = await deduplicateAndSaveAccounts(
       userId, 
@@ -875,7 +875,7 @@ app.post("/api/plaid/exchange_token", async (req, res, next) => {
       itemId
     );
 
-    logger.info('PLAID_AUTH', 'Account deduplication complete:', {});
+    logger.info('PLAID_AUTH', 'Account deduplication complete', { userId, ...deduplicationResult });
     logDiagnostic.info('EXCHANGE_TOKEN', `Account deduplication complete:`, deduplicationResult);
 
     // Enhance accounts with institution name and balance fields for frontend display
@@ -901,7 +901,7 @@ app.post("/api/plaid/exchange_token", async (req, res, next) => {
       accounts: accountsWithInstitution,
     });
   } catch (error) {
-    logger.error('PLAID_AUTH', 'Failed to exchange token', error, {});
+    logger.error('PLAID_AUTH', 'Failed to exchange token', error, { userId });
     logDiagnostic.error('EXCHANGE_TOKEN', 'Failed to exchange token', error);
     
     // Check if it's already an AppError
@@ -931,7 +931,7 @@ app.post("/api/plaid/get_balances", async (req, res, next) => {
     const { userId } = req.body;
 
     if (!userId) {
-      logger.error('GET_BALANCES', 'Missing userId in request', null, {});
+      logger.error('PLAID_ACCOUNTS', 'Missing userId in request', null, {});
       logDiagnostic.error('GET_BALANCES', 'Missing userId in request');
       throw createError.badRequest('userId is required', 'MISSING_USER_ID');
     }
@@ -942,12 +942,12 @@ app.post("/api/plaid/get_balances", async (req, res, next) => {
     // Retrieve all Plaid items for the user
     const items = await getAllPlaidItems(userId);
     if (!items || items.length === 0) {
-      logger.error('GET_BALANCES', 'No Plaid credentials found for user', null, {});
+      logger.error('PLAID_ACCOUNTS', 'No Plaid credentials found for user', null, { userId });
       logDiagnostic.error('GET_BALANCES', 'No Plaid credentials found for user');
       throw createError.notFound('No Plaid connection found. Please connect your bank account first.');
     }
 
-    logger.info('GET_BALANCES', 'Fetching account balances for bank connections', {});
+    logger.info('PLAID_ACCOUNTS', 'Fetching account balances for bank connections', { userId, itemCount: allItems.length });
     logDiagnostic.info('GET_BALANCES', `Fetching account balances for ${items.length} bank connections`);
 
     // Fetch balances from all items
@@ -980,14 +980,14 @@ app.post("/api/plaid/get_balances", async (req, res, next) => {
         
         allAccounts.push(...accountsWithInstitution);
       } catch (itemError) {
-        logger.error('GET_BALANCES', 'Failed to fetch balances for item', itemError, {});
+        logger.error('PLAID_ACCOUNTS', 'Failed to fetch balances for item', itemError, { userId, itemId: item.itemId });
         logDiagnostic.error('GET_BALANCES', `Failed to fetch balances for item ${item.itemId}`, itemError);
         // Continue with other items even if one fails
       }
     }
 
     const accountCount = allAccounts.length;
-    logger.info('GET_BALANCES', 'Successfully fetched balances for accounts from banks', {});
+    logger.info('PLAID_ACCOUNTS', 'Successfully fetched balances for accounts from banks', { userId, accountCount: allAccounts.length });
     logDiagnostic.info('GET_BALANCES', `Successfully fetched balances for ${accountCount} accounts from ${items.length} banks`);
     
     // Update account balances in Firebase settings/personal collection
