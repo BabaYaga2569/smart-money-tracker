@@ -4,6 +4,8 @@ import { Configuration, PlaidApi, PlaidEnvironments } from "plaid";
 import admin from "firebase-admin";
 import { errorHandler, createError } from './middleware/errorHandler.js';
 import validators from './utils/validators.js';
+import healthMonitor from './utils/healthMonitor.js';
+import performanceTracker from './middleware/performanceTracker.js';
 
 const app = express();
 app.use(cors({
@@ -11,6 +13,7 @@ app.use(cors({
   credentials: true
 }));
 app.use(express.json());
+app.use(performanceTracker);
 
 // ============================================================================
 // DIAGNOSTIC LOGGING UTILITY
@@ -628,13 +631,23 @@ app.get("/api/hello", (req, res) => {
   res.json({ message: "Backend is working!" });
 });
 
-// Health check endpoint
-app.get('/api/health', (req, res) => {
-  res.json({ 
-    status: 'ok',
-    timestamp: new Date().toISOString(),
-    uptime: process.uptime()
-  });
+// Enhanced health check endpoint
+app.get('/api/health', async (req, res) => {
+  try {
+    const healthStatus = await healthMonitor.getHealthStatus(plaidClient);
+    
+    // Return 503 if any service is unhealthy
+    const statusCode = healthStatus.status === 'healthy' ? 200 : 503;
+    
+    res.status(statusCode).json(healthStatus);
+  } catch (error) {
+    console.error('[HEALTH_CHECK] Error:', error);
+    res.status(503).json({
+      status: 'unhealthy',
+      timestamp: new Date().toISOString(),
+      error: error.message
+    });
+  }
 });
 
 // ============================================================================
