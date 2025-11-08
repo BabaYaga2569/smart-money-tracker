@@ -1,73 +1,198 @@
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
-    // Helper function - check if user is authenticated and accessing their own data
+    // =============================================================================
+    // HELPER FUNCTIONS
+    // =============================================================================
+    
+    // Check if user is authenticated and accessing their own data
     function isOwner(userId) {
       return request.auth != null && request.auth.uid == userId;
     }
     
-    // User data - only accessible by the user themselves
+    // Check document size (max 10KB to prevent abuse)
+    function isValidSize() {
+      return request.resource.size() < 10000;
+    }
+    
+    // Check if string length is within limits
+    function isValidStringLength(field, maxLength) {
+      return request.resource.data[field] is string 
+        && request.resource.data[field].size() > 0 
+        && request.resource.data[field].size() <= maxLength;
+    }
+    
+    // =============================================================================
+    // USER DATA
+    // =============================================================================
+    
     match /users/{userId} {
-      allow read, write: if isOwner(userId);
+      allow read, write: if isOwner(userId) && isValidSize();
       
-      // Settings subcollection
-      match /settings/{document=**} {
-        allow read, write: if isOwner(userId);
+      // ---------------------------------------------------------------------------
+      // SETTINGS - User preferences and configuration
+      // ---------------------------------------------------------------------------
+      match /settings/{settingId} {
+        allow read, delete: if isOwner(userId);
+        allow create, update: if isOwner(userId) && isValidSize();
       }
       
-      // Bill Instances subcollection
+      // ---------------------------------------------------------------------------
+      // BILL INSTANCES - Individual bill occurrences
+      // ---------------------------------------------------------------------------
       match /billInstances/{billId} {
-        allow read, update, delete: if isOwner(userId);
+        allow read, delete: if isOwner(userId);
         
-        // Validate structure on create
+        // Strict validation on create
         allow create: if isOwner(userId) 
           && request.resource.data.keys().hasAll(['name', 'amount', 'dueDate', 'status', 'isPaid'])
           && request.resource.data.name is string
+          && request.resource.data.name.size() > 0 && request.resource.data.name.size() <= 200
           && request.resource.data.amount is number
+          && request.resource.data.amount >= 0 && request.resource.data.amount <= 1000000
           && request.resource.data.isPaid is bool
           && request.resource.data.status is string
           && request.resource.data.status in ['pending', 'overdue', 'paid', 'skipped']
-          && request.resource.data.dueDate is timestamp;
+          && request.resource.data.dueDate is timestamp
+          && isValidSize();
+        
+        // Allow updates but maintain data integrity
+        allow update: if isOwner(userId)
+          && request.resource.data.keys().hasAll(['name', 'amount', 'dueDate', 'status', 'isPaid'])
+          && request.resource.data.name is string
+          && request.resource.data.name.size() > 0 && request.resource.data.name.size() <= 200
+          && request.resource.data.amount is number
+          && request.resource.data.amount >= 0 && request.resource.data.amount <= 1000000
+          && request.resource.data.isPaid is bool
+          && request.resource.data.status is string
+          && request.resource.data.status in ['pending', 'overdue', 'paid', 'skipped']
+          && request.resource.data.dueDate is timestamp
+          && isValidSize();
       }
       
-      // Subscriptions subcollection
+      // ---------------------------------------------------------------------------
+      // SUBSCRIPTIONS - Recurring payment subscriptions
+      // ---------------------------------------------------------------------------
       match /subscriptions/{subId} {
-        allow read, write: if isOwner(userId);
+        allow read, delete: if isOwner(userId);
+        
+        allow create: if isOwner(userId)
+          && request.resource.data.name is string
+          && request.resource.data.name.size() > 0 && request.resource.data.name.size() <= 200
+          && request.resource.data.amount is number
+          && request.resource.data.amount >= 0 && request.resource.data.amount <= 100000
+          && isValidSize();
+        
+        allow update: if isOwner(userId)
+          && request.resource.data.name is string
+          && request.resource.data.name.size() > 0 && request.resource.data.name.size() <= 200
+          && request.resource.data.amount is number
+          && request.resource.data.amount >= 0 && request.resource.data.amount <= 100000
+          && isValidSize();
       }
       
-      // Transactions subcollection
+      // ---------------------------------------------------------------------------
+      // TRANSACTIONS - Financial transactions from Plaid and manual entry
+      // ---------------------------------------------------------------------------
       match /transactions/{transId} {
-        allow read, write: if isOwner(userId);
+        allow read, delete: if isOwner(userId);
+        
+        // Create validation
+        allow create: if isOwner(userId)
+          && request.resource.data.keys().hasAll(['amount', 'date', 'merchant_name', 'source'])
+          && request.resource.data.amount is number
+          && request.resource.data.amount >= -1000000 && request.resource.data.amount <= 1000000
+          && request.resource.data.date is string
+          && request.resource.data.date.size() == 10  // YYYY-MM-DD format
+          && isValidStringLength('merchant_name', 500)
+          && request.resource.data.source is string
+          && request.resource.data.source in ['plaid', 'manual']
+          && isValidSize();
+        
+        // Update validation - prevent tampering with Plaid transactions
+        allow update: if isOwner(userId)
+          && request.resource.data.amount is number
+          && request.resource.data.amount >= -1000000 && request.resource.data.amount <= 1000000
+          && request.resource.data.date is string
+          && request.resource.data.date.size() == 10
+          && isValidStringLength('merchant_name', 500)
+          && request.resource.data.source is string
+          && request.resource.data.source in ['plaid', 'manual']
+          // Prevent changing source type (security: can't change Plaid → manual)
+          && (!request.resource.data.diff(resource.data).affectedKeys().hasAny(['source']) 
+              || resource.data.source == 'manual')
+          && isValidSize();
       }
       
-      // Bill Payments subcollection
+      // ---------------------------------------------------------------------------
+      // BILL PAYMENTS - Payment tracking for bills
+      // ---------------------------------------------------------------------------
       match /bill_payments/{paymentId} {
-        allow read, write: if isOwner(userId);
+        allow read, delete: if isOwner(userId);
+        
+        allow create, update: if isOwner(userId)
+          && request.resource.data.amount is number
+          && request.resource.data.amount >= 0 && request.resource.data.amount <= 1000000
+          && isValidSize();
       }
       
-      // Financial subcollection
-      match /financial/{document=**} {
-        allow read, write: if isOwner(userId);
+      // ---------------------------------------------------------------------------
+      // FINANCIAL - Financial calculations and snapshots
+      // ---------------------------------------------------------------------------
+      match /financial/{docId} {
+        allow read, delete: if isOwner(userId);
+        allow create, update: if isOwner(userId) && isValidSize();
       }
       
-      // Plaid Items subcollection
+      // ---------------------------------------------------------------------------
+      // PLAID ITEMS - Connected Plaid bank accounts
+      // ---------------------------------------------------------------------------
       match /plaid_items/{itemId} {
-        allow read, write: if isOwner(userId);
+        allow read, delete: if isOwner(userId);
+        
+        allow create, update: if isOwner(userId)
+          && request.resource.data.keys().hasAll(['access_token', 'item_id'])
+          && request.resource.data.access_token is string
+          && request.resource.data.access_token.size() > 0 && request.resource.data.access_token.size() <= 500
+          && request.resource.data.item_id is string
+          && request.resource.data.item_id.size() > 0 && request.resource.data.item_id.size() <= 200
+          && isValidSize();
       }
       
-      // Metadata subcollection
-      match /metadata/{document=**} {
-        allow read, write: if isOwner(userId);
+      // ---------------------------------------------------------------------------
+      // METADATA - Application metadata
+      // ---------------------------------------------------------------------------
+      match /metadata/{metadataId} {
+        allow read, delete: if isOwner(userId);
+        allow create, update: if isOwner(userId) && isValidSize();
       }
       
-      // Goals subcollection
+      // ---------------------------------------------------------------------------
+      // GOALS - Financial goals tracking
+      // ---------------------------------------------------------------------------
       match /goals/{goalId} {
-        allow read, write: if isOwner(userId);
+        allow read, delete: if isOwner(userId);
+        
+        allow create, update: if isOwner(userId)
+          && request.resource.data.name is string
+          && request.resource.data.name.size() > 0 && request.resource.data.name.size() <= 200
+          && request.resource.data.targetAmount is number
+          && request.resource.data.targetAmount >= 0 && request.resource.data.targetAmount <= 10000000
+          && isValidSize();
       }
       
-      // Income Sources subcollection
+      // ---------------------------------------------------------------------------
+      // INCOME SOURCES - Income tracking
+      // ---------------------------------------------------------------------------
       match /incomeSources/{sourceId} {
-        allow read, write: if isOwner(userId);
+        allow read, delete: if isOwner(userId);
+        
+        allow create, update: if isOwner(userId)
+          && request.resource.data.name is string
+          && request.resource.data.name.size() > 0 && request.resource.data.name.size() <= 200
+          && request.resource.data.amount is number
+          && request.resource.data.amount >= 0 && request.resource.data.amount <= 10000000
+          && isValidSize();
       }
     }
   }
