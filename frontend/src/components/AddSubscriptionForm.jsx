@@ -1,9 +1,18 @@
 import React, { useState, useEffect } from 'react';
+import { getTypeFromCategory, SUBSCRIPTION_CATEGORIES, RECURRING_BILL_CATEGORIES } from '../utils/recurringDetection';
 
-const SUBSCRIPTION_CATEGORIES = [
-  'Entertainment',
-  'Utilities',
+const ALL_CATEGORIES = [
+  'Streaming',
   'Software',
+  'Memberships',
+  'Entertainment',
+  'Gaming',
+  'Utilities',
+  'Rent',
+  'Insurance',
+  'Phone',
+  'Internet',
+  'Mortgage',
   'Fitness',
   'Food',
   'Shopping',
@@ -16,7 +25,7 @@ const BILLING_CYCLES = ['Monthly', 'Annual', 'Quarterly'];
 const AddSubscriptionForm = ({ subscription, accounts, onSave, onCancel }) => {
   const [formData, setFormData] = useState({
     name: '',
-    category: 'Entertainment',
+    category: 'Streaming',
     cost: '',
     billingCycle: 'Monthly',
     paymentMethod: '',
@@ -25,7 +34,8 @@ const AddSubscriptionForm = ({ subscription, accounts, onSave, onCancel }) => {
     autoRenew: true,
     essential: false,
     notes: '',
-    status: 'active'
+    status: 'active',
+    type: 'subscription' // Default to subscription
   });
 
   const [errors, setErrors] = useState({});
@@ -34,7 +44,7 @@ const AddSubscriptionForm = ({ subscription, accounts, onSave, onCancel }) => {
     if (subscription) {
       setFormData({
         name: subscription.name || '',
-        category: subscription.category || 'Entertainment',
+        category: subscription.category || 'Streaming',
         cost: subscription.cost || '',
         billingCycle: subscription.billingCycle || 'Monthly',
         paymentMethod: subscription.paymentMethod || '',
@@ -43,17 +53,29 @@ const AddSubscriptionForm = ({ subscription, accounts, onSave, onCancel }) => {
         autoRenew: subscription.autoRenew !== undefined ? subscription.autoRenew : true,
         essential: subscription.essential || false,
         notes: subscription.notes || '',
-        status: subscription.status || 'active'
+        status: subscription.status || 'active',
+        type: subscription.type || getTypeFromCategory(subscription.category || 'Streaming')
       });
     }
   }, [subscription]);
 
   const handleChange = (e) => {
     const { name, value, type, checked } = e.target;
-    setFormData(prev => ({
-      ...prev,
-      [name]: type === 'checkbox' ? checked : value
-    }));
+    const newValue = type === 'checkbox' ? checked : value;
+    
+    setFormData(prev => {
+      const updated = {
+        ...prev,
+        [name]: newValue
+      };
+      
+      // Auto-assign type when category changes
+      if (name === 'category') {
+        updated.type = getTypeFromCategory(value);
+      }
+      
+      return updated;
+    });
     
     // Clear error for this field
     if (errors[name]) {
@@ -101,6 +123,7 @@ const AddSubscriptionForm = ({ subscription, accounts, onSave, onCancel }) => {
       const subscriptionData = {
         ...formData,
         cost: parseFloat(formData.cost),
+        type: formData.type || getTypeFromCategory(formData.category), // Ensure type is set
         priceHistory: subscription?.priceHistory || [
           { date: new Date().toISOString().split('T')[0], price: parseFloat(formData.cost) }
         ]
@@ -141,10 +164,27 @@ const AddSubscriptionForm = ({ subscription, accounts, onSave, onCancel }) => {
                 value={formData.category}
                 onChange={handleChange}
               >
-                {SUBSCRIPTION_CATEGORIES.map(cat => (
-                  <option key={cat} value={cat}>{cat}</option>
-                ))}
+                <optgroup label="Subscriptions">
+                  {SUBSCRIPTION_CATEGORIES.map(cat => (
+                    <option key={cat} value={cat}>{cat}</option>
+                  ))}
+                </optgroup>
+                <optgroup label="Recurring Bills">
+                  {RECURRING_BILL_CATEGORIES.map(cat => (
+                    <option key={cat} value={cat}>{cat}</option>
+                  ))}
+                </optgroup>
+                <optgroup label="Other">
+                  <option value="Fitness">Fitness</option>
+                  <option value="Food">Food</option>
+                  <option value="Shopping">Shopping</option>
+                  <option value="Storage">Storage</option>
+                  <option value="Other">Other</option>
+                </optgroup>
               </select>
+              <small style={{ display: 'block', marginTop: '4px', color: '#888', fontSize: '12px' }}>
+                Type: {formData.type === 'subscription' ? '💳 Subscription' : '🧾 Recurring Bill'}
+              </small>
             </div>
 
             <div className="form-row">
