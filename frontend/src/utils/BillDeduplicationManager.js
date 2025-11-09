@@ -150,13 +150,89 @@ export class BillDeduplicationManager {
     }
 
     /**
-     * Validate if two bills are duplicates
+     * Validate if two bills are duplicates using fuzzy matching
      * @param {Object} bill1 - First bill
      * @param {Object} bill2 - Second bill
      * @returns {boolean} True if bills are duplicates
      */
     static areBillsDuplicates(bill1, bill2) {
-        return this.generateBillKey(bill1) === this.generateBillKey(bill2);
+        // 1. Name similarity (case-insensitive, ignoring special chars)
+        const name1 = (bill1.name || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+        const name2 = (bill2.name || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+        
+        const nameMatch = name1 === name2 || 
+                         name1.includes(name2) || 
+                         name2.includes(name1) ||
+                         this.calculateSimilarity(name1, name2) > 0.85;
+        
+        // 2. Amount similarity (within $1.00)
+        const amount1 = parseFloat(bill1.amount || 0);
+        const amount2 = parseFloat(bill2.amount || 0);
+        const amountMatch = Math.abs(amount1 - amount2) <= 1.00;
+        
+        // 3. Due date similarity (within 3 days)
+        const date1 = new Date(bill1.dueDate || bill1.nextDueDate);
+        const date2 = new Date(bill2.dueDate || bill2.nextDueDate);
+        const daysDiff = Math.abs((date1 - date2) / (1000 * 60 * 60 * 24));
+        const dateMatch = daysDiff <= 3;
+        
+        // 4. Frequency match
+        const freq1 = (bill1.recurrence || 'one-time').toLowerCase();
+        const freq2 = (bill2.recurrence || 'one-time').toLowerCase();
+        const freqMatch = freq1 === freq2;
+        
+        // Bills are duplicates if name + amount + frequency match, and date is close
+        return nameMatch && amountMatch && freqMatch && dateMatch;
+    }
+
+    /**
+     * Calculate string similarity using Levenshtein distance
+     * @param {string} str1 - First string
+     * @param {string} str2 - Second string
+     * @returns {number} Similarity score between 0 and 1
+     */
+    static calculateSimilarity(str1, str2) {
+        const longer = str1.length > str2.length ? str1 : str2;
+        const shorter = str1.length > str2.length ? str2 : str1;
+        
+        if (longer.length === 0) return 1.0;
+        
+        const editDistance = this.levenshteinDistance(longer, shorter);
+        return (longer.length - editDistance) / longer.length;
+    }
+
+    /**
+     * Calculate Levenshtein distance between two strings
+     * @param {string} str1 - First string
+     * @param {string} str2 - Second string
+     * @returns {number} Edit distance
+     */
+    static levenshteinDistance(str1, str2) {
+        const matrix = [];
+        
+        for (let i = 0; i <= str2.length; i++) {
+            matrix[i] = [i];
+        }
+        
+        for (let j = 0; j <= str1.length; j++) {
+            matrix[0][j] = j;
+        }
+        
+        for (let i = 1; i <= str2.length; i++) {
+            for (let j = 1; j <= str1.length; j++) {
+                if (str2.charAt(i - 1) === str1.charAt(j - 1)) {
+                    matrix[i][j] = matrix[i - 1][j - 1];
+                } else {
+                    matrix[i][j] = Math.min(
+                        matrix[i - 1][j - 1] + 1,
+                        matrix[i][j - 1] + 1,
+                        matrix[i - 1][j] + 1
+                    );
+                }
+            }
+        }
+        
+        return matrix[str2.length][str1.length];
     }
 
     /**
@@ -182,6 +258,63 @@ export class BillDeduplicationManager {
             isDuplicate: false,
             duplicateOf: null
         };
+    }
+
+    /**
+     * Generate detailed duplicate report showing what will be removed
+     * Uses fuzzy matching to find duplicates
+     * @param {Array} bills - Array of bill objects
+     * @returns {Object} Detailed report with groups
+     */
+    static generateDetailedDuplicateReport(bills) {
+        const processed = new Set();
+        const duplicateGroups = [];
+        
+        // Use pairwise comparison with fuzzy matching
+        for (let i = 0; i < bills.length; i++) {
+            if (processed.has(i)) continue;
+            
+            const group = [bills[i]];
+            processed.add(i);
+            
+            // Find all bills that are duplicates of bills[i]
+            for (let j = i + 1; j < bills.length; j++) {
+                if (processed.has(j)) continue;
+                
+                if (this.areBillsDuplicates(bills[i], bills[j])) {
+                    group.push(bills[j]);
+                    processed.add(j);
+                }
+            }
+            
+            // Only add groups with duplicates (more than 1 bill)
+            if (group.length > 1) {
+                duplicateGroups.push({
+                    keepBill: group[0], // Keep first
+                    removeBills: group.slice(1), // Remove rest
+                    count: group.length
+                });
+            }
+        }
+        
+        return {
+            duplicateCount: duplicateGroups.reduce((sum, g) => sum + g.removeBills.length, 0),
+            totalGroups: duplicateGroups.length,
+            groups: duplicateGroups
+        };
+    }
+
+    /**
+     * Generate a group key for fuzzy matching
+     * @param {Object} bill - Bill object
+     * @returns {string} Group key
+     */
+    static generateGroupKey(bill) {
+        // Normalize for grouping
+        const name = (bill.name || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+        const amount = Math.round(parseFloat(bill.amount || 0) * 100) / 100; // Round to cents
+        const freq = (bill.recurrence || 'one-time').toLowerCase();
+        return `${name}-${amount}-${freq}`;
     }
 
     /**

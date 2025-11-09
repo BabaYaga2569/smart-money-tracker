@@ -13,6 +13,7 @@ import PlaidConnectionManager from '../utils/PlaidConnectionManager';
 import PlaidErrorModal from '../components/PlaidErrorModal';
 import BillCSVImportModal from '../components/BillCSVImportModal';
 import PaymentHistoryModal from '../components/PaymentHistoryModal';
+import DuplicatePreviewModal from '../components/DuplicatePreviewModal';
 import { formatDateForDisplay, formatDateForInput, getPacificTime } from '../utils/DateUtils';
 import { TRANSACTION_CATEGORIES, CATEGORY_ICONS, getCategoryIcon, migrateLegacyCategory } from '../constants/categories';
 import NotificationSystem from '../components/NotificationSystem';
@@ -50,6 +51,8 @@ export default function Bills() {
   const [deletedBills, setDeletedBills] = useState([]);
   const [editingBill, setEditingBill] = useState(null);
   const [deduplicating, setDeduplicating] = useState(false);
+  const [showDuplicatePreview, setShowDuplicatePreview] = useState(false);
+  const [duplicateReport, setDuplicateReport] = useState(null);
   const [importHistory, setImportHistory] = useState([]);
   const [refreshingTransactions, setRefreshingTransactions] = useState(false);
   const [paidThisMonth, setPaidThisMonth] = useState(0);
@@ -1206,10 +1209,6 @@ const refreshPlaidTransactions = async () => {
   };
 
   const handleDeduplicateBills = async () => {
-    if (!confirm('This will scan all bills and remove duplicates based on name, amount, due date, and frequency. The first occurrence of each bill will be kept. Continue?')) {
-      return;
-    }
-
     try {
       setDeduplicating(true);
       
@@ -1223,7 +1222,7 @@ const refreshPlaidTransactions = async () => {
         ...doc.data()
       }));
       
-      const report = BillDeduplicationManager.generateDuplicateReport(existingBills);
+      const report = BillDeduplicationManager.generateDetailedDuplicateReport(existingBills);
       
       if (report.duplicateCount === 0) {
         showNotification('No duplicate bills found. All bills are unique.', 'info');
@@ -1231,34 +1230,91 @@ const refreshPlaidTransactions = async () => {
         return;
       }
       
-      const result = BillDeduplicationManager.removeDuplicates(existingBills);
+      // Show preview modal
+      setDuplicateReport(report);
+      setShowDuplicatePreview(true);
+      setDeduplicating(false);
       
-      BillDeduplicationManager.logDeduplication(result, 'manual');
+    } catch (error) {
+      console.error('❌ Error analyzing duplicates:', error);
+      showNotification('Error analyzing duplicates: ' + error.message, 'error');
+      setDeduplicating(false);
+    }
+  };
+
+  const handleConfirmDeduplication = async () => {
+    if (!duplicateReport) return;
+    
+    try {
+      setDeduplicating(true);
+      setShowDuplicatePreview(false);
       
-      // ✅ Delete duplicate bills from billInstances
-      for (const removedBill of result.removedBills) {
-        await deleteDoc(doc(db, 'users', currentUser.uid, 'billInstances', removedBill.id));
+      // Delete all bills marked for removal
+      const allBillsToRemove = duplicateReport.groups.flatMap(g => g.removeBills);
+      
+      for (const bill of allBillsToRemove) {
+        await deleteDoc(doc(db, 'users', currentUser.uid, 'billInstances', bill.id));
       }
       
       await loadBills();
       
-      const message = BillDeduplicationManager.getSummaryMessage(result.stats);
-      showNotification(message, 'success');
-      
-      if (result.removedBills.length > 0) {
-        console.log('[Manual Deduplication] Removed bills:', result.removedBills.map(b => ({
-          name: b.name,
-          amount: b.amount,
-          dueDate: b.dueDate,
-          recurrence: b.recurrence
-        })));
-      }
+      showNotification(
+        `Successfully removed ${duplicateReport.duplicateCount} duplicate bills!`,
+        'success'
+      );
       
     } catch (error) {
-      console.error('❌ Error deduplicating bills:', error);
-      showNotification('Error deduplicating bills: ' + error.message, 'error');
+      console.error('❌ Error removing duplicates:', error);
+      showNotification('Error removing duplicates: ' + error.message, 'error');
     } finally {
       setDeduplicating(false);
+      setDuplicateReport(null);
+    }
+  };
+
+  const handleExportToCSV = () => {
+    try {
+      const csvData = processedBills.map(bill => ({
+        'Bill Name': bill.name || '',
+        'Amount': bill.amount || '',
+        'Due Date': bill.nextDueDate || bill.dueDate || '',
+        'Frequency': bill.recurrence || '',
+        'Category': bill.category || '',
+        'Status': bill.status || '',
+        'Is Paid': bill.isPaid ? 'Yes' : 'No',
+        'Last Paid Date': bill.lastPaidDate || '',
+        'Payment Method': bill.lastPayment?.method || '',
+        'Recurring Template ID': bill.recurringTemplateId || '',
+        'Created From': bill.createdFrom || '',
+        'Bill ID': bill.id || ''
+      }));
+      
+      if (csvData.length === 0) {
+        showNotification('No bills to export', 'info');
+        return;
+      }
+      
+      const headers = Object.keys(csvData[0]).join(',');
+      const rows = csvData.map(row => 
+        Object.values(row).map(val => 
+          `"${String(val).replace(/"/g, '""')}"`
+        ).join(',')
+      ).join('\n');
+      
+      const csv = headers + '\n' + rows;
+      
+      const blob = new Blob([csv], { type: 'text/csv' });
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `bills-export-${new Date().toISOString().split('T')[0]}.csv`;
+      a.click();
+      window.URL.revokeObjectURL(url);
+      
+      showNotification(`Exported ${csvData.length} bills to CSV!`, 'success');
+    } catch (error) {
+      console.error('Error exporting bills:', error);
+      showNotification('Error exporting bills: ' + error.message, 'error');
     }
   };
 
@@ -1487,6 +1543,17 @@ const refreshPlaidTransactions = async () => {
   return (
     <div className="bills-container">
       <NotificationSystem />
+      
+      {showDuplicatePreview && (
+        <DuplicatePreviewModal
+          report={duplicateReport}
+          onConfirm={handleConfirmDeduplication}
+          onCancel={() => {
+            setShowDuplicatePreview(false);
+            setDuplicateReport(null);
+          }}
+        />
+      )}
       
       {!plaidStatus.isConnected && !hasPlaidAccounts && !plaidStatus.hasError && (
         <div style={{
@@ -1876,6 +1943,26 @@ const refreshPlaidTransactions = async () => {
             }}
           >
                         📊 Import from CSV
+          </button>
+          <button 
+            className="export-button"
+            onClick={handleExportToCSV}
+            disabled={loading || processedBills.length === 0}
+            title="Export bills to CSV"
+            style={{
+              background: '#28a745',
+              color: '#fff',
+              border: 'none',
+              borderRadius: '8px',
+              padding: '12px 20px',
+              fontWeight: '600',
+              cursor: (loading || processedBills.length === 0) ? 'not-allowed' : 'pointer',
+              transition: 'all 0.2s ease',
+              whiteSpace: 'nowrap',
+              opacity: (loading || processedBills.length === 0) ? 0.6 : 1
+            }}
+          >
+            📊 Export to CSV
           </button>
           {importHistory.length > 0 && (
             <>
