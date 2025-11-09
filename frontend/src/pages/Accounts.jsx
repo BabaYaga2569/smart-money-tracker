@@ -30,6 +30,23 @@ const Accounts = () => {
     
     return { currentBalance, availableBalance, liveBalance, pendingAdjustment };
   };
+
+  // Helper function to remove undefined values for Firebase compatibility
+  // Firebase does not support undefined values in documents
+  const sanitizeForFirebase = (obj) => {
+    if (obj === null || obj === undefined) return null;
+    if (typeof obj !== 'object') return obj;
+    if (Array.isArray(obj)) return obj.map(sanitizeForFirebase);
+    
+    const sanitized = {};
+    for (const [key, value] of Object.entries(obj)) {
+      if (value !== undefined) {
+        sanitized[key] = sanitizeForFirebase(value);
+      }
+    }
+    return sanitized;
+  };
+
   const [accounts, setAccounts] = useState({});
   const [totalBalance, setTotalBalance] = useState(0);
   const [totalProjectedBalance, setTotalProjectedBalance] = useState(0);
@@ -563,9 +580,12 @@ const formattedPlaidAccounts = data.accounts.map(account => {
           const currentDoc = await getDoc(settingsDocRef);
           const currentData = currentDoc.exists() ? currentDoc.data() : {};
           
+          // Sanitize accounts to remove undefined values (Firebase doesn't support undefined)
+          const sanitizedAccounts = formattedPlaidAccounts.map(account => sanitizeForFirebase(account));
+          
           await updateDoc(settingsDocRef, {
             ...currentData,
-            plaidAccounts: formattedPlaidAccounts,
+            plaidAccounts: sanitizedAccounts,
             lastUpdated: new Date().toISOString()
           });
           
@@ -838,9 +858,11 @@ const formattedPlaidAccounts = data.accounts.map(account => {
         }
 
         // 7. Update plaidAccounts array in settings/personal with enriched data
+        // Sanitize to remove undefined values (Firebase doesn't support undefined)
+        const sanitizedEnrichedAccounts = enrichedPlaidAccounts.map(account => sanitizeForFirebase(account));
         await updateDoc(settingsDocRef, {
           ...currentData,
-          plaidAccounts: enrichedPlaidAccounts,
+          plaidAccounts: sanitizedEnrichedAccounts,
           lastUpdated: new Date().toISOString()
         });
         
@@ -968,9 +990,11 @@ const formattedPlaidAccounts = data.accounts.map(account => {
         const existingAccounts = currentData.plaidAccounts || [];
         const filteredAccounts = existingAccounts.filter(acc => acc.item_id !== data.item_id);
 
+        // Sanitize accounts to remove undefined values (Firebase doesn't support undefined)
+        const sanitizedNewAccounts = formattedPlaidAccounts.map(account => sanitizeForFirebase(account));
         await updateDoc(settingsDocRef, {
           ...currentData,
-          plaidAccounts: [...filteredAccounts, ...formattedPlaidAccounts],
+          plaidAccounts: [...filteredAccounts, ...sanitizedNewAccounts],
           lastUpdated: new Date().toISOString(),
         });
 
