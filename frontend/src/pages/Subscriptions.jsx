@@ -212,10 +212,14 @@ const Subscriptions = () => {
   };
 
   const filteredSubscriptions = getFilteredSubscriptions();
-  const activeSubscriptions = subscriptions.filter(sub => sub.status === 'active');
+  // Only include actual subscriptions in calculations (not recurring bills)
+  const activeSubscriptions = subscriptions.filter(sub => 
+    sub.status === 'active' && 
+    (sub.type === 'subscription' || !sub.type)
+  );
   const monthlyTotal = calculateMonthlyTotal(activeSubscriptions);
   const annualTotal = calculateAnnualTotal(activeSubscriptions);
-  const activeCount = countActiveSubscriptions(subscriptions);
+  const activeCount = countActiveSubscriptions(activeSubscriptions);
   const upcomingRenewals = getUpcomingRenewals(activeSubscriptions, 7);
 
   const formatCurrency = (amount) => {

@@ -1589,6 +1589,33 @@ const refreshPlaidTransactions = async () => {
           </div>
           <div style={{ display: 'flex', gap: '12px' }}>
             <button 
+              onClick={async () => {
+                const result = await detectAndAutoAddRecurringBills(currentUser.uid, db);
+                if (result.success) {
+                  NotificationManager.showSuccess(
+                    result.addedCount > 0 
+                      ? `Auto-detected and added ${result.addedCount} recurring bill${result.addedCount > 1 ? 's' : ''}!`
+                      : `Found ${result.totalDetected} recurring bills but all already exist.`
+                  );
+                } else {
+                  NotificationManager.showError('Detection failed', result.error);
+                }
+              }}
+              style={{
+                background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
+                color: '#fff',
+                border: 'none',
+                borderRadius: '8px',
+                padding: '12px 20px',
+                fontWeight: '600',
+                cursor: 'pointer',
+                transition: 'all 0.2s ease'
+              }}
+              title="Manually run recurring bill detection"
+            >
+              🤖 Detect Recurring Bills
+            </button>
+            <button 
               onClick={() => setShowHelpModal(true)}
               style={{
                 background: '#6c757d',
