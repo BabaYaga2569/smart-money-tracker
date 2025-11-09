@@ -777,19 +777,19 @@ app.post("/api/plaid/create_link_token", async (req, res, next) => {
       // Default mode for new connections
       // Products configuration:
       // - "transactions": Enables transaction history for checking, savings, AND credit cards
-      // - "auth": Enables account/routing numbers for checking/savings (ACH payments)
       // 
-      // IMPORTANT: Do NOT include "transfer" or "payment_initiation" products as they
-      // filter out credit card accounts. Credit cards only support "transactions" product.
-      // Using ["auth", "transactions"] allows:
+      // IMPORTANT: Do NOT include "auth", "transfer", or "payment_initiation" products as they
+      // filter out credit card accounts in Production. Credit cards only support "transactions".
+      // Using ["transactions"] allows:
       //   - Credit cards: transaction history ✓
-      //   - Checking/Savings: transaction history + ACH capabilities ✓
+      //   - Checking/Savings: transaction history ✓
+      // Note: ACH routing numbers won't be available, but not needed for read-only transaction access.
       request = {
         user: {
           client_user_id: userId || "user-id",
         },
         client_name: "Smart Money Tracker",
-        products: ["auth", "transactions"],
+        products: ["transactions"],
         country_codes: ["US"],
         language: "en",
         webhook: "https://smart-money-tracker-09ks.onrender.com/api/plaid/webhook",
