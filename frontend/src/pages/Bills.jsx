@@ -17,6 +17,7 @@ import { formatDateForDisplay, formatDateForInput, getPacificTime } from '../uti
 import { TRANSACTION_CATEGORIES, CATEGORY_ICONS, getCategoryIcon, migrateLegacyCategory } from '../constants/categories';
 import NotificationSystem from '../components/NotificationSystem';
 import { BillDeduplicationManager } from '../utils/BillDeduplicationManager';
+import { detectAndAutoAddRecurringBills } from '../components/SubscriptionDetector';
 import "./Bills.css";
 
 const generateBillId = () => {
@@ -53,6 +54,8 @@ export default function Bills() {
   const [refreshingTransactions, setRefreshingTransactions] = useState(false);
   const [paidThisMonth, setPaidThisMonth] = useState(0);
   const [paidBillsCount, setPaidBillsCount] = useState(0);
+  const [recurringBills, setRecurringBills] = useState([]);
+  const [showRecurringBills, setShowRecurringBills] = useState(false);
 
   // ✅ NEW: Load bills from billInstances collection
   const loadBills = async () => {
@@ -341,6 +344,77 @@ const refreshPlaidTransactions = async () => {
     setRefreshingTransactions(false);
   }
 };
+
+  // Load recurring bills from subscriptions collection
+  useEffect(() => {
+    if (!currentUser) return;
+
+    const subscriptionsRef = collection(db, 'users', currentUser.uid, 'subscriptions');
+    const unsubscribe = onSnapshot(
+      subscriptionsRef,
+      (snapshot) => {
+        const subs = snapshot.docs.map(doc => ({
+          id: doc.id,
+          ...doc.data()
+        }));
+        // Filter for recurring bills only
+        const bills = subs.filter(sub => 
+          sub.status === 'active' && 
+          sub.type === 'recurring_bill'
+        );
+        setRecurringBills(bills);
+      },
+      (error) => {
+        console.error('Error loading recurring bills:', error);
+      }
+    );
+
+    return () => unsubscribe();
+  }, [currentUser]);
+
+  // Auto-detect recurring bills on first login
+  useEffect(() => {
+    if (!currentUser) return;
+
+    const checkAndAutoDetect = async () => {
+      try {
+        const settingsRef = doc(db, 'users', currentUser.uid, 'settings', 'personal');
+        const settingsSnap = await getDoc(settingsRef);
+
+        if (settingsSnap.exists()) {
+          const data = settingsSnap.data();
+
+          // Only auto-detect once
+          if (!data.recurringBillsDetected) {
+            console.log('Running automatic recurring bill detection...');
+            
+            const result = await detectAndAutoAddRecurringBills(currentUser.uid, db);
+            
+            if (result.success && result.addedCount > 0) {
+              NotificationManager.showSuccess(
+                `Auto-detected and added ${result.addedCount} recurring bill${result.addedCount > 1 ? 's' : ''}!`
+              );
+            }
+
+            // Mark as detected
+            await updateDoc(settingsRef, { 
+              recurringBillsDetected: true,
+              lastAutoDetection: new Date().toISOString()
+            });
+          }
+        } else {
+          // Create settings document if it doesn't exist
+          await setDoc(settingsRef, {
+            recurringBillsDetected: false
+          });
+        }
+      } catch (error) {
+        console.error('Error in auto-detection:', error);
+      }
+    };
+
+    checkAndAutoDetect();
+  }, [currentUser]);
 
   // Load bills on mount - ADDED
   useEffect(() => {
@@ -1515,6 +1589,33 @@ const refreshPlaidTransactions = async () => {
           </div>
           <div style={{ display: 'flex', gap: '12px' }}>
             <button 
+              onClick={async () => {
+                const result = await detectAndAutoAddRecurringBills(currentUser.uid, db);
+                if (result.success) {
+                  NotificationManager.showSuccess(
+                    result.addedCount > 0 
+                      ? `Auto-detected and added ${result.addedCount} recurring bill${result.addedCount > 1 ? 's' : ''}!`
+                      : `Found ${result.totalDetected} recurring bills but all already exist.`
+                  );
+                } else {
+                  NotificationManager.showError('Detection failed', result.error);
+                }
+              }}
+              style={{
+                background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
+                color: '#fff',
+                border: 'none',
+                borderRadius: '8px',
+                padding: '12px 20px',
+                fontWeight: '600',
+                cursor: 'pointer',
+                transition: 'all 0.2s ease'
+              }}
+              title="Manually run recurring bill detection"
+            >
+              🤖 Detect Recurring Bills
+            </button>
+            <button 
               onClick={() => setShowHelpModal(true)}
               style={{
                 background: '#6c757d',
@@ -2027,6 +2128,109 @@ const refreshPlaidTransactions = async () => {
           )}
         </div>
       </div>
+
+      {/* Recurring Bills Section */}
+      {recurringBills.length > 0 && (
+        <div className="bills-list-section" style={{ marginTop: '40px' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
+            <h3>🔄 Auto-Detected Recurring Bills ({recurringBills.length})</h3>
+            <button 
+              onClick={() => setShowRecurringBills(!showRecurringBills)}
+              style={{
+                background: 'rgba(138, 43, 226, 0.2)',
+                color: '#ba68c8',
+                border: '1px solid #ba68c8',
+                borderRadius: '6px',
+                padding: '8px 16px',
+                fontSize: '13px',
+                fontWeight: '600',
+                cursor: 'pointer'
+              }}
+            >
+              {showRecurringBills ? '▼ Hide' : '▶ Show'}
+            </button>
+          </div>
+          
+          {showRecurringBills && (
+            <>
+              <div style={{
+                padding: '16px',
+                background: 'rgba(138, 43, 226, 0.1)',
+                borderRadius: '8px',
+                marginBottom: '20px',
+                border: '1px solid rgba(138, 43, 226, 0.3)'
+              }}>
+                <p style={{ margin: 0, fontSize: '14px', color: '#ba68c8' }}>
+                  <strong>ℹ️ These bills were automatically detected from your transactions.</strong><br/>
+                  These are utilities, rent, insurance, and other recurring bills that were identified based on transaction patterns.
+                  They are tracked separately from entertainment subscriptions (Netflix, Spotify, etc.).
+                </p>
+              </div>
+
+              <div className="bills-list">
+                {recurringBills.map((bill, index) => (
+                  <div 
+                    key={bill.id || index}
+                    className="bill-item"
+                    style={{
+                      background: 'rgba(138, 43, 226, 0.05)',
+                      border: '2px solid rgba(138, 43, 226, 0.3)'
+                    }}
+                  >
+                    <div className="bill-main-info">
+                      <div className="bill-icon">
+                        {getCategoryIcon(bill.category)}
+                      </div>
+                      <div className="bill-details">
+                        <h4>
+                          {bill.name}
+                          <span 
+                            className="recurring-badge" 
+                            title="Auto-detected from transactions"
+                            style={{
+                              marginLeft: '8px',
+                              padding: '2px 8px',
+                              fontSize: '11px',
+                              background: 'rgba(138, 43, 226, 0.3)',
+                              color: '#ba68c8',
+                              borderRadius: '4px',
+                              fontWeight: 'normal'
+                            }}
+                          >
+                            🤖 Auto-Detected
+                          </span>
+                        </h4>
+                        <div className="bill-meta">
+                          <span className="bill-category">{bill.category}</span>
+                          <span className="bill-frequency">{bill.billingCycle}</span>
+                          {bill.essential && <span style={{ color: '#ffdd00' }}>⭐ Essential</span>}
+                        </div>
+                        {bill.notes && (
+                          <div style={{ fontSize: '12px', color: '#888', marginTop: '4px' }}>
+                            {bill.notes}
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                    
+                    <div className="bill-amount-section">
+                      <div className="bill-amount">{formatCurrency(bill.cost)}</div>
+                      <div className="bill-due-date">
+                        Next: {formatDate(bill.nextRenewal)}
+                      </div>
+                      {bill.paymentMethod && (
+                        <div style={{ fontSize: '11px', color: '#888', marginTop: '4px' }}>
+                          Payment: {bill.paymentMethod}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </>
+          )}
+        </div>
+      )}
 
     </div>
   );
