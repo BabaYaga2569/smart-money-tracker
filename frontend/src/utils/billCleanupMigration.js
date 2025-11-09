@@ -5,9 +5,6 @@
  * This fixes the issue where the system created NEW bill instances every month instead of updating existing ones.
  */
 
-import { collection, getDocs, deleteDoc, doc } from 'firebase/firestore';
-import { db } from '../firebase';
-
 /**
  * Group bills by their identifying characteristics
  * @param {Array} bills - Array of bill objects
@@ -153,11 +150,15 @@ export function analyzeForCleanup(bills) {
 
 /**
  * Execute cleanup by deleting duplicate bills
+ * NOTE: This function is Firebase-dependent and should be called from Bills.jsx
+ * @param {Function} deleteDocFn - Firebase deleteDoc function
+ * @param {Function} docFn - Firebase doc function
+ * @param {Object} db - Firebase database instance
  * @param {string} userId - User ID
  * @param {Array} billsToRemove - Bills to delete
  * @returns {Promise<Object>} Result with success count and errors
  */
-export async function executeCleanup(userId, billsToRemove) {
+export async function executeCleanup(deleteDocFn, docFn, db, userId, billsToRemove) {
   const results = {
     successCount: 0,
     errors: []
@@ -165,7 +166,7 @@ export async function executeCleanup(userId, billsToRemove) {
   
   for (const bill of billsToRemove) {
     try {
-      await deleteDoc(doc(db, 'users', userId, 'billInstances', bill.id));
+      await deleteDocFn(docFn(db, 'users', userId, 'billInstances', bill.id));
       results.successCount++;
       console.log(`✅ Deleted duplicate bill: ${bill.name} (${bill.id})`);
     } catch (error) {
@@ -183,15 +184,21 @@ export async function executeCleanup(userId, billsToRemove) {
 
 /**
  * Main cleanup function - analyze and clean up duplicate bills
+ * NOTE: This function is Firebase-dependent and should be called from Bills.jsx
+ * @param {Function} getDocsFn - Firebase getDocs function
+ * @param {Function} collectionFn - Firebase collection function
+ * @param {Function} deleteDocFn - Firebase deleteDoc function
+ * @param {Function} docFn - Firebase doc function
+ * @param {Object} db - Firebase database instance
  * @param {string} userId - User ID
  * @param {boolean} dryRun - If true, only analyze without deleting
  * @returns {Promise<Object>} Cleanup report
  */
-export async function cleanupDuplicateBills(userId, dryRun = false) {
+export async function cleanupDuplicateBills(getDocsFn, collectionFn, deleteDocFn, docFn, db, userId, dryRun = false) {
   try {
     // Load all bills
-    const billsSnapshot = await getDocs(
-      collection(db, 'users', userId, 'billInstances')
+    const billsSnapshot = await getDocsFn(
+      collectionFn(db, 'users', userId, 'billInstances')
     );
     
     const bills = billsSnapshot.docs.map(doc => ({
@@ -208,7 +215,7 @@ export async function cleanupDuplicateBills(userId, dryRun = false) {
     }
     
     // Execute cleanup
-    const cleanupResults = await executeCleanup(userId, report.billsToRemove);
+    const cleanupResults = await executeCleanup(deleteDocFn, docFn, db, userId, report.billsToRemove);
     
     return {
       ...report,
