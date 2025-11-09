@@ -362,21 +362,21 @@ async function deduplicateAndSaveAccounts(userId, newAccounts, institutionName, 
   const accountsToAdd = newAccounts.map(account => ({
     account_id: account.account_id,
     name: account.name,
-    official_name: account.official_name,
-    mask: account.mask,
+    official_name: account.official_name || null,
+    mask: account.mask || null,
     type: account.type,
-    subtype: account.subtype,
-    // Primary balance fields
-    available_balance: account.balances.available || account.balances.current || 0,
-    current_balance: account.balances.current || 0,
-    balance: account.balances.available || account.balances.current || 0, // For backwards compatibility
-    // Full balances object for flexibility
+    subtype: account.subtype || null,
+    // Primary balance fields - using ?? to handle null without treating 0 as falsy
+    available_balance: account.balances.available ?? account.balances.current ?? 0,
+    current_balance: account.balances.current ?? 0,
+    balance: account.balances.available ?? account.balances.current ?? 0, // For backwards compatibility
+    // Full balances object for flexibility - no undefined values
     balances: {
-      available: account.balances.available,
-      current: account.balances.current,
-      limit: account.balances.limit,
-      iso_currency_code: account.balances.iso_currency_code,
-      unofficial_currency_code: account.balances.unofficial_currency_code
+      available: account.balances.available ?? null,
+      current: account.balances.current ?? 0,
+      limit: account.balances.limit ?? null,
+      iso_currency_code: account.balances.iso_currency_code ?? 'USD',
+      unofficial_currency_code: account.balances.unofficial_currency_code ?? null
     },
     institution_name: institutionName,
     item_id: itemId
@@ -484,11 +484,11 @@ async function updateAccountBalances(userId, accounts) {
       updatedCount++;
       const balances = freshAccount.balances || {};
       
-      // Track both available and current balances
-      const oldAvailable = existingAcc.available_balance || existingAcc.available || existingAcc.balance || 0;
-      const oldCurrent = existingAcc.current_balance || existingAcc.current || existingAcc.balance || 0;
-      const newAvailable = balances.available || balances.current || 0;
-      const newCurrent = balances.current || 0;
+      // Track both available and current balances - using ?? to handle null without treating 0 as falsy
+      const oldAvailable = existingAcc.available_balance ?? existingAcc.available ?? existingAcc.balance ?? 0;
+      const oldCurrent = existingAcc.current_balance ?? existingAcc.current ?? existingAcc.balance ?? 0;
+      const newAvailable = balances.available ?? balances.current ?? 0;
+      const newCurrent = balances.current ?? 0;
       
       // Calculate changes
       const availableChange = newAvailable - oldAvailable;
@@ -509,20 +509,20 @@ async function updateAccountBalances(userId, accounts) {
         pending_amount: pendingAmount
       });
       
-      // Update balance fields with fresh data
+      // Update balance fields with fresh data - no undefined values
       return {
         ...existingAcc,
-        balance: newAvailable, // Primary balance = available (what you can spend)
-        available_balance: newAvailable,
-        current_balance: newCurrent,
-        available: newAvailable, // For compatibility
-        current: newCurrent, // For compatibility
+        balance: newAvailable ?? newCurrent ?? 0, // Primary balance = available (what you can spend)
+        available_balance: newAvailable ?? newCurrent ?? 0,
+        current_balance: newCurrent ?? 0,
+        available: newAvailable ?? newCurrent ?? 0, // For compatibility
+        current: newCurrent ?? 0, // For compatibility
         balances: {
-          available: balances.available,
-          current: balances.current,
-          limit: balances.limit,
-          iso_currency_code: balances.iso_currency_code,
-          unofficial_currency_code: balances.unofficial_currency_code
+          available: balances.available ?? null,
+          current: balances.current ?? 0,
+          limit: balances.limit ?? null,
+          iso_currency_code: balances.iso_currency_code ?? 'USD',
+          unofficial_currency_code: balances.unofficial_currency_code ?? null
         },
         lastUpdated: new Date().toISOString()
       };
