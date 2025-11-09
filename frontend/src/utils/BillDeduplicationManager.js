@@ -262,27 +262,40 @@ export class BillDeduplicationManager {
 
     /**
      * Generate detailed duplicate report showing what will be removed
+     * Uses fuzzy matching to find duplicates
      * @param {Array} bills - Array of bill objects
      * @returns {Object} Detailed report with groups
      */
     static generateDetailedDuplicateReport(bills) {
-        const groups = new Map();
+        const processed = new Set();
+        const duplicateGroups = [];
         
-        bills.forEach(bill => {
-            const key = this.generateGroupKey(bill);
-            if (!groups.has(key)) {
-                groups.set(key, []);
+        // Use pairwise comparison with fuzzy matching
+        for (let i = 0; i < bills.length; i++) {
+            if (processed.has(i)) continue;
+            
+            const group = [bills[i]];
+            processed.add(i);
+            
+            // Find all bills that are duplicates of bills[i]
+            for (let j = i + 1; j < bills.length; j++) {
+                if (processed.has(j)) continue;
+                
+                if (this.areBillsDuplicates(bills[i], bills[j])) {
+                    group.push(bills[j]);
+                    processed.add(j);
+                }
             }
-            groups.get(key).push(bill);
-        });
-        
-        const duplicateGroups = Array.from(groups.values())
-            .filter(group => group.length > 1)
-            .map(group => ({
-                keepBill: group[0], // Keep oldest
-                removeBills: group.slice(1), // Remove rest
-                count: group.length
-            }));
+            
+            // Only add groups with duplicates (more than 1 bill)
+            if (group.length > 1) {
+                duplicateGroups.push({
+                    keepBill: group[0], // Keep first
+                    removeBills: group.slice(1), // Remove rest
+                    count: group.length
+                });
+            }
+        }
         
         return {
             duplicateCount: duplicateGroups.reduce((sum, g) => sum + g.removeBills.length, 0),
