@@ -1,25 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { getTypeFromCategory, SUBSCRIPTION_CATEGORIES, RECURRING_BILL_CATEGORIES } from '../utils/recurringDetection';
 
-const ALL_CATEGORIES = [
-  'Streaming',
-  'Software',
-  'Memberships',
-  'Entertainment',
-  'Gaming',
-  'Utilities',
-  'Rent',
-  'Insurance',
-  'Phone',
-  'Internet',
-  'Mortgage',
-  'Fitness',
-  'Food',
-  'Shopping',
-  'Storage',
-  'Other'
-];
-
 const BILLING_CYCLES = ['Monthly', 'Annual', 'Quarterly'];
 
 const AddSubscriptionForm = ({ subscription, accounts, onSave, onCancel }) => {
