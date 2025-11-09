@@ -18,6 +18,7 @@ import { formatDateForDisplay, formatDateForInput, getPacificTime } from '../uti
 import { TRANSACTION_CATEGORIES, CATEGORY_ICONS, getCategoryIcon, migrateLegacyCategory } from '../constants/categories';
 import NotificationSystem from '../components/NotificationSystem';
 import { BillDeduplicationManager } from '../utils/BillDeduplicationManager';
+import { cleanupDuplicateBills, analyzeForCleanup } from '../utils/billCleanupMigration';
 import { detectAndAutoAddRecurringBills } from '../components/SubscriptionDetector';
 import "./Bills.css";
 
@@ -924,22 +925,51 @@ const refreshPlaidTransactions = async () => {
 
   const updateBillAsPaid = async (bill, paidDate = null, paymentOptions = {}) => {
     try {
-      // ✅ NEW: Update bill in billInstances collection
       const billRef = doc(db, 'users', currentUser.uid, 'billInstances', bill.id);
+      const isRecurring = bill.recurrence && bill.recurrence !== 'one-time';
       
-      await updateDoc(billRef, {
-        isPaid: true,
-        status: 'paid',
-        lastPaidDate: serverTimestamp(),
-        updatedAt: serverTimestamp(),
-        paymentHistory: arrayUnion({
-          paidDate: (paidDate || getPacificTime()).toISOString(),
-          amount: bill.amount,
-          paymentMethod: paymentOptions.method || 'manual',
-          source: paymentOptions.source || 'manual',
-          transactionId: paymentOptions.transactionId || null
-        })
-      });
+      if (isRecurring) {
+        // For RECURRING bills: Update the same bill with next due date
+        const currentDueDate = bill.dueDate || bill.nextDueDate;
+        const currentDueDateObj = new Date(currentDueDate);
+        
+        // Calculate next due date based on frequency
+        let nextDueDate;
+        const frequency = bill.recurrence;
+        
+        if (frequency === 'monthly') {
+          nextDueDate = RecurringManager.calculateNextOccurrenceAfterPayment(currentDueDate, 'monthly');
+        } else if (frequency === 'weekly') {
+          nextDueDate = RecurringManager.calculateNextOccurrenceAfterPayment(currentDueDate, 'weekly');
+        } else if (frequency === 'bi-weekly') {
+          nextDueDate = RecurringManager.calculateNextOccurrenceAfterPayment(currentDueDate, 'bi-weekly');
+        } else if (frequency === 'quarterly') {
+          nextDueDate = RecurringManager.calculateNextOccurrenceAfterPayment(currentDueDate, 'quarterly');
+        } else if (frequency === 'annually') {
+          nextDueDate = RecurringManager.calculateNextOccurrenceAfterPayment(currentDueDate, 'annually');
+        } else {
+          nextDueDate = new Date(currentDueDateObj);
+          nextDueDate.setMonth(nextDueDate.getMonth() + 1);
+        }
+        
+        const nextDueDateStr = nextDueDate.toISOString().split('T')[0];
+        
+        // Update the bill with new due date and reset payment status
+        await updateDoc(billRef, {
+          dueDate: nextDueDateStr,
+          nextDueDate: nextDueDateStr,
+          isPaid: false,
+          status: 'pending',
+          lastPaidDate: serverTimestamp(),
+          updatedAt: serverTimestamp()
+        });
+        
+        console.log(`✅ Recurring bill updated with next due date: ${bill.name} -> ${nextDueDateStr}`);
+      } else {
+        // For ONE-TIME bills: Delete after payment
+        await deleteDoc(billRef);
+        console.log(`✅ One-time bill deleted after payment: ${bill.name}`);
+      }
       
       // If bill was generated from recurring template, advance template's nextOccurrence
       if (bill.recurringTemplateId) {
@@ -981,8 +1011,6 @@ const refreshPlaidTransactions = async () => {
           recurringItems: updatedRecurringItems
         });
       }
-      
-      console.log('✅ Bill marked as paid in billInstances:', bill.id);
     } catch (error) {
       console.error('❌ Error updating bill status:', error);
       throw error;
@@ -1222,16 +1250,33 @@ const refreshPlaidTransactions = async () => {
         ...doc.data()
       }));
       
-      const report = BillDeduplicationManager.generateDetailedDuplicateReport(existingBills);
+      // Use the new cleanup migration logic
+      const report = analyzeForCleanup(existingBills);
       
-      if (report.duplicateCount === 0) {
+      if (report.duplicatesFound === 0) {
         showNotification('No duplicate bills found. All bills are unique.', 'info');
         setDeduplicating(false);
         return;
       }
       
+      // Convert to format expected by DuplicatePreviewModal
+      const modalReport = {
+        duplicateCount: report.duplicatesFound,
+        totalBills: report.totalBills,
+        billsToKeep: report.billsToKeep.length,
+        groups: report.groupDetails.map(group => ({
+          name: group.name,
+          amount: group.amount,
+          frequency: group.frequency,
+          totalCount: group.totalCount,
+          duplicateCount: group.duplicateCount,
+          keepBill: report.billsToKeep.find(b => b.id === group.keepBillId),
+          removeBills: report.billsToRemove.filter(b => group.removeBillIds.includes(b.id))
+        }))
+      };
+      
       // Show preview modal
-      setDuplicateReport(report);
+      setDuplicateReport(modalReport);
       setShowDuplicatePreview(true);
       setDeduplicating(false);
       
@@ -1907,7 +1952,7 @@ const refreshPlaidTransactions = async () => {
               className="deduplicate-button"
               onClick={handleDeduplicateBills}
               disabled={loading || deduplicating}
-              title="Remove duplicate bills (keeps first occurrence)"
+              title="Cleanup duplicate bills - keeps only the next upcoming unpaid bill per group"
               style={{
                 background: '#17a2b8',
                 color: '#fff',
@@ -1921,7 +1966,7 @@ const refreshPlaidTransactions = async () => {
                 opacity: (loading || deduplicating) ? 0.6 : 1
               }}
             >
-              {deduplicating ? '🔄 Deduplicating...' : '🧹 Deduplicate Bills'}
+              {deduplicating ? '🔄 Cleaning up...' : '🧹 Cleanup Duplicates'}
             </button>
           )}
           <button 
