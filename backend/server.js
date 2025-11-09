@@ -128,6 +128,21 @@ function autoCategorizTransaction(description) {
 // ============================================================================
 // PLAID CONFIGURATION & STARTUP DIAGNOSTICS
 // ============================================================================
+// 
+// PRODUCT CONFIGURATION:
+// This app uses Plaid products: ["auth", "transactions"]
+// 
+// WHY THIS CONFIGURATION:
+// - "transactions": Required for transaction history from checking, savings, AND credit cards
+// - "auth": Provides account/routing numbers for checking/savings (enables ACH payments)
+// 
+// WHAT WE AVOID:
+// - "transfer": Enables money movement but FILTERS OUT credit card accounts
+// - "payment_initiation": Similar to transfer, not compatible with credit cards
+// - "income": Income verification, not needed for this app
+// 
+// RESULT: Users can link checking, savings, AND credit card accounts successfully
+// ============================================================================
 
 const PLAID_CLIENT_ID = process.env.PLAID_CLIENT_ID || "demo_client_id";
 const PLAID_SECRET = process.env.PLAID_SECRET || "demo_secret";
@@ -760,6 +775,15 @@ app.post("/api/plaid/create_link_token", async (req, res, next) => {
       logDiagnostic.info('CREATE_LINK_TOKEN', `Update mode configured for item: ${itemId}`);
     } else {
       // Default mode for new connections
+      // Products configuration:
+      // - "transactions": Enables transaction history for checking, savings, AND credit cards
+      // - "auth": Enables account/routing numbers for checking/savings (ACH payments)
+      // 
+      // IMPORTANT: Do NOT include "transfer" or "payment_initiation" products as they
+      // filter out credit card accounts. Credit cards only support "transactions" product.
+      // Using ["auth", "transactions"] allows:
+      //   - Credit cards: transaction history ✓
+      //   - Checking/Savings: transaction history + ACH capabilities ✓
       request = {
         user: {
           client_user_id: userId || "user-id",
@@ -2110,12 +2134,13 @@ app.get("/api/plaid/health", async (req, res, next) => {
         logger.info('HEALTH_CHECK', 'Testing Plaid API connectivity', {});
         logDiagnostic.info('HEALTH_CHECK', 'Testing Plaid API connectivity');
         
+        // Health check only tests basic connectivity with minimal products
         const testRequest = {
           user: {
             client_user_id: 'health-check-test',
           },
           client_name: "Smart Money Tracker Health Check",
-          products: ["auth"],
+          products: ["auth"], // Minimal product for health check only
           country_codes: ["US"],
           language: "en",
         };
