@@ -552,18 +552,22 @@ const allAccounts = data.accounts.map(account => {
     institution_id: account.institution_id ?? '',
     lastBalanceUpdate: balanceChanged ? Date.now() : (existingAccount?.lastBalanceUpdate || Date.now()),
     previousBalance: existingAccount?.balance,
-    // Store original type for filtering
-    originalType: account.type
+    // Store original type and subtype for filtering
+    originalType: account.type,
+    originalSubtype: account.subtype
   };
 });
 
 // Filter: ONLY depository accounts (checking, savings, money market)
-// Exclude credit cards completely
+// Exclude credit cards completely (opposite of CreditCards.jsx filter)
 const formattedPlaidAccounts = allAccounts.filter(account => {
-  // Exclude if type is credit
+  // Exclude if type is 'credit' (matches CreditCards.jsx: a.type === "credit")
   if (account.originalType === 'credit') return false;
   
-  // Exclude if subtype contains 'credit'
+  // Exclude if subtype is 'credit' (matches CreditCards.jsx: a.subtype === "credit")
+  if (account.originalSubtype === 'credit') return false;
+  
+  // Exclude if formatted type contains 'credit' (catches "credit card", etc.)
   const accountType = (account.type || '').toLowerCase();
   if (accountType.includes('credit')) return false;
   
@@ -623,10 +627,13 @@ const formattedPlaidAccounts = allAccounts.filter(account => {
           
           // Filter: ONLY depository accounts (exclude credit cards)
           const plaidAccountsList = allPlaidAccounts.filter(account => {
-            // Exclude if originalType is credit
+            // Exclude if originalType is 'credit'
             if (account.originalType === 'credit') return false;
             
-            // Exclude if type contains 'credit'
+            // Exclude if originalSubtype is 'credit'
+            if (account.originalSubtype === 'credit') return false;
+            
+            // Exclude if formatted type contains 'credit'
             const accountType = (account.type || '').toLowerCase();
             if (accountType.includes('credit')) return false;
             
@@ -681,10 +688,13 @@ const formattedPlaidAccounts = allAccounts.filter(account => {
           
           // Filter: ONLY depository accounts (exclude credit cards)
           const plaidAccountsList = allPlaidAccounts.filter(account => {
-            // Exclude if originalType is credit
+            // Exclude if originalType is 'credit'
             if (account.originalType === 'credit') return false;
             
-            // Exclude if type contains 'credit'
+            // Exclude if originalSubtype is 'credit'
+            if (account.originalSubtype === 'credit') return false;
+            
+            // Exclude if formatted type contains 'credit'
             const accountType = (account.type || '').toLowerCase();
             if (accountType.includes('credit')) return false;
             
@@ -1018,17 +1028,21 @@ const allNewAccounts = data.accounts.map(account => {
     item_id: account.item_id ?? '',
     institution_name: account.institution_name ?? data?.institution_name ?? '',
     institution_id: account.institution_id ?? '',
-    // Store original type for filtering
-    originalType: account.type
+    // Store original type and subtype for filtering
+    originalType: account.type,
+    originalSubtype: account.subtype
   };
 });
 
 // Filter: ONLY depository accounts (exclude credit cards)
 const formattedPlaidAccounts = allNewAccounts.filter(account => {
-  // Exclude if originalType is credit
+  // Exclude if originalType is 'credit'
   if (account.originalType === 'credit') return false;
   
-  // Exclude if type contains 'credit'
+  // Exclude if originalSubtype is 'credit'
+  if (account.originalSubtype === 'credit') return false;
+  
+  // Exclude if formatted type contains 'credit'
   const accountType = (account.type || '').toLowerCase();
   if (accountType.includes('credit')) return false;
   
