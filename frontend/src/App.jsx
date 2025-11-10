@@ -26,6 +26,8 @@ const Paycycle = lazy(() => import('./pages/Paycycle'));
 const Settings = lazy(() => import('./pages/Settings'));
 const BankDetail = lazy(() => import('./pages/BankDetail'));
 const CreditCards = lazy(() => import('./pages/CreditCards'));
+const PaymentHistory = lazy(() => import('./pages/PaymentHistory'));
+const Reports = lazy(() => import('./pages/Reports'));
 const Login = lazy(() => import('./pages/Login'));
 
 // Force bundle hash change to deploy pending fixes
@@ -225,6 +227,22 @@ function App() {
             <PrivateRoute>
               <AppLayout showDebugButton={debugModeEnabled}>
                 <Settings />
+              </AppLayout>
+            </PrivateRoute>
+          } />
+          
+          <Route path="/payment-history" element={
+            <PrivateRoute>
+              <AppLayout showDebugButton={debugModeEnabled}>
+                <PaymentHistory />
+              </AppLayout>
+            </PrivateRoute>
+          } />
+          
+          <Route path="/reports" element={
+            <PrivateRoute>
+              <AppLayout showDebugButton={debugModeEnabled}>
+                <Reports />
               </AppLayout>
             </PrivateRoute>
           } />
