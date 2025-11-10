@@ -55,8 +55,35 @@ export default function DebtOptimizer() {
 
       let creditCards = [];
       if (accountsData.success && accountsData.accounts) {
-        creditCards = accountsData.accounts.filter(
-          (a) => a.type === 'credit' || a.subtype === 'credit'
+        creditCards = accountsData.accounts.filter((account) => {
+          // Check type
+          if (account.type === 'credit') return true;
+
+          // Check subtype exact matches
+          if (account.subtype === 'credit') return true;
+          if (account.subtype === 'credit card') return true;
+
+          // Check if subtype contains 'credit' (case-insensitive)
+          if (account.subtype?.toLowerCase().includes('credit')) return true;
+
+          // Not a credit card
+          return false;
+        });
+
+        console.log(
+          `[Debt Optimizer] Found ${creditCards.length} credit card(s) from ${accountsData.accounts.length} total accounts`
+        );
+
+        // Filter out cards with zero or negative balance (they have available credit, not debt)
+        creditCards = creditCards.filter((card) => {
+          const balance = parseFloat(
+            card.balances?.current || card.balance || 0
+          );
+          return balance > 0;
+        });
+
+        console.log(
+          `[Debt Optimizer] ${creditCards.length} card(s) have outstanding balances`
         );
       }
 
