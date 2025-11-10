@@ -62,6 +62,8 @@ export default function Bills() {
   const [recurringBills, setRecurringBills] = useState([]);
   const [showRecurringBills, setShowRecurringBills] = useState(false);
   const [generatingBills, setGeneratingBills] = useState(false);
+  const [showPaidBills, setShowPaidBills] = useState(false);
+  const [paidBills, setPaidBills] = useState([]);
 
   // ✅ NEW: Load bills from billInstances collection
   const loadBills = async () => {
@@ -130,6 +132,25 @@ export default function Bills() {
       setPaidBillsCount(snapshot.size);
     } catch (error) {
       console.error('Error loading paid bills:', error);
+    }
+  };
+
+  // Load paid bills archive
+  const loadPaidBills = async () => {
+    if (!currentUser) return;
+    try {
+      const paidBillsRef = collection(db, 'users', currentUser.uid, 'paidBills');
+      const q = query(paidBillsRef, orderBy('paidDate', 'desc'));
+      const snapshot = await getDocs(q);
+      const bills = snapshot.docs.map(doc => ({
+        id: doc.id,
+        ...doc.data()
+      }));
+      setPaidBills(bills);
+      console.log(`✅ Loaded ${bills.length} paid bills from archive`);
+    } catch (error) {
+      console.error('Error loading paid bills:', error);
+      setPaidBills([]);
     }
   };
 
@@ -428,8 +449,11 @@ const refreshPlaidTransactions = async () => {
       loadBills();
       loadAccounts();
       loadPaidThisMonth();
+      if (showPaidBills) {
+        loadPaidBills();
+      }
     }
-  }, [currentUser]);
+  }, [currentUser, showPaidBills]);
 
   useEffect(() => {
     if (!currentUser) return;
@@ -867,21 +891,42 @@ const refreshPlaidTransactions = async () => {
     const dueDate = new Date(bill.nextDueDate || bill.dueDate);
     const daysPastDue = Math.max(0, Math.floor((now - dueDate) / (1000 * 60 * 60 * 24)));
     
-    // Record payment in bill_payments collection
+    // Enhanced payment recording with metadata
+    const paidDateISO = new Date(paidDate).toISOString();
+    const paymentYear = new Date(paidDate).getFullYear();
+    const paymentQuarter = `Q${Math.ceil((new Date(paidDate).getMonth() + 1) / 3)}`;
+    
     const paymentsRef = collection(db, 'users', currentUser.uid, 'bill_payments');
     await addDoc(paymentsRef, {
       billId: bill.id,
       billName: bill.name,
       amount: Math.abs(parseFloat(bill.amount)),
+      category: bill.category || 'Bills & Utilities',
       dueDate: bill.nextDueDate || bill.dueDate,
       paidDate: paidDateStr,
       paymentMonth: paidDateStr.slice(0, 7),
+      year: paymentYear,
+      quarter: paymentQuarter,
       paymentMethod: paymentData.method || paymentData.source || 'Manual',
-      category: bill.category || 'Bills & Utilities',
+      recurringTemplateId: bill.recurringTemplateId || null,
+      tags: [bill.category?.toLowerCase() || 'bills', bill.recurrence || 'one-time'],
       linkedTransactionId: paymentData.transactionId || null,
       isOverdue: daysPastDue > 0,
       daysPastDue: daysPastDue,
-      createdAt: new Date()
+      createdAt: serverTimestamp()
+    });
+    
+    // Archive to paidBills collection for historical reference
+    const paidBillsRef = collection(db, 'users', currentUser.uid, 'paidBills');
+    await addDoc(paidBillsRef, {
+      ...bill,
+      isPaid: true,
+      paidDate: paidDateISO,
+      paymentMonth: paidDateStr.slice(0, 7),
+      year: paymentYear,
+      quarter: paymentQuarter,
+      paymentMethod: paymentData.method || paymentData.source || 'Manual',
+      archivedAt: serverTimestamp()
     });
 
     await updateBillAsPaid(bill, paidDate, {
@@ -2345,6 +2390,108 @@ const refreshPlaidTransactions = async () => {
             <div className="bills-empty">No bills found</div>
           )}
         </div>
+      </div>
+
+      {/* Paid Bills Archive Section */}
+      <div className="bills-list-section" style={{ marginTop: '40px' }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
+          <h3>📦 Paid Bills Archive ({paidBills.length})</h3>
+          <button 
+            onClick={() => setShowPaidBills(!showPaidBills)}
+            style={{
+              background: 'rgba(0, 255, 136, 0.2)',
+              color: '#00ff88',
+              border: '1px solid #00ff88',
+              borderRadius: '6px',
+              padding: '8px 16px',
+              fontSize: '13px',
+              fontWeight: '600',
+              cursor: 'pointer'
+            }}
+          >
+            {showPaidBills ? '▼ Hide' : '▶ Show'}
+          </button>
+        </div>
+        
+        {showPaidBills && (
+          <>
+            <div style={{
+              padding: '16px',
+              background: 'rgba(0, 255, 136, 0.1)',
+              borderRadius: '8px',
+              marginBottom: '20px',
+              border: '1px solid rgba(0, 255, 136, 0.3)'
+            }}>
+              <p style={{ margin: 0, fontSize: '14px', color: '#00ff88' }}>
+                <strong>ℹ️ Historical Record</strong><br/>
+                This is your archive of all paid bills. These bills are kept for your records and financial tracking.
+                {paidBills.length > 0 && ` Showing ${paidBills.length} paid bill${paidBills.length !== 1 ? 's' : ''}.`}
+              </p>
+            </div>
+
+            {paidBills.length > 0 ? (
+              <div className="bills-list">
+                {paidBills.map((bill, index) => (
+                  <div 
+                    key={bill.id || index}
+                    className="bill-item paid"
+                    style={{
+                      background: 'rgba(0, 255, 136, 0.05)',
+                      border: '2px solid rgba(0, 255, 136, 0.3)'
+                    }}
+                  >
+                    <div className="bill-main-info">
+                      <div className="bill-icon">
+                        {getCategoryIcon(bill.category)}
+                      </div>
+                      <div className="bill-details">
+                        <h4>
+                          {bill.name}
+                          <span 
+                            className="paid-badge" 
+                            style={{
+                              marginLeft: '8px',
+                              padding: '2px 8px',
+                              fontSize: '11px',
+                              background: 'rgba(0, 255, 136, 0.3)',
+                              color: '#00ff88',
+                              borderRadius: '4px',
+                              fontWeight: 'normal'
+                            }}
+                          >
+                            ✅ PAID
+                          </span>
+                        </h4>
+                        <div className="bill-meta">
+                          <span className="bill-category">{bill.category}</span>
+                          <span className="bill-frequency">{bill.recurrence}</span>
+                          <span>Paid: {formatDate(bill.paidDate)}</span>
+                        </div>
+                      </div>
+                    </div>
+                    
+                    <div className="bill-amount-section">
+                      <div className="bill-amount">{formatCurrency(bill.amount)}</div>
+                      <div className="bill-due-date">
+                        Original Due: {formatDate(bill.dueDate || bill.nextDueDate)}
+                      </div>
+                      <div style={{ 
+                        marginTop: '8px', 
+                        fontSize: '12px', 
+                        color: '#888',
+                        textAlign: 'center'
+                      }}>
+                        {bill.paymentMethod && `Paid via ${bill.paymentMethod}`}
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <div className="bills-empty">No paid bills in archive yet. Pay some bills to see them here!</div>
+            )}
+          </>
+        )}
       </div>
 
       {/* Recurring Bills Section */}

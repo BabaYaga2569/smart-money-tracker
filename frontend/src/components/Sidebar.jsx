@@ -46,6 +46,7 @@ const Sidebar = () => {
     { name: "Transactions", path: "/transactions" },
     { name: "Spendability", path: "/spendability" },
     { name: "Bills", path: "/bills" },
+    { name: "💳 Payment History", path: "/payment-history" },
     { name: "Recurring", path: "/recurring" },
     { name: "Credit Cards", path: "/creditcards" },
     { name: "Subscriptions", path: "/subscriptions", badge: detectionCount },
@@ -53,6 +54,7 @@ const Sidebar = () => {
     { name: "Categories", path: "/categories" },
     { name: "Cash Flow", path: "/cashflow" },
     { name: "Pay Cycle", path: "/paycycle" },
+    { name: "📊 Reports", path: "/reports" },
     { name: "Settings", path: "/settings" }
   ];
 
