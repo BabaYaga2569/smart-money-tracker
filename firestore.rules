@@ -71,6 +71,31 @@ service cloud.firestore {
       }
       
       // ---------------------------------------------------------------------------
+      // PAID BILLS - Archive of paid bills for history/reporting
+      // ---------------------------------------------------------------------------
+      match /paidBills/{paidBillId} {
+        allow read, delete: if isOwner(userId);
+        
+        // Allow creating paid bill archives
+        allow create: if isOwner(userId) 
+          && request.resource.data.keys().hasAll(['name', 'amount', 'paidDate'])
+          && request.resource.data.name is string
+          && request.resource.data.name.size() > 0 && request.resource.data.name.size() <= 200
+          && request.resource.data.amount is number
+          && request.resource.data.amount >= 0 && request.resource.data.amount <= 1000000
+          && request.resource.data.paidDate is timestamp
+          && isValidSize();
+        
+        // Allow updates for corrections
+        allow update: if isOwner(userId)
+          && request.resource.data.name is string
+          && request.resource.data.name.size() > 0 && request.resource.data.name.size() <= 200
+          && request.resource.data.amount is number
+          && request.resource.data.amount >= 0 && request.resource.data.amount <= 1000000
+          && isValidSize();
+      }
+      
+      // ---------------------------------------------------------------------------
       // SUBSCRIPTIONS - Recurring payment subscriptions
       // ---------------------------------------------------------------------------
       match /subscriptions/{subId} {
@@ -88,6 +113,29 @@ service cloud.firestore {
           && request.resource.data.name.size() > 0 && request.resource.data.name.size() <= 200
           && request.resource.data.amount is number
           && request.resource.data.amount >= 0 && request.resource.data.amount <= 100000
+          && isValidSize();
+      }
+      
+      // ---------------------------------------------------------------------------
+      // RECURRING ITEMS - Recurring bill/payment templates
+      // ---------------------------------------------------------------------------
+      match /recurringItems/{recurringId} {
+        allow read, delete: if isOwner(userId);
+        
+        allow create: if isOwner(userId)
+          && request.resource.data.name is string
+          && request.resource.data.name.size() > 0 && request.resource.data.name.size() <= 200
+          && request.resource.data.amount is number
+          && request.resource.data.amount >= 0 && request.resource.data.amount <= 1000000
+          && request.resource.data.frequency is string
+          && request.resource.data.frequency in ['daily', 'weekly', 'biweekly', 'monthly', 'bimonthly', 'quarterly', 'yearly']
+          && isValidSize();
+        
+        allow update: if isOwner(userId)
+          && request.resource.data.name is string
+          && request.resource.data.name.size() > 0 && request.resource.data.name.size() <= 200
+          && request.resource.data.amount is number
+          && request.resource.data.amount >= 0 && request.resource.data.amount <= 1000000
           && isValidSize();
       }
       
