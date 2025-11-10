@@ -1,5 +1,5 @@
 import React, { useMemo, useState, useEffect } from "react";
-import { collection, doc, onSnapshot, orderBy, query, updateDoc, Timestamp, getDoc, addDoc, where, getDocs, setDoc, deleteDoc, serverTimestamp, arrayUnion } from "firebase/firestore";
+import { collection, doc, onSnapshot, orderBy, query, updateDoc, Timestamp, getDoc, addDoc, where, getDocs, setDoc, deleteDoc, serverTimestamp } from "firebase/firestore";
 import { db } from "../firebase";
 import { useAuth } from "../contexts/AuthContext";
 import { findMatchingTransactionForBill } from "../utils/billMatcher";
@@ -376,11 +376,11 @@ const refreshPlaidTransactions = async () => {
   const handleRematchTransactions = async () => {
     if (!currentUser) return;
     
-    const loadingId = NotificationManager.showLoading('Re-matching transactions to bills...');
+    const loadingId = NotificationManager.showLoading('🔄 Scanning transactions and matching bills...');
     
     try {
       // Get all unpaid bills from billInstances
-      const unpaidBills = processedBills.filter(b => !b.isPaid);
+      const unpaidBills = processedBills.filter(b => !b.isPaid && b.status !== 'paid');
       
       if (unpaidBills.length === 0) {
         NotificationManager.removeNotification(loadingId);
@@ -393,9 +393,15 @@ const refreshPlaidTransactions = async () => {
       thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
       
       const transactionsRef = collection(db, 'users', currentUser.uid, 'transactions');
-      const q = query(transactionsRef, where('date', '>=', thirtyDaysAgo.toISOString().split('T')[0]));
+      const q = query(
+        transactionsRef,
+        where('date', '>=', thirtyDaysAgo.toISOString().split('T')[0]),
+        orderBy('date', 'desc')
+      );
       const snapshot = await getDocs(q);
       const recentTransactions = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+      
+      console.log(`[Re-match] Found ${unpaidBills.length} unpaid bills and ${recentTransactions.length} recent transactions`);
       
       let matchedCount = 0;
       const matchedBills = [];
@@ -405,15 +411,20 @@ const refreshPlaidTransactions = async () => {
         const matchedTransaction = findMatchingTransactionForBill(bill, recentTransactions);
         
         if (matchedTransaction && !matchedTransaction.pending) {
-          // Mark bill as paid
-          const billRef = doc(db, 'users', currentUser.uid, 'billInstances', bill.id);
-          await updateDoc(billRef, {
-            isPaid: true,
-            paidDate: new Date(matchedTransaction.date),
-            paidAmount: Math.abs(parseFloat(matchedTransaction.amount)),
-            paymentMethod: 'Auto-matched (Manual Re-match)',
-            linkedTransactionIds: arrayUnion(matchedTransaction.transaction_id || matchedTransaction.id),
-            lastUpdated: serverTimestamp()
+          console.log(`[Re-match] Found match for ${bill.name}:`, matchedTransaction.name || matchedTransaction.merchant_name);
+          
+          // Use full payment processing flow to:
+          // 1. Archive to paidBills collection
+          // 2. Record in bill_payments collection
+          // 3. Generate next month's bill if recurring
+          await processBillPaymentInternal(bill, {
+            paidDate: matchedTransaction.date,
+            method: 'Auto-matched',
+            source: 'manual-rematch',
+            transactionId: matchedTransaction.transaction_id || matchedTransaction.id,
+            accountId: matchedTransaction.account_id,
+            merchantName: matchedTransaction.name || matchedTransaction.merchant_name,
+            amount: Math.abs(parseFloat(matchedTransaction.amount))
           });
           
           matchedCount++;
@@ -428,22 +439,16 @@ const refreshPlaidTransactions = async () => {
       NotificationManager.removeNotification(loadingId);
       
       if (matchedCount > 0) {
-        const matchDetails = matchedBills.map(m => 
-          `✅ ${m.name} → ${m.transactionName} (${m.transactionDate})`
-        ).join('\n');
-        
-        NotificationManager.showSuccess(
-          `Matched ${matchedCount} bill${matchedCount !== 1 ? 's' : ''} to transactions!\n\n${matchDetails}`,
-          8000
-        );
-        
+        NotificationManager.showSuccess(`✅ Re-matched ${matchedCount} bill${matchedCount > 1 ? 's' : ''} to transactions!`);
+        // Reload bills to show updated status
         await loadBills();
+        await loadPaidThisMonth();
       } else {
-        NotificationManager.showInfo('No new matches found');
+        NotificationManager.showInfo('No matches found. Bills may already be paid or no matching transactions exist.');
       }
       
     } catch (error) {
-      console.error('Re-matching failed:', error);
+      console.error('[Re-match] Error:', error);
       NotificationManager.removeNotification(loadingId);
       NotificationManager.showError('Re-matching failed', error.message);
     }
@@ -2007,19 +2012,19 @@ const refreshPlaidTransactions = async () => {
                 marginLeft: '10px', 
                 background: (!hasPlaidAccounts && !plaidStatus.isConnected)
                   ? '#999'
-                  : 'linear-gradient(135deg, #f093fb 0%, #f5576c 100%)', 
+                  : '#3b82f6', 
                 color: '#fff',
                 border: 'none',
-                borderRadius: '6px',
-                padding: '12px 16px',
+                borderRadius: '8px',
+                padding: '10px 20px',
                 fontSize: '14px',
                 fontWeight: '600',
                 cursor: (!hasPlaidAccounts && !plaidStatus.isConnected) ? 'not-allowed' : 'pointer',
                 opacity: (!hasPlaidAccounts && !plaidStatus.isConnected) ? 0.6 : 1,
-                boxShadow: (!hasPlaidAccounts && !plaidStatus.isConnected) ? 'none' : '0 2px 4px rgba(245,87,108,0.3)'
+                boxShadow: (!hasPlaidAccounts && !plaidStatus.isConnected) ? 'none' : '0 2px 4px rgba(59,130,246,0.3)'
               }}
             >
-              🔄 Re-match Bills
+              🔄 Re-match Transactions
             </button>
             
             {typeof window !== 'undefined' && window.location.hostname === 'localhost' && (
