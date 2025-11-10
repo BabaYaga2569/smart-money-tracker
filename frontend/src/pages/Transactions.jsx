@@ -976,28 +976,60 @@ useEffect(() => {
   };
 
   const exportTransactions = () => {
-    const csvData = transactions.map(t => ({
-      Date: t.date,
-      Description: t.description,
-      Category: t.category,
-      Account: getAccountDisplayName(accounts[t.account] || {}),
-      Amount: t.amount,
-      Type: t.type
-    }));
+    const csvData = filteredTransactions.map(tx => {
+      // Find account name from account_id
+      const account = accounts[tx.account_id] || accounts[tx.account];
+      
+      // Determine type from amount (negative = expense, positive = income)
+      const type = tx.amount < 0 ? 'Expense' : 'Income';
+      
+      // Get name from multiple possible fields
+      const description = tx.name || tx.merchant_name || tx.description || 'Unknown';
+      
+      return {
+        Date: tx.date || '',
+        Description: description,
+        Category: tx.category || tx.personal_finance_category?.primary || 'Uncategorized',
+        Account: account?.name || account?.official_name || 'Unknown Account',
+        Amount: tx.amount || 0,
+        Type: type,
+        Notes: tx.notes || '',
+        Pending: tx.pending ? 'Yes' : 'No'
+      };
+    });
     
-    const csvContent = "data:text/csv;charset=utf-8," 
-      + "Date,Description,Category,Account,Amount,Type\n"
-      + csvData.map(row => Object.values(row).map(val => `"${val}"`).join(",")).join("\n");
+    // Create CSV string
+    const headers = ['Date', 'Description', 'Category', 'Account', 'Amount', 'Type', 'Notes', 'Pending'];
+    const csvRows = [
+      headers.join(','),
+      ...csvData.map(row => 
+        headers.map(header => {
+          const value = row[header];
+          // Escape commas and quotes
+          if (typeof value === 'string' && (value.includes(',') || value.includes('"'))) {
+            return `"${value.replace(/"/g, '""')}"`;
+          }
+          return value;
+        }).join(',')
+      )
+    ];
     
-    const encodedUri = encodeURI(csvContent);
-    const link = document.createElement("a");
-    link.setAttribute("href", encodedUri);
-    link.setAttribute("download", `transactions_${new Date().toISOString().split('T')[0]}.csv`);
+    const csvString = csvRows.join('\n');
+    
+    // Create download
+    const blob = new Blob([csvString], { type: 'text/csv;charset=utf-8;' });
+    const link = document.createElement('a');
+    const url = URL.createObjectURL(blob);
+    
+    link.setAttribute('href', url);
+    link.setAttribute('download', `transactions_${new Date().toISOString().split('T')[0]}.csv`);
+    link.style.visibility = 'hidden';
+    
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
     
-    showNotification('Transactions exported successfully!', 'success');
+    showNotification('CSV exported successfully!', 'success');
   };
 
   const handleDeleteAllTransactions = async () => {
