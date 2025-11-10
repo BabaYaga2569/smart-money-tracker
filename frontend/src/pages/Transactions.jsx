@@ -1179,11 +1179,10 @@ useEffect(() => {
         // Build composite key with normalized values
         const normalizedName = normalizeName(tx);
         const normalizedAmount = normalizeAmount(tx.amount);
-        const accountId = tx.account_id || tx.account || '';
         const date = tx.date || '';
         
-        // Composite key: date + amount + name + account
-        const key = `${date}_${normalizedAmount}_${normalizedName}_${accountId}`;
+        // Composite key: date + amount + name (account removed to catch cross-account duplicates)
+        const key = `${date}_${normalizedAmount}_${normalizedName}`;
         
         console.log(`[Check] ${tx.name || tx.merchant_name} → key: ${key}`);
         
