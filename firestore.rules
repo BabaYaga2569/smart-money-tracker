@@ -83,7 +83,8 @@ service cloud.firestore {
           && request.resource.data.name.size() > 0 && request.resource.data.name.size() <= 200
           && request.resource.data.amount is number
           && request.resource.data.amount >= 0 && request.resource.data.amount <= 1000000
-          && request.resource.data.paidDate is timestamp
+          && request.resource.data.paidDate is string
+          && request.resource.data.paidDate.size() > 0
           && isValidSize();
         
         // Allow updates for corrections
