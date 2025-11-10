@@ -98,6 +98,16 @@ const CATEGORY_KEYWORDS = {
 };
 
 /**
+ * Normalize string for comparison (removes special characters and converts to lowercase)
+ * @param {string} str - String to normalize
+ * @returns {string} Normalized string
+ */
+function normalizeString(str) {
+  if (!str) return '';
+  return str.toLowerCase().replace(/[^a-z0-9]/g, '').trim();
+}
+
+/**
  * Auto-categorize transaction based on merchant name/description
  * @param {string} description - Merchant name or transaction description
  * @returns {string} Category name or empty string if no match
@@ -1500,6 +1510,9 @@ app.post("/api/plaid/sync_transactions", async (req, res, next) => {
     // Prepare atomic operations
     const operations = [];
     const cursorsToUpdate = new Map();
+    
+    // Track transaction IDs processed in this batch to prevent same-batch duplicates
+    const processedInBatch = new Set();
 
     for (const plaidTx of plaidTransactions) {
       try {
@@ -1508,8 +1521,38 @@ app.post("/api/plaid/sync_transactions", async (req, res, next) => {
         
         const txDocRef = transactionsRef.doc(plaidTx.transaction_id);
         
+        // STEP 1: Check if already processed in THIS batch
+        if (processedInBatch.has(plaidTx.transaction_id)) {
+          logger.info('TRANSACTION_SYNC', 'Skipping duplicate in same batch', { 
+            transaction_id: plaidTx.transaction_id,
+            name: plaidTx.name
+          });
+          skippedCount++;
+          continue;
+        }
+        
         // Check if transaction exists
         const existingTx = existingTransactions.find(t => t.transaction_id === plaidTx.transaction_id);
+        
+        // STEP 2: Check for duplicate by composite key (date + amount + merchant + account)
+        const duplicateByComposite = existingTransactions.find(existing =>
+          existing.date === plaidTx.date &&
+          Math.abs(existing.amount - (-plaidTx.amount)) < 0.01 &&
+          existing.account_id === plaidTx.account_id &&
+          normalizeString(existing.name) === normalizeString(plaidTx.name)
+        );
+        
+        if (duplicateByComposite && duplicateByComposite.transaction_id !== plaidTx.transaction_id) {
+          logger.info('TRANSACTION_SYNC', 'Skipping duplicate by composite key', {
+            transaction_id: plaidTx.transaction_id,
+            name: plaidTx.name,
+            date: plaidTx.date,
+            amount: plaidTx.amount,
+            existing_id: duplicateByComposite.transaction_id
+          });
+          skippedCount++;
+          continue;
+        }
         
         // Check for duplicates using consistency validator
         const duplicate = checkDuplicateTransaction(plaidTx, existingTransactions);
@@ -1521,6 +1564,9 @@ app.post("/api/plaid/sync_transactions", async (req, res, next) => {
           skippedCount++;
           continue;
         }
+        
+        // Mark as processed in this batch
+        processedInBatch.add(plaidTx.transaction_id);
         
         // Prepare transaction data in our format
         const isPending = Boolean(plaidTx.pending);
