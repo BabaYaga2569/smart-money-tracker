@@ -166,62 +166,55 @@ const refreshPlaidTransactions = async () => {
   );
   
   try {
-    // Step 1: Fetch Plaid transactions from backend (last 90 days)
+    // Step 1: Sync Plaid transactions from backend (last 90 days)
     const token = localStorage.getItem('token');
     const apiUrl = import.meta.env.VITE_API_URL || 'https://smart-money-tracker-09ks.onrender.com';
     
-    const response = await fetch(`${apiUrl}/api/plaid/transactions?days=90`, {
+    // Calculate date range (90 days ago to today)
+    const endDate = new Date();
+    const startDate = new Date();
+    startDate.setDate(startDate.getDate() - 90);
+
+    const response = await fetch(`${apiUrl}/api/plaid/sync_transactions`, {
+      method: 'POST',
       headers: {
         'Authorization': `Bearer ${token}`,
         'Content-Type': 'application/json'
-      }
+      },
+      body: JSON.stringify({
+        userId: currentUser.uid,
+        start_date: startDate.toISOString().split('T')[0],
+        end_date: endDate.toISOString().split('T')[0]
+      })
     });
     
     if (!response.ok) {
-      throw new Error('Failed to fetch transactions from Plaid');
+      throw new Error('Failed to sync transactions from Plaid');
     }
     
     const data = await response.json();
-    const plaidTransactions = data.transactions || [];
-    
-    console.log(`[Plaid Sync] Fetched ${plaidTransactions.length} transactions from last 90 days`);
-    
-    // Step 2: Store transactions in Firebase (avoid duplicates)
+
+    // Log sync results
+    console.log(`[Plaid Sync] Synced: ${data.added} added, ${data.updated} updated, ${data.pending} pending`);
+
+    // Step 2: Now fetch all transactions from Firebase (sync_transactions saves them there)
     const transactionsRef = collection(db, 'users', currentUser.uid, 'transactions');
-    let newTransactionsCount = 0;
-    
-    for (const tx of plaidTransactions) {
-      const txId = tx.transaction_id;
-      if (!txId) continue;
-      
-      // Check if transaction already exists
-      const existingQuery = query(transactionsRef, where('transaction_id', '==', txId));
-      const existingDocs = await getDocs(existingQuery);
-      
-      if (existingDocs.empty) {
-        await addDoc(transactionsRef, {
-          transaction_id: txId,
-          name: tx.name || tx.merchant_name || 'Unknown',
-          merchant_name: tx.merchant_name,
-          amount: tx.amount,
-          date: tx.date,
-          category: tx.category?.[0] || 'Other',
-          pending: tx.pending || false,
-          account_id: tx.account_id,
-          synced_at: new Date().toISOString()
-        });
-        newTransactionsCount++;
-      }
-    }
-    
-    console.log(`[Plaid Sync] Added ${newTransactionsCount} new transactions to Firebase`);
-    
-    // Step 3: Get all transactions from Firebase
-    const allTransactionsSnap = await getDocs(transactionsRef);
-    const allTransactions = allTransactionsSnap.docs.map(d => ({
-      id: d.id,
-      ...d.data()
+    const ninetyDaysAgo = new Date();
+    ninetyDaysAgo.setDate(ninetyDaysAgo.getDate() - 90);
+
+    const transactionsQuery = query(
+      transactionsRef,
+      where('date', '>=', ninetyDaysAgo.toISOString().split('T')[0]),
+      orderBy('date', 'desc')
+    );
+
+    const transactionsSnapshot = await getDocs(transactionsQuery);
+    const allTransactions = transactionsSnapshot.docs.map(doc => ({
+      id: doc.id,
+      ...doc.data()
     }));
+
+    console.log(`[Plaid Sync] Fetched ${allTransactions.length} transactions from Firebase`);
     
     // Step 4: Get all bills
     const settingsDocRef = doc(db, 'users', currentUser.uid, 'settings', 'personal');
@@ -358,7 +351,7 @@ const refreshPlaidTransactions = async () => {
     } else {
       NotificationManager.showNotification({
         type: 'info',
-        message: `Synced ${plaidTransactions.length} transactions. No new bill matches found.`,
+        message: `Synced ${allTransactions.length} transactions. No new bill matches found.`,
         duration: 4000
       });
     }
@@ -2705,3 +2698,4 @@ const refreshPlaidTransactions = async () => {
     </div>
   );
 }
+
