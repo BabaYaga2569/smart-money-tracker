@@ -82,12 +82,28 @@ function calculateSimilarity(str1, str2) {
 function matchNames(billName, transactionName) {
   if (!billName || !transactionName) return 0;
   
-  const billVariations = generateNameVariations(billName);
+  const billNormalized = normalizeString(billName);
   const txNormalized = normalizeString(transactionName);
   const txWords = txNormalized.split(' ');
   const billNormalized = normalizeString(billName);
   const billWords = billNormalized.split(' ');
   
+  // Check if transaction is an abbreviation/prefix of bill name
+  // e.g., "Affirm" (tx) matches "Affirm Dog Water Bowl" (bill)
+  if (billNormalized.startsWith(txNormalized) && txNormalized.length >= 3) {
+    // High score for prefix match, especially if transaction is a significant portion
+    const ratio = txNormalized.length / billNormalized.length;
+    return Math.min(0.95, 0.7 + ratio * 0.25);
+  }
+  
+  // Check if bill is an abbreviation/prefix of transaction
+  // e.g., "Affirm" (bill) matches "Affirm Inc Payment" (tx)
+  if (txNormalized.startsWith(billNormalized) && billNormalized.length >= 3) {
+    const ratio = billNormalized.length / txNormalized.length;
+    return Math.min(0.95, 0.7 + ratio * 0.25);
+  }
+  
+  const billVariations = generateNameVariations(billName);
   let maxScore = 0;
   
   // Exact match after normalization
@@ -117,14 +133,17 @@ function matchNames(billName, transactionName) {
   
   for (const variation of billVariations) {
     if (txNormalized === variation) {
-      return 1.0;
+      maxScore = Math.max(maxScore, 1.0);
+      continue;
     }
     
+    // Check if variation is contained in transaction
     if (txNormalized.includes(variation) || variation.includes(txNormalized)) {
-      const score = Math.min(variation.length / txNormalized.length, 1.0);
-      maxScore = Math.max(maxScore, score * 0.9);
+      const score = Math.min(variation.length / Math.max(txNormalized.length, variation.length), 1.0);
+      maxScore = Math.max(maxScore, score * 0.85);
     }
     
+    // Check if variation matches a word in transaction
     if (txWords.some(word => word === variation)) {
       maxScore = Math.max(maxScore, 0.8);
     }
@@ -132,6 +151,13 @@ function matchNames(billName, transactionName) {
     const similarity = calculateSimilarity(variation, txNormalized);
     if (similarity > 0.6) {
       maxScore = Math.max(maxScore, similarity * 0.7);
+    }
+  }
+  
+  // Check if first word of bill matches first word of transaction
+  if (billWords.length > 0 && txWords.length > 0) {
+    if (billWords[0] === txWords[0] && billWords[0].length >= 4) {
+      maxScore = Math.max(maxScore, 0.75);
     }
   }
   
@@ -199,7 +225,7 @@ export function findMatchingTransactionForBill(bill, transactions) {
         dateScore
       };
     })
-    .filter(candidate => candidate.confidence > 0.5)
+    .filter(candidate => candidate.confidence > 0.45)
     .sort((a, b) => b.confidence - a.confidence);
 
   if (candidates.length > 0) {
