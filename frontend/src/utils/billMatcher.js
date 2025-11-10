@@ -85,8 +85,35 @@ function matchNames(billName, transactionName) {
   const billVariations = generateNameVariations(billName);
   const txNormalized = normalizeString(transactionName);
   const txWords = txNormalized.split(' ');
+  const billNormalized = normalizeString(billName);
+  const billWords = billNormalized.split(' ');
   
   let maxScore = 0;
+  
+  // Exact match after normalization
+  if (billNormalized === txNormalized) {
+    return 1.0;
+  }
+  
+  // Check if bill name contains transaction name (e.g., "Affirm Dog Water Bowl" contains "Affirm")
+  if (billNormalized.includes(txNormalized)) {
+    return 0.95;
+  }
+  
+  // Check if transaction name contains bill name
+  if (txNormalized.includes(billNormalized)) {
+    return 0.95;
+  }
+  
+  // Check if first word of bill matches transaction name (e.g., "Affirm" from "Affirm Dog Water Bowl")
+  if (billWords.length > 0 && billWords[0] === txNormalized) {
+    return 0.9;
+  }
+  
+  // Check if transaction starts with first word of bill
+  if (billWords.length > 0 && txNormalized.startsWith(billWords[0])) {
+    return 0.85;
+  }
   
   for (const variation of billVariations) {
     if (txNormalized === variation) {
@@ -146,7 +173,19 @@ export function findMatchingTransactionForBill(bill, transactions) {
       const daysDiff = Math.abs((txDate - billDueDate) / (1000 * 60 * 60 * 24));
       const dateScore = Math.max(0, 1 - (daysDiff / 3));
       
-      const nameScore = matchNames(bill.name, txName);
+      let nameScore = matchNames(bill.name, txName);
+      
+      // Check merchant names array if available
+      if (bill.merchantNames && Array.isArray(bill.merchantNames)) {
+        const txNormalized = normalizeString(txName);
+        for (const merchantName of bill.merchantNames) {
+          const merchantNormalized = normalizeString(merchantName);
+          if (txNormalized.includes(merchantNormalized) || merchantNormalized.includes(txNormalized)) {
+            nameScore = Math.max(nameScore, 0.95);
+            break;
+          }
+        }
+      }
       
       const confidence = (nameScore * 0.5) + (amountScore * 0.3) + (dateScore * 0.2);
       

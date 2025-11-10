@@ -2000,10 +2000,10 @@ app.post("/api/plaid/webhook", async (req, res, next) => {
             logDiagnostic.info('WEBHOOK', `Removed ${syncResponse.data.removed.length} transactions from Firebase`);
           }
           
-          await itemDoc.ref.update({
+          await itemDoc.ref.set({
             cursor: syncResponse.data.next_cursor,
             lastWebhookUpdate: admin.firestore.FieldValue.serverTimestamp()
-          });
+          }, { merge: true });
           
           logDiagnostic.info('WEBHOOK', 'Successfully processed webhook update', {
             saved: allTransactions.length,
@@ -2035,11 +2035,11 @@ app.post("/api/plaid/webhook", async (req, res, next) => {
                            errorCode === 'ITEM_LOCKED' ||
                            errorCode === 'ITEM_NO_LONGER_AVAILABLE';
         
-        await itemsSnapshot.docs[0].ref.update({
+        await itemsSnapshot.docs[0].ref.set({
           status: needsReauth ? 'NEEDS_REAUTH' : 'error',
           error: error,
           updatedAt: admin.firestore.FieldValue.serverTimestamp()
-        });
+        }, { merge: true });
         
         logDiagnostic.info('WEBHOOK', `Item marked as ${needsReauth ? 'NEEDS_REAUTH' : 'error'}`, {
           item_id,
@@ -2065,20 +2065,12 @@ app.post("/api/plaid/webhook", async (req, res, next) => {
       logDiagnostic.error('WEBHOOK', 'Error processing webhook', error);
     }
     
-    // Check if it's already an AppError
-    if (error.statusCode) {
-      return next(error);
-    }
-    
-    // Handle Firebase errors
-    if (isFirebaseError(error)) {
-      return next(createError.firebaseError(error.message || 'Firebase error processing webhook'));
-    }
-    
-    // Return 200 to Plaid to prevent retries for internal errors
+    // Always return 200 to Plaid to prevent retries
+    // Log error for debugging but don't fail the webhook
     res.status(200).json({ 
-      success: false, 
-      error: 'Internal error processing webhook' 
+      received: true,
+      error: 'logged',
+      message: error.message
     });
   }
 });
