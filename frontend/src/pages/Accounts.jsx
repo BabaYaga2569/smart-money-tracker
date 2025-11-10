@@ -529,7 +529,7 @@ const Accounts = () => {
       if (data.success && data.accounts && data.accounts.length > 0) {
         // Format backend accounts for frontend display
        // ✅ Improved mapping logic – reflects pending (uses available first) and safely handles null balances
-const formattedPlaidAccounts = data.accounts.map(account => {
+const allAccounts = data.accounts.map(account => {
   const { currentBalance, availableBalance, liveBalance, pendingAdjustment } = extractBalances(account);
 
   // Check if balance changed compared to existing account
@@ -551,8 +551,28 @@ const formattedPlaidAccounts = data.accounts.map(account => {
     institution_name: account.institution_name ?? data?.institution_name ?? '',
     institution_id: account.institution_id ?? '',
     lastBalanceUpdate: balanceChanged ? Date.now() : (existingAccount?.lastBalanceUpdate || Date.now()),
-    previousBalance: existingAccount?.balance
+    previousBalance: existingAccount?.balance,
+    // Store original type and subtype for filtering
+    originalType: account.type,
+    originalSubtype: account.subtype
   };
+});
+
+// Filter: ONLY depository accounts (checking, savings, money market)
+// Exclude credit cards completely (opposite of CreditCards.jsx filter)
+const formattedPlaidAccounts = allAccounts.filter(account => {
+  // Exclude if type is 'credit' (matches CreditCards.jsx: a.type === "credit")
+  if (account.originalType === 'credit') return false;
+  
+  // Exclude if subtype is 'credit' (matches CreditCards.jsx: a.subtype === "credit")
+  if (account.originalSubtype === 'credit') return false;
+  
+  // Exclude if formatted type contains 'credit' (catches "credit card", etc.)
+  const accountType = (account.type || '').toLowerCase();
+  if (accountType.includes('credit')) return false;
+  
+  // Include all other accounts (depository accounts like checking, savings, etc.)
+  return true;
 });
 
 
@@ -603,7 +623,23 @@ const formattedPlaidAccounts = data.accounts.map(account => {
         if (settingsDocSnap.exists()) {
           const firebaseData = settingsDocSnap.data();
           const bankAccounts = firebaseData.bankAccounts || {};
-          const plaidAccountsList = firebaseData.plaidAccounts || [];
+          const allPlaidAccounts = firebaseData.plaidAccounts || [];
+          
+          // Filter: ONLY depository accounts (exclude credit cards)
+          const plaidAccountsList = allPlaidAccounts.filter(account => {
+            // Exclude if originalType is 'credit'
+            if (account.originalType === 'credit') return false;
+            
+            // Exclude if originalSubtype is 'credit'
+            if (account.originalSubtype === 'credit') return false;
+            
+            // Exclude if formatted type contains 'credit'
+            const accountType = (account.type || '').toLowerCase();
+            if (accountType.includes('credit')) return false;
+            
+            // Include all other accounts
+            return true;
+          });
           
           setAccounts(bankAccounts);
           setPlaidAccounts(plaidAccountsList);
@@ -648,7 +684,23 @@ const formattedPlaidAccounts = data.accounts.map(account => {
         if (settingsDocSnap.exists()) {
           const data = settingsDocSnap.data();
           const bankAccounts = data.bankAccounts || {};
-          const plaidAccountsList = data.plaidAccounts || [];
+          const allPlaidAccounts = data.plaidAccounts || [];
+          
+          // Filter: ONLY depository accounts (exclude credit cards)
+          const plaidAccountsList = allPlaidAccounts.filter(account => {
+            // Exclude if originalType is 'credit'
+            if (account.originalType === 'credit') return false;
+            
+            // Exclude if originalSubtype is 'credit'
+            if (account.originalSubtype === 'credit') return false;
+            
+            // Exclude if formatted type contains 'credit'
+            const accountType = (account.type || '').toLowerCase();
+            if (accountType.includes('credit')) return false;
+            
+            // Include all other accounts
+            return true;
+          });
           
           setAccounts(bankAccounts);
           setPlaidAccounts(plaidAccountsList);
@@ -959,7 +1011,7 @@ const formattedPlaidAccounts = data.accounts.map(account => {
         // Format Plaid accounts for display with null checks
         // IMPORTANT: Do NOT store access_token - it's now stored securely server-side
         // ✅ Improved mapping logic – reflects pending (uses available first) and safely handles null balances
-const formattedPlaidAccounts = data.accounts.map(account => {
+const allNewAccounts = data.accounts.map(account => {
   const { currentBalance, availableBalance, liveBalance, pendingAdjustment } = extractBalances(account);
 
   return {
@@ -976,7 +1028,26 @@ const formattedPlaidAccounts = data.accounts.map(account => {
     item_id: account.item_id ?? '',
     institution_name: account.institution_name ?? data?.institution_name ?? '',
     institution_id: account.institution_id ?? '',
+    // Store original type and subtype for filtering
+    originalType: account.type,
+    originalSubtype: account.subtype
   };
+});
+
+// Filter: ONLY depository accounts (exclude credit cards)
+const formattedPlaidAccounts = allNewAccounts.filter(account => {
+  // Exclude if originalType is 'credit'
+  if (account.originalType === 'credit') return false;
+  
+  // Exclude if originalSubtype is 'credit'
+  if (account.originalSubtype === 'credit') return false;
+  
+  // Exclude if formatted type contains 'credit'
+  const accountType = (account.type || '').toLowerCase();
+  if (accountType.includes('credit')) return false;
+  
+  // Include all other accounts
+  return true;
 });
 
 
