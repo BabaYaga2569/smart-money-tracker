@@ -1114,7 +1114,7 @@ useEffect(() => {
     }
   };
 
-  // Remove duplicate transactions
+  // Remove duplicate transactions with normalized comparison
   const removeDuplicateTransactions = async () => {
     if (!currentUser) return;
     
@@ -1126,32 +1126,75 @@ useEffect(() => {
       
       const allTxs = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
       
-      // Find duplicates by composite key
+      console.log(`[Remove Duplicates] Checking ${allTxs.length} transactions...`);
+      
+      // Helper function to normalize merchant name
+      const normalizeName = (tx) => {
+        const name = tx.name || tx.merchant_name || '';
+        return name.toLowerCase().replace(/[^a-z0-9]/g, '').trim();
+      };
+      
+      // Helper function to normalize amount (to 2 decimal places)
+      const normalizeAmount = (amount) => {
+        return parseFloat(amount || 0).toFixed(2);
+      };
+      
+      // Find duplicates by normalized composite key
       const seen = new Map();
       const duplicatesToDelete = [];
       
       allTxs.forEach(tx => {
-        const key = `${tx.date}_${tx.amount}_${tx.name}_${tx.account_id}`;
+        // Build composite key with normalized values
+        const normalizedName = normalizeName(tx);
+        const normalizedAmount = normalizeAmount(tx.amount);
+        const accountId = tx.account_id || '';
+        const date = tx.date || '';
+        
+        // Composite key: date + amount + name + account
+        const key = `${date}_${normalizedAmount}_${normalizedName}_${accountId}`;
         
         if (seen.has(key)) {
           // This is a duplicate - mark for deletion
-          duplicatesToDelete.push(tx.id);
-          console.log('Found duplicate:', tx.name, tx.date, tx.amount);
+          duplicatesToDelete.push({
+            id: tx.id,
+            name: tx.name || tx.merchant_name,
+            date: tx.date,
+            amount: tx.amount
+          });
+          console.log('[Remove Duplicates] Found duplicate:', {
+            name: tx.name || tx.merchant_name,
+            date: tx.date,
+            amount: tx.amount,
+            key: key
+          });
         } else {
           // First occurrence - keep it
-          seen.set(key, tx.id);
+          seen.set(key, {
+            id: tx.id,
+            name: tx.name || tx.merchant_name,
+            date: tx.date,
+            amount: tx.amount
+          });
         }
       });
       
       if (duplicatesToDelete.length === 0) {
+        console.log('[Remove Duplicates] No duplicates found');
         alert('No duplicates found!');
         setLoading(false);
         return;
       }
       
-      // Confirm deletion
+      // Show detailed confirmation with duplicate info
+      const duplicateDetails = duplicatesToDelete
+        .slice(0, 5) // Show first 5
+        .map(d => `  • ${d.name} - ${d.date} - ${Math.abs(d.amount).toFixed(2)}`)
+        .join('\n');
+      
+      const moreCount = duplicatesToDelete.length > 5 ? `\n  ... and ${duplicatesToDelete.length - 5} more` : '';
+      
       const confirmed = window.confirm(
-        `Found ${duplicatesToDelete.length} duplicate transaction(s). Delete them?`
+        `Found ${duplicatesToDelete.length} duplicate transaction(s):\n\n${duplicateDetails}${moreCount}\n\nDelete them?`
       );
       
       if (!confirmed) {
@@ -1161,21 +1204,22 @@ useEffect(() => {
       
       // Delete duplicates using batch
       const batch = writeBatch(db);
-      duplicatesToDelete.forEach(id => {
-        const docRef = doc(db, 'users', currentUser.uid, 'transactions', id);
+      duplicatesToDelete.forEach(dup => {
+        const docRef = doc(db, 'users', currentUser.uid, 'transactions', dup.id);
         batch.delete(docRef);
       });
       
       await batch.commit();
       
-      alert(`Deleted ${duplicatesToDelete.length} duplicate transaction(s)!`);
+      console.log(`[Remove Duplicates] Deleted ${duplicatesToDelete.length} duplicates`);
+      alert(`✅ Deleted ${duplicatesToDelete.length} duplicate transaction(s)!`);
       showNotification(`Removed ${duplicatesToDelete.length} duplicate(s)`, 'success');
       
       // Real-time listener will auto-update transactions
       
     } catch (error) {
-      console.error('Error removing duplicates:', error);
-      alert('Failed to remove duplicates. Check console for details.');
+      console.error('[Remove Duplicates] Error:', error);
+      alert('❌ Failed to remove duplicates. Check console for details.');
       showNotification('Error removing duplicates', 'error');
     } finally {
       setLoading(false);
