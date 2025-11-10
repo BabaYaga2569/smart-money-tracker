@@ -1142,10 +1142,13 @@ useEffect(() => {
       console.log(`[Remove Duplicates] Checking ${allTxs.length} transactions...`);
       
       // Helper function to normalize merchant name
-      const normalizeName = (tx) => {
-        const name = tx.name || tx.merchant_name || '';
-        return name.toLowerCase().replace(/[^a-z0-9]/g, '').trim();
-      };
+     const normalizeName = (tx) => {
+  const name = tx.name || tx.merchant_name || '';
+  const normalized = name.toLowerCase().replace(/[^a-z0-9\s]/g, '').trim();
+  // Get first significant word (4+ chars) for matching
+  const words = normalized.split(/\s+/).filter(w => w.length >= 4);
+  return words[0] || normalized;
+};
       
       // Helper function to normalize amount (to 2 decimal places)
       const normalizeAmount = (amount) => {
