@@ -28,6 +28,7 @@ const BankDetail = lazy(() => import('./pages/BankDetail'));
 const CreditCards = lazy(() => import('./pages/CreditCards'));
 const PaymentHistory = lazy(() => import('./pages/PaymentHistory'));
 const Reports = lazy(() => import('./pages/Reports'));
+const DebtOptimizer = lazy(() => import('./pages/DebtOptimizer'));
 const Login = lazy(() => import('./pages/Login'));
 
 // Force bundle hash change to deploy pending fixes
@@ -243,6 +244,14 @@ function App() {
             <PrivateRoute>
               <AppLayout showDebugButton={debugModeEnabled}>
                 <Reports />
+              </AppLayout>
+            </PrivateRoute>
+          } />
+          
+          <Route path="/debt-optimizer" element={
+            <PrivateRoute>
+              <AppLayout showDebugButton={debugModeEnabled}>
+                <DebtOptimizer />
               </AppLayout>
             </PrivateRoute>
           } />
