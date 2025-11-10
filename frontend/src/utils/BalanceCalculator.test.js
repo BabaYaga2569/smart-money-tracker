@@ -227,6 +227,79 @@ const runBalanceCalculatorTests = () => {
         console.log('✅ Mixed pending indicators all counted (matches bank available balance)');
     });
 
+    // Test 8: Credit card accounts should be filtered out before calculation
+    test('Credit card accounts excluded from total projected balance', () => {
+        const accounts = [
+            {
+                account_id: 'checking_123',
+                name: 'USAA Checking',
+                type: 'depository',
+                subtype: 'checking',
+                balance: '591.70'
+            },
+            {
+                account_id: 'savings_456',
+                name: 'Ally Savings',
+                type: 'depository',
+                subtype: 'savings',
+                balance: '639.71'
+            },
+            {
+                account_id: 'credit_789',
+                name: 'Citi Credit Card',
+                type: 'credit',
+                subtype: 'credit card',
+                balance: '626.21'  // This is available credit, NOT cash
+            },
+            {
+                account_id: 'credit_890',
+                name: 'Costco Credit Card',
+                type: 'credit',
+                subtype: 'credit card',
+                balance: '1721.24'  // This is available credit, NOT cash
+            }
+        ];
+        
+        // Filter out credit cards BEFORE calling calculateTotalProjectedBalance
+        const depositoryAccounts = accounts.filter(account => {
+            // Include if type is depository
+            if (account.type === 'depository') return true;
+            
+            // Include if subtype is checking, savings, or money market
+            const depositorySubtypes = ['checking', 'savings', 'money market', 'cd', 'hsa'];
+            if (depositorySubtypes.includes(account.subtype?.toLowerCase())) return true;
+            
+            // Exclude if type is credit
+            if (account.type === 'credit') return false;
+            
+            // Exclude if subtype contains 'credit'
+            if (account.subtype?.toLowerCase().includes('credit')) return false;
+            
+            // Default: include for manual accounts
+            return true;
+        });
+        
+        const transactions = [];
+        
+        const totalProjected = calculateTotalProjectedBalance(depositoryAccounts, transactions);
+        
+        // Expected: Only checking + savings (591.70 + 639.71 = 1231.41)
+        // Should NOT include credit card available credit (626.21 + 1721.24)
+        const expectedTotal = 1231.41;
+        
+        assert(
+            Math.abs(totalProjected - expectedTotal) < 0.01,
+            `Total projected should be ${expectedTotal} (depository accounts only), got ${totalProjected}`
+        );
+        
+        assert(
+            depositoryAccounts.length === 2,
+            `Should have filtered to 2 depository accounts, got ${depositoryAccounts.length}`
+        );
+        
+        console.log('✅ Credit card accounts correctly excluded from balance calculation');
+    });
+
     console.log('\n✅ All Balance Calculator tests passed!');
 };
 

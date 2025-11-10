@@ -89,7 +89,29 @@ if (wasUpdated) {
   settingsData = refreshedDoc.data();
 }
 
-  const plaidAccounts = settingsData.plaidAccounts || [];
+  const allPlaidAccounts = settingsData.plaidAccounts || [];
+
+      // Filter: ONLY depository accounts (checking, savings, money market)
+      // Exclude credit cards completely
+      const depositoryAccounts = allPlaidAccounts.filter(account => {
+        // Include if type is depository
+        if (account.type === 'depository') return true;
+        
+        // Include if subtype is checking, savings, or money market
+        const depositorySubtypes = ['checking', 'savings', 'money market', 'cd', 'hsa'];
+        if (depositorySubtypes.includes(account.subtype?.toLowerCase())) return true;
+        
+        // Exclude if type is credit
+        if (account.type === 'credit') return false;
+        
+        // Exclude if subtype contains 'credit'
+        if (account.subtype?.toLowerCase().includes('credit')) return false;
+        
+        // Default: include for manual accounts
+        return true;
+      });
+
+      console.log(`[Spendability] Filtered ${allPlaidAccounts.length} accounts to ${depositoryAccounts.length} depository accounts (excluded credit cards)`);
 
       // Load transactions to calculate projected balances
       const transactionsRef = collection(db, 'users', currentUser.uid, 'transactions');
@@ -105,19 +127,29 @@ if (wasUpdated) {
       });
 
       // Use PROJECTED balance (includes pending transactions)
-      const totalAvailable = calculateTotalProjectedBalance(plaidAccounts, transactions);
+      // Calculate balance using ONLY depository accounts (no credit cards)
+      const totalAvailable = calculateTotalProjectedBalance(depositoryAccounts, transactions);
 
       console.log('Spendability: Balance calculation', {
-        liveBalance: plaidAccounts.reduce((sum, a) => sum + parseFloat(a.balance || 0), 0),
+        liveBalance: depositoryAccounts.reduce((sum, a) => sum + parseFloat(a.balance || 0), 0),
         projectedBalance: totalAvailable,
-        difference: totalAvailable - plaidAccounts.reduce((sum, a) => sum + parseFloat(a.balance || 0), 0)
+        difference: totalAvailable - depositoryAccounts.reduce((sum, a) => sum + parseFloat(a.balance || 0), 0)
       });
 
       // 🔍 COMPREHENSIVE DEBUG LOGGING
       console.log('🔍 SPENDABILITY DEBUG:', {
         timestamp: new Date().toISOString(),
-        plaidAccountsCount: plaidAccounts.length,
-        plaidAccounts: plaidAccounts.map(a => ({
+        allAccountsCount: allPlaidAccounts.length,
+        depositoryAccountsCount: depositoryAccounts.length,
+        excludedAccounts: allPlaidAccounts.filter(a => 
+          !depositoryAccounts.some(d => d.account_id === a.account_id)
+        ).map(a => ({
+          name: a.name,
+          type: a.type,
+          subtype: a.subtype,
+          balance: a.balance
+        })),
+        depositoryAccounts: depositoryAccounts.map(a => ({
           name: a.name,
           subtype: a.subtype,
           type: a.type,
@@ -127,7 +159,7 @@ if (wasUpdated) {
         })),
         transactionsCount: transactions.length,
         pendingTransactionsCount: transactions.filter(t => t.pending).length,
-        totalLiveBalance: plaidAccounts.reduce((sum, a) => sum + parseFloat(a.balance || 0), 0),
+        totalLiveBalance: depositoryAccounts.reduce((sum, a) => sum + parseFloat(a.balance || 0), 0),
         totalProjectedBalance: totalAvailable
       }); 
      // Get pay cycle data
@@ -357,8 +389,8 @@ console.log('🔍 PAYDAY CALCULATION DEBUG:', {
         willDisplayAs: finalDaysUntilPayday > 0 ? `${finalDaysUntilPayday} days` : 'Today!'
       });
 
-      // Sum ALL checking accounts with projected balances
-      const checkingAccounts = plaidAccounts.filter(a => {
+      // Sum ALL checking accounts with projected balances (from depository accounts only)
+      const checkingAccounts = depositoryAccounts.filter(a => {
         const name = (a.name || '').toLowerCase();
         const subtype = (a.subtype || '').toLowerCase();
         const accountType = (a.type || '').toLowerCase();
@@ -393,8 +425,8 @@ console.log('🔍 PAYDAY CALCULATION DEBUG:', {
 
       console.log(`Total Checking: ${checkingTotal.toFixed(2)}`);
 
-      // Sum ALL savings accounts with projected balances
-      const savingsAccounts = plaidAccounts.filter(a => 
+      // Sum ALL savings accounts with projected balances (from depository accounts only)
+      const savingsAccounts = depositoryAccounts.filter(a => 
         a.subtype === 'savings' || 
         a.name?.toLowerCase().includes('savings')
       );
