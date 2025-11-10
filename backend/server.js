@@ -2065,20 +2065,12 @@ app.post("/api/plaid/webhook", async (req, res, next) => {
       logDiagnostic.error('WEBHOOK', 'Error processing webhook', error);
     }
     
-    // Check if it's already an AppError
-    if (error.statusCode) {
-      return next(error);
-    }
-    
-    // Handle Firebase errors
-    if (isFirebaseError(error)) {
-      return next(createError.firebaseError(error.message || 'Firebase error processing webhook'));
-    }
-    
-    // Return 200 to Plaid to prevent retries for internal errors
+    // Always return 200 to Plaid to prevent retries
+    // Log error for debugging but don't fail the webhook
     res.status(200).json({ 
-      success: false, 
-      error: 'Internal error processing webhook' 
+      received: true,
+      error: 'logged',
+      message: error.message
     });
   }
 });
