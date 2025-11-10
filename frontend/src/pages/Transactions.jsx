@@ -883,10 +883,8 @@ useEffect(() => {
   };
 
   const handleEditTransaction = (transaction) => {
-    if (transaction.source === 'plaid') {
-      showNotification('❌ Cannot edit Plaid transactions. They sync from your bank.', 'error');
-      return;
-    }
+    // Allow editing Plaid transactions, but track that they've been manually edited
+    // This prevents them from being overwritten during next sync
     
     setEditingTransaction(transaction.id);
     setEditFormData({
@@ -910,13 +908,28 @@ useEffect(() => {
       ? -Math.abs(editFormData.amount)
       : Math.abs(editFormData.amount);
     
-    await updateTransaction(editingTransaction, {
+    const updates = {
       merchant_name: editFormData.merchant_name,
       amount: finalAmount,
       date: editFormData.date,
       category: editFormData.category,
       notes: editFormData.notes
-    });
+    };
+    
+    // If editing a Plaid transaction, mark it as manually edited
+    if (transaction.source === 'plaid' || transaction.plaid_transaction_id || transaction.transaction_id) {
+      updates.manuallyEdited = true;
+      updates.lastEditedAt = new Date().toISOString();
+      updates.lastEditedBy = currentUser.uid;
+      
+      console.log('[Edit Transaction] Marking Plaid transaction as manually edited:', {
+        id: transaction.id,
+        name: transaction.merchant_name || transaction.name,
+        manuallyEdited: true
+      });
+    }
+    
+    await updateTransaction(editingTransaction, updates);
   };
 
   const handleCancelEdit = () => {
@@ -2169,6 +2182,27 @@ useEffect(() => {
                 {editingTransaction === transaction.id ? (
                   <div className="transaction-edit-mode">
                     <div className="transaction-edit-form">
+                      {/* Show warning if editing Plaid transaction */}
+                      {(transaction.source === 'plaid' || transaction.plaid_transaction_id || transaction.transaction_id) && (
+                        <div style={{
+                          background: 'linear-gradient(135deg, #f39c12 0%, #e67e22 100%)',
+                          color: 'white',
+                          padding: '12px 16px',
+                          borderRadius: '8px',
+                          marginBottom: '16px',
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: '10px'
+                        }}>
+                          <span style={{ fontSize: '20px' }}>⚠️</span>
+                          <div>
+                            <strong>Plaid Transaction</strong>
+                            <div style={{ fontSize: '13px', marginTop: '4px' }}>
+                              This transaction synced from your bank. Your edits will be saved and won&apos;t be overwritten.
+                            </div>
+                          </div>
+                        </div>
+                      )}
                       <div className="edit-form-row">
                         <label>Merchant/Description:</label>
                         <input
@@ -2245,6 +2279,21 @@ useEffect(() => {
                         >
                           {transaction.merchant_name || transaction.name || transaction.description || 'Unknown'}
                         </span>
+                        
+                        {/* Show "Edited" badge if manually modified */}
+                        {transaction.manuallyEdited && (
+                          <span style={{
+                            background: 'rgba(52, 152, 219, 0.2)',
+                            color: '#3498db',
+                            padding: '2px 8px',
+                            borderRadius: '4px',
+                            fontSize: '11px',
+                            fontWeight: '600',
+                            marginLeft: '8px'
+                          }}>
+                            EDITED
+                          </span>
+                        )}
                         
                         {transaction.category && (
                           <span className="transaction-category-inline">

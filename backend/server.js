@@ -1534,7 +1534,17 @@ app.post("/api/plaid/sync_transactions", async (req, res, next) => {
         // Check if transaction exists
         const existingTx = existingTransactions.find(t => t.transaction_id === plaidTx.transaction_id);
         
-        // STEP 2: Check for duplicate by composite key (date + amount + merchant + account)
+        // STEP 2: Skip updating transactions that were manually edited
+        if (existingTx && existingTx.manuallyEdited === true) {
+          logger.info('TRANSACTION_SYNC', 'Skipping update - transaction was manually edited', {
+            transaction_id: plaidTx.transaction_id,
+            name: plaidTx.name
+          });
+          skippedCount++;
+          continue;
+        }
+        
+        // STEP 3: Check for duplicate by composite key (date + amount + merchant + account)
         const duplicateByComposite = existingTransactions.find(existing =>
           existing.date === plaidTx.date &&
           Math.abs(existing.amount - (-plaidTx.amount)) < 0.01 &&
@@ -2431,17 +2441,6 @@ app.put("/api/transactions/:transactionId", async (req, res, next) => {
     
     const existingTransaction = transactionDoc.data();
     
-    // Check if trying to edit protected fields on Plaid transactions
-    if (existingTransaction.source === 'plaid') {
-      if (merchant_name !== undefined || amount !== undefined || 
-          date !== undefined || notes !== undefined) {
-        throw createError.badRequest(
-          'Can only edit category for Plaid transactions.',
-          'PLAID_READ_ONLY'
-        );
-      }
-    }
-    
     // Build updates object
     const updates = {
       updated_at: admin.firestore.FieldValue.serverTimestamp()
@@ -2455,6 +2454,19 @@ app.put("/api/transactions/:transactionId", async (req, res, next) => {
       updates.category_override = true;
     }
     if (notes !== undefined) updates.notes = notes;
+    
+    // If editing a Plaid transaction, mark it as manually edited
+    // This prevents it from being overwritten during next Plaid sync
+    if (existingTransaction.source === 'plaid' || existingTransaction.transaction_id) {
+      updates.manuallyEdited = true;
+      updates.lastEditedAt = admin.firestore.FieldValue.serverTimestamp();
+      updates.lastEditedBy = userId;
+      
+      logger.info('UPDATE_TRANSACTION', 'Marking Plaid transaction as manually edited', {
+        transactionId: transactionId,
+        userId: userId
+      });
+    }
     
     await transactionRef.update(updates);
     
