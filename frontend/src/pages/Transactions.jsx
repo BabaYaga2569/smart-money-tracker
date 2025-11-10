@@ -1141,14 +1141,30 @@ useEffect(() => {
       
       console.log(`[Remove Duplicates] Checking ${allTxs.length} transactions...`);
       
-      // Helper function to normalize merchant name
-     const normalizeName = (tx) => {
-  const name = tx.name || tx.merchant_name || '';
-  const normalized = name.toLowerCase().replace(/[^a-z0-9\s]/g, '').trim();
-  // Get first significant word (4+ chars) for matching
-  const words = normalized.split(/\s+/).filter(w => w.length >= 4);
-  return words[0] || normalized;
-};
+      // Find all Affirm transactions and log them
+      const affirmTxs = allTxs.filter(tx => {
+        const name = (tx.name || tx.merchant_name || '').toLowerCase();
+        return name.includes('affirm');
+      });
+      
+      console.log(`[Remove Duplicates] Found ${affirmTxs.length} Affirm transactions:`, affirmTxs.map(tx => ({
+        id: tx.id,
+        name: tx.name || tx.merchant_name,
+        date: tx.date,
+        amount: tx.amount,
+        account_id: tx.account_id,
+        account: tx.account
+      })));
+      
+      // Helper function to normalize merchant name - FIRST WORD ONLY
+      const normalizeName = (tx) => {
+        const name = tx.name || tx.merchant_name || '';
+        const normalized = name.toLowerCase().replace(/[^a-z0-9\s]/g, '').trim();
+        const words = normalized.split(/\s+/).filter(w => w.length >= 3);
+        const firstWord = words[0] || normalized;
+        console.log(`[Normalize] "${name}" → "${firstWord}"`);
+        return firstWord;
+      };
       
       // Helper function to normalize amount (to 2 decimal places)
       const normalizeAmount = (amount) => {
@@ -1163,11 +1179,13 @@ useEffect(() => {
         // Build composite key with normalized values
         const normalizedName = normalizeName(tx);
         const normalizedAmount = normalizeAmount(tx.amount);
-        const accountId = tx.account_id || '';
+        const accountId = tx.account_id || tx.account || '';
         const date = tx.date || '';
         
         // Composite key: date + amount + name + account
         const key = `${date}_${normalizedAmount}_${normalizedName}_${accountId}`;
+        
+        console.log(`[Check] ${tx.name || tx.merchant_name} → key: ${key}`);
         
         if (seen.has(key)) {
           // This is a duplicate - mark for deletion
@@ -1177,11 +1195,12 @@ useEffect(() => {
             date: tx.date,
             amount: tx.amount
           });
-          console.log('[Remove Duplicates] Found duplicate:', {
+          console.log('[Remove Duplicates] ✅ Found duplicate:', {
             name: tx.name || tx.merchant_name,
             date: tx.date,
             amount: tx.amount,
-            key: key
+            key: key,
+            matchedWith: seen.get(key)
           });
         } else {
           // First occurrence - keep it
@@ -1201,9 +1220,9 @@ useEffect(() => {
         return;
       }
       
-      // Show detailed confirmation with duplicate info
+      // Show detailed confirmation
       const duplicateDetails = duplicatesToDelete
-        .slice(0, 5) // Show first 5
+        .slice(0, 5)
         .map(d => `  • ${d.name} - ${d.date} - ${Math.abs(d.amount).toFixed(2)}`)
         .join('\n');
       
@@ -1230,8 +1249,6 @@ useEffect(() => {
       console.log(`[Remove Duplicates] Deleted ${duplicatesToDelete.length} duplicates`);
       alert(`✅ Deleted ${duplicatesToDelete.length} duplicate transaction(s)!`);
       showNotification(`Removed ${duplicatesToDelete.length} duplicate(s)`, 'success');
-      
-      // Real-time listener will auto-update transactions
       
     } catch (error) {
       console.error('[Remove Duplicates] Error:', error);
