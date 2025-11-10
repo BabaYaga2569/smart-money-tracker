@@ -372,6 +372,83 @@ const refreshPlaidTransactions = async () => {
   }
 };
 
+  // Manual re-match function to re-try matching bills with transactions
+  const handleRematchTransactions = async () => {
+    if (!currentUser) return;
+    
+    const loadingId = NotificationManager.showLoading('Re-matching transactions to bills...');
+    
+    try {
+      // Get all unpaid bills from billInstances
+      const unpaidBills = processedBills.filter(b => !b.isPaid);
+      
+      if (unpaidBills.length === 0) {
+        NotificationManager.removeNotification(loadingId);
+        NotificationManager.showInfo('No unpaid bills to match');
+        return;
+      }
+      
+      // Get recent transactions (last 30 days)
+      const thirtyDaysAgo = new Date();
+      thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+      
+      const transactionsRef = collection(db, 'users', currentUser.uid, 'transactions');
+      const q = query(transactionsRef, where('date', '>=', thirtyDaysAgo.toISOString().split('T')[0]));
+      const snapshot = await getDocs(q);
+      const recentTransactions = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+      
+      let matchedCount = 0;
+      const matchedBills = [];
+      
+      // Try to match each unpaid bill
+      for (const bill of unpaidBills) {
+        const matchedTransaction = findMatchingTransactionForBill(bill, recentTransactions);
+        
+        if (matchedTransaction && !matchedTransaction.pending) {
+          // Mark bill as paid
+          const billRef = doc(db, 'users', currentUser.uid, 'billInstances', bill.id);
+          await updateDoc(billRef, {
+            isPaid: true,
+            paidDate: new Date(matchedTransaction.date),
+            paidAmount: Math.abs(parseFloat(matchedTransaction.amount)),
+            paymentMethod: 'Auto-matched (Manual Re-match)',
+            linkedTransactionIds: arrayUnion(matchedTransaction.transaction_id || matchedTransaction.id),
+            lastUpdated: serverTimestamp()
+          });
+          
+          matchedCount++;
+          matchedBills.push({
+            name: bill.name,
+            transactionName: matchedTransaction.name || matchedTransaction.merchant_name,
+            transactionDate: matchedTransaction.date
+          });
+        }
+      }
+      
+      NotificationManager.removeNotification(loadingId);
+      
+      if (matchedCount > 0) {
+        const matchDetails = matchedBills.map(m => 
+          `✅ ${m.name} → ${m.transactionName} (${m.transactionDate})`
+        ).join('\n');
+        
+        NotificationManager.showSuccess(
+          `Matched ${matchedCount} bill${matchedCount !== 1 ? 's' : ''} to transactions!\n\n${matchDetails}`,
+          8000
+        );
+        
+        await loadBills();
+      } else {
+        NotificationManager.showInfo('No new matches found');
+      }
+      
+    } catch (error) {
+      console.error('Re-matching failed:', error);
+      NotificationManager.removeNotification(loadingId);
+      NotificationManager.showError('Re-matching failed', error.message);
+    }
+  };
+
   // Load recurring bills from subscriptions collection
   useEffect(() => {
     if (!currentUser) return;
@@ -1920,6 +1997,29 @@ const refreshPlaidTransactions = async () => {
                   : (!plaidStatus.isConnected && !hasPlaidAccounts)
                     ? '🔒 Connect Plaid' 
                     : '🔄 Match Transactions'}
+            </button>
+            
+            <button 
+              onClick={handleRematchTransactions}
+              disabled={!hasPlaidAccounts && !plaidStatus.isConnected}
+              title="Re-match unpaid bills with recent transactions (last 30 days)"
+              style={{ 
+                marginLeft: '10px', 
+                background: (!hasPlaidAccounts && !plaidStatus.isConnected)
+                  ? '#999'
+                  : 'linear-gradient(135deg, #f093fb 0%, #f5576c 100%)', 
+                color: '#fff',
+                border: 'none',
+                borderRadius: '6px',
+                padding: '12px 16px',
+                fontSize: '14px',
+                fontWeight: '600',
+                cursor: (!hasPlaidAccounts && !plaidStatus.isConnected) ? 'not-allowed' : 'pointer',
+                opacity: (!hasPlaidAccounts && !plaidStatus.isConnected) ? 0.6 : 1,
+                boxShadow: (!hasPlaidAccounts && !plaidStatus.isConnected) ? 'none' : '0 2px 4px rgba(245,87,108,0.3)'
+              }}
+            >
+              🔄 Re-match Bills
             </button>
             
             {typeof window !== 'undefined' && window.location.hostname === 'localhost' && (
