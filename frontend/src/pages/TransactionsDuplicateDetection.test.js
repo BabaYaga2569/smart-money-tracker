@@ -23,7 +23,10 @@ const test = (name, fn) => {
 // Helper function to normalize merchant name (same as in Transactions.jsx)
 const normalizeName = (tx) => {
   const name = tx.name || tx.merchant_name || '';
-  return name.toLowerCase().replace(/[^a-z0-9]/g, '').trim();
+  const normalized = name.toLowerCase().replace(/[^a-z0-9\s]/g, '').trim();
+  const words = normalized.split(/\s+/).filter(w => w.length >= 3);
+  const firstWord = words[0] || normalized;
+  return firstWord;
 };
 
 // Helper function to normalize amount (same as in Transactions.jsx)
@@ -49,17 +52,15 @@ const runDuplicateDetectionTests = () => {
       `Expected all to match, got: '${result1}', '${result2}', '${result3}'`);
   });
 
-  test('normalizeName: removes special characters', () => {
+  test('normalizeName: removes special characters and extracts first word', () => {
     const tx1 = { name: 'Affirm, Inc.' };
     const tx2 = { name: 'Affirm Inc' };
-    const tx3 = { name: 'AffirmInc' };
     
     const result1 = normalizeName(tx1);
     const result2 = normalizeName(tx2);
-    const result3 = normalizeName(tx3);
     
-    assert(result1 === result2 && result2 === result3, 
-      `Expected all to match, got: '${result1}', '${result2}', '${result3}'`);
+    assert(result1 === result2 && result1 === 'affirm', 
+      `Expected both to be 'affirm', got: '${result1}', '${result2}'`);
   });
 
   test('normalizeName: removes whitespace', () => {
@@ -146,11 +147,33 @@ const runDuplicateDetectionTests = () => {
       account_id: 'acct123'
     };
     
-    const key1 = `${tx1.date}_${normalizeAmount(tx1.amount)}_${normalizeName(tx1)}_${tx1.account_id}`;
-    const key2 = `${tx2.date}_${normalizeAmount(tx2.amount)}_${normalizeName(tx2)}_${tx2.account_id}`;
+    const key1 = `${tx1.date}_${normalizeAmount(tx1.amount)}_${normalizeName(tx1)}`;
+    const key2 = `${tx2.date}_${normalizeAmount(tx2.amount)}_${normalizeName(tx2)}`;
     
     assert(key1 === key2, 
       `Expected matching keys, got: '${key1}', '${key2}'`);
+  });
+
+  test('composite key: identifies cross-account duplicates', () => {
+    const tx1 = {
+      name: 'Affirm',
+      amount: -20.66,
+      date: '2025-10-17',
+      account_id: 'zxydAykJMNc63YM1qOxrUbdJVKNQB4tzmxMBa'
+    };
+    
+    const tx2 = {
+      name: 'AFFIRM',
+      amount: -20.660000,
+      date: '2025-10-17',
+      account_id: 'j6KbjzpN7ZUNoRo4JO9mILkkvmpBEQcZq6Jq5'  // Different account
+    };
+    
+    const key1 = `${tx1.date}_${normalizeAmount(tx1.amount)}_${normalizeName(tx1)}`;
+    const key2 = `${tx2.date}_${normalizeAmount(tx2.amount)}_${normalizeName(tx2)}`;
+    
+    assert(key1 === key2, 
+      `Expected matching keys despite different accounts, got: '${key1}', '${key2}'`);
   });
 
   test('composite key: distinguishes different transactions', () => {
@@ -168,8 +191,8 @@ const runDuplicateDetectionTests = () => {
       account_id: 'acct123'
     };
     
-    const key1 = `${tx1.date}_${normalizeAmount(tx1.amount)}_${normalizeName(tx1)}_${tx1.account_id}`;
-    const key2 = `${tx2.date}_${normalizeAmount(tx2.amount)}_${normalizeName(tx2)}_${tx2.account_id}`;
+    const key1 = `${tx1.date}_${normalizeAmount(tx1.amount)}_${normalizeName(tx1)}`;
+    const key2 = `${tx2.date}_${normalizeAmount(tx2.amount)}_${normalizeName(tx2)}`;
     
     assert(key1 !== key2, 
       `Expected different keys, got: '${key1}', '${key2}'`);
