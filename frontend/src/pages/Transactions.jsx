@@ -1114,6 +1114,74 @@ useEffect(() => {
     }
   };
 
+  // Remove duplicate transactions
+  const removeDuplicateTransactions = async () => {
+    if (!currentUser) return;
+    
+    setLoading(true);
+    try {
+      const transactionsRef = collection(db, 'users', currentUser.uid, 'transactions');
+      const q = query(transactionsRef, orderBy('date', 'desc'));
+      const snapshot = await getDocs(q);
+      
+      const allTxs = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+      
+      // Find duplicates by composite key
+      const seen = new Map();
+      const duplicatesToDelete = [];
+      
+      allTxs.forEach(tx => {
+        const key = `${tx.date}_${tx.amount}_${tx.name}_${tx.account_id}`;
+        
+        if (seen.has(key)) {
+          // This is a duplicate - mark for deletion
+          duplicatesToDelete.push(tx.id);
+          console.log('Found duplicate:', tx.name, tx.date, tx.amount);
+        } else {
+          // First occurrence - keep it
+          seen.set(key, tx.id);
+        }
+      });
+      
+      if (duplicatesToDelete.length === 0) {
+        alert('No duplicates found!');
+        setLoading(false);
+        return;
+      }
+      
+      // Confirm deletion
+      const confirmed = window.confirm(
+        `Found ${duplicatesToDelete.length} duplicate transaction(s). Delete them?`
+      );
+      
+      if (!confirmed) {
+        setLoading(false);
+        return;
+      }
+      
+      // Delete duplicates using batch
+      const batch = writeBatch(db);
+      duplicatesToDelete.forEach(id => {
+        const docRef = doc(db, 'users', currentUser.uid, 'transactions', id);
+        batch.delete(docRef);
+      });
+      
+      await batch.commit();
+      
+      alert(`Deleted ${duplicatesToDelete.length} duplicate transaction(s)!`);
+      showNotification(`Removed ${duplicatesToDelete.length} duplicate(s)`, 'success');
+      
+      // Real-time listener will auto-update transactions
+      
+    } catch (error) {
+      console.error('Error removing duplicates:', error);
+      alert('Failed to remove duplicates. Check console for details.');
+      showNotification('Error removing duplicates', 'error');
+    } finally {
+      setLoading(false);
+    }
+  };
+
   // Category filtering handlers
   const handleCategoryClick = (categoryName) => {
     setSelectedCategory(categoryName);
@@ -1685,6 +1753,17 @@ useEffect(() => {
               title="Delete all transactions permanently"
             >
               🗑️ Delete All Transactions
+            </button>
+          )}
+          
+          {transactions.length > 0 && (
+            <button
+              onClick={removeDuplicateTransactions}
+              disabled={loading}
+              className="btn-cleanup-duplicates"
+              title="Find and remove duplicate transactions"
+            >
+              🧹 Remove Duplicates
             </button>
           )}
         </div>

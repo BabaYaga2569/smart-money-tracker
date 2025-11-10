@@ -948,3 +948,25 @@
   background: rgba(255, 255, 255, 0.3);
   transform: scale(1.05);
 }
+
+/* Remove Duplicates Button */
+.btn-cleanup-duplicates {
+  background: linear-gradient(135deg, #f39c12 0%, #e74c3c 100%);
+  color: white;
+  border: none;
+  padding: 10px 20px;
+  border-radius: 8px;
+  cursor: pointer;
+  font-weight: 600;
+  transition: transform 0.2s;
+}
+
+.btn-cleanup-duplicates:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 4px 12px rgba(231, 76, 60, 0.3);
+}
+
+.btn-cleanup-duplicates:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
