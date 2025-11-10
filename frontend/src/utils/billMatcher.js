@@ -1,5 +1,5 @@
 // frontend/src/utils/billMatcher.js
-// Enhanced Bill Matcher with 3-day tolerance and fuzzy matching
+// Enhanced Bill Matcher with 10-day tolerance and fuzzy matching
 
 /**
  * Normalizes a string for fuzzy matching
@@ -164,7 +164,7 @@ function matchNames(billName, transactionName) {
 }
 
 /**
- * Main matching function with 3-day tolerance
+ * Main matching function with 10-day tolerance
  */
 export function findMatchingTransactionForBill(bill, transactions) {
   if (!bill || !transactions || transactions.length === 0) {
@@ -185,7 +185,18 @@ export function findMatchingTransactionForBill(bill, transactions) {
       const txDate = new Date(tx.date);
       const daysDiff = Math.abs((txDate - billDueDate) / (1000 * 60 * 60 * 24));
       
-      return daysDiff <= 3; // 3-DAY TOLERANCE!
+      // Log when transactions are filtered out by date
+      if (daysDiff > 10) {
+        console.log(`[Bill Matcher] Transaction outside 10-day window:`, {
+          bill: bill.name,
+          billDue: billDueDate.toISOString().split('T')[0],
+          txDate: txDate.toISOString().split('T')[0],
+          daysDiff: daysDiff.toFixed(1),
+          txName: tx.name || tx.merchant_name
+        });
+      }
+      
+      return daysDiff <= 10; // 10-DAY TOLERANCE! (more realistic for bill payments)
     })
     .map(tx => {
       const txAmount = Math.abs(parseFloat(tx.amount));
@@ -196,7 +207,7 @@ export function findMatchingTransactionForBill(bill, transactions) {
       const amountScore = Math.max(0, 1 - (amountDiff / 2.00));
       
       const daysDiff = Math.abs((txDate - billDueDate) / (1000 * 60 * 60 * 24));
-      const dateScore = Math.max(0, 1 - (daysDiff / 3));
+      const dateScore = Math.max(0, 1 - (daysDiff / 10));
       
       let nameScore = matchNames(bill.name, txName);
       
