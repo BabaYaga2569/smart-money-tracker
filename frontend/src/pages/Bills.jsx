@@ -2392,6 +2392,108 @@ const refreshPlaidTransactions = async () => {
         </div>
       </div>
 
+      {/* Paid Bills Archive Section */}
+      <div className="bills-list-section" style={{ marginTop: '40px' }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
+          <h3>📦 Paid Bills Archive ({paidBills.length})</h3>
+          <button 
+            onClick={() => setShowPaidBills(!showPaidBills)}
+            style={{
+              background: 'rgba(0, 255, 136, 0.2)',
+              color: '#00ff88',
+              border: '1px solid #00ff88',
+              borderRadius: '6px',
+              padding: '8px 16px',
+              fontSize: '13px',
+              fontWeight: '600',
+              cursor: 'pointer'
+            }}
+          >
+            {showPaidBills ? '▼ Hide' : '▶ Show'}
+          </button>
+        </div>
+        
+        {showPaidBills && (
+          <>
+            <div style={{
+              padding: '16px',
+              background: 'rgba(0, 255, 136, 0.1)',
+              borderRadius: '8px',
+              marginBottom: '20px',
+              border: '1px solid rgba(0, 255, 136, 0.3)'
+            }}>
+              <p style={{ margin: 0, fontSize: '14px', color: '#00ff88' }}>
+                <strong>ℹ️ Historical Record</strong><br/>
+                This is your archive of all paid bills. These bills are kept for your records and financial tracking.
+                {paidBills.length > 0 && ` Showing ${paidBills.length} paid bill${paidBills.length !== 1 ? 's' : ''}.`}
+              </p>
+            </div>
+
+            {paidBills.length > 0 ? (
+              <div className="bills-list">
+                {paidBills.map((bill, index) => (
+                  <div 
+                    key={bill.id || index}
+                    className="bill-item paid"
+                    style={{
+                      background: 'rgba(0, 255, 136, 0.05)',
+                      border: '2px solid rgba(0, 255, 136, 0.3)'
+                    }}
+                  >
+                    <div className="bill-main-info">
+                      <div className="bill-icon">
+                        {getCategoryIcon(bill.category)}
+                      </div>
+                      <div className="bill-details">
+                        <h4>
+                          {bill.name}
+                          <span 
+                            className="paid-badge" 
+                            style={{
+                              marginLeft: '8px',
+                              padding: '2px 8px',
+                              fontSize: '11px',
+                              background: 'rgba(0, 255, 136, 0.3)',
+                              color: '#00ff88',
+                              borderRadius: '4px',
+                              fontWeight: 'normal'
+                            }}
+                          >
+                            ✅ PAID
+                          </span>
+                        </h4>
+                        <div className="bill-meta">
+                          <span className="bill-category">{bill.category}</span>
+                          <span className="bill-frequency">{bill.recurrence}</span>
+                          <span>Paid: {formatDate(bill.paidDate)}</span>
+                        </div>
+                      </div>
+                    </div>
+                    
+                    <div className="bill-amount-section">
+                      <div className="bill-amount">{formatCurrency(bill.amount)}</div>
+                      <div className="bill-due-date">
+                        Original Due: {formatDate(bill.dueDate || bill.nextDueDate)}
+                      </div>
+                      <div style={{ 
+                        marginTop: '8px', 
+                        fontSize: '12px', 
+                        color: '#888',
+                        textAlign: 'center'
+                      }}>
+                        {bill.paymentMethod && `Paid via ${bill.paymentMethod}`}
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <div className="bills-empty">No paid bills in archive yet. Pay some bills to see them here!</div>
+            )}
+          </>
+        )}
+      </div>
+
       {/* Recurring Bills Section */}
       {recurringBills.length > 0 && (
         <div className="bills-list-section" style={{ marginTop: '40px' }}>

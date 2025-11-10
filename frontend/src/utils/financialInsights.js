@@ -3,7 +3,7 @@
  * Generates smart insights from payment and spending data
  */
 
-export const generateFinancialInsights = (payments, options = {}) => {
+export const generateFinancialInsights = (payments) => {
   const insights = [];
   
   if (!payments || payments.length === 0) {
