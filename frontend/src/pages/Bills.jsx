@@ -20,6 +20,7 @@ import NotificationSystem from '../components/NotificationSystem';
 import { BillDeduplicationManager } from '../utils/BillDeduplicationManager';
 import { cleanupDuplicateBills, analyzeForCleanup } from '../utils/billCleanupMigration';
 import { detectAndAutoAddRecurringBills } from '../components/SubscriptionDetector';
+import { generateAllBills, updateTemplatesDates } from '../utils/billGenerator';
 import "./Bills.css";
 
 const generateBillId = () => {
@@ -60,6 +61,7 @@ export default function Bills() {
   const [paidBillsCount, setPaidBillsCount] = useState(0);
   const [recurringBills, setRecurringBills] = useState([]);
   const [showRecurringBills, setShowRecurringBills] = useState(false);
+  const [generatingBills, setGeneratingBills] = useState(false);
 
   // ✅ NEW: Load bills from billInstances collection
   const loadBills = async () => {
@@ -1574,6 +1576,70 @@ const refreshPlaidTransactions = async () => {
     });
   };
 
+  const handleGenerateAllBills = async () => {
+    if (generatingBills) return;
+    
+    // Confirm with user
+    const confirmed = window.confirm(
+      '🔄 Generate Bills from Recurring Templates?\n\n' +
+      'This will:\n' +
+      '• Read all recurring bill templates\n' +
+      '• Update any October dates to current month\n' +
+      '• Generate fresh bill instances\n' +
+      '• Show all bills on this page\n\n' +
+      'Existing unpaid bills will be replaced. Continue?'
+    );
+    
+    if (!confirmed) return;
+    
+    setGeneratingBills(true);
+    
+    const loadingNotificationId = NotificationManager.showLoading(
+      '🔄 Generating bills from recurring templates...'
+    );
+    
+    try {
+      // Step 1: Update template dates
+      const updateResult = await updateTemplatesDates(currentUser.uid, db);
+      
+      if (updateResult.templatesUpdated > 0) {
+        console.log(`✅ Updated ${updateResult.templatesUpdated} template dates`);
+      }
+      
+      // Step 2: Generate all bills (clear existing and create fresh)
+      const generateResult = await generateAllBills(currentUser.uid, db, true);
+      
+      NotificationManager.removeNotification(loadingNotificationId);
+      
+      if (generateResult.success) {
+        NotificationManager.showNotification({
+          type: 'success',
+          message: `✅ Success!\n\n` +
+            `📋 Generated ${generateResult.billsGenerated} bills from ${generateResult.templatesProcessed} templates\n` +
+            `🗑️ Cleared ${generateResult.billsCleared} old bill instances\n` +
+            `📅 Updated ${updateResult.templatesUpdated} template dates`,
+          duration: 6000
+        });
+        
+        // Reload bills to show the new ones
+        await loadBills();
+        await loadPaidThisMonth();
+      } else {
+        NotificationManager.showNotification({
+          type: 'error',
+          message: `❌ Error: ${generateResult.message}`,
+          duration: 5000
+        });
+      }
+    } catch (error) {
+      console.error('Error generating bills:', error);
+      NotificationManager.removeNotification(loadingNotificationId);
+      NotificationManager.showError('Error generating bills', error.message);
+    } finally {
+      setGeneratingBills(false);
+    }
+  };
+
   if (loading) {
     return (
       <div className="bills-container">
@@ -1726,6 +1792,26 @@ const refreshPlaidTransactions = async () => {
               title="Manually run recurring bill detection"
             >
               🤖 Detect Recurring Bills
+            </button>
+            <button 
+              onClick={handleGenerateAllBills}
+              disabled={generatingBills}
+              style={{
+                background: generatingBills 
+                  ? 'linear-gradient(135deg, #999 0%, #666 100%)'
+                  : 'linear-gradient(135deg, #11998e 0%, #38ef7d 100%)',
+                color: '#fff',
+                border: 'none',
+                borderRadius: '8px',
+                padding: '12px 20px',
+                fontWeight: '600',
+                cursor: generatingBills ? 'not-allowed' : 'pointer',
+                transition: 'all 0.2s ease',
+                opacity: generatingBills ? 0.6 : 1
+              }}
+              title="Generate bill instances from all recurring templates"
+            >
+              {generatingBills ? '⏳ Generating...' : '🔄 Generate All Bills'}
             </button>
             <button 
               onClick={() => setShowHelpModal(true)}
