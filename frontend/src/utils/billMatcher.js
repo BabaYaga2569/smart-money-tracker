@@ -85,7 +85,6 @@ function matchNames(billName, transactionName) {
   const billNormalized = normalizeString(billName);
   const txNormalized = normalizeString(transactionName);
   const txWords = txNormalized.split(' ');
-  const billNormalized = normalizeString(billName);
   const billWords = billNormalized.split(' ');
   
   // Check if transaction is an abbreviation/prefix of bill name
