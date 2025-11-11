@@ -1,7 +1,7 @@
 // utils/debtAnalyzer.js
 // Core analysis engine for debt optimization
 
-import { calculatePayoff, calculateSavings, estimateMinimumPayment } from './payoffCalculator';
+import { calculatePayoff, calculateSavings, estimateMinimumPayment } from './payoffCalculator.js';
 
 /**
  * Analyze complete debt situation and generate recommendations
@@ -21,7 +21,7 @@ export const analyzeDebtSituation = (
 ) => {
   // Filter out cards with no balance
   const cardsWithDebt = creditCards.filter((card) => {
-    const balance = parseFloat(card.current || card.balance || 0);
+    const balance = parseFloat(card.balances?.current || card.balance || 0);
     return balance > 0;
   });
 
@@ -43,7 +43,7 @@ export const analyzeDebtSituation = (
   let validAPRCount = 0;
 
   const cardsWithAnalysis = cardsWithDebt.map((card) => {
-    const balance = parseFloat(card.current || card.balance || 0);
+    const balance = parseFloat(card.balances?.current || card.balance || 0);
     const apr = extractAPR(card);
     const minimumPayment = estimateMinimumPayment(balance, apr);
 
