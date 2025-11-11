@@ -747,9 +747,14 @@ const refreshPlaidTransactions = async () => {
       return 'paid';
     }
     
+    // Normalize both dates to midnight to avoid off-by-one errors
     const now = new Date();
+    now.setHours(0, 0, 0, 0);
+    
     const dueDate = new Date(bill.nextDueDate || bill.dueDate);
-    const daysUntilDue = Math.ceil((dueDate - now) / (1000 * 60 * 60 * 24));
+    dueDate.setHours(0, 0, 0, 0);
+    
+    const daysUntilDue = Math.round((dueDate - now) / (1000 * 60 * 60 * 24));
     
     if (daysUntilDue < 0) {
       return 'overdue';
@@ -1631,9 +1636,14 @@ const refreshPlaidTransactions = async () => {
       return '⏭️ SKIPPED';
     }
     
+    // Normalize both dates to midnight to avoid off-by-one errors
     const now = new Date();
+    now.setHours(0, 0, 0, 0);
+    
     const dueDate = new Date(bill.nextDueDate || bill.dueDate);
-    const daysUntilDue = Math.ceil((dueDate - now) / (1000 * 60 * 60 * 24));
+    dueDate.setHours(0, 0, 0, 0);
+    
+    const daysUntilDue = Math.round((dueDate - now) / (1000 * 60 * 60 * 24));
     const status = determineBillStatus(bill);
     
     switch (status) {
