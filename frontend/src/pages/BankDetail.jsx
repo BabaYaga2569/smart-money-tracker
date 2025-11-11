@@ -27,6 +27,16 @@ const BankDetail = () => {
     net: 0
   });
 
+  // Helper function to extract available balance from account object
+  const getPreferredBalance = (account) => {
+    if (!account) return null;
+    // Prefer available_balance, fall back to balances.available, then current
+    return account.available_balance || 
+           account.balances?.available || 
+           account.current_balance ||
+           account.balances?.current;
+  };
+
   // Load account details from Firebase settings
   useEffect(() => {
     const loadAccountDetails = async () => {
@@ -72,8 +82,13 @@ const BankDetail = () => {
         if (data.success && data.accounts) {
           const matchingAccount = data.accounts.find(acc => acc.account_id === accountId);
           if (matchingAccount) {
-            console.log('✅ [BankDetail] Fresh balance fetched:', matchingAccount.balances.current);
-            setLiveBalance(matchingAccount.balances.current);
+            const freshAvailable = getPreferredBalance(matchingAccount);
+            const currentBalance = matchingAccount.current_balance || matchingAccount.balances?.current;
+            console.log('✅ [BankDetail] Fresh balance fetched:', freshAvailable);
+            console.log('✅ [BankDetail] Available:', freshAvailable, 'Current:', currentBalance);
+            setLiveBalance(freshAvailable);
+          } else {
+            console.log('❌ [BankDetail] Fresh balance fetched: null');
           }
         }
       } catch (error) {
@@ -143,16 +158,37 @@ const BankDetail = () => {
     
     // Apply type filter
     if (filters.type) {
-      filtered = filtered.filter(t => t.type === filters.type);
+      if (filters.type === 'income') {
+        filtered = filtered.filter(t => {
+          const amount = parseFloat(t.amount) || 0;
+          return amount > 0;
+        });
+      } else if (filters.type === 'expense') {
+        filtered = filtered.filter(t => {
+          const amount = parseFloat(t.amount) || 0;
+          return amount < 0;
+        });
+      }
     }
     
     // Apply date filters
     if (filters.dateFrom) {
-      filtered = filtered.filter(t => t.date >= filters.dateFrom);
+      const fromDate = new Date(filters.dateFrom);
+      fromDate.setHours(0, 0, 0, 0);
+      filtered = filtered.filter(t => {
+        const txDate = new Date(t.date);
+        txDate.setHours(0, 0, 0, 0);
+        return txDate >= fromDate;
+      });
     }
     
     if (filters.dateTo) {
-      filtered = filtered.filter(t => t.date <= filters.dateTo);
+      const toDate = new Date(filters.dateTo);
+      toDate.setHours(23, 59, 59, 999);
+      filtered = filtered.filter(t => {
+        const txDate = new Date(t.date);
+        return txDate <= toDate;
+      });
     }
     
     setFilteredTransactions(filtered);
@@ -170,14 +206,32 @@ const BankDetail = () => {
     let income = 0;
     let expenses = 0;
     
+    console.log('[BankDetail] Monthly transactions:', monthlyTransactions.length);
+    
+    // Debug logging for first few transactions (to avoid performance impact with large datasets)
+    if (monthlyTransactions.length > 0 && monthlyTransactions.length <= 5) {
+      monthlyTransactions.forEach(t => {
+        console.log('[BankDetail] Transaction sample:', {
+          name: t.name,
+          amount: t.amount,
+          type: typeof t.amount,
+          parsed: parseFloat(t.amount) || 0
+        });
+      });
+    }
+    
     monthlyTransactions.forEach(t => {
       const amount = parseFloat(t.amount) || 0;
+      
+      // Plaid: positive = income, negative = expense
       if (amount > 0) {
         income += amount;
-      } else {
+      } else if (amount < 0) {
         expenses += Math.abs(amount);
       }
     });
+    
+    console.log('[BankDetail] Monthly stats calculated:', { income, expenses, net: income - expenses });
     
     setMonthlyStats({
       income,
@@ -281,8 +335,8 @@ const BankDetail = () => {
             </div>
           </div>
           <div className="bank-balance">
-            <span className="balance-label">Current Balance</span>
-            <div className="balance-amount">{formatCurrency(liveBalance ?? (parseFloat(account.balance) || 0))}</div>
+            <span className="balance-label">Available Balance</span>
+            <div className="balance-amount">{formatCurrency(liveBalance ?? (parseFloat(account.available || account.balance) || 0))}</div>
           </div>
         </div>
       </div>

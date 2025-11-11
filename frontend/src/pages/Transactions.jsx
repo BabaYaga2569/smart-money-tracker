@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { doc, getDoc, collection, addDoc, deleteDoc, query, orderBy, limit, getDocs, writeBatch, onSnapshot } from 'firebase/firestore';
 import { db } from '../firebase';
 import { formatDateForDisplay, formatDateForInput } from '../utils/DateUtils';
@@ -33,6 +33,12 @@ const Transactions = () => {
   const [showErrorModal, setShowErrorModal] = useState(false);
   const [healthStatus, setHealthStatus] = useState(null);
   const [showHealthBanner, setShowHealthBanner] = useState(false);
+  
+  // Category filtering state
+  const [selectedCategory, setSelectedCategory] = useState(null);
+  
+  // Ref for scrolling to transactions section
+  const transactionsListRef = useRef(null);
   
   // Analytics state
   const [analytics, setAnalytics] = useState({
@@ -146,7 +152,7 @@ const Transactions = () => {
 
   useEffect(() => {
     applyFilters(accounts);  // ← Pass accounts explicitly to avoid stale closure!
-  }, [transactions, filters, accounts]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [transactions, filters, accounts, selectedCategory]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     calculateAnalytics();
@@ -877,10 +883,8 @@ useEffect(() => {
   };
 
   const handleEditTransaction = (transaction) => {
-    if (transaction.source === 'plaid') {
-      showNotification('❌ Cannot edit Plaid transactions. They sync from your bank.', 'error');
-      return;
-    }
+    // Allow editing Plaid transactions, but track that they've been manually edited
+    // This prevents them from being overwritten during next sync
     
     setEditingTransaction(transaction.id);
     setEditFormData({
@@ -904,13 +908,28 @@ useEffect(() => {
       ? -Math.abs(editFormData.amount)
       : Math.abs(editFormData.amount);
     
-    await updateTransaction(editingTransaction, {
+    const updates = {
       merchant_name: editFormData.merchant_name,
       amount: finalAmount,
       date: editFormData.date,
       category: editFormData.category,
       notes: editFormData.notes
-    });
+    };
+    
+    // If editing a Plaid transaction, mark it as manually edited
+    if (transaction.source === 'plaid' || transaction.plaid_transaction_id || transaction.transaction_id) {
+      updates.manuallyEdited = true;
+      updates.lastEditedAt = new Date().toISOString();
+      updates.lastEditedBy = currentUser.uid;
+      
+      console.log('[Edit Transaction] Marking Plaid transaction as manually edited:', {
+        id: transaction.id,
+        name: transaction.merchant_name || transaction.name,
+        manuallyEdited: true
+      });
+    }
+    
+    await updateTransaction(editingTransaction, updates);
   };
 
   const handleCancelEdit = () => {
@@ -957,28 +976,60 @@ useEffect(() => {
   };
 
   const exportTransactions = () => {
-    const csvData = transactions.map(t => ({
-      Date: t.date,
-      Description: t.description,
-      Category: t.category,
-      Account: getAccountDisplayName(accounts[t.account] || {}),
-      Amount: t.amount,
-      Type: t.type
-    }));
+    const csvData = filteredTransactions.map(tx => {
+      // Find account name from account_id
+      const account = accounts[tx.account_id] || accounts[tx.account];
+      
+      // Determine type from amount (negative = expense, positive = income)
+      const type = tx.amount < 0 ? 'Expense' : 'Income';
+      
+      // Get name from multiple possible fields
+      const description = tx.name || tx.merchant_name || tx.description || 'Unknown';
+      
+      return {
+        Date: tx.date || '',
+        Description: description,
+        Category: tx.category || tx.personal_finance_category?.primary || 'Uncategorized',
+        Account: account?.name || account?.official_name || 'Unknown Account',
+        Amount: tx.amount || 0,
+        Type: type,
+        Notes: tx.notes || '',
+        Pending: tx.pending ? 'Yes' : 'No'
+      };
+    });
     
-    const csvContent = "data:text/csv;charset=utf-8," 
-      + "Date,Description,Category,Account,Amount,Type\n"
-      + csvData.map(row => Object.values(row).map(val => `"${val}"`).join(",")).join("\n");
+    // Create CSV string
+    const headers = ['Date', 'Description', 'Category', 'Account', 'Amount', 'Type', 'Notes', 'Pending'];
+    const csvRows = [
+      headers.join(','),
+      ...csvData.map(row => 
+        headers.map(header => {
+          const value = row[header];
+          // Escape commas and quotes
+          if (typeof value === 'string' && (value.includes(',') || value.includes('"'))) {
+            return `"${value.replace(/"/g, '""')}"`;
+          }
+          return value;
+        }).join(',')
+      )
+    ];
     
-    const encodedUri = encodeURI(csvContent);
-    const link = document.createElement("a");
-    link.setAttribute("href", encodedUri);
-    link.setAttribute("download", `transactions_${new Date().toISOString().split('T')[0]}.csv`);
+    const csvString = csvRows.join('\n');
+    
+    // Create download
+    const blob = new Blob([csvString], { type: 'text/csv;charset=utf-8;' });
+    const link = document.createElement('a');
+    const url = URL.createObjectURL(blob);
+    
+    link.setAttribute('href', url);
+    link.setAttribute('download', `transactions_${new Date().toISOString().split('T')[0]}.csv`);
+    link.style.visibility = 'hidden';
+    
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
     
-    showNotification('Transactions exported successfully!', 'success');
+    showNotification('CSV exported successfully!', 'success');
   };
 
   const handleDeleteAllTransactions = async () => {
@@ -1108,6 +1159,150 @@ useEffect(() => {
     }
   };
 
+  // Remove duplicate transactions with normalized comparison
+  const removeDuplicateTransactions = async () => {
+    if (!currentUser) return;
+    
+    setLoading(true);
+    try {
+      const transactionsRef = collection(db, 'users', currentUser.uid, 'transactions');
+      const q = query(transactionsRef, orderBy('date', 'desc'));
+      const snapshot = await getDocs(q);
+      
+      const allTxs = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+      
+      console.log(`[Remove Duplicates] Checking ${allTxs.length} transactions...`);
+      
+      // Find all Affirm transactions and log them
+      const affirmTxs = allTxs.filter(tx => {
+        const name = (tx.name || tx.merchant_name || '').toLowerCase();
+        return name.includes('affirm');
+      });
+      
+      console.log(`[Remove Duplicates] Found ${affirmTxs.length} Affirm transactions:`, affirmTxs.map(tx => ({
+        id: tx.id,
+        name: tx.name || tx.merchant_name,
+        date: tx.date,
+        amount: tx.amount,
+        account_id: tx.account_id,
+        account: tx.account
+      })));
+      
+      // Helper function to normalize merchant name - FIRST WORD ONLY
+      const normalizeName = (tx) => {
+        const name = tx.name || tx.merchant_name || '';
+        const normalized = name.toLowerCase().replace(/[^a-z0-9\s]/g, '').trim();
+        const words = normalized.split(/\s+/).filter(w => w.length >= 3);
+        const firstWord = words[0] || normalized;
+        console.log(`[Normalize] "${name}" → "${firstWord}"`);
+        return firstWord;
+      };
+      
+      // Helper function to normalize amount (to 2 decimal places)
+      const normalizeAmount = (amount) => {
+        return parseFloat(amount || 0).toFixed(2);
+      };
+      
+      // Find duplicates by normalized composite key
+      const seen = new Map();
+      const duplicatesToDelete = [];
+      
+      allTxs.forEach(tx => {
+        // Build composite key with normalized values
+        const normalizedName = normalizeName(tx);
+        const normalizedAmount = normalizeAmount(tx.amount);
+        const date = tx.date || '';
+        
+        // Composite key: date + amount + name (account removed to catch cross-account duplicates)
+        const key = `${date}_${normalizedAmount}_${normalizedName}`;
+        
+        console.log(`[Check] ${tx.name || tx.merchant_name} → key: ${key}`);
+        
+        if (seen.has(key)) {
+          // This is a duplicate - mark for deletion
+          duplicatesToDelete.push({
+            id: tx.id,
+            name: tx.name || tx.merchant_name,
+            date: tx.date,
+            amount: tx.amount
+          });
+          console.log('[Remove Duplicates] ✅ Found duplicate:', {
+            name: tx.name || tx.merchant_name,
+            date: tx.date,
+            amount: tx.amount,
+            key: key,
+            matchedWith: seen.get(key)
+          });
+        } else {
+          // First occurrence - keep it
+          seen.set(key, {
+            id: tx.id,
+            name: tx.name || tx.merchant_name,
+            date: tx.date,
+            amount: tx.amount
+          });
+        }
+      });
+      
+      if (duplicatesToDelete.length === 0) {
+        console.log('[Remove Duplicates] No duplicates found');
+        alert('No duplicates found!');
+        setLoading(false);
+        return;
+      }
+      
+      // Show detailed confirmation
+      const duplicateDetails = duplicatesToDelete
+        .slice(0, 5)
+        .map(d => `  • ${d.name} - ${d.date} - ${Math.abs(d.amount).toFixed(2)}`)
+        .join('\n');
+      
+      const moreCount = duplicatesToDelete.length > 5 ? `\n  ... and ${duplicatesToDelete.length - 5} more` : '';
+      
+      const confirmed = window.confirm(
+        `Found ${duplicatesToDelete.length} duplicate transaction(s):\n\n${duplicateDetails}${moreCount}\n\nDelete them?`
+      );
+      
+      if (!confirmed) {
+        setLoading(false);
+        return;
+      }
+      
+      // Delete duplicates using batch
+      const batch = writeBatch(db);
+      duplicatesToDelete.forEach(dup => {
+        const docRef = doc(db, 'users', currentUser.uid, 'transactions', dup.id);
+        batch.delete(docRef);
+      });
+      
+      await batch.commit();
+      
+      console.log(`[Remove Duplicates] Deleted ${duplicatesToDelete.length} duplicates`);
+      alert(`✅ Deleted ${duplicatesToDelete.length} duplicate transaction(s)!`);
+      showNotification(`Removed ${duplicatesToDelete.length} duplicate(s)`, 'success');
+      
+    } catch (error) {
+      console.error('[Remove Duplicates] Error:', error);
+      alert('❌ Failed to remove duplicates. Check console for details.');
+      showNotification('Error removing duplicates', 'error');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // Category filtering handlers
+  const handleCategoryClick = (categoryName) => {
+    setSelectedCategory(categoryName);
+    // Scroll to transactions list section using ref
+    if (transactionsListRef.current) {
+      transactionsListRef.current.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }
+  };
+
+  const handleClearFilter = () => {
+    setSelectedCategory(null);
+  };
+
   const applyFilters = (currentAccounts = accounts) => {
     console.log('🔍 [applyFilters] Running with:', {
       transactionsCount: transactions.length,
@@ -1116,6 +1311,11 @@ useEffect(() => {
     });
     
     let filtered = [...transactions];
+    
+    // Apply category filter from top categories section
+    if (selectedCategory) {
+      filtered = filtered.filter(t => t.category === selectedCategory);
+    }
     
     if (filters.search) {
       const searchLower = filters.search.toLowerCase();
@@ -1195,9 +1395,16 @@ useEffect(() => {
           t.pending === 'true' || 
           t.status === 'pending'
         );
-      } else {
-        // Filter by transaction type (income/expense)
-        filtered = filtered.filter(t => t.type === filters.type);
+      } else if (filters.type === 'income') {
+        filtered = filtered.filter(t => {
+          const amount = parseFloat(t.amount) || 0;
+          return amount > 0;
+        });
+      } else if (filters.type === 'expense') {
+        filtered = filtered.filter(t => {
+          const amount = parseFloat(t.amount) || 0;
+          return amount < 0;
+        });
       }
     }
     
@@ -1656,6 +1863,17 @@ useEffect(() => {
               🗑️ Delete All Transactions
             </button>
           )}
+          
+          {transactions.length > 0 && (
+            <button
+              onClick={removeDuplicateTransactions}
+              disabled={loading}
+              className="btn-cleanup-duplicates"
+              title="Find and remove duplicate transactions"
+            >
+              🧹 Remove Duplicates
+            </button>
+          )}
         </div>
         
         {autoSyncing && (
@@ -1976,11 +2194,23 @@ useEffect(() => {
       </div>
 
       {/* Transactions List */}
-      <div className="transactions-list">
+      <div className="transactions-list" ref={transactionsListRef}>
         <div className="transactions-header">
           <h3>Recent Transactions</h3>
           <p>Showing {filteredTransactions.length} of {transactions.length} transactions</p>
         </div>
+        
+        {/* Filter banner */}
+        {selectedCategory && (
+          <div className="filter-banner">
+            <span>
+              Showing {filteredTransactions.length} {selectedCategory} transaction{filteredTransactions.length !== 1 ? 's' : ''}
+            </span>
+            <button onClick={handleClearFilter} className="clear-filter-btn">
+              Clear Filter ✕
+            </button>
+          </div>
+        )}
         
         {filteredTransactions.length === 0 ? (
           <div className="no-transactions">
@@ -2003,6 +2233,27 @@ useEffect(() => {
                 {editingTransaction === transaction.id ? (
                   <div className="transaction-edit-mode">
                     <div className="transaction-edit-form">
+                      {/* Show warning if editing Plaid transaction */}
+                      {(transaction.source === 'plaid' || transaction.plaid_transaction_id || transaction.transaction_id) && (
+                        <div style={{
+                          background: 'linear-gradient(135deg, #f39c12 0%, #e67e22 100%)',
+                          color: 'white',
+                          padding: '12px 16px',
+                          borderRadius: '8px',
+                          marginBottom: '16px',
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: '10px'
+                        }}>
+                          <span style={{ fontSize: '20px' }}>⚠️</span>
+                          <div>
+                            <strong>Plaid Transaction</strong>
+                            <div style={{ fontSize: '13px', marginTop: '4px' }}>
+                              This transaction synced from your bank. Your edits will be saved and won&apos;t be overwritten.
+                            </div>
+                          </div>
+                        </div>
+                      )}
                       <div className="edit-form-row">
                         <label>Merchant/Description:</label>
                         <input
@@ -2080,6 +2331,21 @@ useEffect(() => {
                           {transaction.merchant_name || transaction.name || transaction.description || 'Unknown'}
                         </span>
                         
+                        {/* Show "Edited" badge if manually modified */}
+                        {transaction.manuallyEdited && (
+                          <span style={{
+                            background: 'rgba(52, 152, 219, 0.2)',
+                            color: '#3498db',
+                            padding: '2px 8px',
+                            borderRadius: '4px',
+                            fontSize: '11px',
+                            fontWeight: '600',
+                            marginLeft: '8px'
+                          }}>
+                            EDITED
+                          </span>
+                        )}
+                        
                         {transaction.category && (
                           <span className="transaction-category-inline">
                             {transaction.category}
@@ -2134,7 +2400,11 @@ useEffect(() => {
           <h3>Top Spending Categories This Month</h3>
           <div className="categories-list">
             {analytics.topCategories.map(([category, amount]) => (
-              <div key={category} className="category-item">
+              <div 
+                key={category} 
+                className="category-item clickable"
+                onClick={() => handleCategoryClick(category)}
+              >
                 <span className="category-name">{category}</span>
                 <span className="category-amount">{formatCurrency(amount)}</span>
               </div>

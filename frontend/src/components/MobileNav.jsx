@@ -15,12 +15,15 @@ export default function MobileNav({ isOpen, onToggle, onClose }) {
     { name: "Transactions", path: "/transactions" },
     { name: "Spendability", path: "/spendability" },
     { name: "Bills", path: "/bills" },
+    { name: "💳 Payment History", path: "/payment-history" },
     { name: "Recurring", path: "/recurring" },
+    { name: "🧠 Debt Optimizer", path: "/debt-optimizer" },
     { name: "Subscriptions", path: "/subscriptions" },
     { name: "Goals", path: "/goals" },
     { name: "Categories", path: "/categories" },
     { name: "Cash Flow", path: "/cashflow" },
     { name: "Pay Cycle", path: "/paycycle" },
+    { name: "📊 Reports", path: "/reports" },
     { name: "Settings", path: "/settings" }
   ];
 

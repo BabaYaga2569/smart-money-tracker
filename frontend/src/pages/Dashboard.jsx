@@ -7,6 +7,8 @@ import PlaidConnectionManager from '../utils/PlaidConnectionManager';
 import './Dashboard.css';
 import { useAuth } from '../contexts/AuthContext';
 import DashboardTileCreditCard from "../components/DashboardTileCreditCard";
+import { useTransactionsQuery } from '../hooks/useFirebaseQuery';
+import HealthStatus from '../components/HealthStatus';
 
 
 const Dashboard = () => {
@@ -34,6 +36,12 @@ const Dashboard = () => {
   monthlyExpenses: 0,
   transactionCount: 0
 });
+
+  // ✅ React Query - Cached transactions query (instant on subsequent visits!)
+  const { data: cachedTransactions = [], isLoading: transactionsLoading } = useTransactionsQuery(
+    currentUser?.uid,
+    { limitCount: 100, orderByField: 'timestamp', orderDirection: 'desc' }
+  );
   useEffect(() => {
     loadDashboardData();
     checkPlaidConnection();
@@ -259,6 +267,14 @@ setDashboardData({
   };
 
   const loadTransactions = async () => {
+    // ✅ React Query - Use cached data if available (instant!)
+    // This eliminates redundant Firebase queries on subsequent page visits
+    if (cachedTransactions && cachedTransactions.length > 0) {
+      console.log('✅ Using cached transactions from React Query (instant load!)');
+      return cachedTransactions;
+    }
+    
+    // Fallback to direct Firebase query if cache is empty
     try {
       const transactionsRef = collection(db, 'users', currentUser.uid, 'transactions');
       const q = query(transactionsRef, orderBy('timestamp', 'desc'), limit(100));
@@ -472,6 +488,11 @@ setDashboardData({
             )}
           </div>
         </div>
+      </div>
+
+      {/* Health Status Widget */}
+      <div className="health-status-container">
+        <HealthStatus />
       </div>
 
       <div className="dashboard-tiles-grid">

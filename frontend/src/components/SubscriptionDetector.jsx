@@ -1,9 +1,65 @@
 import React, { useState } from 'react';
-import { collection, addDoc } from 'firebase/firestore';
+import { collection, addDoc, getDocs, query, where } from 'firebase/firestore';
 import { db } from '../firebase';
 import { useAuth } from '../contexts/AuthContext';
 import { removeDetection, getAllDetections, getDismissedIds } from '../utils/detectionStorage';
+import { analyzeTransactionsForRecurring, getTypeFromCategory, RECURRING_BILL_CATEGORIES } from '../utils/recurringDetection';
 import './SubscriptionDetector.css';
+
+/**
+ * Auto-detect and auto-add recurring bills from transactions
+ * @param {string} userId - User ID
+ * @param {object} db - Firebase database instance
+ * @returns {object} - Result with added bills count
+ */
+export const detectAndAutoAddRecurringBills = async (userId, db) => {
+  try {
+    // Get all transactions from Firebase
+    const transactionsRef = collection(db, 'users', userId, 'transactions');
+    const transactionsSnap = await getDocs(transactionsRef);
+    const transactions = transactionsSnap.docs.map(doc => ({
+      id: doc.id,
+      ...doc.data()
+    }));
+
+    // Analyze transactions for recurring patterns
+    const detectedBills = analyzeTransactionsForRecurring(transactions);
+    
+    // Filter for recurring bills only (not subscriptions)
+    const recurringBills = detectedBills.filter(bill => bill.type === 'recurring_bill');
+    
+    // Get existing subscriptions to avoid duplicates
+    const subscriptionsRef = collection(db, 'users', userId, 'subscriptions');
+    const existingSnap = await getDocs(subscriptionsRef);
+    const existingNames = new Set(
+      existingSnap.docs.map(doc => doc.data().name?.toLowerCase())
+    );
+    
+    // Auto-add recurring bills that don't already exist
+    let addedCount = 0;
+    for (const bill of recurringBills) {
+      if (!existingNames.has(bill.name?.toLowerCase())) {
+        await addDoc(subscriptionsRef, {
+          ...bill,
+          autoDetected: true
+        });
+        addedCount++;
+      }
+    }
+    
+    return {
+      success: true,
+      addedCount,
+      totalDetected: recurringBills.length
+    };
+  } catch (error) {
+    console.error('Error in auto-detection:', error);
+    return {
+      success: false,
+      error: error.message
+    };
+  }
+};
 
 const SubscriptionDetector = ({ onClose, onSubscriptionAdded }) => {
   const { currentUser } = useAuth();
@@ -68,12 +124,16 @@ const SubscriptionDetector = ({ onClose, onSubscriptionAdded }) => {
       const category = editingIndex === index ? editedData.category : detectedSub.category;
       const essential = editingIndex === index ? editedData.essential : false;
 
+      // Determine type based on category
+      const type = getTypeFromCategory(category);
+
       const subscriptionData = {
         name: detectedSub.merchantName,
         cost: detectedSub.amount,
         billingCycle: detectedSub.billingCycle,
         category: category,
         essential: essential,
+        type: type, // Add type field
         nextRenewal: detectedSub.nextRenewal,
         status: 'active',
         autoRenew: true,
@@ -128,7 +188,15 @@ const SubscriptionDetector = ({ onClose, onSubscriptionAdded }) => {
       'Software': '💻',
       'Utilities': '⚡',
       'Food': '🍔',
-      'Other': '📦'
+      'Other': '📦',
+      'Streaming': '📺',
+      'Rent': '🏠',
+      'Insurance': '🛡️',
+      'Phone': '📱',
+      'Internet': '🌐',
+      'Mortgage': '🏡',
+      'Gaming': '🎮',
+      'Memberships': '🎫'
     };
     return emojiMap[category] || '📦';
   };

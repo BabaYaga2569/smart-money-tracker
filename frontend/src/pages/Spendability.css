@@ -192,6 +192,35 @@
   gap: 10px;
 }
 
+.bill-item.overdue {
+  border: 2px solid #ff4444;
+  border-radius: 8px;
+  padding: 12px;
+  margin: 8px 0;
+  animation: pulse-red 2s infinite;
+}
+
+@keyframes pulse-red {
+  0%, 100% { 
+    border-color: #ff4444; 
+    opacity: 1; 
+  }
+  50% { 
+    border-color: #ff8888; 
+    opacity: 0.7; 
+  }
+}
+
+.overdue-warning {
+  background: rgba(255, 68, 68, 0.1);
+  border-left: 4px solid #ff4444;
+  padding: 8px;
+  margin-top: 8px;
+  color: #ff4444;
+  font-weight: bold;
+  font-size: 0.85rem;
+}
+
 .bill-info {
   display: flex;
   flex-direction: column;
@@ -322,9 +351,26 @@
   }
 }
 
+@media (min-width: 769px) and (max-width: 1199px) {
+  .tiles-grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+  
+  /* Position Next Payday tile on the right side, below Calculation Breakdown */
+  .payday-tile {
+    grid-column: 2;
+  }
+}
+
 @media (min-width: 1200px) {
   .tiles-grid {
     grid-template-columns: repeat(3, 1fr);
+  }
+  
+  /* Position Next Payday tile below Calculation Breakdown on the right */
+  .payday-tile {
+    grid-column: 2;
+    grid-row: 3;
   }
 }
 

@@ -27,8 +27,8 @@
 .cashflow-container,
 .paycycle-container,
 .settings-container {
-  padding: 20px;
-  background: #000;
+  padding: var(--spacing-lg); /* Use variable! */
+  background: var(--bg);
   color: #fff;
   min-height: 100vh;
   max-width: 1400px;
@@ -36,20 +36,20 @@
 }
 
 .page-header {
-  margin-bottom: 30px;
+  margin-bottom: var(--spacing-xl); /* Use variable! */
   text-align: center;
 }
 
 .page-header h2 {
-  color: #00ff88;
-  margin: 0 0 10px 0;
+  color: var(--electric-green);
+  margin: 0 0 var(--spacing-sm) 0;
   font-size: 2.5rem;
   font-weight: bold;
 }
 
 .page-header p {
   color: #ccc;
-  margin: 0 0 15px 0;
+  margin: 0 0 var(--spacing-md) 0;
   font-size: 1.1rem;
 }
 
@@ -66,8 +66,8 @@
 .paycycle-summary {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)) !important;
-  gap: 20px !important;
-  margin-bottom: 30px;
+  gap: var(--spacing-lg) !important; /* Use variable! */
+  margin-bottom: var(--spacing-xl);
   max-width: 1400px;
   margin-left: auto;
   margin-right: auto;
@@ -77,10 +77,10 @@
 .summary-card {
   background: #1a1a1a;
   border: 2px solid #333;
-  border-radius: 12px;
+  border-radius: var(--radius-lg); /* Use variable! */
   padding: 28px 24px !important;
   text-align: center;
-  transition: all 0.3s ease;
+  transition: all var(--transition-normal); /* Use variable! */
   min-width: 280px !important;
   max-width: 320px !important;
   min-height: 140px !important;
@@ -90,37 +90,41 @@
   display: flex !important;
   flex-direction: column !important;
   justify-content: space-between !important;
-  /* Force hardware acceleration for smooth performance */
   transform: translateZ(0);
   will-change: transform;
-  /* Enhanced font rendering */
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
 }
 
 .summary-card:hover {
-  border-color: #00ff88;
+  border-color: var(--electric-green);
   transform: translateY(-2px);
+  box-shadow: var(--shadow-glow); /* Use variable! */
 }
 
 .summary-card h3 {
   color: var(--electric-green) !important;
-  margin: 0 0 8px 0;
+  margin: 0 0 var(--spacing-sm) 0;
   font-size: 14px !important;
   font-weight: 700 !important;
   line-height: 1.2 !important;
   white-space: nowrap !important;
   overflow: visible !important;
   text-overflow: clip !important;
-  text-shadow: 0 0 6px rgba(0, 255, 136, 0.4) !important;
-  margin-bottom: 8px !important;
+}
+
+.summary-card .value {
+  font-size: 2rem;
+  font-weight: bold;
+  color: var(--text-bright);
+  margin: var(--spacing-sm) 0;
 }
 
 .total-amount {
   font-size: 28px !important;
   font-weight: 800 !important;
   color: var(--text-bright) !important;
-  margin: 8px 0;
+  margin: var(--spacing-sm) 0;
   line-height: 1.1 !important;
   overflow: visible !important;
   text-shadow: 0 0 10px rgba(255, 255, 255, 0.5) !important;
@@ -151,7 +155,7 @@
 .dashboard-tiles-grid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
-  gap: 20px;
+  gap: var(--spacing-lg);
   max-width: 1400px;
   margin: 0 auto;
 }
@@ -159,24 +163,24 @@
 .dashboard-tile {
   background: #1a1a1a;
   border: 2px solid #333;
-  border-radius: 12px;
-  padding: 20px;
+  border-radius: var(--radius-lg);
+  padding: var(--spacing-lg);
   cursor: pointer;
-  transition: all 0.3s ease;
+  transition: all var(--transition-normal);
   position: relative;
 }
 
 .dashboard-tile:hover {
-  border-color: #00ff88;
+  border-color: var(--electric-green);
   transform: translateY(-2px);
-  box-shadow: 0 8px 20px rgba(0, 255, 136, 0.1);
+  box-shadow: var(--shadow-glow);
 }
 
 .tile-header {
   display: flex;
   align-items: center;
-  gap: 10px;
-  margin-bottom: 15px;
+  gap: var(--spacing-sm);
+  margin-bottom: var(--spacing-md);
 }
 
 .tile-icon {
@@ -184,26 +188,26 @@
 }
 
 .tile-header h3 {
-  color: #00ff88;
+  color: var(--electric-green);
   margin: 0;
   font-size: 1.2rem;
 }
 
 .tile-content {
-  margin-bottom: 15px;
+  margin-bottom: var(--spacing-md);
 }
 
 .tile-value {
   font-size: 1.5rem;
   font-weight: bold;
   color: #fff;
-  margin-bottom: 5px;
+  margin-bottom: var(--spacing-xs);
 }
 
 .tile-amount {
   font-size: 1.1rem;
-  color: #00ff88;
-  margin-bottom: 10px;
+  color: var(--electric-green);
+  margin-bottom: var(--spacing-sm);
 }
 
 .tile-description {
@@ -213,14 +217,14 @@
 }
 
 .tile-button {
-  background: #00ff88;
+  background: var(--electric-green);
   color: #000;
   border: none;
-  padding: 8px 16px;
-  border-radius: 6px;
+  padding: var(--spacing-sm) var(--spacing-md);
+  border-radius: var(--radius-md);
   font-weight: bold;
   cursor: pointer;
-  transition: background 0.3s ease;
+  transition: background var(--transition-normal);
   width: 100%;
 }
 
@@ -232,20 +236,20 @@
 .coming-soon {
   background: #1a1a1a;
   border: 2px solid #333;
-  border-radius: 12px;
-  padding: 30px;
+  border-radius: var(--radius-lg);
+  padding: var(--spacing-xl);
   text-align: center;
-  margin-top: 30px;
+  margin-top: var(--spacing-xl);
 }
 
 .coming-soon h3 {
-  color: #00ff88;
-  margin: 0 0 15px 0;
+  color: var(--electric-green);
+  margin: 0 0 var(--spacing-md) 0;
 }
 
 .coming-soon p {
   color: #ccc;
-  margin: 10px 0;
+  margin: var(--spacing-sm) 0;
 }
 
 .coming-soon ul {
@@ -262,16 +266,16 @@
 /* Buttons */
 .btn-primary,
 .btn-secondary {
-  padding: 8px 16px;
-  border-radius: 6px;
+  padding: var(--spacing-sm) var(--spacing-md);
+  border-radius: var(--radius-md);
   font-weight: 500;
   cursor: pointer;
-  transition: all 0.3s ease;
-  margin: 0 5px;
+  transition: all var(--transition-normal);
+  margin: 0 var(--spacing-xs);
 }
 
 .btn-primary {
-  background: #00ff88;
+  background: var(--electric-green);
   color: #000;
   border: none;
 }
@@ -282,12 +286,12 @@
 
 .btn-secondary {
   background: transparent;
-  color: #00ff88;
-  border: 1px solid #00ff88;
+  color: var(--electric-green);
+  border: 1px solid var(--electric-green);
 }
 
 .btn-secondary:hover {
-  background: #00ff88;
+  background: var(--electric-green);
   color: #000;
 }
 
@@ -465,7 +469,7 @@ html body .layout .main-content .metric-text-container {
    MOBILE & TABLET MODAL OPTIMIZATION
    ======================================== */
 
-/* Mobile container padding adjustments */
+/* Mobile responsive adjustments */
 @media (max-width: 768px) {
   .dashboard-container,
   .accounts-container,
@@ -478,11 +482,12 @@ html body .layout .main-content .metric-text-container {
   .cashflow-container,
   .paycycle-container,
   .settings-container {
-    padding: 15px 10px;
+    padding: var(--spacing-md);
   }
   
-  .page-header {
-    margin-bottom: 20px;
+  .summary-card {
+    min-width: 100% !important;
+    max-width: 100% !important;
   }
 }
 

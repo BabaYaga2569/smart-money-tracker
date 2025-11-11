@@ -1,7 +1,10 @@
-import React, { useState, useEffect } from 'react';
-import { doc, getDoc, updateDoc, collection, addDoc, query, where, getDocs } from 'firebase/firestore';
-import { db } from '../firebase';
+import React, { useMemo, useState, useEffect } from "react";
+import { collection, doc, onSnapshot, orderBy, query, updateDoc, Timestamp, getDoc, addDoc, where, getDocs, setDoc, deleteDoc, serverTimestamp } from "firebase/firestore";
+import { db } from "../firebase";
+import { useAuth } from "../contexts/AuthContext";
+import { findMatchingTransactionForBill } from "../utils/billMatcher";
 import { RecurringBillManager } from '../utils/RecurringBillManager';
+import { RecurringManager } from '../utils/RecurringManager';
 import { BillSortingManager } from '../utils/BillSortingManager';
 import { NotificationManager } from '../utils/NotificationManager';
 import { BillAnimationManager } from '../utils/BillAnimationManager';
@@ -10,278 +13,624 @@ import PlaidConnectionManager from '../utils/PlaidConnectionManager';
 import PlaidErrorModal from '../components/PlaidErrorModal';
 import BillCSVImportModal from '../components/BillCSVImportModal';
 import PaymentHistoryModal from '../components/PaymentHistoryModal';
+import DuplicatePreviewModal from '../components/DuplicatePreviewModal';
 import { formatDateForDisplay, formatDateForInput, getPacificTime } from '../utils/DateUtils';
 import { TRANSACTION_CATEGORIES, CATEGORY_ICONS, getCategoryIcon, migrateLegacyCategory } from '../constants/categories';
 import NotificationSystem from '../components/NotificationSystem';
 import { BillDeduplicationManager } from '../utils/BillDeduplicationManager';
-import './Bills.css';
-import { useAuth } from '../contexts/AuthContext';
+import { cleanupDuplicateBills, analyzeForCleanup } from '../utils/billCleanupMigration';
+import { detectAndAutoAddRecurringBills } from '../components/SubscriptionDetector';
+import { generateAllBills, updateTemplatesDates } from '../utils/billGenerator';
+import "./Bills.css";
 
 const generateBillId = () => {
   return `bill_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
 };
 
-const Bills = () => {
+export default function Bills() {
   const { currentUser } = useAuth();
-  const [loading, setLoading] = useState(true);
   const [bills, setBills] = useState([]);
+  const [transactions, setTransactions] = useState([]);
+  
+  // Missing State Declarations - ADDED
+  const [loading, setLoading] = useState(true);
   const [processedBills, setProcessedBills] = useState([]);
-  const [accounts, setAccounts] = useState({});
-  const [showModal, setShowModal] = useState(false);
-  const [editingBill, setEditingBill] = useState(null);
+  const [searchTerm, setSearchTerm] = useState('');
   const [filterCategory, setFilterCategory] = useState('all');
   const [filterStatus, setFilterStatus] = useState('all');
   const [filterRecurring, setFilterRecurring] = useState('all');
-  const [searchTerm, setSearchTerm] = useState('');
   const [payingBill, setPayingBill] = useState(null);
-  const [refreshingTransactions, setRefreshingTransactions] = useState(false);
-  const [plaidStatus, setPlaidStatus] = useState({
-    isConnected: false,
-    hasError: false,
-    errorMessage: null
-  });
+  const [accounts, setAccounts] = useState({});
   const [hasPlaidAccounts, setHasPlaidAccounts] = useState(false);
+  const [plaidStatus, setPlaidStatus] = useState({ isConnected: false, hasError: false });
   const [showErrorModal, setShowErrorModal] = useState(false);
-  
-  const [deletedBills, setDeletedBills] = useState([]);
+  const [showModal, setShowModal] = useState(false);
   const [showBulkDeleteModal, setShowBulkDeleteModal] = useState(false);
-  
   const [showCSVImport, setShowCSVImport] = useState(false);
-  const [importHistory, setImportHistory] = useState([]);
   const [showImportHistory, setShowImportHistory] = useState(false);
-  const [showHelpModal, setShowHelpModal] = useState(false);
-  
-  const [deduplicating, setDeduplicating] = useState(false);
-  
-  // Payment history state
   const [showPaymentHistory, setShowPaymentHistory] = useState(false);
+  const [showHelpModal, setShowHelpModal] = useState(false);
+  const [deletedBills, setDeletedBills] = useState([]);
+  const [editingBill, setEditingBill] = useState(null);
+  const [deduplicating, setDeduplicating] = useState(false);
+  const [showDuplicatePreview, setShowDuplicatePreview] = useState(false);
+  const [duplicateReport, setDuplicateReport] = useState(null);
+  const [importHistory, setImportHistory] = useState([]);
+  const [refreshingTransactions, setRefreshingTransactions] = useState(false);
   const [paidThisMonth, setPaidThisMonth] = useState(0);
   const [paidBillsCount, setPaidBillsCount] = useState(0);
+  const [recurringBills, setRecurringBills] = useState([]);
+  const [showRecurringBills, setShowRecurringBills] = useState(false);
+  const [generatingBills, setGeneratingBills] = useState(false);
+  const [showPaidBills, setShowPaidBills] = useState(false);
+  const [paidBills, setPaidBills] = useState([]);
 
-  const BILL_CATEGORIES = CATEGORY_ICONS;
-
-  // Main initialization useEffect
-  useEffect(() => {
-    // Load data immediately - don't wait
-    loadBills();
-    loadAccounts();
-    loadPaidThisMonth();
-    
-    // Initialize Plaid in background (non-blocking)
-    initializePlaidIntegration().catch(err => {
-      console.error('Plaid init failed:', err);
-    });
-    
-    // Check connection in background
-    checkPlaidConnection().catch(err => {
-      console.error('Plaid check failed:', err);
-    });
-    
-    const unsubscribe = PlaidConnectionManager.subscribe((status) => {
-      setPlaidStatus({
-        isConnected: status.hasToken && status.isApiWorking === true && status.hasAccounts,
-        hasError: status.error !== null,
-        errorMessage: status.error
-      });
-    });
-    
-    return () => unsubscribe();
-  }, []);
-
-  // Visual sync useEffect
-  useEffect(() => {
-    if (processedBills.length > 0) {
-      setTimeout(() => {
-        syncBillVisuals();
-      }, 100);
-    }
-  }, [processedBills]);
-
-  const checkPlaidConnection = async () => {
+  // ✅ NEW: Load bills from billInstances collection
+  const loadBills = async () => {
+    if (!currentUser) return;
     try {
-      const status = await PlaidConnectionManager.checkConnection();
-      setPlaidStatus({
-        isConnected: status.hasToken && status.isApiWorking === true && status.hasAccounts,
-        hasError: status.error !== null,
-        errorMessage: status.error
+      // Load all bills from billInstances collection
+      const billsSnapshot = await getDocs(
+        collection(db, 'users', currentUser.uid, 'billInstances')
+      );
+      
+      const allBills = billsSnapshot.docs.map(doc => ({
+        id: doc.id,
+        ...doc.data()
+      }));
+      
+      // Process bills with status
+      const processed = allBills.map(bill => ({
+        ...bill,
+        status: determineBillStatus(bill)
+      }));
+      
+      console.log('✅ Loaded bills from billInstances:', {
+        total: allBills.length,
+        unpaid: processed.filter(b => !b.isPaid).length,
+        paid: processed.filter(b => b.isPaid).length
       });
+      
+      setProcessedBills(processed);
+      
+      // Also load import history from settings (for backward compatibility)
+      try {
+        const settingsDocRef = doc(db, 'users', currentUser.uid, 'settings', 'personal');
+        const settingsDoc = await getDoc(settingsDocRef);
+        if (settingsDoc.exists()) {
+          setImportHistory(settingsDoc.data().importHistory || []);
+        }
+      } catch (err) {
+        console.log('No import history found');
+      }
+      
+      setLoading(false);
     } catch (error) {
-      console.error('Error checking Plaid connection:', error);
+      console.error('❌ Error loading bills:', error);
+      setProcessedBills([]);
+      setLoading(false);
     }
   };
 
+  // Load paid bills for current month - ADDED
   const loadPaidThisMonth = async () => {
+    if (!currentUser) return;
     try {
-      const currentMonth = new Date().toISOString().slice(0, 7);
+      const now = new Date();
+      const currentMonth = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+      
       const paymentsRef = collection(db, 'users', currentUser.uid, 'bill_payments');
       const q = query(paymentsRef, where('paymentMonth', '==', currentMonth));
+      const snapshot = await getDocs(q);
       
-      const querySnapshot = await getDocs(q);
       let total = 0;
-      querySnapshot.forEach((doc) => {
+      snapshot.docs.forEach(doc => {
         total += doc.data().amount || 0;
       });
       
       setPaidThisMonth(total);
-      setPaidBillsCount(querySnapshot.size);
+      setPaidBillsCount(snapshot.size);
     } catch (error) {
-      console.error('Error loading paid this month:', error);
-      setPaidThisMonth(0);
-      setPaidBillsCount(0);
+      console.error('Error loading paid bills:', error);
     }
   };
 
-  const initializePlaidIntegration = async () => {
-    await PlaidIntegrationManager.initialize({
-      enabled: true,
-      transactionTolerance: 0.05,
-      autoMarkPaid: true
-    });
-
-    PlaidIntegrationManager.setBillPaymentProcessor(async (billId, paymentData) => {
-      const bill = processedBills.find(b => 
-        b.id === billId || b.name === billId
-      );
-      
-      if (bill) {
-        await processBillPaymentInternal(bill, paymentData);
-      }
-    });
-
-    PlaidIntegrationManager.setBillsProvider(async () => {
-      return processedBills.filter(bill => bill.status !== 'paid');
-    });
-  };
-
-  const refreshPlaidTransactions = async () => {
-    const status = PlaidConnectionManager.getStatus();
-    
-    const isConnected = status.hasToken && status.isApiWorking === true && status.hasAccounts;
-    
-    if (!isConnected && !hasPlaidAccounts) {
-      NotificationManager.showWarning(
-        'Plaid not connected',
-        'Please connect your bank account first to use automated bill matching. You can connect Plaid from the Accounts page.'
-      );
-      return;
-    }
-    
-    if (status.isApiWorking === false) {
-      NotificationManager.showError(
-        'Plaid API unavailable',
-        PlaidConnectionManager.getErrorMessage() + ' Please try again later or contact support.'
-      );
-      return;
-    }
-
+  // Load paid bills archive
+  const loadPaidBills = async () => {
+    if (!currentUser) return;
     try {
-      setRefreshingTransactions(true);
-      
-      // Pass userId instead of token - tokens are now stored server-side
-      const result = await PlaidIntegrationManager.refreshBillMatching(currentUser.uid);
-      
-      if (result.success) {
-        await loadBills();
-        NotificationManager.showSuccess(
-          `Matched ${result.processedCount} bills from ${result.totalTransactions} transactions`
-        );
-      } else {
-        NotificationManager.showError(
-          'Failed to fetch transactions',
-          result.error
-        );
-      }
+      const paidBillsRef = collection(db, 'users', currentUser.uid, 'paidBills');
+      const q = query(paidBillsRef, orderBy('paidDate', 'desc'));
+      const snapshot = await getDocs(q);
+      const bills = snapshot.docs.map(doc => ({
+        id: doc.id,
+        ...doc.data()
+      }));
+      setPaidBills(bills);
+      console.log(`✅ Loaded ${bills.length} paid bills from archive`);
     } catch (error) {
-      console.error('Error refreshing Plaid transactions:', error);
-      NotificationManager.showError(
-        'Error refreshing transactions',
-        error.message
-      );
-    } finally {
-      setRefreshingTransactions(false);
+      console.error('Error loading paid bills:', error);
+      setPaidBills([]);
     }
   };
 
-  const loadBills = async () => {
-    try {
-      const settingsDocRef = doc(db, 'users', currentUser.uid, 'settings', 'personal');
-      const settingsDocSnap = await getDoc(settingsDocRef);
+  // Refresh Plaid transactions and match with bills - ADDED
+  // ENHANCED: Refresh Plaid transactions and match with bills (90 days historical)
+const refreshPlaidTransactions = async () => {
+  if (!currentUser || refreshingTransactions) return;
+  
+  setRefreshingTransactions(true);
+  
+  const loadingNotificationId = NotificationManager.showLoading(
+    'Syncing bank transactions and matching bills...'
+  );
+  
+  try {
+    // Step 1: Sync Plaid transactions from backend (last 90 days)
+    const token = localStorage.getItem('token');
+    const apiUrl = import.meta.env.VITE_API_URL || 'https://smart-money-tracker-09ks.onrender.com';
+    
+    // Calculate date range (90 days ago to today)
+    const endDate = new Date();
+    const startDate = new Date();
+    startDate.setDate(startDate.getDate() - 90);
+
+    const response = await fetch(`${apiUrl}/api/plaid/sync_transactions`, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${token}`,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        userId: currentUser.uid,
+        start_date: startDate.toISOString().split('T')[0],
+        end_date: endDate.toISOString().split('T')[0]
+      })
+    });
+    
+    if (!response.ok) {
+      throw new Error('Failed to sync transactions from Plaid');
+    }
+    
+    const data = await response.json();
+
+    // Log sync results
+    console.log(`[Plaid Sync] Synced: ${data.added} added, ${data.updated} updated, ${data.pending} pending`);
+
+    // Step 2: Now fetch all transactions from Firebase (sync_transactions saves them there)
+    const transactionsRef = collection(db, 'users', currentUser.uid, 'transactions');
+    const ninetyDaysAgo = new Date();
+    ninetyDaysAgo.setDate(ninetyDaysAgo.getDate() - 90);
+
+    const transactionsQuery = query(
+      transactionsRef,
+      where('date', '>=', ninetyDaysAgo.toISOString().split('T')[0]),
+      orderBy('date', 'desc')
+    );
+
+    const transactionsSnapshot = await getDocs(transactionsQuery);
+    const allTransactions = transactionsSnapshot.docs.map(doc => ({
+      id: doc.id,
+      ...doc.data()
+    }));
+
+    console.log(`[Plaid Sync] Fetched ${allTransactions.length} transactions from Firebase`);
+    
+    // Step 4: Get all bills
+    const settingsDocRef = doc(db, 'users', currentUser.uid, 'settings', 'personal');
+    const settingsDoc = await getDoc(settingsDocRef);
+    const billsData = settingsDoc.exists() ? settingsDoc.data().bills || [] : [];
+    
+    // Step 5: Match bills with transactions (including historical)
+    let matchedCount = 0;
+    const matchedBills = [];
+    
+    const updatedBills = billsData.map(bill => {
+      // Skip if already paid for current cycle
+      if (RecurringBillManager.isBillPaidForCurrentCycle(bill)) {
+        return bill;
+      }
       
-      if (settingsDocSnap.exists()) {
-        const data = settingsDocSnap.data();
-        let billsData = data.bills || [];
-        
-        setImportHistory(data.importHistory || []);
-        
-        let needsUpdate = false;
-        billsData = billsData.map(bill => {
-          if (!bill.id) {
-            needsUpdate = true;
-            return { ...bill, id: generateBillId() };
-          }
-          return bill;
+      // Try to find matching transaction
+      const matchedTransaction = findMatchingTransactionForBill(bill, allTransactions);
+      
+      if (matchedTransaction && !matchedTransaction.pending) {
+        matchedCount++;
+        matchedBills.push({
+          name: bill.name,
+          amount: bill.amount,
+          transactionName: matchedTransaction.name || matchedTransaction.merchant_name,
+          transactionDate: matchedTransaction.date,
+          transactionId: matchedTransaction.transaction_id || matchedTransaction.id
         });
         
-        try {
-          const deduplicationResult = BillDeduplicationManager.removeDuplicates(billsData);
-          if (deduplicationResult.stats.duplicates > 0) {
-            console.log('[Auto-Deduplication]', BillDeduplicationManager.getSummaryMessage(deduplicationResult.stats));
-            BillDeduplicationManager.logDeduplication(deduplicationResult, 'auto-load');
-            billsData = deduplicationResult.cleanedBills;
-            needsUpdate = true;
-            
-            NotificationManager.showNotification({
-              type: 'info',
-              message: `Auto-cleanup: ${BillDeduplicationManager.getSummaryMessage(deduplicationResult.stats)}`,
-              duration: 5000
-            });
+        // Mark bill as paid with transaction details
+        return RecurringBillManager.markBillAsPaid(
+          bill,
+          new Date(matchedTransaction.date),
+          {
+            source: 'plaid',
+            method: 'auto',
+            transactionId: matchedTransaction.transaction_id || matchedTransaction.id,
+            accountId: matchedTransaction.account_id,
+            merchantName: matchedTransaction.merchant_name || matchedTransaction.name || bill.name,
+            amount: Math.abs(parseFloat(matchedTransaction.amount))
           }
-        } catch (dedupeError) {
-          console.error('[Auto-Deduplication] Failed:', dedupeError);
-        }
+        );
+      }
+      
+      return bill;
+    });
+    
+    // Step 6: Update recurring templates for bills that were auto-matched
+    const currentData = settingsDoc.exists() ? settingsDoc.data() : {};
+    const recurringItems = currentData.recurringItems || [];
+    let updatedRecurringItems = recurringItems;
+    
+    // Advance recurring templates for matched bills
+    matchedBills.forEach(match => {
+      const matchedBill = updatedBills.find(b => b.name === match.name);
+      if (matchedBill && matchedBill.recurringTemplateId) {
+        updatedRecurringItems = updatedRecurringItems.map(template => {
+          if (template.id === matchedBill.recurringTemplateId) {
+            const billDueDate = matchedBill.dueDate || matchedBill.nextDueDate;
+            const templateNextOccurrence = template.nextOccurrence;
+            
+            // Only advance if bill's due date matches template's current nextOccurrence
+            if (billDueDate === templateNextOccurrence) {
+              const nextOccurrence = RecurringManager.calculateNextOccurrenceAfterPayment(
+                templateNextOccurrence,
+                template.frequency
+              );
+              
+              console.log(`[Plaid Auto-Pay] Advancing recurring template "${template.name}" from ${templateNextOccurrence} to ${nextOccurrence.toISOString().split('T')[0]}`);
+              
+              return {
+                ...template,
+                nextOccurrence: nextOccurrence.toISOString().split('T')[0],
+                lastPaidDate: match.transactionDate,
+                updatedAt: new Date().toISOString()
+              };
+            }
+          }
+          return template;
+        });
+      }
+    });
+    
+    // Step 7: Save updated bills and recurring items
+    await updateDoc(settingsDocRef, {
+      bills: updatedBills,
+      recurringItems: updatedRecurringItems
+    });
+    
+    // Step 8: Record payments in bill_payments collection
+    const paymentsRef = collection(db, 'users', currentUser.uid, 'bill_payments');
+    for (const match of matchedBills) {
+      const matchedBill = updatedBills.find(b => b.name === match.name);
+      if (!matchedBill) continue;
+      
+      const paidDate = match.transactionDate;
+      const dueDate = matchedBill.nextDueDate || matchedBill.dueDate;
+      const daysPastDue = Math.max(0, Math.floor((new Date(paidDate) - new Date(dueDate)) / (1000 * 60 * 60 * 24)));
+      
+      await addDoc(paymentsRef, {
+        billId: matchedBill.id,
+        billName: matchedBill.name,
+        amount: Math.abs(parseFloat(matchedBill.amount)),
+        dueDate: dueDate,
+        paidDate: paidDate,
+        paymentMonth: paidDate.slice(0, 7),
+        paymentMethod: 'Auto (Plaid)',
+        category: matchedBill.category || 'Bills & Utilities',
+        linkedTransactionId: match.transactionId,
+        isOverdue: daysPastDue > 0,
+        daysPastDue: daysPastDue,
+        createdAt: new Date()
+      });
+    }
+    
+    // Step 9: Reload bills
+    await loadBills();
+    await loadPaidThisMonth();
+    
+    // Step 10: Show success notification
+    NotificationManager.removeNotification(loadingNotificationId);
+    
+    if (matchedCount > 0) {
+      // Show detailed match notification
+      const matchDetails = matchedBills.map(m => 
+        `✅ ${m.name} → ${m.transactionName} (${m.transactionDate})`
+      ).join('\n');
+      
+      NotificationManager.showNotification({
+        type: 'success',
+        message: `🎉 Auto-matched ${matchedCount} bill${matchedCount !== 1 ? 's' : ''}!\n\n${matchDetails}`,
+        duration: 8000
+      });
+    } else {
+      NotificationManager.showNotification({
+        type: 'info',
+        message: `Synced ${allTransactions.length} transactions. No new bill matches found.`,
+        duration: 4000
+      });
+    }
+    
+  } catch (error) {
+    console.error('Error refreshing transactions:', error);
+    NotificationManager.removeNotification(loadingNotificationId);
+    NotificationManager.showError('Error syncing transactions', error.message || 'Failed to connect to Plaid');
+  } finally {
+    setRefreshingTransactions(false);
+  }
+};
+
+  // Manual re-match function to re-try matching bills with transactions
+  const handleRematchTransactions = async () => {
+    if (!currentUser) return;
+    
+    const loadingId = NotificationManager.showLoading('🔄 Scanning transactions and matching bills...');
+    
+    try {
+      // Get all unpaid bills from billInstances
+      const unpaidBills = processedBills.filter(b => !b.isPaid && b.status !== 'paid');
+      
+      if (unpaidBills.length === 0) {
+        NotificationManager.removeNotification(loadingId);
+        NotificationManager.showInfo('No unpaid bills to match');
+        return;
+      }
+      
+      // Get recent transactions (last 30 days)
+      const thirtyDaysAgo = new Date();
+      thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+      
+      const transactionsRef = collection(db, 'users', currentUser.uid, 'transactions');
+      const q = query(
+        transactionsRef,
+        where('date', '>=', thirtyDaysAgo.toISOString().split('T')[0]),
+        orderBy('date', 'desc')
+      );
+      const snapshot = await getDocs(q);
+      const recentTransactions = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+      
+      console.log(`[Re-match] Found ${unpaidBills.length} unpaid bills and ${recentTransactions.length} recent transactions`);
+      
+      let matchedCount = 0;
+      const matchedBills = [];
+      
+      // Try to match each unpaid bill
+      for (const bill of unpaidBills) {
+        const matchedTransaction = findMatchingTransactionForBill(bill, recentTransactions);
         
-        if (needsUpdate) {
-          await updateDoc(settingsDocRef, {
-            ...data,
-            bills: billsData
+        if (matchedTransaction && !matchedTransaction.pending) {
+          console.log(`[Re-match] Found match for ${bill.name}:`, matchedTransaction.name || matchedTransaction.merchant_name);
+          
+          // Use full payment processing flow to:
+          // 1. Archive to paidBills collection
+          // 2. Record in bill_payments collection
+          // 3. Generate next month's bill if recurring
+          await processBillPaymentInternal(bill, {
+            paidDate: matchedTransaction.date,
+            method: 'Auto-matched',
+            source: 'manual-rematch',
+            transactionId: matchedTransaction.transaction_id || matchedTransaction.id,
+            accountId: matchedTransaction.account_id,
+            merchantName: matchedTransaction.name || matchedTransaction.merchant_name,
+            amount: Math.abs(parseFloat(matchedTransaction.amount))
+          });
+          
+          matchedCount++;
+          matchedBills.push({
+            name: bill.name,
+            transactionName: matchedTransaction.name || matchedTransaction.merchant_name,
+            transactionDate: matchedTransaction.date
           });
         }
-        
-        setBills(billsData);
-        
-        const processed = RecurringBillManager.processBills(billsData).map(bill => ({
-          ...bill,
-          status: determineBillStatus(bill),
-          category: migrateLegacyCategory(bill.category || 'Bills & Utilities')
-        }));
-        setProcessedBills(processed);
       }
+      
+      NotificationManager.removeNotification(loadingId);
+      
+      if (matchedCount > 0) {
+        NotificationManager.showSuccess(`✅ Re-matched ${matchedCount} bill${matchedCount > 1 ? 's' : ''} to transactions!`);
+        // Reload bills to show updated status
+        await loadBills();
+        await loadPaidThisMonth();
+      } else {
+        NotificationManager.showInfo('No matches found. Bills may already be paid or no matching transactions exist.');
+      }
+      
     } catch (error) {
-      console.error('Error loading bills:', error);
-      
-      const mockBills = [
-        {
-          name: 'PiercePrime',
-          amount: 125.50,
-          category: 'Bills & Utilities',
-          recurrence: 'monthly',
-          dueDate: '2025-10-24',
-          nextDueDate: '2025-10-24',
-          status: 'pending',
-          account: 'bofa',
-          autopay: false
-        }
-      ];
-      
-      setBills(mockBills);
-      setProcessedBills(mockBills.map(bill => ({
-        ...bill,
-        category: migrateLegacyCategory(bill.category || 'Bills & Utilities')
-      })));
-    } finally {
-      setLoading(false);
+      console.error('[Re-match] Error:', error);
+      NotificationManager.removeNotification(loadingId);
+      NotificationManager.showError('Re-matching failed', error.message);
     }
   };
+
+  // Load recurring bills from subscriptions collection
+  useEffect(() => {
+    if (!currentUser) return;
+
+    const subscriptionsRef = collection(db, 'users', currentUser.uid, 'subscriptions');
+    const unsubscribe = onSnapshot(
+      subscriptionsRef,
+      (snapshot) => {
+        const subs = snapshot.docs.map(doc => ({
+          id: doc.id,
+          ...doc.data()
+        }));
+        // Filter for recurring bills only
+        const bills = subs.filter(sub => 
+          sub.status === 'active' && 
+          sub.type === 'recurring_bill'
+        );
+        setRecurringBills(bills);
+      },
+      (error) => {
+        console.error('Error loading recurring bills:', error);
+      }
+    );
+
+    return () => unsubscribe();
+  }, [currentUser]);
+
+  // Auto-detect recurring bills on first login
+  useEffect(() => {
+    if (!currentUser) return;
+
+    const checkAndAutoDetect = async () => {
+      try {
+        const settingsRef = doc(db, 'users', currentUser.uid, 'settings', 'personal');
+        const settingsSnap = await getDoc(settingsRef);
+
+        if (settingsSnap.exists()) {
+          const data = settingsSnap.data();
+
+          // Only auto-detect once
+          if (!data.recurringBillsDetected) {
+            console.log('Running automatic recurring bill detection...');
+            
+            const result = await detectAndAutoAddRecurringBills(currentUser.uid, db);
+            
+            if (result.success && result.addedCount > 0) {
+              NotificationManager.showSuccess(
+                `Auto-detected and added ${result.addedCount} recurring bill${result.addedCount > 1 ? 's' : ''}!`
+              );
+            }
+
+            // Mark as detected
+            await updateDoc(settingsRef, { 
+              recurringBillsDetected: true,
+              lastAutoDetection: new Date().toISOString()
+            });
+          }
+        } else {
+          // Create settings document if it doesn't exist
+          await setDoc(settingsRef, {
+            recurringBillsDetected: false
+          });
+        }
+      } catch (error) {
+        console.error('Error in auto-detection:', error);
+      }
+    };
+
+    checkAndAutoDetect();
+  }, [currentUser]);
+
+  // Load bills on mount - ADDED
+  useEffect(() => {
+    if (currentUser) {
+      loadBills();
+      loadAccounts();
+      loadPaidThisMonth();
+      if (showPaidBills) {
+        loadPaidBills();
+      }
+    }
+  }, [currentUser, showPaidBills]);
+
+  useEffect(() => {
+    if (!currentUser) return;
+    const billsRef = collection(db, "users", currentUser.uid, "bills");
+    const q = query(billsRef, orderBy("dueDate", "asc"));
+    const unsub = onSnapshot(q, snap => {
+      const data = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+      setBills(data);
+    });
+    return () => unsub();
+  }, [currentUser]);
+
+  // If you already load transactions elsewhere, remove this listener and pass them in
+  useEffect(() => {
+    if (!currentUser) return;
+    const txRef = collection(db, "users", currentUser.uid, "transactions");
+    const unsub = onSnapshot(txRef, snap => {
+      const data = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+      setTransactions(data);
+    });
+    return () => unsub();
+  }, [currentUser]);
+
+  const now = new Date();
+
+  const { overdue, upcoming, paid } = useMemo(() => {
+    const o = [], u = [], p = [];
+    for (const b of bills) {
+      const isPaid = !!b.paid;
+      const due = b.dueDate ? new Date(b.dueDate) : null;
+      const pastDue = due && due < new Date(now.toDateString()) && !isPaid;
+      if (isPaid) p.push(b); else if (pastDue) o.push(b); else u.push(b);
+    }
+    o.sort((a,b)=>new Date(a.dueDate)-new Date(b.dueDate));
+    u.sort((a,b)=>new Date(a.dueDate)-new Date(b.dueDate));
+    p.sort((a,b)=>new Date(b.paidDate||0)-new Date(a.paidDate||0));
+    return { overdue:o, upcoming:u, paid:p };
+  }, [bills]);
+
+  async function markPaid(bill) {
+    if (!currentUser) return;
+    const ref = doc(db, "users", currentUser.uid, "bills", bill.id);
+    await updateDoc(ref, { paid:true, paidDate:Timestamp.now(), paidVia:"Manual" });
+  }
+
+  // Local auto-match pass using transactions (non-destructive; only marks when certain)
+  useEffect(() => {
+    (async () => {
+      if (!currentUser || !transactions.length || !bills.length) return;
+      const updates = [];
+      for (const b of bills) {
+        if (b.paid) continue;
+        const m = findMatchingTransactionForBill(b, transactions);
+        if (!m) continue;
+        const ref = doc(db, "users", currentUser.uid, "bills", b.id);
+        updates.push(updateDoc(ref, {
+          paid: true,
+          paidDate: Timestamp.now(),
+          paidVia: "Auto (Plaid)",
+          lastMatchedTxnId: m.id || null,
+        }));
+      }
+      await Promise.allSettled(updates);
+    })();
+  }, [currentUser, transactions, bills]);
+
+  const Section = ({ title, items, emptyText }) => (
+    <section className="bills-section">
+      <h3 className="bills-section-title">{title} ({items.length})</h3>
+      {items.length===0 ? <div className="bills-empty">{emptyText}</div> : (
+        <div className="bills-list">
+          {items.map(b => {
+            const isOverdue = new Date(b.dueDate) < now && !b.paid;
+            return (
+              <div key={b.id} className={`bill-card ${b.paid?"paid":""} ${isOverdue?"overdue":""}`}>
+                <div className="bill-title-row">
+                  <span className="bill-name">{b.name}</span>
+                  <span className="bill-amount">${Number(b.amount).toFixed(2)}</span>
+                </div>
+                <div className="bill-meta-row">
+                  <span className="bill-duedate">Due {new Date(b.dueDate).toLocaleDateString()}</span>
+                  {b.paid ? (
+                    <span className="bill-paid-badge">
+                      ✅ Paid {b.paidDate?.toDate?.() ? b.paidDate.toDate().toLocaleDateString() : (b.paidDate? new Date(b.paidDate).toLocaleDateString() : "")}
+                      {b.paidVia ? ` • ${b.paidVia}` : ""}
+                    </span>
+                  ) : null}
+                </div>
+                <div className="bill-actions">
+                  {!b.paid ? (
+                    <button className="btn btn-success" onClick={() => markPaid(b)}>Mark Paid</button>
+                  ) : (
+                    <button className="btn btn-muted" disabled>Paid {b.paidVia?`(${b.paidVia})`:""}</button>
+                  )}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </section>
+  );
 
   const loadAccounts = async () => {
     // ... rest of your loadAccounts function stays exactly the same
@@ -398,9 +747,14 @@ const Bills = () => {
       return 'paid';
     }
     
+    // Normalize both dates to midnight to avoid off-by-one errors
     const now = new Date();
+    now.setHours(0, 0, 0, 0);
+    
     const dueDate = new Date(bill.nextDueDate || bill.dueDate);
-    const daysUntilDue = Math.ceil((dueDate - now) / (1000 * 60 * 60 * 24));
+    dueDate.setHours(0, 0, 0, 0);
+    
+    const daysUntilDue = Math.round((dueDate - now) / (1000 * 60 * 60 * 24));
     
     if (daysUntilDue < 0) {
       return 'overdue';
@@ -590,6 +944,7 @@ const Bills = () => {
       );
     }
   };
+  
   const processBillPaymentInternal = async (bill, paymentData = {}) => {
     const paidDate = paymentData.paidDate || getPacificTime();
     const paidDateStr = formatDateForInput(paidDate);
@@ -616,21 +971,42 @@ const Bills = () => {
     const dueDate = new Date(bill.nextDueDate || bill.dueDate);
     const daysPastDue = Math.max(0, Math.floor((now - dueDate) / (1000 * 60 * 60 * 24)));
     
-    // Record payment in bill_payments collection
+    // Enhanced payment recording with metadata
+    const paidDateISO = new Date(paidDate).toISOString();
+    const paymentYear = new Date(paidDate).getFullYear();
+    const paymentQuarter = `Q${Math.ceil((new Date(paidDate).getMonth() + 1) / 3)}`;
+    
     const paymentsRef = collection(db, 'users', currentUser.uid, 'bill_payments');
     await addDoc(paymentsRef, {
       billId: bill.id,
       billName: bill.name,
       amount: Math.abs(parseFloat(bill.amount)),
+      category: bill.category || 'Bills & Utilities',
       dueDate: bill.nextDueDate || bill.dueDate,
       paidDate: paidDateStr,
       paymentMonth: paidDateStr.slice(0, 7),
+      year: paymentYear,
+      quarter: paymentQuarter,
       paymentMethod: paymentData.method || paymentData.source || 'Manual',
-      category: bill.category || 'Bills & Utilities',
+      recurringTemplateId: bill.recurringTemplateId || null,
+      tags: [bill.category?.toLowerCase() || 'bills', bill.recurrence || 'one-time'],
       linkedTransactionId: paymentData.transactionId || null,
       isOverdue: daysPastDue > 0,
       daysPastDue: daysPastDue,
-      createdAt: new Date()
+      createdAt: serverTimestamp()
+    });
+    
+    // Archive to paidBills collection for historical reference
+    const paidBillsRef = collection(db, 'users', currentUser.uid, 'paidBills');
+    await addDoc(paidBillsRef, {
+      ...bill,
+      isPaid: true,
+      paidDate: paidDateISO,
+      paymentMonth: paidDateStr.slice(0, 7),
+      year: paymentYear,
+      quarter: paymentQuarter,
+      paymentMethod: paymentData.method || paymentData.source || 'Manual',
+      archivedAt: serverTimestamp()
     });
 
     await updateBillAsPaid(bill, paidDate, {
@@ -676,29 +1052,94 @@ const Bills = () => {
 
   const updateBillAsPaid = async (bill, paidDate = null, paymentOptions = {}) => {
     try {
-      const settingsDocRef = doc(db, 'users', currentUser.uid, 'settings', 'personal'); 
-      const currentDoc = await getDoc(settingsDocRef);
-      const currentData = currentDoc.exists() ? currentDoc.data() : {};
+      const billRef = doc(db, 'users', currentUser.uid, 'billInstances', bill.id);
+      const isRecurring = bill.recurrence && bill.recurrence !== 'one-time';
       
-      const bills = currentData.bills || [];
-      
-      const updatedBills = bills.map(b => {
-        if (b.id === bill.id) {
-          return RecurringBillManager.markBillAsPaid(
-            b, 
-            paidDate || getPacificTime(),
-            paymentOptions
-          );
+      if (isRecurring) {
+        // For RECURRING bills: Update the same bill with next due date
+        const currentDueDate = bill.dueDate || bill.nextDueDate;
+        const currentDueDateObj = new Date(currentDueDate);
+        
+        // Calculate next due date based on frequency
+        let nextDueDate;
+        const frequency = bill.recurrence;
+        
+        if (frequency === 'monthly') {
+          nextDueDate = RecurringManager.calculateNextOccurrenceAfterPayment(currentDueDate, 'monthly');
+        } else if (frequency === 'weekly') {
+          nextDueDate = RecurringManager.calculateNextOccurrenceAfterPayment(currentDueDate, 'weekly');
+        } else if (frequency === 'bi-weekly') {
+          nextDueDate = RecurringManager.calculateNextOccurrenceAfterPayment(currentDueDate, 'bi-weekly');
+        } else if (frequency === 'quarterly') {
+          nextDueDate = RecurringManager.calculateNextOccurrenceAfterPayment(currentDueDate, 'quarterly');
+        } else if (frequency === 'annually') {
+          nextDueDate = RecurringManager.calculateNextOccurrenceAfterPayment(currentDueDate, 'annually');
+        } else {
+          nextDueDate = new Date(currentDueDateObj);
+          nextDueDate.setMonth(nextDueDate.getMonth() + 1);
         }
-        return b;
-      });
+        
+        const nextDueDateStr = nextDueDate.toISOString().split('T')[0];
+        
+        // Update the bill with new due date and reset payment status
+        await updateDoc(billRef, {
+          dueDate: nextDueDateStr,
+          nextDueDate: nextDueDateStr,
+          isPaid: false,
+          status: 'pending',
+          lastPaidDate: serverTimestamp(),
+          updatedAt: serverTimestamp()
+        });
+        
+        console.log(`✅ Recurring bill updated with next due date: ${bill.name} -> ${nextDueDateStr}`);
+      } else {
+        // For ONE-TIME bills: Delete after payment
+        await deleteDoc(billRef);
+        console.log(`✅ One-time bill deleted after payment: ${bill.name}`);
+      }
       
-      await updateDoc(settingsDocRef, {
-        ...currentData,
-        bills: updatedBills
-      });
+      // If bill was generated from recurring template, advance template's nextOccurrence
+      if (bill.recurringTemplateId) {
+        const settingsDocRef = doc(db, 'users', currentUser.uid, 'settings', 'personal');
+        const currentDoc = await getDoc(settingsDocRef);
+        const currentData = currentDoc.exists() ? currentDoc.data() : {};
+        const recurringItems = currentData.recurringItems || [];
+        
+        const updatedRecurringItems = recurringItems.map(template => {
+          if (template.id === bill.recurringTemplateId) {
+            // Check if bill's due date matches template's nextOccurrence
+            const billDueDate = bill.dueDate || bill.nextDueDate;
+            const templateNextOccurrence = template.nextOccurrence;
+            
+            // Only advance if this bill's due date matches the template's current nextOccurrence
+            if (billDueDate === templateNextOccurrence) {
+              // Advance recurring template to next occurrence
+              const nextOccurrence = RecurringManager.calculateNextOccurrenceAfterPayment(
+                templateNextOccurrence,
+                template.frequency
+              );
+              
+              console.log(`[Bill Payment] Advancing recurring template "${template.name}" from ${templateNextOccurrence} to ${nextOccurrence.toISOString().split('T')[0]}`);
+              
+              return {
+                ...template,
+                nextOccurrence: nextOccurrence.toISOString().split('T')[0],
+                lastPaidDate: paidDate || getPacificTime(),
+                updatedAt: new Date().toISOString()
+              };
+            }
+          }
+          return template;
+        });
+        
+        // Update recurring templates
+        await updateDoc(settingsDocRef, {
+          ...currentData,
+          recurringItems: updatedRecurringItems
+        });
+      }
     } catch (error) {
-      console.error('Error updating bill status:', error);
+      console.error('❌ Error updating bill status:', error);
       throw error;
     }
   };
@@ -734,28 +1175,24 @@ const Bills = () => {
 
   const handleSaveBill = async (billData) => {
     try {
-      const settingsDocRef = doc(db, 'users', currentUser.uid, 'settings', 'personal');
-      const currentDoc = await getDoc(settingsDocRef);
-      const currentData = currentDoc.exists() ? currentDoc.data() : {};
-      
-      const bills = currentData.bills || [];
-      
       if (editingBill) {
-        const updatedBills = bills.map(bill => {
-          if (bill.id === editingBill.id) {
-            return { ...billData, id: editingBill.id, originalDueDate: billData.dueDate };
-          }
-          return bill;
-        });
-        
-        await updateDoc(settingsDocRef, {
-          ...currentData,
-          bills: updatedBills
+        // ✅ Update existing bill in billInstances
+        const billRef = doc(db, 'users', currentUser.uid, 'billInstances', editingBill.id);
+        await updateDoc(billRef, {
+          ...billData,
+          originalDueDate: billData.dueDate,
+          updatedAt: serverTimestamp()
         });
         
         showNotification('Bill updated successfully!', 'success');
       } else {
-        const isDuplicate = bills.some(bill => {
+        // ✅ Check for duplicates in billInstances
+        const billsSnapshot = await getDocs(
+          collection(db, 'users', currentUser.uid, 'billInstances')
+        );
+        const existingBills = billsSnapshot.docs.map(doc => doc.data());
+        
+        const isDuplicate = existingBills.some(bill => {
           const exactMatch = bill.name.toLowerCase() === billData.name.toLowerCase() && 
                              parseFloat(bill.amount) === parseFloat(billData.amount) &&
                              bill.dueDate === billData.dueDate &&
@@ -769,7 +1206,7 @@ const Bills = () => {
           return;
         }
         
-        const similarBill = bills.find(bill => 
+        const similarBill = existingBills.find(bill => 
           bill.name.toLowerCase() === billData.name.toLowerCase() && 
           parseFloat(bill.amount) === parseFloat(billData.amount) &&
           (bill.dueDate !== billData.dueDate || bill.recurrence !== billData.recurrence)
@@ -788,18 +1225,28 @@ const Bills = () => {
           }
         }
         
+        // ✅ Add new bill to billInstances
+        const billId = generateBillId();
         const newBill = {
           ...billData,
-          id: generateBillId(),
+          id: billId,
           originalDueDate: billData.dueDate,
-          status: 'pending'
+          isPaid: false,
+          status: 'pending',
+          paymentHistory: [],
+          linkedTransactionIds: [],
+          merchantNames: [
+            billData.name.toLowerCase(),
+            billData.name.toLowerCase().replace(/[^a-z0-9]/g, '')
+          ],
+          createdAt: serverTimestamp(),
+          updatedAt: serverTimestamp(),
+          createdFrom: 'bills-page'
         };
         
-        await updateDoc(settingsDocRef, {
-          ...currentData,
-          bills: [...bills, newBill]
-        });
+        await setDoc(doc(db, 'users', currentUser.uid, 'billInstances', billId), newBill);
         
+        console.log('✅ Bill saved to billInstances:', newBill);
         showNotification('Bill added successfully!', 'success');
       }
       
@@ -812,8 +1259,8 @@ const Bills = () => {
       setShowModal(false);
       setEditingBill(null);
     } catch (error) {
-      console.error('Error saving bill:', error);
-      showNotification('Error saving bill', 'error');
+      console.error('❌ Error saving bill:', error);
+      showNotification('Error saving bill: ' + error.message, 'error');
     }
   };
 
@@ -823,44 +1270,28 @@ const Bills = () => {
     }
 
     try {
-      const settingsDocRef = doc(db, 'users', currentUser.uid, 'settings', 'personal');
-      const currentDoc = await getDoc(settingsDocRef);
-      const currentData = currentDoc.exists() ? currentDoc.data() : {};
+      // ✅ Delete bill from billInstances collection
+      await deleteDoc(doc(db, 'users', currentUser.uid, 'billInstances', billToDelete.id));
       
-      const bills = currentData.bills || [];
-      const updatedBills = bills.filter(bill => bill.id !== billToDelete.id);
-      
-      await updateDoc(settingsDocRef, {
-        ...currentData,
-        bills: updatedBills
-      });
-      
+      console.log('✅ Bill deleted from billInstances:', billToDelete.id);
       await loadBills();
       showNotification('Bill deleted successfully!', 'success');
     } catch (error) {
-      console.error('Error deleting bill:', error);
-      showNotification('Error deleting bill', 'error');
+      console.error('❌ Error deleting bill:', error);
+      showNotification('Error deleting bill: ' + error.message, 'error');
     }
   };
 
   const handleToggleSkipBill = async (bill) => {
     try {
-      const settingsDocRef = doc(db, 'users', currentUser.uid, 'settings', 'personal');
-      const currentDoc = await getDoc(settingsDocRef);
-      const currentData = currentDoc.exists() ? currentDoc.data() : {};
-      
-      const bills = currentData.bills || [];
+      // ✅ Update bill in billInstances collection
       const newStatus = bill.status === 'skipped' ? 'pending' : 'skipped';
+      const billRef = doc(db, 'users', currentUser.uid, 'billInstances', bill.id);
       
-      const updatedBills = bills.map(b => 
-        b.id === bill.id 
-          ? { ...b, status: newStatus, skippedAt: newStatus === 'skipped' ? new Date().toISOString() : null }
-          : b
-      );
-      
-      await updateDoc(settingsDocRef, {
-        ...currentData,
-        bills: updatedBills
+      await updateDoc(billRef, {
+        status: newStatus,
+        skippedAt: newStatus === 'skipped' ? new Date().toISOString() : null,
+        updatedAt: serverTimestamp()
       });
       
       await loadBills();
@@ -869,8 +1300,8 @@ const Bills = () => {
         'success'
       );
     } catch (error) {
-      console.error('Error toggling skip status:', error);
-      showNotification('Error updating bill', 'error');
+      console.error('❌ Error toggling skip status:', error);
+      showNotification('Error updating bill: ' + error.message, 'error');
     }
   };
 
@@ -880,17 +1311,22 @@ const Bills = () => {
     try {
       setLoading(true);
       
-      const settingsDocRef = doc(db, 'users', currentUser.uid, 'settings', 'personal');
-      const currentDoc = await getDoc(settingsDocRef);
-      const currentData = currentDoc.exists() ? currentDoc.data() : {};
+      // ✅ Get all bills from billInstances
+      const billsSnapshot = await getDocs(
+        collection(db, 'users', currentUser.uid, 'billInstances')
+      );
       
-      const billsToDelete = currentData.bills || [];
+      const billsToDelete = billsSnapshot.docs.map(doc => ({
+        id: doc.id,
+        ...doc.data()
+      }));
+      
       setDeletedBills(billsToDelete);
       
-      await updateDoc(settingsDocRef, {
-        ...currentData,
-        bills: []
-      });
+      // ✅ Delete all bills from billInstances
+      for (const billDoc of billsSnapshot.docs) {
+        await deleteDoc(doc(db, 'users', currentUser.uid, 'billInstances', billDoc.id));
+      }
       
       await loadBills();
       showNotification(
@@ -898,8 +1334,8 @@ const Bills = () => {
         'success'
       );
     } catch (error) {
-      console.error('Error bulk deleting bills:', error);
-      showNotification('Error deleting bills', 'error');
+      console.error('❌ Error bulk deleting bills:', error);
+      showNotification('Error deleting bills: ' + error.message, 'error');
     } finally {
       setLoading(false);
     }
@@ -911,76 +1347,146 @@ const Bills = () => {
     try {
       setLoading(true);
       
-      const settingsDocRef = doc(db, 'users', currentUser.uid, 'settings', 'personal');
-      const currentDoc = await getDoc(settingsDocRef);
-      const currentData = currentDoc.exists() ? currentDoc.data() : {};
-      
-      await updateDoc(settingsDocRef, {
-        ...currentData,
-        bills: deletedBills
-      });
+      // ✅ Restore all bills to billInstances
+      for (const bill of deletedBills) {
+        await setDoc(doc(db, 'users', currentUser.uid, 'billInstances', bill.id), bill);
+      }
       
       await loadBills();
       setDeletedBills([]);
       showNotification('Bills restored successfully!', 'success');
     } catch (error) {
-      console.error('Error undoing bulk delete:', error);
-      showNotification('Error restoring bills', 'error');
+      console.error('❌ Error undoing bulk delete:', error);
+      showNotification('Error restoring bills: ' + error.message, 'error');
     } finally {
       setLoading(false);
     }
   };
 
   const handleDeduplicateBills = async () => {
-    if (!confirm('This will scan all bills and remove duplicates based on name, amount, due date, and frequency. The first occurrence of each bill will be kept. Continue?')) {
-      return;
-    }
-
     try {
       setDeduplicating(true);
       
-      const settingsDocRef = doc(db, 'users', currentUser.uid, 'settings', 'personal');
-      const currentDoc = await getDoc(settingsDocRef);
-      const currentData = currentDoc.exists() ? currentDoc.data() : {};
+      // ✅ Load all bills from billInstances
+      const billsSnapshot = await getDocs(
+        collection(db, 'users', currentUser.uid, 'billInstances')
+      );
       
-      const existingBills = currentData.bills || [];
+      const existingBills = billsSnapshot.docs.map(doc => ({
+        id: doc.id,
+        ...doc.data()
+      }));
       
-      const report = BillDeduplicationManager.generateDuplicateReport(existingBills);
+      // Use the new cleanup migration logic
+      const report = analyzeForCleanup(existingBills);
       
-      if (report.duplicateCount === 0) {
+      if (report.duplicatesFound === 0) {
         showNotification('No duplicate bills found. All bills are unique.', 'info');
         setDeduplicating(false);
         return;
       }
       
-      const result = BillDeduplicationManager.removeDuplicates(existingBills);
+      // Convert to format expected by DuplicatePreviewModal
+      const modalReport = {
+        duplicateCount: report.duplicatesFound,
+        totalBills: report.totalBills,
+        billsToKeep: report.billsToKeep.length,
+        groups: report.groupDetails.map(group => ({
+          name: group.name,
+          amount: group.amount,
+          frequency: group.frequency,
+          totalCount: group.totalCount,
+          duplicateCount: group.duplicateCount,
+          keepBill: report.billsToKeep.find(b => b.id === group.keepBillId),
+          removeBills: report.billsToRemove.filter(b => group.removeBillIds.includes(b.id))
+        }))
+      };
       
-      BillDeduplicationManager.logDeduplication(result, 'manual');
+      // Show preview modal
+      setDuplicateReport(modalReport);
+      setShowDuplicatePreview(true);
+      setDeduplicating(false);
       
-      await updateDoc(settingsDocRef, {
-        ...currentData,
-        bills: result.cleanedBills
-      });
+    } catch (error) {
+      console.error('❌ Error analyzing duplicates:', error);
+      showNotification('Error analyzing duplicates: ' + error.message, 'error');
+      setDeduplicating(false);
+    }
+  };
+
+  const handleConfirmDeduplication = async () => {
+    if (!duplicateReport) return;
+    
+    try {
+      setDeduplicating(true);
+      setShowDuplicatePreview(false);
+      
+      // Delete all bills marked for removal
+      const allBillsToRemove = duplicateReport.groups.flatMap(g => g.removeBills);
+      
+      for (const bill of allBillsToRemove) {
+        await deleteDoc(doc(db, 'users', currentUser.uid, 'billInstances', bill.id));
+      }
       
       await loadBills();
       
-      const message = BillDeduplicationManager.getSummaryMessage(result.stats);
-      showNotification(message, 'success');
-      
-      if (result.removedBills.length > 0) {
-        console.log('[Manual Deduplication] Removed bills:', result.removedBills.map(b => ({
-          name: b.name,
-          amount: b.amount,
-          dueDate: b.dueDate,
-          recurrence: b.recurrence
-        })));
-      }
+      showNotification(
+        `Successfully removed ${duplicateReport.duplicateCount} duplicate bills!`,
+        'success'
+      );
       
     } catch (error) {
-      console.error('Error deduplicating bills:', error);
-      showNotification('Error deduplicating bills', 'error');
+      console.error('❌ Error removing duplicates:', error);
+      showNotification('Error removing duplicates: ' + error.message, 'error');
     } finally {
       setDeduplicating(false);
+      setDuplicateReport(null);
+    }
+  };
+
+  const handleExportToCSV = () => {
+    try {
+      const csvData = processedBills.map(bill => ({
+        'Bill Name': bill.name || '',
+        'Amount': bill.amount || '',
+        'Due Date': bill.nextDueDate || bill.dueDate || '',
+        'Frequency': bill.recurrence || '',
+        'Category': bill.category || '',
+        'Status': bill.status || '',
+        'Is Paid': bill.isPaid ? 'Yes' : 'No',
+        'Last Paid Date': bill.lastPaidDate || '',
+        'Payment Method': bill.lastPayment?.method || '',
+        'Recurring Template ID': bill.recurringTemplateId || '',
+        'Created From': bill.createdFrom || '',
+        'Bill ID': bill.id || ''
+      }));
+      
+      if (csvData.length === 0) {
+        showNotification('No bills to export', 'info');
+        return;
+      }
+      
+      const headers = Object.keys(csvData[0]).join(',');
+      const rows = csvData.map(row => 
+        Object.values(row).map(val => 
+          `"${String(val).replace(/"/g, '""')}"`
+        ).join(',')
+      ).join('\n');
+      
+      const csv = headers + '\n' + rows;
+      
+      const blob = new Blob([csv], { type: 'text/csv' });
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `bills-export-${new Date().toISOString().split('T')[0]}.csv`;
+      a.click();
+      window.URL.revokeObjectURL(url);
+      
+      showNotification(`Exported ${csvData.length} bills to CSV!`, 'success');
+    } catch (error) {
+      console.error('Error exporting bills:', error);
+      showNotification('Error exporting bills: ' + error.message, 'error');
     }
   };
 
@@ -988,22 +1494,34 @@ const Bills = () => {
     try {
       setLoading(true);
       
-      const settingsDocRef = doc(db, 'users', currentUser.uid, 'settings', 'personal');
-      const currentDoc = await getDoc(settingsDocRef);
-      const currentData = currentDoc.exists() ? currentDoc.data() : {};
-      
-      const existingBills = currentData.bills || [];
-      
       const cleanedBills = importedBills.map(bill => {
         const { dateError, dateWarning, rowNumber, isDuplicate, ...cleanBill } = bill;
-        return cleanBill;
+        // Ensure bill has all required fields
+        return {
+          ...cleanBill,
+          isPaid: false,
+          status: 'pending',
+          paymentHistory: [],
+          linkedTransactionIds: [],
+          merchantNames: [
+            cleanBill.name.toLowerCase(),
+            cleanBill.name.toLowerCase().replace(/[^a-z0-9]/g, '')
+          ],
+          createdAt: serverTimestamp(),
+          updatedAt: serverTimestamp(),
+          createdFrom: 'csv-import'
+        };
       });
       
-      const updatedBills = [...existingBills, ...cleanedBills];
+      // ✅ Save all bills to billInstances collection
+      for (const bill of cleanedBills) {
+        await setDoc(doc(db, 'users', currentUser.uid, 'billInstances', bill.id), bill);
+      }
       
       const errorsCount = importedBills.filter(b => b.dateError).length;
       const warningsCount = importedBills.filter(b => b.dateWarning && !b.dateError).length;
       
+      // Save import history to settings
       const importEntry = {
         id: `import_${Date.now()}`,
         timestamp: new Date().toISOString(),
@@ -1024,11 +1542,16 @@ const Bills = () => {
       const newHistory = [importEntry, ...importHistory].slice(0, 10);
       setImportHistory(newHistory);
       
+      const settingsDocRef = doc(db, 'users', currentUser.uid, 'settings', 'personal');
+      const currentDoc = await getDoc(settingsDocRef);
+      const currentData = currentDoc.exists() ? currentDoc.data() : {};
+      
       await updateDoc(settingsDocRef, {
         ...currentData,
-        bills: updatedBills,
         importHistory: newHistory
       });
+      
+      console.log('✅ CSV import: Saved', cleanedBills.length, 'bills to billInstances');
       
       await loadBills();
       setShowCSVImport(false);
@@ -1038,8 +1561,8 @@ const Bills = () => {
       if (warningsCount > 0) message += ` (${warningsCount} with warnings)`;
       showNotification(message, errorsCount > 0 ? 'warning' : 'success');
     } catch (error) {
-      console.error('Error importing bills:', error);
-      showNotification('Error importing bills', 'error');
+      console.error('❌ Error importing bills:', error);
+      showNotification('Error importing bills: ' + error.message, 'error');
     } finally {
       setLoading(false);
     }
@@ -1052,28 +1575,34 @@ const Bills = () => {
       setLoading(true);
       const lastImport = importHistory[0];
       
-      const settingsDocRef = doc(db, 'users', currentUser.uid, 'settings', 'personal');
-      const currentDoc = await getDoc(settingsDocRef);
-      const currentData = currentDoc.exists() ? currentDoc.data() : {};
-      
-      const existingBills = currentData.bills || [];
+      // ✅ Delete bills from billInstances collection
       const importedBillIds = new Set(lastImport.bills.map(b => b.id));
-      const updatedBills = existingBills.filter(bill => !importedBillIds.has(bill.id));
+      for (const billId of importedBillIds) {
+        try {
+          await deleteDoc(doc(db, 'users', currentUser.uid, 'billInstances', billId));
+        } catch (err) {
+          console.log('Bill already deleted:', billId);
+        }
+      }
       
       const newHistory = importHistory.slice(1);
       setImportHistory(newHistory);
       
+      // Update import history in settings
+      const settingsDocRef = doc(db, 'users', currentUser.uid, 'settings', 'personal');
+      const currentDoc = await getDoc(settingsDocRef);
+      const currentData = currentDoc.exists() ? currentDoc.data() : {};
+      
       await updateDoc(settingsDocRef, {
         ...currentData,
-        bills: updatedBills,
         importHistory: newHistory
       });
       
       await loadBills();
       showNotification(`Undid import of ${lastImport.billCount} bills`, 'success');
     } catch (error) {
-      console.error('Error undoing import:', error);
-      showNotification('Error undoing import', 'error');
+      console.error('❌ Error undoing import:', error);
+      showNotification('Error undoing import: ' + error.message, 'error');
     } finally {
       setLoading(false);
     }
@@ -1107,9 +1636,14 @@ const Bills = () => {
       return '⏭️ SKIPPED';
     }
     
+    // Normalize both dates to midnight to avoid off-by-one errors
     const now = new Date();
+    now.setHours(0, 0, 0, 0);
+    
     const dueDate = new Date(bill.nextDueDate || bill.dueDate);
-    const daysUntilDue = Math.ceil((dueDate - now) / (1000 * 60 * 60 * 24));
+    dueDate.setHours(0, 0, 0, 0);
+    
+    const daysUntilDue = Math.round((dueDate - now) / (1000 * 60 * 60 * 24));
     const status = determineBillStatus(bill);
     
     switch (status) {
@@ -1172,6 +1706,70 @@ const Bills = () => {
     });
   };
 
+  const handleGenerateAllBills = async () => {
+    if (generatingBills) return;
+    
+    // Confirm with user
+    const confirmed = window.confirm(
+      '🔄 Generate Bills from Recurring Templates?\n\n' +
+      'This will:\n' +
+      '• Read all recurring bill templates\n' +
+      '• Update any October dates to current month\n' +
+      '• Generate fresh bill instances\n' +
+      '• Show all bills on this page\n\n' +
+      'Existing unpaid bills will be replaced. Continue?'
+    );
+    
+    if (!confirmed) return;
+    
+    setGeneratingBills(true);
+    
+    const loadingNotificationId = NotificationManager.showLoading(
+      '🔄 Generating bills from recurring templates...'
+    );
+    
+    try {
+      // Step 1: Update template dates
+      const updateResult = await updateTemplatesDates(currentUser.uid, db);
+      
+      if (updateResult.templatesUpdated > 0) {
+        console.log(`✅ Updated ${updateResult.templatesUpdated} template dates`);
+      }
+      
+      // Step 2: Generate all bills (clear existing and create fresh)
+      const generateResult = await generateAllBills(currentUser.uid, db, true);
+      
+      NotificationManager.removeNotification(loadingNotificationId);
+      
+      if (generateResult.success) {
+        NotificationManager.showNotification({
+          type: 'success',
+          message: `✅ Success!\n\n` +
+            `📋 Generated ${generateResult.billsGenerated} bills from ${generateResult.templatesProcessed} templates\n` +
+            `🗑️ Cleared ${generateResult.billsCleared} old bill instances\n` +
+            `📅 Updated ${updateResult.templatesUpdated} template dates`,
+          duration: 6000
+        });
+        
+        // Reload bills to show the new ones
+        await loadBills();
+        await loadPaidThisMonth();
+      } else {
+        NotificationManager.showNotification({
+          type: 'error',
+          message: `❌ Error: ${generateResult.message}`,
+          duration: 5000
+        });
+      }
+    } catch (error) {
+      console.error('Error generating bills:', error);
+      NotificationManager.removeNotification(loadingNotificationId);
+      NotificationManager.showError('Error generating bills', error.message);
+    } finally {
+      setGeneratingBills(false);
+    }
+  };
+
   if (loading) {
     return (
       <div className="bills-container">
@@ -1186,6 +1784,17 @@ const Bills = () => {
   return (
     <div className="bills-container">
       <NotificationSystem />
+      
+      {showDuplicatePreview && (
+        <DuplicatePreviewModal
+          report={duplicateReport}
+          onConfirm={handleConfirmDeduplication}
+          onCancel={() => {
+            setShowDuplicatePreview(false);
+            setDuplicateReport(null);
+          }}
+        />
+      )}
       
       {!plaidStatus.isConnected && !hasPlaidAccounts && !plaidStatus.hasError && (
         <div style={{
@@ -1288,6 +1897,53 @@ const Bills = () => {
           </div>
           <div style={{ display: 'flex', gap: '12px' }}>
             <button 
+              onClick={async () => {
+                const result = await detectAndAutoAddRecurringBills(currentUser.uid, db);
+                if (result.success) {
+                  NotificationManager.showSuccess(
+                    result.addedCount > 0 
+                      ? `Auto-detected and added ${result.addedCount} recurring bill${result.addedCount > 1 ? 's' : ''}!`
+                      : `Found ${result.totalDetected} recurring bills but all already exist.`
+                  );
+                } else {
+                  NotificationManager.showError('Detection failed', result.error);
+                }
+              }}
+              style={{
+                background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
+                color: '#fff',
+                border: 'none',
+                borderRadius: '8px',
+                padding: '12px 20px',
+                fontWeight: '600',
+                cursor: 'pointer',
+                transition: 'all 0.2s ease'
+              }}
+              title="Manually run recurring bill detection"
+            >
+              🤖 Detect Recurring Bills
+            </button>
+            <button 
+              onClick={handleGenerateAllBills}
+              disabled={generatingBills}
+              style={{
+                background: generatingBills 
+                  ? 'linear-gradient(135deg, #999 0%, #666 100%)'
+                  : 'linear-gradient(135deg, #11998e 0%, #38ef7d 100%)',
+                color: '#fff',
+                border: 'none',
+                borderRadius: '8px',
+                padding: '12px 20px',
+                fontWeight: '600',
+                cursor: generatingBills ? 'not-allowed' : 'pointer',
+                transition: 'all 0.2s ease',
+                opacity: generatingBills ? 0.6 : 1
+              }}
+              title="Generate bill instances from all recurring templates"
+            >
+              {generatingBills ? '⏳ Generating...' : '🔄 Generate All Bills'}
+            </button>
+            <button 
               onClick={() => setShowHelpModal(true)}
               style={{
                 background: '#6c757d',
@@ -1349,6 +2005,29 @@ const Bills = () => {
                   : (!plaidStatus.isConnected && !hasPlaidAccounts)
                     ? '🔒 Connect Plaid' 
                     : '🔄 Match Transactions'}
+            </button>
+            
+            <button 
+              onClick={handleRematchTransactions}
+              disabled={!hasPlaidAccounts && !plaidStatus.isConnected}
+              title="Re-match unpaid bills with recent transactions (last 30 days)"
+              style={{ 
+                marginLeft: '10px', 
+                background: (!hasPlaidAccounts && !plaidStatus.isConnected)
+                  ? '#999'
+                  : '#3b82f6', 
+                color: '#fff',
+                border: 'none',
+                borderRadius: '8px',
+                padding: '10px 20px',
+                fontSize: '14px',
+                fontWeight: '600',
+                cursor: (!hasPlaidAccounts && !plaidStatus.isConnected) ? 'not-allowed' : 'pointer',
+                opacity: (!hasPlaidAccounts && !plaidStatus.isConnected) ? 0.6 : 1,
+                boxShadow: (!hasPlaidAccounts && !plaidStatus.isConnected) ? 'none' : '0 2px 4px rgba(59,130,246,0.3)'
+              }}
+            >
+              🔄 Re-match Transactions
             </button>
             
             {typeof window !== 'undefined' && window.location.hostname === 'localhost' && (
@@ -1512,7 +2191,7 @@ const Bills = () => {
               className="deduplicate-button"
               onClick={handleDeduplicateBills}
               disabled={loading || deduplicating}
-              title="Remove duplicate bills (keeps first occurrence)"
+              title="Cleanup duplicate bills - keeps only the next upcoming unpaid bill per group"
               style={{
                 background: '#17a2b8',
                 color: '#fff',
@@ -1526,7 +2205,7 @@ const Bills = () => {
                 opacity: (loading || deduplicating) ? 0.6 : 1
               }}
             >
-              {deduplicating ? '🔄 Deduplicating...' : '🧹 Deduplicate Bills'}
+              {deduplicating ? '🔄 Cleaning up...' : '🧹 Cleanup Duplicates'}
             </button>
           )}
           <button 
@@ -1547,7 +2226,27 @@ const Bills = () => {
               opacity: loading ? 0.6 : 1
             }}
           >
-            📊 Import from CSV
+                        📊 Import from CSV
+          </button>
+          <button 
+            className="export-button"
+            onClick={handleExportToCSV}
+            disabled={loading || processedBills.length === 0}
+            title="Export bills to CSV"
+            style={{
+              background: '#28a745',
+              color: '#fff',
+              border: 'none',
+              borderRadius: '8px',
+              padding: '12px 20px',
+              fontWeight: '600',
+              cursor: (loading || processedBills.length === 0) ? 'not-allowed' : 'pointer',
+              transition: 'all 0.2s ease',
+              whiteSpace: 'nowrap',
+              opacity: (loading || processedBills.length === 0) ? 0.6 : 1
+            }}
+          >
+            📊 Export to CSV
           </button>
           {importHistory.length > 0 && (
             <>
@@ -1666,6 +2365,60 @@ const Bills = () => {
                     </div>
                   )}
                   
+{/* Manual Mark as Paid Button */}
+{bill.status !== 'paid' && bill.status !== 'skipped' && (
+  <div style={{ marginTop: '12px' }}>
+    <button
+      onClick={() => handleMarkAsPaid(bill)}
+      disabled={payingBill === bill.name}
+      style={{
+        width: '100%',
+        padding: '10px 16px',
+        background: payingBill === bill.name 
+          ? 'rgba(0, 255, 136, 0.3)' 
+          : 'linear-gradient(135deg, #00ff88 0%, #00d4ff 100%)',
+        color: '#000',
+        border: 'none',
+        borderRadius: '8px',
+        fontSize: '13px',
+        fontWeight: '700',
+        cursor: payingBill === bill.name ? 'not-allowed' : 'pointer',
+        transition: 'all 0.2s ease',
+        opacity: payingBill === bill.name ? 0.6 : 1,
+        boxShadow: payingBill === bill.name 
+          ? 'none' 
+          : '0 4px 12px rgba(0, 255, 136, 0.3)',
+        textTransform: 'uppercase',
+        letterSpacing: '0.5px'
+      }}
+    >
+      {payingBill === bill.name ? '⏳ Processing...' : '💳 Mark as Paid'}
+    </button>
+    
+    {/* Skip Button */}
+    <button
+      onClick={() => handleToggleSkipBill(bill)}
+      style={{
+        marginTop: '8px',
+        width: '100%',
+        padding: '8px 12px',
+        background: bill.status === 'skipped' 
+          ? 'rgba(138, 43, 226, 0.2)' 
+          : 'rgba(156, 39, 176, 0.1)',
+        color: bill.status === 'skipped' ? '#ba68c8' : '#9c27b0',
+        border: '1px solid ' + (bill.status === 'skipped' ? '#ba68c8' : '#9c27b0'),
+        borderRadius: '6px',
+        fontSize: '11px',
+        fontWeight: '600',
+        cursor: 'pointer',
+        transition: 'all 0.2s ease'
+      }}
+    >
+      {bill.status === 'skipped' ? '↩️ Unskip Bill' : '⏭️ Skip This Month'}
+    </button>
+  </div>
+)}
+                  
                   {bill.lastPayment && bill.lastPayment.source === 'plaid' && bill.lastPayment.transactionId && (
                     <div className="matched-transaction-info" style={{
                       marginTop: '8px',
@@ -1700,575 +2453,259 @@ const Bills = () => {
                       textAlign: 'center'
                     }}>
                       ✅ PAID {formatDate(bill.lastPaidDate)}
+                      {bill.status === 'paid' && bill.lastPaidDate && (
+  <div className="paid-info" style={{
+    marginTop: '8px',
+    padding: '6px 10px',
+    background: 'rgba(0, 255, 136, 0.1)',
+    borderRadius: '6px',
+    border: '1px solid #00ff88',
+    fontSize: '11px',
+    color: '#00ff88',
+    fontWeight: 'bold',
+    textAlign: 'center'
+  }}>
+    ✅ PAID {formatDate(bill.lastPaidDate)}
+    
+    {/* Undo Payment Button */}
+    <button
+      onClick={() => handleUnmarkAsPaid(bill)}
+      style={{
+        marginTop: '6px',
+        width: '100%',
+        padding: '6px 10px',
+        background: 'rgba(255, 107, 0, 0.2)',
+        color: '#ff6b00',
+        border: '1px solid #ff6b00',
+        borderRadius: '4px',
+        fontSize: '10px',
+        fontWeight: '600',
+        cursor: 'pointer',
+        transition: 'all 0.2s ease',
+        textTransform: 'uppercase'
+      }}
+    >
+      ↩️ Undo Payment
+    </button>
+  </div>
+)}
                     </div>
                   )}
-                </div>
-                
-                <div className="bill-status-section">
-                  <span className={getStatusBadgeClass(bill.status)}>
-                    {getStatusDisplayText(bill)}
-                  </span>
-                </div>
-                
-                <div className="bill-actions">
-                  <button 
-                    className="action-btn mark-paid"
-                    onClick={() => handleMarkAsPaid(bill)}
-                    disabled={payingBill === bill.name || RecurringBillManager.isBillPaidForCurrentCycle(bill) || bill.status === 'skipped'}
-                  >
-                    {payingBill === bill.name ? 'Processing...' : 
-                     RecurringBillManager.isBillPaidForCurrentCycle(bill) ? 'Already Paid' :
-                     bill.status === 'skipped' ? 'Skipped' : 'Mark Paid'}
-                  </button>
-                  
-                  {RecurringBillManager.isBillPaidForCurrentCycle(bill) && (
-                    <button 
-                      className="action-btn secondary"
-                      onClick={() => handleUnmarkAsPaid(bill)}
-                      style={{
-                        background: '#ff6b00',
-                        marginTop: '4px'
-                      }}
-                      title="Mark this bill as unpaid"
-                    >
-                      Mark Unpaid
-                    </button>
-                  )}
-                  
-                  {bill.recurringTemplateId && bill.status !== 'paid' && (
-                    <button 
-                      className="action-btn secondary"
-                      onClick={() => handleToggleSkipBill(bill)}
-                      style={{
-                        background: bill.status === 'skipped' ? '#4caf50' : '#9c27b0',
-                        marginTop: '4px'
-                      }}
-                      title={bill.status === 'skipped' ? 'Unskip this bill' : 'Skip this month'}
-                    >
-                      {bill.status === 'skipped' ? '↩️ Unskip' : '⏭️ Skip Month'}
-                    </button>
-                  )}
-                  
-                  <button 
-                    className="action-btn secondary"
-                    onClick={() => {
-                      setEditingBill(bill);
-                      setShowModal(true);
-                    }}
-                  >
-                    Edit
-                  </button>
-                  <button 
-                    className="action-btn danger"
-                    onClick={() => handleDeleteBill(bill)}
-                  >
-                    Delete
-                  </button>
                 </div>
               </div>
             ))
           ) : (
-            <div className="no-bills">
-              <p>No bills found matching your criteria.</p>
-              <button 
-                className="add-first-bill-btn"
-                onClick={() => {
-                  setEditingBill(null);
-                  setShowModal(true);
-                }}
-              >
-                Add Your First Bill
-              </button>
-            </div>
+            <div className="bills-empty">No bills found</div>
           )}
         </div>
       </div>
 
-      {showModal && (
-        <BillModal
-          bill={editingBill}
-          categories={TRANSACTION_CATEGORIES}
-          accounts={accounts}
-          onSave={handleSaveBill}
-          onCancel={() => {
-            setShowModal(false);
-            setEditingBill(null);
-          }}
-        />
-      )}
-
-      {showBulkDeleteModal && (
-        <div className="modal-overlay" onClick={() => setShowBulkDeleteModal(false)}>
-          <div className="modal" onClick={(e) => e.stopPropagation()}>
-            <div className="modal-header">
-              <h3>⚠️ Delete All Bills?</h3>
-              <button className="close-btn" onClick={() => setShowBulkDeleteModal(false)}>×</button>
-            </div>
-            
-            <div className="modal-body">
-              <p style={{ marginBottom: '20px', fontSize: '16px' }}>
-                Are you sure you want to delete <strong>all {processedBills.length} bills</strong>?
-              </p>
-              <p style={{ marginBottom: '20px', color: '#ff9800' }}>
-                ⚠️ This will permanently delete all your bills from the system.
-              </p>
-              <p style={{ marginBottom: '20px', color: '#00ff88' }}>
-                ✓ Don't worry! You can undo this action using the "Undo Delete" button that will appear after deletion.
-              </p>
-              
-              <div className="modal-actions" style={{ display: 'flex', gap: '10px', justifyContent: 'flex-end' }}>
-                <button 
-                  onClick={() => setShowBulkDeleteModal(false)}
-                  className="cancel-btn"
-                  style={{ padding: '10px 20px' }}
-                >
-                  Cancel
-                </button>
-                <button 
-                  onClick={handleBulkDelete}
-                  className="delete-btn"
-                  disabled={loading}
-                  style={{ padding: '10px 20px', backgroundColor: '#f44336' }}
-                >
-                  {loading ? 'Deleting...' : 'Delete All'}
-                </button>
-              </div>
-            </div>
-          </div>
+      {/* Paid Bills Archive Section */}
+      <div className="bills-list-section" style={{ marginTop: '40px' }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
+          <h3>📦 Paid Bills Archive ({paidBills.length})</h3>
+          <button 
+            onClick={() => setShowPaidBills(!showPaidBills)}
+            style={{
+              background: 'rgba(0, 255, 136, 0.2)',
+              color: '#00ff88',
+              border: '1px solid #00ff88',
+              borderRadius: '6px',
+              padding: '8px 16px',
+              fontSize: '13px',
+              fontWeight: '600',
+              cursor: 'pointer'
+            }}
+          >
+            {showPaidBills ? '▼ Hide' : '▶ Show'}
+          </button>
         </div>
-      )}
-
-      {showCSVImport && (
-        <BillCSVImportModal
-          existingBills={processedBills}
-          onImport={handleCSVImport}
-          onCancel={() => setShowCSVImport(false)}
-        />
-      )}
-
-{showImportHistory && (
-        <div className="modal-overlay" onClick={() => setShowImportHistory(false)}>
-          <div className="modal" onClick={(e) => e.stopPropagation()} style={{ maxWidth: '700px' }}>
-            <div className="modal-header">
-              <h3>📜 Import History</h3>
-              <button className="close-btn" onClick={() => setShowImportHistory(false)}>×</button>
-            </div>
-            
-            <div className="modal-body">
-              <p style={{ marginBottom: '20px', color: '#ccc' }}>
-                History of CSV imports (last 10)
+        
+        {showPaidBills && (
+          <>
+            <div style={{
+              padding: '16px',
+              background: 'rgba(0, 255, 136, 0.1)',
+              borderRadius: '8px',
+              marginBottom: '20px',
+              border: '1px solid rgba(0, 255, 136, 0.3)'
+            }}>
+              <p style={{ margin: 0, fontSize: '14px', color: '#00ff88' }}>
+                <strong>ℹ️ Historical Record</strong><br/>
+                This is your archive of all paid bills. These bills are kept for your records and financial tracking.
+                {paidBills.length > 0 && ` Showing ${paidBills.length} paid bill${paidBills.length !== 1 ? 's' : ''}.`}
               </p>
-              
-              <div style={{ maxHeight: '500px', overflowY: 'auto' }}>
-                {importHistory.map((entry, index) => (
+            </div>
+
+            {paidBills.length > 0 ? (
+              <div className="bills-list">
+                {paidBills.map((bill, index) => (
                   <div 
-                    key={entry.id}
+                    key={bill.id || index}
+                    className="bill-item paid"
                     style={{
-                      padding: '16px',
-                      marginBottom: '12px',
-                      background: index === 0 ? '#1a3a1a' : '#1a1a1a',
-                      border: index === 0 ? '2px solid #00ff88' : '1px solid #333',
-                      borderRadius: '8px'
+                      background: 'rgba(0, 255, 136, 0.05)',
+                      border: '2px solid rgba(0, 255, 136, 0.3)'
                     }}
                   >
-                    <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '8px', alignItems: 'flex-start' }}>
-                      <div style={{ flex: 1 }}>
-                        <strong style={{ color: '#fff' }}>
-                          {new Date(entry.timestamp).toLocaleString()}
-                          {index === 0 && <span style={{ color: '#00ff88', marginLeft: '8px' }}>(Most Recent)</span>}
-                        </strong>
-                        <div style={{ fontSize: '14px', color: '#888', marginTop: '4px' }}>
-                          {entry.billCount} bills imported
-                          {entry.errorsCount > 0 && (
-                            <span style={{ color: '#f44336', marginLeft: '8px' }}>
-                              • {entry.errorsCount} errors
-                            </span>
-                          )}
-                          {entry.warningsCount > 0 && (
-                            <span style={{ color: '#ff9800', marginLeft: '8px' }}>
-                              • {entry.warningsCount} warnings
-                            </span>
-                          )}
+                    <div className="bill-main-info">
+                      <div className="bill-icon">
+                        {getCategoryIcon(bill.category)}
+                      </div>
+                      <div className="bill-details">
+                        <h4>
+                          {bill.name}
+                          <span 
+                            className="paid-badge" 
+                            style={{
+                              marginLeft: '8px',
+                              padding: '2px 8px',
+                              fontSize: '11px',
+                              background: 'rgba(0, 255, 136, 0.3)',
+                              color: '#00ff88',
+                              borderRadius: '4px',
+                              fontWeight: 'normal'
+                            }}
+                          >
+                            ✅ PAID
+                          </span>
+                        </h4>
+                        <div className="bill-meta">
+                          <span className="bill-category">{bill.category}</span>
+                          <span className="bill-frequency">{bill.recurrence}</span>
+                          <span>Paid: {formatDate(bill.paidDate)}</span>
                         </div>
                       </div>
                     </div>
-                    <div style={{ fontSize: '13px', color: '#ccc', marginTop: '12px' }}>
-                      <div style={{ fontWeight: '600', marginBottom: '6px' }}>Bills:</div>
-                      {entry.bills.map((b, idx) => (
-                        <div key={idx} style={{ paddingLeft: '12px', marginBottom: '4px' }}>
-                          • {b.name} 
-                          {b.institutionName && <span style={{ color: '#888' }}> ({b.institutionName})</span>}
-                          <span style={{ color: '#888' }}> - ${b.amount?.toFixed?.(2) || b.amount}</span>
-                          {b.dueDate && <span style={{ color: '#888' }}> - Due: {b.dueDate}</span>}
-                          {b.dateError && (
-                            <span style={{ color: '#f44336', marginLeft: '8px' }}>
-                              ❌ {b.dateError}
-                            </span>
-                          )}
-                          {b.dateWarning && !b.dateError && (
-                            <span style={{ color: '#ff9800', marginLeft: '8px' }}>
-                              ⚠️ {b.dateWarning}
-                            </span>
-                          )}
-                        </div>
-                      ))}
+                    
+                    <div className="bill-amount-section">
+                      <div className="bill-amount">{formatCurrency(bill.amount)}</div>
+                      <div className="bill-due-date">
+                        Original Due: {formatDate(bill.dueDate || bill.nextDueDate)}
+                      </div>
+                      <div style={{ 
+                        marginTop: '8px', 
+                        fontSize: '12px', 
+                        color: '#888',
+                        textAlign: 'center'
+                      }}>
+                        {bill.paymentMethod && `Paid via ${bill.paymentMethod}`}
+                      </div>
                     </div>
                   </div>
                 ))}
               </div>
-              
-              <div style={{ marginTop: '20px', display: 'flex', justifyContent: 'space-between' }}>
-                <button
-                  onClick={() => setShowImportHistory(false)}
-                  style={{
-                    padding: '10px 20px',
-                    background: '#555',
-                    color: '#fff',
-                    border: 'none',
-                    borderRadius: '4px',
-                    cursor: 'pointer',
-                    fontWeight: '600'
-                  }}
-                >
-                  Close
-                </button>
-                {importHistory.length > 0 && (
-                  <button
-                    onClick={() => {
-                      setShowImportHistory(false);
-                      handleUndoLastImport();
-                    }}
+            ) : (
+              <div className="bills-empty">No paid bills in archive yet. Pay some bills to see them here!</div>
+            )}
+          </>
+        )}
+      </div>
+
+      {/* Recurring Bills Section */}
+      {recurringBills.length > 0 && (
+        <div className="bills-list-section" style={{ marginTop: '40px' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
+            <h3>🔄 Auto-Detected Recurring Bills ({recurringBills.length})</h3>
+            <button 
+              onClick={() => setShowRecurringBills(!showRecurringBills)}
+              style={{
+                background: 'rgba(138, 43, 226, 0.2)',
+                color: '#ba68c8',
+                border: '1px solid #ba68c8',
+                borderRadius: '6px',
+                padding: '8px 16px',
+                fontSize: '13px',
+                fontWeight: '600',
+                cursor: 'pointer'
+              }}
+            >
+              {showRecurringBills ? '▼ Hide' : '▶ Show'}
+            </button>
+          </div>
+          
+          {showRecurringBills && (
+            <>
+              <div style={{
+                padding: '16px',
+                background: 'rgba(138, 43, 226, 0.1)',
+                borderRadius: '8px',
+                marginBottom: '20px',
+                border: '1px solid rgba(138, 43, 226, 0.3)'
+              }}>
+                <p style={{ margin: 0, fontSize: '14px', color: '#ba68c8' }}>
+                  <strong>ℹ️ These bills were automatically detected from your transactions.</strong><br/>
+                  These are utilities, rent, insurance, and other recurring bills that were identified based on transaction patterns.
+                  They are tracked separately from entertainment subscriptions (Netflix, Spotify, etc.).
+                </p>
+              </div>
+
+              <div className="bills-list">
+                {recurringBills.map((bill, index) => (
+                  <div 
+                    key={bill.id || index}
+                    className="bill-item"
                     style={{
-                      padding: '10px 20px',
-                      background: '#ff9800',
-                      color: '#000',
-                      border: 'none',
-                      borderRadius: '4px',
-                      cursor: 'pointer',
-                      fontWeight: '600'
+                      background: 'rgba(138, 43, 226, 0.05)',
+                      border: '2px solid rgba(138, 43, 226, 0.3)'
                     }}
                   >
-                    ↩️ Undo Last Import
-                  </button>
-                )}
+                    <div className="bill-main-info">
+                      <div className="bill-icon">
+                        {getCategoryIcon(bill.category)}
+                      </div>
+                      <div className="bill-details">
+                        <h4>
+                          {bill.name}
+                          <span 
+                            className="recurring-badge" 
+                            title="Auto-detected from transactions"
+                            style={{
+                              marginLeft: '8px',
+                              padding: '2px 8px',
+                              fontSize: '11px',
+                              background: 'rgba(138, 43, 226, 0.3)',
+                              color: '#ba68c8',
+                              borderRadius: '4px',
+                              fontWeight: 'normal'
+                            }}
+                          >
+                            🤖 Auto-Detected
+                          </span>
+                        </h4>
+                        <div className="bill-meta">
+                          <span className="bill-category">{bill.category}</span>
+                          <span className="bill-frequency">{bill.billingCycle}</span>
+                          {bill.essential && <span style={{ color: '#ffdd00' }}>⭐ Essential</span>}
+                        </div>
+                        {bill.notes && (
+                          <div style={{ fontSize: '12px', color: '#888', marginTop: '4px' }}>
+                            {bill.notes}
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                    
+                    <div className="bill-amount-section">
+                      <div className="bill-amount">{formatCurrency(bill.cost)}</div>
+                      <div className="bill-due-date">
+                        Next: {formatDate(bill.nextRenewal)}
+                      </div>
+                      {bill.paymentMethod && (
+                        <div style={{ fontSize: '11px', color: '#888', marginTop: '4px' }}>
+                          Payment: {bill.paymentMethod}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                ))}
               </div>
-            </div>
-          </div>
+            </>
+          )}
         </div>
       )}
 
-      {showHelpModal && (
-        <div className="modal-overlay" onClick={() => setShowHelpModal(false)}>
-          <div className="modal" onClick={(e) => e.stopPropagation()} style={{ maxWidth: '800px', maxHeight: '90vh', overflowY: 'auto' }}>
-            <div className="modal-header">
-              <h3>❓ Bills Management Help</h3>
-              <button className="close-btn" onClick={() => setShowHelpModal(false)}>×</button>
-            </div>
-            
-            <div className="modal-body">
-              <div style={{ marginBottom: '24px' }}>
-                <h4 style={{ color: '#00ff88', marginBottom: '12px' }}>📊 CSV Import</h4>
-                <ul style={{ color: '#ccc', lineHeight: '1.8' }}>
-                  <li><strong>Step 1:</strong> Click "Import from CSV" and upload your CSV file</li>
-                  <li><strong>Step 2:</strong> Review column mapping (auto-detected or manual mapping available)</li>
-                  <li><strong>Step 3:</strong> Preview bills and fix any errors (dates, categories, etc.)</li>
-                  <li><strong>Step 4:</strong> Use bulk actions to approve, skip, or assign categories</li>
-                </ul>
-                
-                <h5 style={{ color: '#00ff88', marginTop: '16px', marginBottom: '8px' }}>Supported Fields:</h5>
-                <ul style={{ color: '#ccc', lineHeight: '1.8' }}>
-                  <li><strong>name</strong> (required): Bill name or description</li>
-                  <li><strong>amount</strong> (required): Bill amount (numeric, can include $ and commas)</li>
-                  <li><strong>institutionName</strong> (optional): Bank or company name</li>
-                  <li><strong>dueDate</strong> (optional): Supports YYYY-MM-DD, MM/DD/YYYY, or day of month (1-31)</li>
-                  <li><strong>recurrence</strong> (optional): monthly, weekly, bi-weekly, etc. (defaults to monthly)</li>
-                  <li><strong>category</strong> (optional): Auto-detected if not provided</li>
-                </ul>
-                
-                <h5 style={{ color: '#00ff88', marginTop: '16px', marginBottom: '8px' }}>Key Features:</h5>
-                <ul style={{ color: '#ccc', lineHeight: '1.8' }}>
-                  <li><strong>Date Formats:</strong> Multiple formats supported with validation</li>
-                  <li><strong>Error Prevention:</strong> Cannot import bills with date errors - fix or skip them first</li>
-                  <li><strong>Inline Editing:</strong> Edit dates directly in the preview</li>
-                  <li><strong>Duplicate Detection:</strong> Checks name + amount + date (allows same bill on different dates)</li>
-                  <li><strong>Bulk Assign Category:</strong> Apply category to all non-skipped bills at once</li>
-                  <li><strong>Skip Bills with Errors:</strong> Automatically skip problematic bills</li>
-                </ul>
-              </div>
-
-              <div style={{ marginBottom: '24px' }}>
-                <h4 style={{ color: '#00ff88', marginBottom: '12px' }}>📜 Import History</h4>
-                <ul style={{ color: '#ccc', lineHeight: '1.8' }}>
-                  <li>Track your last 10 CSV imports with timestamps</li>
-                  <li>View bill count and names for each import</li>
-                  <li>Undo the most recent import if needed</li>
-                  <li>History is saved automatically with each import</li>
-                </ul>
-              </div>
-
-              <div style={{ marginBottom: '24px' }}>
-                <h4 style={{ color: '#00ff88', marginBottom: '12px' }}>🔄 Transaction Matching</h4>
-                <ul style={{ color: '#ccc', lineHeight: '1.8' }}>
-                  <li><strong>Connect Plaid:</strong> Link your bank accounts from the Accounts page</li>
-                  <li><strong>Auto-match:</strong> Click "Match Transactions" to automatically find payments</li>
-                  <li><strong>Smart matching:</strong> Bills are matched by amount, date, and merchant name</li>
-                  <li><strong>Status updates:</strong> Bills are automatically marked as paid when matched</li>
-                  <li><strong>Manual override:</strong> You can manually mark bills as paid or unpaid</li>
-                </ul>
-              </div>
-
-              <div style={{ marginBottom: '24px' }}>
-                <h4 style={{ color: '#00ff88', marginBottom: '12px' }}>🔄 Recurring Bills</h4>
-                <ul style={{ color: '#ccc', lineHeight: '1.8' }}>
-                  <li><strong>Auto badge:</strong> Bills with 🔄 Auto are generated from recurring templates</li>
-                  <li><strong>Create templates:</strong> Set up recurring bills on the Recurring page</li>
-                  <li><strong>Template control:</strong> Delete templates with option to remove generated bills</li>
-                  <li><strong>Cleanup menu:</strong> Bulk maintenance tools for recurring bills</li>
-                </ul>
-              </div>
-
-              <div style={{ marginBottom: '24px' }}>
-                <h4 style={{ color: '#00ff88', marginBottom: '12px' }}>🗑️ Bulk Operations</h4>
-                <ul style={{ color: '#ccc', lineHeight: '1.8' }}>
-                  <li><strong>Delete All:</strong> Remove all bills with one click (with undo option)</li>
-                  <li><strong>Undo Delete:</strong> Restore all deleted bills if done by mistake</li>
-                  <li><strong>Undo Import:</strong> Remove bills from the last CSV import</li>
-                  <li><strong>Safety first:</strong> All destructive actions require confirmation</li>
-                </ul>
-              </div>
-
-              <div style={{ marginBottom: '24px' }}>
-                <h4 style={{ color: '#00ff88', marginBottom: '12px' }}>💡 Tips & Best Practices</h4>
-                <ul style={{ color: '#ccc', lineHeight: '1.8' }}>
-                  <li>Download the CSV template for proper formatting</li>
-                  <li>Review duplicate warnings before importing</li>
-                  <li>Use bulk category assignment to speed up imports</li>
-                  <li>Connect Plaid for automatic transaction matching</li>
-                  <li>Set up recurring templates for repeating bills</li>
-                  <li>Use the search and filter to find specific bills</li>
-                </ul>
-              </div>
-
-              <div style={{ marginTop: '24px', textAlign: 'center' }}>
-                <button
-                  onClick={() => setShowHelpModal(false)}
-                  style={{
-                    padding: '12px 24px',
-                    background: '#00ff88',
-                    color: '#000',
-                    border: 'none',
-                    borderRadius: '4px',
-                    cursor: 'pointer',
-                    fontWeight: '600',
-                    fontSize: '16px'
-                  }}
-                >
-                  Got it!
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
-
-      <PlaidErrorModal
-        isOpen={showErrorModal}
-        onClose={() => setShowErrorModal(false)}
-        onRetry={() => {
-          setShowErrorModal(false);
-          checkPlaidConnection();
-        }}
-      />
-
-      <PaymentHistoryModal
-        isOpen={showPaymentHistory}
-        onClose={() => setShowPaymentHistory(false)}
-      />
     </div>
   );
-};
+}
 
-const BillModal = ({ bill, categories, accounts, onSave, onCancel }) => {
-  const [formData, setFormData] = useState({
-    name: bill?.name || '',
-    amount: bill?.amount || '',
-    dueDate: bill?.dueDate || '',
-    recurrence: bill?.recurrence || 'monthly',
-    category: migrateLegacyCategory(bill?.category || 'Bills & Utilities'),
-    account: bill?.account || Object.keys(accounts)[0] || 'bofa',
-    notes: bill?.notes || ''
-  });
-
-  const [errors, setErrors] = useState({});
-
-  const accountsList = Object.entries(accounts).map(([key, account]) => ({
-    key: key,
-    name: account.name,
-    type: account.type,
-    mask: account.mask
-  }));
-
-  const frequencies = [
-    { value: 'monthly', label: 'Monthly' },
-    { value: 'bi-weekly', label: 'Bi-weekly' },
-    { value: 'weekly', label: 'Weekly' },
-    { value: 'quarterly', label: 'Quarterly' },
-    { value: 'annually', label: 'Annually' },
-    { value: 'one-time', label: 'One-time' }
-  ];
-
-  const handleInputChange = (field, value) => {
-    setFormData(prev => ({ ...prev, [field]: value }));
-    if (errors[field]) {
-      setErrors(prev => ({ ...prev, [field]: '' }));
-    }
-  };
-
-  const validateForm = () => {
-    const newErrors = {};
-    
-    if (!formData.name.trim()) {
-      newErrors.name = 'Bill name is required';
-    }
-    
-    if (!formData.amount || parseFloat(formData.amount) <= 0) {
-      newErrors.amount = 'Valid amount is required';
-    }
-    
-    if (!formData.dueDate) {
-      newErrors.dueDate = 'Due date is required';
-    }
-    
-    setErrors(newErrors);
-    return Object.keys(newErrors).length === 0;
-  };
-
-  const handleSubmit = (e) => {
-    e.preventDefault();
-    
-    if (validateForm()) {
-      onSave({
-        ...formData,
-        amount: parseFloat(formData.amount).toString()
-      });
-    }
-  };
-
-  return (
-    <div className="modal-overlay" onClick={onCancel}>
-      <div className="modal-content" onClick={(e) => e.stopPropagation()}>
-        <div className="modal-header">
-          <h3>{bill ? 'Edit Bill' : 'Add New Bill'}</h3>
-          <button className="modal-close" onClick={onCancel}>×</button>
-        </div>
-        
-        <form className="modal-form" onSubmit={handleSubmit}>
-          <div className="form-row">
-            <div className="form-group">
-              <label>Bill Name *</label>
-              <input
-                type="text"
-                value={formData.name}
-                onChange={(e) => handleInputChange('name', e.target.value)}
-                placeholder="e.g., NV Energy, Southwest Gas"
-                className={errors.name ? 'error' : ''}
-              />
-              {errors.name && <span className="error-text">{errors.name}</span>}
-            </div>
-            
-            <div className="form-group">
-              <label>Amount *</label>
-              <input
-                type="number"
-                step="0.01"
-                value={formData.amount}
-                onChange={(e) => handleInputChange('amount', e.target.value)}
-                placeholder="0.00"
-                className={errors.amount ? 'error' : ''}
-              />
-              {errors.amount && <span className="error-text">{errors.amount}</span>}
-            </div>
-          </div>
-          
-          <div className="form-row">
-            <div className="form-group">
-              <label>Due Date *</label>
-              <input
-                type="date"
-                value={formData.dueDate}
-                onChange={(e) => handleInputChange('dueDate', e.target.value)}
-                className={errors.dueDate ? 'error' : ''}
-              />
-              {errors.dueDate && <span className="error-text">{errors.dueDate}</span>}
-            </div>
-            
-            <div className="form-group">
-              <label>Frequency</label>
-              <select
-                value={formData.recurrence}
-                onChange={(e) => handleInputChange('recurrence', e.target.value)}
-              >
-                {frequencies.map(freq => (
-                  <option key={freq.value} value={freq.value}>
-                    {freq.label}
-                  </option>
-                ))}
-              </select>
-            </div>
-          </div>
-          
-          <div className="form-row">
-            <div className="form-group">
-              <label>Category</label>
-              <select
-                value={formData.category}
-                onChange={(e) => handleInputChange('category', e.target.value)}
-              >
-                {categories.map(category => (
-                  <option key={category} value={category}>
-                    {category}
-                  </option>
-                ))}
-              </select>
-            </div>
-            
-            <div className="form-group">
-              <label>Account to Debit</label>
-              <select
-                value={formData.account}
-                onChange={(e) => handleInputChange('account', e.target.value)}
-              >
-                {accountsList.map(account => (
-                  <option key={account.key} value={account.key}>
-                    {account.name} {account.mask ? `(****${account.mask})` : ''} - {account.type}
-                  </option>
-                ))}
-              </select>
-            </div>
-          </div>
-          
-          <div className="form-group">
-            <label>Notes (Optional)</label>
-            <textarea
-              value={formData.notes}
-              onChange={(e) => handleInputChange('notes', e.target.value)}
-              placeholder="Additional notes about this bill..."
-              rows={3}
-            />
-          </div>
-          
-          <div className="modal-actions">
-            <button type="button" className="btn-cancel" onClick={onCancel}>
-              Cancel
-            </button>
-            <button type="submit" className="btn-save">
-              {bill ? 'Update Bill' : 'Add Bill'}
-            </button>
-          </div>
-        </form>
-      </div>
-    </div>
-  );
-};
-
-export default Bills;

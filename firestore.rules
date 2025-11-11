@@ -1,0 +1,248 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // =============================================================================
+    // HELPER FUNCTIONS
+    // =============================================================================
+    
+    // Check if user is authenticated and accessing their own data
+    function isOwner(userId) {
+      return request.auth != null && request.auth.uid == userId;
+    }
+    
+    // Check document size (max 10KB to prevent abuse)
+    function isValidSize() {
+      return request.resource.size() < 10000;
+    }
+    
+    // Check if string length is within limits
+    function isValidStringLength(field, maxLength) {
+      return request.resource.data[field] is string 
+        && request.resource.data[field].size() > 0 
+        && request.resource.data[field].size() <= maxLength;
+    }
+    
+    // =============================================================================
+    // USER DATA
+    // =============================================================================
+    
+    match /users/{userId} {
+      allow read, write: if isOwner(userId) && isValidSize();
+      
+      // ---------------------------------------------------------------------------
+      // SETTINGS - User preferences and configuration
+      // ---------------------------------------------------------------------------
+      match /settings/{settingId} {
+        allow read, delete: if isOwner(userId);
+        allow create, update: if isOwner(userId) && isValidSize();
+      }
+      
+      // ---------------------------------------------------------------------------
+      // BILL INSTANCES - Individual bill occurrences
+      // ---------------------------------------------------------------------------
+      match /billInstances/{billId} {
+        allow read, delete: if isOwner(userId);
+        
+        // Strict validation on create
+        allow create: if isOwner(userId) 
+          && request.resource.data.keys().hasAll(['name', 'amount', 'dueDate', 'status', 'isPaid'])
+          && request.resource.data.name is string
+          && request.resource.data.name.size() > 0 && request.resource.data.name.size() <= 200
+          && request.resource.data.amount is number
+          && request.resource.data.amount >= 0 && request.resource.data.amount <= 1000000
+          && request.resource.data.isPaid is bool
+          && request.resource.data.status is string
+          && request.resource.data.status in ['pending', 'overdue', 'paid', 'skipped']
+          && request.resource.data.dueDate is timestamp
+          && isValidSize();
+        
+        // Allow updates but maintain data integrity
+        allow update: if isOwner(userId)
+          && request.resource.data.keys().hasAll(['name', 'amount', 'dueDate', 'status', 'isPaid'])
+          && request.resource.data.name is string
+          && request.resource.data.name.size() > 0 && request.resource.data.name.size() <= 200
+          && request.resource.data.amount is number
+          && request.resource.data.amount >= 0 && request.resource.data.amount <= 1000000
+          && request.resource.data.isPaid is bool
+          && request.resource.data.status is string
+          && request.resource.data.status in ['pending', 'overdue', 'paid', 'skipped']
+          && request.resource.data.dueDate is timestamp
+          && isValidSize();
+      }
+      
+      // ---------------------------------------------------------------------------
+      // PAID BILLS - Archive of paid bills for history/reporting
+      // ---------------------------------------------------------------------------
+      match /paidBills/{paidBillId} {
+        allow read, delete: if isOwner(userId);
+        
+        // Allow creating paid bill archives
+        allow create: if isOwner(userId) 
+          && request.resource.data.keys().hasAll(['name', 'amount', 'paidDate'])
+          && request.resource.data.name is string
+          && request.resource.data.name.size() > 0 && request.resource.data.name.size() <= 200
+          && request.resource.data.amount is number
+          && request.resource.data.amount >= 0 && request.resource.data.amount <= 1000000
+          && request.resource.data.paidDate is string
+          && request.resource.data.paidDate.size() > 0
+          && isValidSize();
+        
+        // Allow updates for corrections
+        allow update: if isOwner(userId)
+          && request.resource.data.name is string
+          && request.resource.data.name.size() > 0 && request.resource.data.name.size() <= 200
+          && request.resource.data.amount is number
+          && request.resource.data.amount >= 0 && request.resource.data.amount <= 1000000
+          && isValidSize();
+      }
+      
+      // ---------------------------------------------------------------------------
+      // SUBSCRIPTIONS - Recurring payment subscriptions
+      // ---------------------------------------------------------------------------
+      match /subscriptions/{subId} {
+        allow read, delete: if isOwner(userId);
+        
+        allow create: if isOwner(userId)
+          && request.resource.data.name is string
+          && request.resource.data.name.size() > 0 && request.resource.data.name.size() <= 200
+          && request.resource.data.amount is number
+          && request.resource.data.amount >= 0 && request.resource.data.amount <= 100000
+          && isValidSize();
+        
+        allow update: if isOwner(userId)
+          && request.resource.data.name is string
+          && request.resource.data.name.size() > 0 && request.resource.data.name.size() <= 200
+          && request.resource.data.amount is number
+          && request.resource.data.amount >= 0 && request.resource.data.amount <= 100000
+          && isValidSize();
+      }
+      
+      // ---------------------------------------------------------------------------
+      // RECURRING ITEMS - Recurring bill/payment templates
+      // ---------------------------------------------------------------------------
+      match /recurringItems/{recurringId} {
+        allow read, delete: if isOwner(userId);
+        
+        allow create: if isOwner(userId)
+          && request.resource.data.name is string
+          && request.resource.data.name.size() > 0 && request.resource.data.name.size() <= 200
+          && request.resource.data.amount is number
+          && request.resource.data.amount >= 0 && request.resource.data.amount <= 1000000
+          && request.resource.data.frequency is string
+          && request.resource.data.frequency in ['daily', 'weekly', 'biweekly', 'monthly', 'bimonthly', 'quarterly', 'yearly']
+          && isValidSize();
+        
+        allow update: if isOwner(userId)
+          && request.resource.data.name is string
+          && request.resource.data.name.size() > 0 && request.resource.data.name.size() <= 200
+          && request.resource.data.amount is number
+          && request.resource.data.amount >= 0 && request.resource.data.amount <= 1000000
+          && isValidSize();
+      }
+      
+      // ---------------------------------------------------------------------------
+      // TRANSACTIONS - Financial transactions from Plaid and manual entry
+      // ---------------------------------------------------------------------------
+      match /transactions/{transId} {
+        allow read, delete: if isOwner(userId);
+        
+        // Create validation
+        allow create: if isOwner(userId)
+          && request.resource.data.keys().hasAll(['amount', 'date', 'merchant_name', 'source'])
+          && request.resource.data.amount is number
+          && request.resource.data.amount >= -1000000 && request.resource.data.amount <= 1000000
+          && request.resource.data.date is string
+          && request.resource.data.date.size() == 10  // YYYY-MM-DD format
+          && isValidStringLength('merchant_name', 500)
+          && request.resource.data.source is string
+          && request.resource.data.source in ['plaid', 'manual']
+          && isValidSize();
+        
+        // Update validation - prevent tampering with Plaid transactions
+        allow update: if isOwner(userId)
+          && request.resource.data.amount is number
+          && request.resource.data.amount >= -1000000 && request.resource.data.amount <= 1000000
+          && request.resource.data.date is string
+          && request.resource.data.date.size() == 10
+          && isValidStringLength('merchant_name', 500)
+          && request.resource.data.source is string
+          && request.resource.data.source in ['plaid', 'manual']
+          // Prevent changing source type (security: can't change Plaid → manual)
+          && (!request.resource.data.diff(resource.data).affectedKeys().hasAny(['source']) 
+              || resource.data.source == 'manual')
+          && isValidSize();
+      }
+      
+      // ---------------------------------------------------------------------------
+      // BILL PAYMENTS - Payment tracking for bills
+      // ---------------------------------------------------------------------------
+      match /bill_payments/{paymentId} {
+        allow read, delete: if isOwner(userId);
+        
+        allow create, update: if isOwner(userId)
+          && request.resource.data.amount is number
+          && request.resource.data.amount >= 0 && request.resource.data.amount <= 1000000
+          && isValidSize();
+      }
+      
+      // ---------------------------------------------------------------------------
+      // FINANCIAL - Financial calculations and snapshots
+      // ---------------------------------------------------------------------------
+      match /financial/{docId} {
+        allow read, delete: if isOwner(userId);
+        allow create, update: if isOwner(userId) && isValidSize();
+      }
+      
+      // ---------------------------------------------------------------------------
+      // PLAID ITEMS - Connected Plaid bank accounts
+      // ---------------------------------------------------------------------------
+      match /plaid_items/{itemId} {
+        allow read, delete: if isOwner(userId);
+        
+        allow create, update: if isOwner(userId)
+          && request.resource.data.keys().hasAll(['access_token', 'item_id'])
+          && request.resource.data.access_token is string
+          && request.resource.data.access_token.size() > 0 && request.resource.data.access_token.size() <= 500
+          && request.resource.data.item_id is string
+          && request.resource.data.item_id.size() > 0 && request.resource.data.item_id.size() <= 200
+          && isValidSize();
+      }
+      
+      // ---------------------------------------------------------------------------
+      // METADATA - Application metadata
+      // ---------------------------------------------------------------------------
+      match /metadata/{metadataId} {
+        allow read, delete: if isOwner(userId);
+        allow create, update: if isOwner(userId) && isValidSize();
+      }
+      
+      // ---------------------------------------------------------------------------
+      // GOALS - Financial goals tracking
+      // ---------------------------------------------------------------------------
+      match /goals/{goalId} {
+        allow read, delete: if isOwner(userId);
+        
+        allow create, update: if isOwner(userId)
+          && request.resource.data.name is string
+          && request.resource.data.name.size() > 0 && request.resource.data.name.size() <= 200
+          && request.resource.data.targetAmount is number
+          && request.resource.data.targetAmount >= 0 && request.resource.data.targetAmount <= 10000000
+          && isValidSize();
+      }
+      
+      // ---------------------------------------------------------------------------
+      // INCOME SOURCES - Income tracking
+      // ---------------------------------------------------------------------------
+      match /incomeSources/{sourceId} {
+        allow read, delete: if isOwner(userId);
+        
+        allow create, update: if isOwner(userId)
+          && request.resource.data.name is string
+          && request.resource.data.name.size() > 0 && request.resource.data.name.size() <= 200
+          && request.resource.data.amount is number
+          && request.resource.data.amount >= 0 && request.resource.data.amount <= 10000000
+          && isValidSize();
+      }
+    }
+  }
+}

@@ -18,6 +18,35 @@ const Accounts = () => {
   useSmartBalanceSync(currentUser?.uid);
   
   const [loading, setLoading] = useState(true);
+
+  // Helper function to extract balance data from account object
+  // Prefers top-level fields from backend, falls back to balances object
+  const extractBalances = (account) => {
+    const balances = account.balances || {};
+    const currentBalance = parseFloat(account.current_balance ?? balances.current ?? 0);
+    const availableBalance = parseFloat(account.available_balance ?? balances.available ?? currentBalance);
+    const liveBalance = availableBalance; // available includes pending
+    const pendingAdjustment = availableBalance - currentBalance;
+    
+    return { currentBalance, availableBalance, liveBalance, pendingAdjustment };
+  };
+
+  // Helper function to remove undefined values for Firebase compatibility
+  // Firebase does not support undefined values in documents
+  const sanitizeForFirebase = (obj) => {
+    if (obj === null || obj === undefined) return null;
+    if (typeof obj !== 'object') return obj;
+    if (Array.isArray(obj)) return obj.map(sanitizeForFirebase);
+    
+    const sanitized = {};
+    for (const [key, value] of Object.entries(obj)) {
+      if (value !== undefined) {
+        sanitized[key] = sanitizeForFirebase(value);
+      }
+    }
+    return sanitized;
+  };
+
   const [accounts, setAccounts] = useState({});
   const [totalBalance, setTotalBalance] = useState(0);
   const [totalProjectedBalance, setTotalProjectedBalance] = useState(0);
@@ -49,6 +78,9 @@ const Accounts = () => {
   
   // Health check state
   const [healthStatus, setHealthStatus] = useState(null);
+  
+  // Reconnect state
+  const [reconnectingItemId, setReconnectingItemId] = useState(null);
 
  // eslint-disable-next-line react-hooks/exhaustive-deps
  useEffect(() => {
@@ -470,6 +502,13 @@ const Accounts = () => {
   const loadAccountsAndTransactions = async () => {
     // Real-time listener handles transactions, just load accounts
     await loadAccounts();
+    
+    // Check connection health after accounts are loaded
+    if (currentUser) {
+      checkConnectionHealth().catch(err => {
+        console.error('Health check failed:', err);
+      });
+    }
   };
 
   const loadAccounts = async () => {
@@ -490,12 +529,12 @@ const Accounts = () => {
       if (data.success && data.accounts && data.accounts.length > 0) {
         // Format backend accounts for frontend display
        // ✅ Improved mapping logic – reflects pending (uses available first) and safely handles null balances
-const formattedPlaidAccounts = data.accounts.map(account => {
-  const balances = account.balances || {}; // 👈 prevents null crash
-  const currentBalance = parseFloat(balances.current ?? 0);
-  const availableBalance = parseFloat(balances.available ?? currentBalance);
-  const liveBalance = availableBalance; // available includes pending
-  const pendingAdjustment = availableBalance - currentBalance; // difference = total pending (positive for deposits, negative for expenses)
+const allAccounts = data.accounts.map(account => {
+  const { currentBalance, availableBalance, liveBalance, pendingAdjustment } = extractBalances(account);
+
+  // Check if balance changed compared to existing account
+  const existingAccount = plaidAccounts.find(acc => acc.account_id === account.account_id);
+  const balanceChanged = !existingAccount || existingAccount.balance !== liveBalance.toFixed(2);
 
   return {
     account_id: account.account_id ?? '',
@@ -511,7 +550,29 @@ const formattedPlaidAccounts = data.accounts.map(account => {
     item_id: account.item_id ?? '',
     institution_name: account.institution_name ?? data?.institution_name ?? '',
     institution_id: account.institution_id ?? '',
+    lastBalanceUpdate: balanceChanged ? Date.now() : (existingAccount?.lastBalanceUpdate || Date.now()),
+    previousBalance: existingAccount?.balance,
+    // Store original type and subtype for filtering
+    originalType: account.type,
+    originalSubtype: account.subtype
   };
+});
+
+// Filter: ONLY depository accounts (checking, savings, money market)
+// Exclude credit cards completely (opposite of CreditCards.jsx filter)
+const formattedPlaidAccounts = allAccounts.filter(account => {
+  // Exclude if type is 'credit' (matches CreditCards.jsx: a.type === "credit")
+  if (account.originalType === 'credit') return false;
+  
+  // Exclude if subtype is 'credit' (matches CreditCards.jsx: a.subtype === "credit")
+  if (account.originalSubtype === 'credit') return false;
+  
+  // Exclude if formatted type contains 'credit' (catches "credit card", etc.)
+  const accountType = (account.type || '').toLowerCase();
+  if (accountType.includes('credit')) return false;
+  
+  // Include all other accounts (depository accounts like checking, savings, etc.)
+  return true;
 });
 
 
@@ -532,6 +593,27 @@ const formattedPlaidAccounts = data.accounts.map(account => {
         setTotalProjectedBalance(projectedTotal);
         
         console.log('✅ Loaded fresh balances from backend API:', formattedPlaidAccounts.length, 'accounts');
+        
+        // Persist accounts with lastBalanceUpdate to Firebase
+        try {
+          const settingsDocRef = doc(db, 'users', currentUser.uid, 'settings', 'personal');
+          const currentDoc = await getDoc(settingsDocRef);
+          const currentData = currentDoc.exists() ? currentDoc.data() : {};
+          
+          // Sanitize accounts to remove undefined values (Firebase doesn't support undefined)
+          const sanitizedAccounts = formattedPlaidAccounts.map(account => sanitizeForFirebase(account));
+          
+          await updateDoc(settingsDocRef, {
+            ...currentData,
+            plaidAccounts: sanitizedAccounts,
+            lastUpdated: new Date().toISOString()
+          });
+          
+          console.log('✅ Persisted accounts with lastBalanceUpdate to Firebase');
+        } catch (fbError) {
+          console.warn('Failed to persist accounts to Firebase:', fbError);
+          // Not critical - continue with cached data
+        }
       } else {
         // Fallback to Firebase if API fails or returns no accounts
         console.warn('⚠️ Backend returned no accounts, falling back to Firebase');
@@ -541,7 +623,23 @@ const formattedPlaidAccounts = data.accounts.map(account => {
         if (settingsDocSnap.exists()) {
           const firebaseData = settingsDocSnap.data();
           const bankAccounts = firebaseData.bankAccounts || {};
-          const plaidAccountsList = firebaseData.plaidAccounts || [];
+          const allPlaidAccounts = firebaseData.plaidAccounts || [];
+          
+          // Filter: ONLY depository accounts (exclude credit cards)
+          const plaidAccountsList = allPlaidAccounts.filter(account => {
+            // Exclude if originalType is 'credit'
+            if (account.originalType === 'credit') return false;
+            
+            // Exclude if originalSubtype is 'credit'
+            if (account.originalSubtype === 'credit') return false;
+            
+            // Exclude if formatted type contains 'credit'
+            const accountType = (account.type || '').toLowerCase();
+            if (accountType.includes('credit')) return false;
+            
+            // Include all other accounts
+            return true;
+          });
           
           setAccounts(bankAccounts);
           setPlaidAccounts(plaidAccountsList);
@@ -586,7 +684,23 @@ const formattedPlaidAccounts = data.accounts.map(account => {
         if (settingsDocSnap.exists()) {
           const data = settingsDocSnap.data();
           const bankAccounts = data.bankAccounts || {};
-          const plaidAccountsList = data.plaidAccounts || [];
+          const allPlaidAccounts = data.plaidAccounts || [];
+          
+          // Filter: ONLY depository accounts (exclude credit cards)
+          const plaidAccountsList = allPlaidAccounts.filter(account => {
+            // Exclude if originalType is 'credit'
+            if (account.originalType === 'credit') return false;
+            
+            // Exclude if originalSubtype is 'credit'
+            if (account.originalSubtype === 'credit') return false;
+            
+            // Exclude if formatted type contains 'credit'
+            const accountType = (account.type || '').toLowerCase();
+            if (accountType.includes('credit')) return false;
+            
+            // Include all other accounts
+            return true;
+          });
           
           setAccounts(bankAccounts);
           setPlaidAccounts(plaidAccountsList);
@@ -796,9 +910,11 @@ const formattedPlaidAccounts = data.accounts.map(account => {
         }
 
         // 7. Update plaidAccounts array in settings/personal with enriched data
+        // Sanitize to remove undefined values (Firebase doesn't support undefined)
+        const sanitizedEnrichedAccounts = enrichedPlaidAccounts.map(account => sanitizeForFirebase(account));
         await updateDoc(settingsDocRef, {
           ...currentData,
-          plaidAccounts: enrichedPlaidAccounts,
+          plaidAccounts: sanitizedEnrichedAccounts,
           lastUpdated: new Date().toISOString()
         });
         
@@ -895,12 +1011,8 @@ const formattedPlaidAccounts = data.accounts.map(account => {
         // Format Plaid accounts for display with null checks
         // IMPORTANT: Do NOT store access_token - it's now stored securely server-side
         // ✅ Improved mapping logic – reflects pending (uses available first) and safely handles null balances
-const formattedPlaidAccounts = data.accounts.map(account => {
-  const balances = account.balances || {}; // 👈 prevents null crash
-  const currentBalance = parseFloat(balances.current ?? 0);
-  const availableBalance = parseFloat(balances.available ?? currentBalance);
-  const liveBalance = availableBalance; // available includes pending
-  const pendingAdjustment = availableBalance - currentBalance; // difference = total pending (positive for deposits, negative for expenses)
+const allNewAccounts = data.accounts.map(account => {
+  const { currentBalance, availableBalance, liveBalance, pendingAdjustment } = extractBalances(account);
 
   return {
     account_id: account.account_id ?? '',
@@ -916,7 +1028,26 @@ const formattedPlaidAccounts = data.accounts.map(account => {
     item_id: account.item_id ?? '',
     institution_name: account.institution_name ?? data?.institution_name ?? '',
     institution_id: account.institution_id ?? '',
+    // Store original type and subtype for filtering
+    originalType: account.type,
+    originalSubtype: account.subtype
   };
+});
+
+// Filter: ONLY depository accounts (exclude credit cards)
+const formattedPlaidAccounts = allNewAccounts.filter(account => {
+  // Exclude if originalType is 'credit'
+  if (account.originalType === 'credit') return false;
+  
+  // Exclude if originalSubtype is 'credit'
+  if (account.originalSubtype === 'credit') return false;
+  
+  // Exclude if formatted type contains 'credit'
+  const accountType = (account.type || '').toLowerCase();
+  if (accountType.includes('credit')) return false;
+  
+  // Include all other accounts
+  return true;
 });
 
 
@@ -930,9 +1061,11 @@ const formattedPlaidAccounts = data.accounts.map(account => {
         const existingAccounts = currentData.plaidAccounts || [];
         const filteredAccounts = existingAccounts.filter(acc => acc.item_id !== data.item_id);
 
+        // Sanitize accounts to remove undefined values (Firebase doesn't support undefined)
+        const sanitizedNewAccounts = formattedPlaidAccounts.map(account => sanitizeForFirebase(account));
         await updateDoc(settingsDocRef, {
           ...currentData,
-          plaidAccounts: [...filteredAccounts, ...formattedPlaidAccounts],
+          plaidAccounts: [...filteredAccounts, ...sanitizedNewAccounts],
           lastUpdated: new Date().toISOString(),
         });
 
@@ -968,6 +1101,58 @@ const formattedPlaidAccounts = data.accounts.map(account => {
       showNotification('Bank connection cancelled or failed', 'error');
       setShowErrorModal(true);
     }
+  };
+
+  const handleReconnectAccount = (itemId) => {
+    console.log('🔄 [Accounts] Starting reconnect for item:', itemId);
+    showNotification('Opening reconnection flow...', 'info');
+    setReconnectingItemId(itemId);
+  };
+
+  const handleReconnectSuccess = async (publicToken, metadata) => {
+    try {
+      console.log('✅ [Accounts] Reconnection successful for:', metadata.institution?.name);
+      showNotification('Reconnection successful! Refreshing balances...', 'success');
+      
+      const apiUrl = import.meta.env.VITE_API_URL || 'https://smart-money-tracker-09ks.onrender.com';
+      
+      // Exchange the public token (Plaid requires this even for update mode)
+      const response = await fetch(`${apiUrl}/api/plaid/exchange_token`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ 
+          public_token: publicToken,
+          userId: currentUser.uid 
+        }),
+      });
+
+      const data = await response.json();
+
+      if (data?.success) {
+        // Refresh balances after reconnection
+        await loadAccounts();
+        
+        // Refresh health check to remove the warning badge
+        await checkConnectionHealth();
+        
+        showNotification('Bank connection updated successfully!', 'success');
+      } else {
+        showNotification('Reconnection completed but balance update failed', 'error');
+      }
+      
+      setReconnectingItemId(null);
+    } catch (error) {
+      console.error('❌ [Accounts] Error completing reconnection:', error);
+      showNotification('Reconnection failed. Please try again.', 'error');
+      setReconnectingItemId(null);
+    }
+  };
+
+  const handleReconnectExit = () => {
+    console.log('🔄 [Accounts] Reconnection cancelled');
+    setReconnectingItemId(null);
   };
 
   const getAccountTypeIcon = (type) => {
@@ -1023,6 +1208,13 @@ const formattedPlaidAccounts = data.accounts.map(account => {
     if (!timestamp) return false;
     const minutes = Math.floor((Date.now() - timestamp) / 1000 / 60);
     return minutes > 10;
+  };
+  
+  // Helper function to check if balance data is stale (>24 hours without update)
+  const isBalanceStale = (lastBalanceUpdate) => {
+    if (!lastBalanceUpdate) return false;
+    const hoursSinceUpdate = (Date.now() - lastBalanceUpdate) / (1000 * 60 * 60);
+    return hoursSinceUpdate > 24;
   };
 
   if (loading) {
@@ -1341,6 +1533,12 @@ const formattedPlaidAccounts = data.accounts.map(account => {
                       ⚠️ Reconnection Required
                     </span>
                   )}
+                  {/* Show "Stale Data" badge if balance hasn't updated in >24 hours */}
+                  {isBalanceStale(account.lastBalanceUpdate) && (
+                    <span className="stale-badge" title="Balance hasn't updated in over 24 hours">
+                      ⚠️ Stale Data
+                    </span>
+                  )}
                 </div>
                 <span className="account-type">{account.type} {account.mask ? `••${account.mask}` : ''}</span>
               </div>
@@ -1375,24 +1573,19 @@ const formattedPlaidAccounts = data.accounts.map(account => {
               </div>
               
               <div className="account-actions">
-                {plaidStatus.isConnected ? (
-                  <button 
-                    className="action-btn"
-                    disabled
-                    title="Balance is synced automatically via Plaid"
-                  >
-                    🔄 Auto-synced
-                  </button>
-                ) : (
-                  <button 
-                    className="action-btn"
-                    disabled
-                    title="Plaid connection required for auto-sync"
-                    style={{ opacity: 0.6 }}
-                  >
-                    ⏸️ Sync Paused
-                  </button>
-                )}
+                <button 
+                  className={`action-btn reconnect-btn ${isBalanceStale(account.lastBalanceUpdate) ? 'stale' : ''}`}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    handleReconnectAccount(account.item_id);
+                  }}
+                  disabled={saving}
+                  title={isBalanceStale(account.lastBalanceUpdate) 
+                    ? "⚠️ Balance is stale - click to refresh connection" 
+                    : "Refresh bank connection and update balance"}
+                >
+                  🔄 Reconnect
+                </button>
                 <button 
                   className="action-btn delete-btn"
                   onClick={(e) => {
@@ -1574,6 +1767,19 @@ const formattedPlaidAccounts = data.accounts.map(account => {
           checkPlaidConnection();
         }}
       />
+
+      {/* PlaidLink for reconnection flow - renders nothing but auto-opens dialog */}
+      {reconnectingItemId && (
+        <PlaidLink
+          onSuccess={handleReconnectSuccess}
+          onExit={handleReconnectExit}
+          userId={currentUser.uid}
+          mode="update"
+          itemId={reconnectingItemId}
+          buttonText="Reconnect"
+          autoOpen={true}
+        />
+      )}
     </div>
   );
 };

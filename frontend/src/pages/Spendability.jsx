@@ -1,10 +1,12 @@
 import React, { useState, useEffect } from 'react';
-import { doc, getDoc, updateDoc, collection, addDoc, getDocs } from 'firebase/firestore';
+import { doc, getDoc, updateDoc, collection, addDoc, getDocs, query, where, serverTimestamp, arrayUnion, setDoc } from 'firebase/firestore';
 import { db } from '../firebase';
 import { PayCycleCalculator } from '../utils/PayCycleCalculator';
 import { RecurringBillManager } from '../utils/RecurringBillManager';
 import { formatDateForDisplay, formatDateForInput, getDaysUntilDateInPacific, getPacificTime, getManualPacificDaysUntilPayday } from '../utils/DateUtils';
 import { calculateProjectedBalance, calculateTotalProjectedBalance } from '../utils/BalanceCalculator';
+import { autoMigrateBills } from '../utils/FirebaseMigration';
+import { runAutoDetection } from '../utils/AutoBillDetection';
 import './Spendability.css';
 import { useAuth } from '../contexts/AuthContext';
 
@@ -65,6 +67,9 @@ const Spendability = () => {
       setLoading(true);
       setError(null);
 
+      // Auto-migrate bills to unified structure (runs once per user)
+      await autoMigrateBills(currentUser.uid);
+
       const settingsDocRef = doc(db, 'users', currentUser.uid, 'settings', 'personal');
       const settingsDocSnap = await getDoc(settingsDocRef);
       
@@ -84,7 +89,29 @@ if (wasUpdated) {
   settingsData = refreshedDoc.data();
 }
 
-  const plaidAccounts = settingsData.plaidAccounts || [];
+  const allPlaidAccounts = settingsData.plaidAccounts || [];
+
+      // Filter: ONLY depository accounts (checking, savings, money market)
+      // Exclude credit cards completely
+      const depositoryAccounts = allPlaidAccounts.filter(account => {
+        // Include if type is depository
+        if (account.type === 'depository') return true;
+        
+        // Include if subtype is checking, savings, or money market
+        const depositorySubtypes = ['checking', 'savings', 'money market', 'cd', 'hsa'];
+        if (depositorySubtypes.includes(account.subtype?.toLowerCase())) return true;
+        
+        // Exclude if type is credit
+        if (account.type === 'credit') return false;
+        
+        // Exclude if subtype contains 'credit'
+        if (account.subtype?.toLowerCase().includes('credit')) return false;
+        
+        // Default: include for manual accounts
+        return true;
+      });
+
+      console.log(`[Spendability] Filtered ${allPlaidAccounts.length} accounts to ${depositoryAccounts.length} depository accounts (excluded credit cards)`);
 
       // Load transactions to calculate projected balances
       const transactionsRef = collection(db, 'users', currentUser.uid, 'transactions');
@@ -100,19 +127,29 @@ if (wasUpdated) {
       });
 
       // Use PROJECTED balance (includes pending transactions)
-      const totalAvailable = calculateTotalProjectedBalance(plaidAccounts, transactions);
+      // Calculate balance using ONLY depository accounts (no credit cards)
+      const totalAvailable = calculateTotalProjectedBalance(depositoryAccounts, transactions);
 
       console.log('Spendability: Balance calculation', {
-        liveBalance: plaidAccounts.reduce((sum, a) => sum + parseFloat(a.balance || 0), 0),
+        liveBalance: depositoryAccounts.reduce((sum, a) => sum + parseFloat(a.balance || 0), 0),
         projectedBalance: totalAvailable,
-        difference: totalAvailable - plaidAccounts.reduce((sum, a) => sum + parseFloat(a.balance || 0), 0)
+        difference: totalAvailable - depositoryAccounts.reduce((sum, a) => sum + parseFloat(a.balance || 0), 0)
       });
 
       // 🔍 COMPREHENSIVE DEBUG LOGGING
       console.log('🔍 SPENDABILITY DEBUG:', {
         timestamp: new Date().toISOString(),
-        plaidAccountsCount: plaidAccounts.length,
-        plaidAccounts: plaidAccounts.map(a => ({
+        allAccountsCount: allPlaidAccounts.length,
+        depositoryAccountsCount: depositoryAccounts.length,
+        excludedAccounts: allPlaidAccounts.filter(a => 
+          !depositoryAccounts.some(d => d.account_id === a.account_id)
+        ).map(a => ({
+          name: a.name,
+          type: a.type,
+          subtype: a.subtype,
+          balance: a.balance
+        })),
+        depositoryAccounts: depositoryAccounts.map(a => ({
           name: a.name,
           subtype: a.subtype,
           type: a.type,
@@ -122,7 +159,7 @@ if (wasUpdated) {
         })),
         transactionsCount: transactions.length,
         pendingTransactionsCount: transactions.filter(t => t.pending).length,
-        totalLiveBalance: plaidAccounts.reduce((sum, a) => sum + parseFloat(a.balance || 0), 0),
+        totalLiveBalance: depositoryAccounts.reduce((sum, a) => sum + parseFloat(a.balance || 0), 0),
         totalProjectedBalance: totalAvailable
       }); 
      // Get pay cycle data
@@ -139,16 +176,16 @@ if (settingsData.nextPaydayOverride) {
 
 // ✅ FIX: Read from the ACTUAL Settings data structure
 // Check multiple possible locations for lastPayDate for backward compatibility
-const lastPayDateValue = settingsData.lastPayDate || settingsData.yoursSchedule?.lastPaydate;
+const lastPayDateValue = settingsData.paySchedules?.yours?.lastPaydate || settingsData.lastPayDate || settingsData.yoursSchedule?.lastPaydate;
 const yoursSchedule = {
   lastPaydate: lastPayDateValue,
-  amount: parseFloat(settingsData.payAmount || settingsData.yoursSchedule?.amount) || 0
+  amount: parseFloat(settingsData.paySchedules?.yours?.amount || settingsData.payAmount || settingsData.yoursSchedule?.amount) || 0
 };
 
 const spouseSchedule = {
-  type: 'bi-monthly',  // 15th & 30th
-  amount: parseFloat(settingsData.spousePayAmount) || 0,
-  dates: [15, 30]
+  type: settingsData.paySchedules?.spouse?.type || 'bi-monthly',  // 15th & 30th
+  amount: parseFloat(settingsData.paySchedules?.spouse?.amount || settingsData.spousePayAmount) || 0,
+  dates: settingsData.paySchedules?.spouse?.dates || [15, 30]
 };
 
 console.log('Spendability: Using schedules', {
@@ -175,19 +212,161 @@ console.log('📅 PAYDAY CALCULATION DEBUG:', {
   daysUntilPayday: daysUntilPayday,
   source: result.source || 'Check what PayCycleCalculator returned'
 });
+
+// Add comprehensive logging for debugging
+console.log('🔍 PAYDAY CALCULATION DEBUG:', {
+  currentDate: new Date().toISOString(),
+  currentDatePacific: getPacificTime().toISOString(),
+  nextPaydayOverride: settingsData.nextPaydayOverride,
+  payCycleDataExists: !!payCycleData,
+  payCycleDate: payCycleData?.date,
+  paySchedules: {
+    yours: {
+      lastPaydate: settingsData.paySchedules?.yours?.lastPaydate,
+      type: settingsData.paySchedules?.yours?.type,
+      amount: settingsData.paySchedules?.yours?.amount
+    },
+    spouse: {
+      type: settingsData.paySchedules?.spouse?.type,
+      amount: settingsData.paySchedules?.spouse?.amount,
+      dates: settingsData.paySchedules?.spouse?.dates
+    }
+  },
+  calculatedResult: result
+});
 }      
  
-      const bills = settingsData.bills || [];
-      const billsWithRecurrence = bills.map(bill => ({
+      // Load bills from unified billInstances collection ONLY
+      let allBills = [];
+      try {
+        const billInstancesSnapshot = await getDocs(
+          query(
+            collection(db, 'users', currentUser.uid, 'billInstances'),
+            where('isPaid', '==', false),
+            where('status', '!=', 'skipped')
+          )
+        );
+        allBills = billInstancesSnapshot.docs.map(doc => {
+          const data = doc.data();
+          return {
+            id: doc.id,
+            name: data.name,
+            amount: data.amount,
+            dueDate: data.dueDate,
+            nextDueDate: data.dueDate,
+            category: data.category,
+            recurrence: data.recurrence || 'monthly',
+            isPaid: data.isPaid,
+            status: data.status,
+            isSubscription: data.isSubscription || false,
+            subscriptionId: data.subscriptionId,
+            paymentHistory: data.paymentHistory || [],
+            linkedTransactionIds: data.linkedTransactionIds || [],
+            merchantNames: data.merchantNames || [],
+            originalDueDate: data.originalDueDate
+          };
+        });
+        console.log('Spendability: Loaded bills from unified billInstances', {
+          count: allBills.length,
+          bills: allBills.map(b => ({ name: b.name, amount: b.amount, dueDate: b.dueDate, status: b.status }))
+        });
+      } catch (error) {
+        console.log('Spendability: Error loading bill instances:', error.message);
+      }
+
+      // Run auto-detection for bill payments
+      try {
+        const autoDetectionResult = await runAutoDetection(currentUser.uid, transactions, allBills);
+        
+        if (autoDetectionResult.success && autoDetectionResult.matchCount > 0) {
+          // Show notification to user
+          const message = `✅ Auto-detected ${autoDetectionResult.paidBills.length} paid bill(s)!`;
+          setNotification({ message, type: 'success' });
+          setTimeout(() => setNotification({ message: '', type: '' }), 4000);
+          
+          // Reload bills after auto-detection marked some as paid
+          const refreshedBillsSnapshot = await getDocs(
+            query(
+              collection(db, 'users', currentUser.uid, 'billInstances'),
+              where('isPaid', '==', false),
+              where('status', '!=', 'skipped')
+            )
+          );
+          allBills = refreshedBillsSnapshot.docs.map(doc => {
+            const data = doc.data();
+            return {
+              id: doc.id,
+              name: data.name,
+              amount: data.amount,
+              dueDate: data.dueDate,
+              nextDueDate: data.dueDate,
+              category: data.category,
+              recurrence: data.recurrence || 'monthly',
+              isPaid: data.isPaid,
+              status: data.status,
+              isSubscription: data.isSubscription || false,
+              subscriptionId: data.subscriptionId,
+              paymentHistory: data.paymentHistory || [],
+              linkedTransactionIds: data.linkedTransactionIds || [],
+              merchantNames: data.merchantNames || [],
+              originalDueDate: data.originalDueDate
+            };
+          });
+          console.log('Spendability: Reloaded bills after auto-detection', {
+            count: allBills.length
+          });
+        }
+      } catch (error) {
+        console.error('Spendability: Error running auto-detection:', error);
+        // Don't fail the whole page if auto-detection fails
+      }
+
+      // Add default recurrence if missing
+      const billsWithRecurrence = allBills.map(bill => ({
         ...bill,
         recurrence: bill.recurrence || 'monthly'
       }));
 
       const processedBills = RecurringBillManager.processBills(billsWithRecurrence);
-      const billsDueBeforePayday = RecurringBillManager.getBillsDueBefore(processedBills, new Date(nextPayday));
       
-      const totalBillsDue = billsDueBeforePayday.reduce((sum, bill) => {
-        return sum + (parseFloat(bill.amount) || 0);
+      // Get bills due before payday
+      const billsDueBeforeNextPayday = RecurringBillManager.getBillsDueBefore(processedBills, new Date(nextPayday));
+      
+      // ALSO get overdue bills that haven't been paid yet
+      const overdueBills = RecurringBillManager.getOverdueBills(processedBills);
+      
+      // Combine both arrays and remove duplicates
+      const combinedBills = [...billsDueBeforeNextPayday, ...overdueBills];
+      const unsortedBillsDueBeforePayday = RecurringBillManager.deduplicateBills(combinedBills);
+      
+      // Add status info to each bill and sort by priority (overdue bills first)
+      const billsDueBeforePayday = unsortedBillsDueBeforePayday
+        .map(bill => ({
+          ...bill,
+          statusInfo: RecurringBillManager.determineBillStatus(bill)
+        }))
+        .sort((a, b) => {
+          // Overdue bills ALWAYS at top
+          if (a.statusInfo.priority !== b.statusInfo.priority) {
+            return b.statusInfo.priority - a.statusInfo.priority;
+          }
+          // Then by due date
+          return new Date(a.nextDueDate) - new Date(b.nextDueDate);
+        });
+      
+      // Calculate total with detailed logging
+      const totalBillsDue = (billsDueBeforePayday || []).reduce((sum, bill) => {
+        const amount = Number(bill.amount ?? bill.cost) || 0;
+        if (amount === 0 && bill.isSubscription) {
+          console.warn(
+            `Spendability: Subscription bill ${bill.name} has zero/invalid amount`,
+            'amount:', bill.amount,
+            'type:', typeof bill.amount,
+            'cost:', bill.cost,
+            'costType:', typeof bill.cost
+          );
+        }
+        return sum + amount;
       }, 0);
 
       const preferences = settingsData.preferences || {};
@@ -205,11 +384,13 @@ console.log('📅 PAYDAY CALCULATION DEBUG:', {
         nextPayday,
         daysUntilPayday,
         finalDaysUntilPayday,
+        totalBillsDue,
+        billsCount: billsDueBeforePayday.length,
         willDisplayAs: finalDaysUntilPayday > 0 ? `${finalDaysUntilPayday} days` : 'Today!'
       });
 
-      // Sum ALL checking accounts with projected balances
-      const checkingAccounts = plaidAccounts.filter(a => {
+      // Sum ALL checking accounts with projected balances (from depository accounts only)
+      const checkingAccounts = depositoryAccounts.filter(a => {
         const name = (a.name || '').toLowerCase();
         const subtype = (a.subtype || '').toLowerCase();
         const accountType = (a.type || '').toLowerCase();
@@ -244,8 +425,8 @@ console.log('📅 PAYDAY CALCULATION DEBUG:', {
 
       console.log(`Total Checking: ${checkingTotal.toFixed(2)}`);
 
-      // Sum ALL savings accounts with projected balances
-      const savingsAccounts = plaidAccounts.filter(a => 
+      // Sum ALL savings accounts with projected balances (from depository accounts only)
+      const savingsAccounts = depositoryAccounts.filter(a => 
         a.subtype === 'savings' || 
         a.name?.toLowerCase().includes('savings')
       );
@@ -388,7 +569,7 @@ console.log('📅 PAYDAY CALCULATION DEBUG:', {
       return;
     }
 
-    if (!window.confirm(`Mark ${bill.name} bill ($${bill.amount}) as paid?`)) {
+    if (!window.confirm(`Mark ${bill.name} bill ($${bill.amount ?? bill.cost}) as paid?`)) {
       return;
     }
 
@@ -397,7 +578,7 @@ console.log('📅 PAYDAY CALCULATION DEBUG:', {
       
       // Create transaction for the bill payment
       const transaction = {
-        amount: -Math.abs(parseFloat(bill.amount)),
+        amount: -Math.abs(parseFloat(bill.amount ?? bill.cost)),
         description: `${bill.name} Payment`,
         category: 'Bills & Utilities',
         account: 'bofa', // Default to main account - could be made configurable
@@ -416,8 +597,12 @@ console.log('📅 PAYDAY CALCULATION DEBUG:', {
       // Update bill status in Firebase and get updated bill data
       const updatedBill = await updateBillAsPaid(bill);
 
-      // Refresh the financial data
-      await fetchFinancialData();
+      // TODO: Known Issue - Bill doesn't visually disappear immediately after payment
+      // Root cause: setRefreshTrigger() reloads all data but doesn't force immediate UI update
+      // Will be fixed in comprehensive Spendability refactor
+      // Workaround: User can reload page to see updated state
+      // Trigger full refresh to update UI
+      setRefreshTrigger(prev => prev + 1);
 
       // Show enhanced notification with next due date
       const nextDueDateStr = updatedBill && updatedBill.nextDueDate 
@@ -466,28 +651,63 @@ console.log('📅 PAYDAY CALCULATION DEBUG:', {
 
   const updateBillAsPaid = async (bill) => {
     try {
-      const settingsDocRef = doc(db, 'users', currentUser.uid, 'settings', 'personal'); 
-      const currentDoc = await getDoc(settingsDocRef);
-      const currentData = currentDoc.exists() ? currentDoc.data() : {};
+      // Update bill in billInstances collection
+      const billRef = doc(db, 'users', currentUser.uid, 'billInstances', bill.id);
       
-      const bills = currentData.bills || [];
-      let updatedBill = null;
-      
-      const updatedBills = bills.map(b => {
-        if (b.name === bill.name && b.amount === bill.amount) {
-          // Mark as paid and update last payment date using Pacific Time  
-          updatedBill = RecurringBillManager.markBillAsPaid(b, getPacificTime());
-          return updatedBill;
-        }
-        return b;
+      await updateDoc(billRef, {
+        isPaid: true,
+        status: 'paid',
+        lastPaidDate: serverTimestamp(),
+        updatedAt: serverTimestamp(),
+        paymentHistory: arrayUnion({
+          paidDate: new Date().toISOString(),
+          amount: bill.amount,
+          transactionId: null,
+          paymentMethod: 'manual',
+          source: 'manual'
+        })
       });
       
-      await updateDoc(settingsDocRef, {
-        ...currentData,
-        bills: updatedBills
-      });
+      // Generate next month's bill if recurring or subscription
+      if (bill.recurrence === 'monthly' || bill.isSubscription) {
+        const currentDueDate = new Date(bill.dueDate);
+        const nextDueDate = new Date(currentDueDate);
+        nextDueDate.setMonth(nextDueDate.getMonth() + 1);
+        
+        const nextBillId = `bill_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+        const nextBillInstance = {
+          id: nextBillId,
+          name: bill.name,
+          amount: bill.amount,
+          dueDate: formatDateForInput(nextDueDate),
+          originalDueDate: bill.originalDueDate || bill.dueDate,
+          isPaid: false,
+          status: 'pending',
+          category: bill.category,
+          recurrence: bill.recurrence,
+          isSubscription: bill.isSubscription || false,
+          subscriptionId: bill.subscriptionId,
+          paymentHistory: [],
+          linkedTransactionIds: [],
+          merchantNames: bill.merchantNames || [],
+          createdAt: serverTimestamp(),
+          updatedAt: serverTimestamp()
+        };
+        
+        await setDoc(
+          doc(db, 'users', currentUser.uid, 'billInstances', nextBillId),
+          nextBillInstance
+        );
+        
+        console.log(`✅ Generated next bill for ${bill.name} due ${formatDateForInput(nextDueDate)}`);
+        
+        return {
+          ...bill,
+          nextDueDate: formatDateForInput(nextDueDate)
+        };
+      }
       
-      return updatedBill;
+      return bill;
     } catch (error) {
       console.error('Error updating bill status:', error);
       throw error;
@@ -589,11 +809,16 @@ console.log('📅 PAYDAY CALCULATION DEBUG:', {
           <div className="bills-list">
             {financialData.billsBeforePayday.length > 0 ? (
               financialData.billsBeforePayday.map((bill, index) => (
-                <div key={index} className="bill-item">
+                <div key={index} className={`bill-item ${bill.statusInfo?.status === 'overdue' ? 'overdue' : ''}`}>
                   <div className="bill-info">
                     <span className="bill-name">{bill.name}</span>
                     <span className="bill-due-date">Due: {formatDate(bill.nextDueDate)}</span>
-                    <span className="bill-amount">{formatCurrency(bill.amount)}</span>
+                    <span className="bill-amount">{formatCurrency(bill.amount ?? bill.cost)}</span>
+                    {bill.statusInfo?.status === 'overdue' && (
+                      <div className="overdue-warning">
+                        🚨 OVERDUE by {bill.statusInfo.daysOverdue} day{bill.statusInfo.daysOverdue !== 1 ? 's' : ''} - LATE FEES MAY APPLY!
+                      </div>
+                    )}
                   </div>
                   <div className="bill-actions">
                     <button 
@@ -691,3 +916,4 @@ console.log('📅 PAYDAY CALCULATION DEBUG:', {
 };
 
 export default Spendability;
+ 

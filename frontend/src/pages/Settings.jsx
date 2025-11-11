@@ -7,6 +7,7 @@ import { Link } from 'react-router-dom';
 import './Settings.css';
 import { useAuth } from '../contexts/AuthContext';
 
+
 const Settings = () => {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -588,6 +589,55 @@ const Settings = () => {
           </div>
         </div>
 
+      </div>
+
+      {/* Sentry Testing Section */}
+      <div className="settings-section">
+        <h2 className="settings-section-title">🔍 Sentry Testing</h2>
+        <div className="settings-card">
+          <p className="settings-description">
+            Test Sentry error reporting to ensure errors are being tracked correctly.
+          </p>
+          
+          <div className="button-group" style={{ display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
+            <button 
+              className="btn btn-secondary"
+              onClick={() => {
+                if (window.Sentry) {
+                  window.Sentry.captureMessage('🧪 Test message from Settings page!', 'info');
+                  alert('Test message sent to Sentry! Check your Sentry dashboard.');
+                } else {
+                  alert('Sentry is not initialized. Please check your Sentry configuration.');
+                }
+              }}
+            >
+              🧪 Test Sentry Message
+            </button>
+            
+            <button 
+              className="btn btn-secondary"
+              onClick={() => {
+                if (window.Sentry) {
+                  window.Sentry.captureException(new Error('🧪 Test error from Settings page!'));
+                  alert('Test error sent to Sentry! Check your Sentry dashboard.');
+                } else {
+                  alert('Sentry is not initialized. Please check your Sentry configuration.');
+                }
+              }}
+            >
+              ❌ Test Sentry Error
+            </button>
+            
+            <button 
+              className="btn btn-danger"
+              onClick={() => {
+                throw new Error('🧪 Test error to trigger ErrorBoundary!');
+              }}
+            >
+              💥 Test Error Boundary
+            </button>
+          </div>
+        </div>
       </div>
     </div>
   );
