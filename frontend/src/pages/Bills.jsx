@@ -747,11 +747,19 @@ const refreshPlaidTransactions = async () => {
       return 'paid';
     }
     
-    // Normalize both dates to midnight to avoid off-by-one errors
-    const now = new Date();
+    // Use Pacific Time for consistent timezone handling
+    const now = getPacificTime();
     now.setHours(0, 0, 0, 0);
     
-    const dueDate = new Date(bill.nextDueDate || bill.dueDate);
+    // Parse due date properly to avoid timezone issues
+    const dueDateStr = bill.nextDueDate || bill.dueDate;
+    const dueDate = typeof dueDateStr === 'string' ? 
+      (() => {
+        // Parse YYYY-MM-DD as local date
+        const parts = dueDateStr.split('-');
+        return new Date(parseInt(parts[0]), parseInt(parts[1]) - 1, parseInt(parts[2]));
+      })() :
+      new Date(dueDateStr);
     dueDate.setHours(0, 0, 0, 0);
     
     const daysUntilDue = Math.round((dueDate - now) / (1000 * 60 * 60 * 24));
@@ -1641,11 +1649,19 @@ const refreshPlaidTransactions = async () => {
       return '⏭️ SKIPPED';
     }
     
-    // Normalize both dates to midnight to avoid off-by-one errors
-    const now = new Date();
+    // Use Pacific Time for consistent timezone handling
+    const now = getPacificTime();
     now.setHours(0, 0, 0, 0);
     
-    const dueDate = new Date(bill.nextDueDate || bill.dueDate);
+    // Parse due date properly to avoid timezone issues
+    const dueDateStr = bill.nextDueDate || bill.dueDate;
+    const dueDate = typeof dueDateStr === 'string' ? 
+      (() => {
+        // Parse YYYY-MM-DD as local date
+        const parts = dueDateStr.split('-');
+        return new Date(parseInt(parts[0]), parseInt(parts[1]) - 1, parseInt(parts[2]));
+      })() :
+      new Date(dueDateStr);
     dueDate.setHours(0, 0, 0, 0);
     
     const daysUntilDue = Math.round((dueDate - now) / (1000 * 60 * 60 * 24));
