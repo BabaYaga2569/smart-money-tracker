@@ -199,6 +199,9 @@ export class RecurringManager {
       return new Date();
     }
 
+    // Normalize to midnight for consistent date calculations
+    currentDate.setHours(0, 0, 0, 0);
+
     // Always advance by one period from current occurrence
     let nextDate = new Date(currentDate);
     const dayOfMonth = currentDate.getDate();
@@ -211,29 +214,31 @@ export class RecurringManager {
         nextDate.setDate(nextDate.getDate() + 14);
         break;
       case 'monthly':
-        // Handle month-end dates properly BEFORE advancing
+        // Handle month-end dates properly by setting date to 1 first
         if (dayOfMonth > 28) {
-          // Calculate next month
-          const targetMonth = (currentDate.getMonth() + 1) % 12;
-          const targetYear =
-            currentDate.getMonth() === 11
-              ? currentDate.getFullYear() + 1
-              : currentDate.getFullYear();
-          const lastDayOfTargetMonth = new Date(targetYear, targetMonth + 1, 0).getDate();
-          nextDate = new Date(targetYear, targetMonth, Math.min(dayOfMonth, lastDayOfTargetMonth));
+          nextDate.setDate(1); // Set to 1st of month first to avoid overflow
+          nextDate.setMonth(nextDate.getMonth() + 1);
+          const lastDayOfMonth = new Date(
+            nextDate.getFullYear(),
+            nextDate.getMonth() + 1,
+            0
+          ).getDate();
+          nextDate.setDate(Math.min(dayOfMonth, lastDayOfMonth));
         } else {
           nextDate.setMonth(nextDate.getMonth() + 1);
         }
         break;
       case 'quarterly':
-        // Handle month-end dates properly BEFORE advancing
+        // Handle month-end dates properly by setting date to 1 first
         if (dayOfMonth > 28) {
-          // Calculate next quarter (3 months ahead)
-          const targetMonth = (currentDate.getMonth() + 3) % 12;
-          const yearsToAdd = Math.floor((currentDate.getMonth() + 3) / 12);
-          const targetYear = currentDate.getFullYear() + yearsToAdd;
-          const lastDayOfTargetMonth = new Date(targetYear, targetMonth + 1, 0).getDate();
-          nextDate = new Date(targetYear, targetMonth, Math.min(dayOfMonth, lastDayOfTargetMonth));
+          nextDate.setDate(1); // Set to 1st of month first to avoid overflow
+          nextDate.setMonth(nextDate.getMonth() + 3);
+          const lastDayOfMonth = new Date(
+            nextDate.getFullYear(),
+            nextDate.getMonth() + 1,
+            0
+          ).getDate();
+          nextDate.setDate(Math.min(dayOfMonth, lastDayOfMonth));
         } else {
           nextDate.setMonth(nextDate.getMonth() + 3);
         }

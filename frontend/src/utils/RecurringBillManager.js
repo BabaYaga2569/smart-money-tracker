@@ -4,6 +4,17 @@ import { getPacificTime } from './DateUtils.js';
 
 export class RecurringBillManager {
   /**
+   * Normalize a date to midnight (start of day) for day-level comparisons
+   * @param {Date} date - Date to normalize
+   * @returns {Date} Date set to midnight (00:00:00)
+   */
+  static normalizeToMidnight(date) {
+    const normalized = new Date(date);
+    normalized.setHours(0, 0, 0, 0);
+    return normalized;
+  }
+
+  /**
    * Calculate the next due date for a recurring bill
    * @param {Object} bill - Bill object with name, amount, lastDueDate, recurrence
    * @param {Date} currentDate - Current date (defaults to today)
@@ -67,10 +78,12 @@ export class RecurringBillManager {
       return new Date();
     }
 
-    const nextDue = new Date(lastDue);
+    // Normalize both dates to midnight for accurate day-level comparison
+    const normalizedCurrent = this.normalizeToMidnight(currentDate);
+    const nextDue = this.normalizeToMidnight(new Date(lastDue));
     const dayOfMonth = lastDue.getDate();
 
-    while (nextDue < currentDate) {
+    while (nextDue < normalizedCurrent) {
       nextDue.setMonth(nextDue.getMonth() + 1);
 
       if (dayOfMonth > 28) {
@@ -91,9 +104,11 @@ export class RecurringBillManager {
       return new Date();
     }
 
-    const nextDue = new Date(lastDue);
+    // Normalize both dates to midnight for accurate day-level comparison
+    const normalizedCurrent = this.normalizeToMidnight(currentDate);
+    const nextDue = this.normalizeToMidnight(new Date(lastDue));
 
-    while (nextDue < currentDate) {
+    while (nextDue < normalizedCurrent) {
       nextDue.setDate(nextDue.getDate() + 7);
     }
 
@@ -109,9 +124,11 @@ export class RecurringBillManager {
       return new Date();
     }
 
-    const nextDue = new Date(lastDue);
+    // Normalize both dates to midnight for accurate day-level comparison
+    const normalizedCurrent = this.normalizeToMidnight(currentDate);
+    const nextDue = this.normalizeToMidnight(new Date(lastDue));
 
-    while (nextDue < currentDate) {
+    while (nextDue < normalizedCurrent) {
       nextDue.setDate(nextDue.getDate() + 14);
     }
 
@@ -127,10 +144,12 @@ export class RecurringBillManager {
       return new Date();
     }
 
-    const nextDue = new Date(lastDue);
+    // Normalize both dates to midnight for accurate day-level comparison
+    const normalizedCurrent = this.normalizeToMidnight(currentDate);
+    const nextDue = this.normalizeToMidnight(new Date(lastDue));
     const dayOfMonth = lastDue.getDate();
 
-    while (nextDue < currentDate) {
+    while (nextDue < normalizedCurrent) {
       nextDue.setMonth(nextDue.getMonth() + 3);
 
       if (dayOfMonth > 28) {
@@ -151,9 +170,11 @@ export class RecurringBillManager {
       return new Date();
     }
 
-    const nextDue = new Date(lastDue);
+    // Normalize both dates to midnight for accurate day-level comparison
+    const normalizedCurrent = this.normalizeToMidnight(currentDate);
+    const nextDue = this.normalizeToMidnight(new Date(lastDue));
 
-    while (nextDue < currentDate) {
+    while (nextDue < normalizedCurrent) {
       nextDue.setFullYear(nextDue.getFullYear() + 1);
     }
 
