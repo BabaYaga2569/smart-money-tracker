@@ -87,84 +87,98 @@ export default function DebtOptimizer() {
         );
       }
 
-      // Load transactions for balance calculation
-      const transactionsRef = collection(
-        db,
-        'users',
-        currentUser.uid,
-        'transactions'
-      );
-      const transactionsSnapshot = await getDocs(transactionsRef);
-      const transactions = transactionsSnapshot.docs.map((doc) => ({
-        id: doc.id,
-        ...doc.data(),
-      }));
-
-      // Load settings for spendability calculation
-      const settingsDocRef = doc(
-        db,
-        'users',
-        currentUser.uid,
-        'settings',
-        'personal'
-      );
-      const settingsDoc = await getDoc(settingsDocRef);
-      const settingsData = settingsDoc.exists() ? settingsDoc.data() : {};
-
-      const plaidAccounts = settingsData.plaidAccounts || [];
-      const totalAvailable = calculateTotalProjectedBalance(
-        plaidAccounts,
-        transactions
-      );
-
-      // Load bills
-      const billsRef = collection(db, 'users', currentUser.uid, 'billInstances');
-      const billsSnapshot = await getDocs(billsRef);
-      const allBills = billsSnapshot.docs.map((doc) => ({
-        id: doc.id,
-        ...doc.data(),
-      }));
-
-      // Filter upcoming bills (before next payday)
-      const payCycleDocRef = doc(
-        db,
-        'users',
-        currentUser.uid,
-        'financial',
-        'payCycle'
-      );
-      const payCycleDoc = await getDoc(payCycleDocRef);
-      const payCycleData = payCycleDoc.exists() ? payCycleDoc.data() : null;
-
-      const nextPayday =
-        settingsData.nextPaydayOverride ||
-        (payCycleData && payCycleData.date) ||
-        null;
-
+      // Initialize default values for optional data
+      let totalAvailable = 0;
       let upcomingBills = [];
-      if (nextPayday) {
-        const today = getPacificTime();
-        const paydayDate = new Date(nextPayday);
-        upcomingBills = allBills.filter((bill) => {
-          const billDate = new Date(bill.dueDate);
-          return billDate >= today && billDate <= paydayDate && !bill.isPaid;
-        });
+      let nextPayday = null;
+      let recurringPayments = [];
+
+      // Try to load additional data, but don't fail if it errors
+      try {
+        // Load transactions for balance calculation
+        const transactionsRef = collection(
+          db,
+          'users',
+          currentUser.uid,
+          'transactions'
+        );
+        const transactionsSnapshot = await getDocs(transactionsRef);
+        const transactions = transactionsSnapshot.docs.map((doc) => ({
+          id: doc.id,
+          ...doc.data(),
+        }));
+
+        // Load settings for spendability calculation
+        const settingsDocRef = doc(
+          db,
+          'users',
+          currentUser.uid,
+          'settings',
+          'personal'
+        );
+        const settingsDoc = await getDoc(settingsDocRef);
+        const settingsData = settingsDoc.exists() ? settingsDoc.data() : {};
+
+        const plaidAccounts = settingsData.plaidAccounts || [];
+        totalAvailable = calculateTotalProjectedBalance(
+          plaidAccounts,
+          transactions
+        );
+
+        // Load bills
+        const billsRef = collection(db, 'users', currentUser.uid, 'billInstances');
+        const billsSnapshot = await getDocs(billsRef);
+        const allBills = billsSnapshot.docs.map((doc) => ({
+          id: doc.id,
+          ...doc.data(),
+        }));
+
+        // Filter upcoming bills (before next payday)
+        const payCycleDocRef = doc(
+          db,
+          'users',
+          currentUser.uid,
+          'financial',
+          'payCycle'
+        );
+        const payCycleDoc = await getDoc(payCycleDocRef);
+        const payCycleData = payCycleDoc.exists() ? payCycleDoc.data() : null;
+
+        nextPayday =
+          settingsData.nextPaydayOverride ||
+          (payCycleData && payCycleData.date) ||
+          null;
+
+        if (nextPayday) {
+          const today = getPacificTime();
+          const paydayDate = new Date(nextPayday);
+          upcomingBills = allBills.filter((bill) => {
+            const billDate = new Date(bill.dueDate);
+            return billDate >= today && billDate <= paydayDate && !bill.isPaid;
+          });
+        }
+
+        // Load recurring payments
+        const recurringItemsRef = collection(
+          db,
+          'users',
+          currentUser.uid,
+          'recurringItems'
+        );
+        const recurringSnapshot = await getDocs(recurringItemsRef);
+        recurringPayments = recurringSnapshot.docs.map((doc) => ({
+          id: doc.id,
+          ...doc.data(),
+        }));
+      } catch (error) {
+        console.warn('Error loading additional financial data:', error);
+        showNotification(
+          'Some financial data could not be loaded, showing basic debt analysis',
+          'warning'
+        );
       }
 
-      // Load recurring payments
-      const recurringItemsRef = collection(
-        db,
-        'users',
-        currentUser.uid,
-        'recurringItems'
-      );
-      const recurringSnapshot = await getDocs(recurringItemsRef);
-      const recurringPayments = recurringSnapshot.docs.map((doc) => ({
-        id: doc.id,
-        ...doc.data(),
-      }));
-
-      // Analyze debt situation
+      // Analyze debt situation with whatever data we have
       const debtAnalysis = analyzeDebtSituation(
         creditCards,
         totalAvailable,
@@ -184,8 +198,8 @@ export default function DebtOptimizer() {
         setTimeline(initialTimeline);
       }
     } catch (error) {
-      console.error('Error loading debt data:', error);
-      showNotification('Failed to load debt data', 'error');
+      console.error('Error loading credit card data:', error);
+      showNotification('Failed to load credit card data', 'error');
     } finally {
       setLoading(false);
     }
