@@ -1299,21 +1299,68 @@ const refreshPlaidTransactions = async () => {
 
   const handleToggleSkipBill = async (bill) => {
     try {
-      // ✅ Update bill in billInstances collection
-      const newStatus = bill.status === 'skipped' ? 'pending' : 'skipped';
       const billRef = doc(db, 'users', currentUser.uid, 'billInstances', bill.id);
       
-      await updateDoc(billRef, {
-        status: newStatus,
-        skippedAt: newStatus === 'skipped' ? new Date().toISOString() : null,
-        updatedAt: serverTimestamp()
-      });
-      
-      await loadBills();
-      showNotification(
-        newStatus === 'skipped' ? 'Bill skipped for this month' : 'Bill unskipped', 
-        'success'
-      );
+      if (bill.status === 'skipped') {
+        // Unskip: Just set status back to pending
+        await updateDoc(billRef, {
+          status: 'pending',
+          skippedAt: null,
+          updatedAt: serverTimestamp()
+        });
+        
+        await loadBills();
+        showNotification('Bill unskipped', 'success');
+      } else {
+        // Skip: Advance the due date to next period (for recurring bills)
+        const isRecurring = bill.recurrence && bill.recurrence !== 'one-time';
+        
+        if (isRecurring) {
+          const currentDueDate = bill.dueDate || bill.nextDueDate;
+          let nextDueDate;
+          const frequency = bill.recurrence;
+          
+          // Calculate next due date based on frequency
+          if (frequency === 'monthly') {
+            nextDueDate = RecurringManager.calculateNextOccurrenceAfterPayment(currentDueDate, 'monthly');
+          } else if (frequency === 'weekly') {
+            nextDueDate = RecurringManager.calculateNextOccurrenceAfterPayment(currentDueDate, 'weekly');
+          } else if (frequency === 'bi-weekly') {
+            nextDueDate = RecurringManager.calculateNextOccurrenceAfterPayment(currentDueDate, 'bi-weekly');
+          } else if (frequency === 'quarterly') {
+            nextDueDate = RecurringManager.calculateNextOccurrenceAfterPayment(currentDueDate, 'quarterly');
+          } else if (frequency === 'annually') {
+            nextDueDate = RecurringManager.calculateNextOccurrenceAfterPayment(currentDueDate, 'annually');
+          } else {
+            nextDueDate = new Date(currentDueDate);
+            nextDueDate.setMonth(nextDueDate.getMonth() + 1);
+          }
+          
+          const nextDueDateStr = nextDueDate.toISOString().split('T')[0];
+          
+          await updateDoc(billRef, {
+            status: 'pending',
+            dueDate: nextDueDateStr,
+            nextDueDate: nextDueDateStr,
+            skippedDate: formatDateForInput(getPacificTime()),
+            updatedAt: serverTimestamp()
+          });
+          
+          console.log(`✅ Bill skipped to next period: ${bill.name} -> ${nextDueDateStr}`);
+          await loadBills();
+          showNotification(`Bill skipped! Due date advanced to ${nextDueDateStr}`, 'success');
+        } else {
+          // For one-time bills, just mark as skipped
+          await updateDoc(billRef, {
+            status: 'skipped',
+            skippedAt: new Date().toISOString(),
+            updatedAt: serverTimestamp()
+          });
+          
+          await loadBills();
+          showNotification('One-time bill marked as skipped', 'success');
+        }
+      }
     } catch (error) {
       console.error('❌ Error toggling skip status:', error);
       showNotification('Error updating bill: ' + error.message, 'error');
