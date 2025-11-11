@@ -6,6 +6,7 @@ import { analyzeDebtSituation, calculateDebtFreeTimeline } from '../utils/debtAn
 import { calculatePayoffDate } from '../utils/payoffCalculator';
 import { calculateTotalProjectedBalance } from '../utils/BalanceCalculator';
 import { getPacificTime } from '../utils/DateUtils';
+import { FinancialAnalyzer } from '../utils/FinancialAnalyzer';
 import { Line } from 'react-chartjs-2';
 import {
   Chart as ChartJS,
@@ -39,6 +40,9 @@ export default function DebtOptimizer() {
   const [extraPayment, setExtraPayment] = useState(0);
   const [timeline, setTimeline] = useState(null);
   const [notification, setNotification] = useState({ message: '', type: '' });
+  const [financialAnalysis, setFinancialAnalysis] = useState(null);
+  const [smartRecommendations, setSmartRecommendations] = useState(null);
+  const [spendingInsights, setSpendingInsights] = useState([]);
 
   const loadDebtData = useCallback(async () => {
     try {
@@ -222,6 +226,77 @@ export default function DebtOptimizer() {
     }
   }, [extraPayment, analysis]);
 
+  // Analyze financial situation and generate smart recommendations
+  useEffect(() => {
+    if (!currentUser || !analysis || !analysis.cardsPrioritized) {
+      return;
+    }
+
+    console.log('[Debt Optimizer] Running financial analysis...');
+
+    const analyzeFinancials = async () => {
+      try {
+        // Load transactions for cash flow analysis
+        const transactionsRef = collection(db, 'users', currentUser.uid, 'transactions');
+        const transactionsSnapshot = await getDocs(transactionsRef);
+        const transactions = transactionsSnapshot.docs.map(doc => ({
+          id: doc.id,
+          ...doc.data()
+        }));
+
+        // Load accounts for available cash
+        const apiUrl = import.meta.env.VITE_API_URL || 'https://smart-money-tracker-09ks.onrender.com';
+        const accountsResponse = await fetch(`${apiUrl}/api/accounts?userId=${currentUser.uid}&_t=${Date.now()}`);
+        const accountsData = await accountsResponse.json();
+        const accounts = accountsData.success ? accountsData.accounts : [];
+
+        // Analyze cash flow
+        const cashFlow = FinancialAnalyzer.analyzeCashFlow(transactions, accounts);
+        
+        if (!cashFlow) {
+          return;
+        }
+
+        console.log('[Debt Optimizer] Cash flow:', cashFlow);
+
+        // Analyze spending patterns
+        const spending = FinancialAnalyzer.analyzeSpending(transactions);
+        setSpendingInsights(spending);
+
+        // Prepare debt data from existing analysis
+        const debts = analysis.cardsPrioritized.map(c => ({
+          id: c.account_id,
+          name: c.name || c.official_name,
+          balance: c.balance,
+          interestRate: c.apr,
+          minimumPayment: c.balance * 0.02
+        }));
+
+        // Calculate optimal strategy
+        const strategy = FinancialAnalyzer.calculateStrategy(debts, cashFlow);
+        
+        if (strategy) {
+          console.log('[Debt Optimizer] Strategy generated:', strategy);
+          
+          // Generate recommendations
+          const recs = FinancialAnalyzer.generateRecommendations(strategy, cashFlow);
+          
+          setFinancialAnalysis({
+            cashFlow,
+            strategy,
+            recommendations: recs
+          });
+          
+          setSmartRecommendations(recs);
+        }
+      } catch (error) {
+        console.warn('[Debt Optimizer] Could not generate smart recommendations:', error);
+      }
+    };
+
+    analyzeFinancials();
+  }, [currentUser, analysis]);
+
   const showNotification = (message, type = 'success') => {
     setNotification({ message, type });
     setTimeout(() => setNotification({ message: '', type: '' }), 5000);
@@ -364,6 +439,78 @@ export default function DebtOptimizer() {
           </div>
         </div>
       </div>
+
+      {/* Smart Recommendations Section */}
+      {financialAnalysis && (
+        <div className="smart-recommendations-section">
+          <h3>🤖 AI-Powered Recommendations</h3>
+          
+          {/* Strategy Info */}
+          <div className="strategy-card">
+            <div className="strategy-header">
+              <span className="strategy-badge">{financialAnalysis.strategy.strategyName}</span>
+              <span className="debt-free-date">
+                Debt-Free: {financialAnalysis.strategy.debtFreeDate.toLocaleDateString('en-US', {
+                  month: 'short',
+                  year: 'numeric'
+                })}
+              </span>
+            </div>
+            <p className="strategy-reasoning">{financialAnalysis.strategy.reasoning}</p>
+          </div>
+
+          {/* Action Items */}
+          <div className="action-items">
+            <h4>This Month&apos;s Action Plan:</h4>
+            {smartRecommendations.map((rec, idx) => (
+              <div key={idx} className={`action-item priority-${rec.priority}`}>
+                <div className="action-header">
+                  <span className="action-title">{rec.title}</span>
+                  <span className={`priority-badge ${rec.priority}`}>{rec.priority}</span>
+                </div>
+                <p className="action-description">{rec.description}</p>
+              </div>
+            ))}
+          </div>
+
+          {/* Cash Flow Summary */}
+          <div className="cash-flow-card">
+            <h4>💰 Monthly Cash Flow</h4>
+            <div className="cash-flow-row">
+              <span>Income:</span>
+              <span className="positive">${financialAnalysis.cashFlow.monthlyIncome.toFixed(2)}</span>
+            </div>
+            <div className="cash-flow-row">
+              <span>Expenses:</span>
+              <span className="negative">-${financialAnalysis.cashFlow.monthlyExpenses.toFixed(2)}</span>
+            </div>
+            <div className="cash-flow-row total">
+              <span>Surplus:</span>
+              <span className={financialAnalysis.cashFlow.monthlySurplus > 0 ? 'positive' : 'negative'}>
+                ${financialAnalysis.cashFlow.monthlySurplus.toFixed(2)}
+              </span>
+            </div>
+          </div>
+
+          {/* Spending Insights */}
+          {spendingInsights.length > 0 && (
+            <div className="spending-insights">
+              <h4>💡 Spending Optimization</h4>
+              {spendingInsights.map((insight, idx) => (
+                <div key={idx} className="insight-item">
+                  <div className="insight-row">
+                    <span className="category">{insight.category}</span>
+                    <span className="amount">${insight.amount.toFixed(2)}/mo</span>
+                  </div>
+                  <p className="insight-suggestion">
+                    {insight.suggestion} → Save ${insight.potentialSavings}/mo
+                  </p>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
 
       {/* AI Priority Recommendation */}
       {analysis.priorityRecommendation && (
