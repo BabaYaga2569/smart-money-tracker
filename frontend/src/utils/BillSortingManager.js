@@ -20,7 +20,7 @@ export class BillSortingManager {
         due.setHours(0, 0, 0, 0); // Reset time to start of day
         
         const diffTime = due.getTime() - today.getTime();
-        const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+        const diffDays = Math.round(diffTime / (1000 * 60 * 60 * 24));
         
         return diffDays;
     }
