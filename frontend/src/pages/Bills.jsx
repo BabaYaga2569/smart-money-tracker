@@ -447,14 +447,59 @@ const refreshPlaidTransactions = async () => {
     }
   };
 
-  // Load recurring bills from subscriptions collection
+  // Auto-generate bill instance from recurring template
+  const autoGenerateBillFromTemplate = async (template) => {
+    try {
+      // Read date EXACTLY from template (no timezone conversion!)
+      const exactDueDate = template.nextRenewal || template.nextOccurrence;
+      
+      if (!exactDueDate) {
+        console.warn(`Template ${template.name} has no nextRenewal/nextOccurrence date`);
+        return;
+      }
+      
+      const billId = generateBillId();
+      const billInstance = {
+        id: billId,
+        name: template.name,
+        amount: template.cost || template.amount,
+        dueDate: exactDueDate, // ← USE EXACT DATE FROM TEMPLATE!
+        nextDueDate: exactDueDate,
+        originalDueDate: exactDueDate,
+        category: template.category || 'Subscriptions',
+        recurrence: template.billingCycle || template.frequency || 'monthly',
+        recurringTemplateId: template.id,
+        isPaid: false,
+        status: 'pending',
+        paymentHistory: [],
+        linkedTransactionIds: [],
+        merchantNames: [
+          template.name.toLowerCase(),
+          template.name.toLowerCase().replace(/[^a-z0-9]/g, '')
+        ],
+        createdAt: serverTimestamp(),
+        updatedAt: serverTimestamp(),
+        createdFrom: 'auto-generated'
+      };
+      
+      await setDoc(doc(db, 'users', currentUser.uid, 'billInstances', billId), billInstance);
+      console.log(`✅ Auto-generated bill instance: ${template.name} due ${exactDueDate}`);
+      
+      // Reload bills to show new instance
+      await loadBills();
+    } catch (error) {
+      console.error('❌ Error auto-generating bill:', error);
+    }
+  };
+
+  // Load recurring bills from subscriptions collection and auto-generate instances
   useEffect(() => {
     if (!currentUser) return;
 
     const subscriptionsRef = collection(db, 'users', currentUser.uid, 'subscriptions');
     const unsubscribe = onSnapshot(
       subscriptionsRef,
-      (snapshot) => {
+      async (snapshot) => {
         const subs = snapshot.docs.map(doc => ({
           id: doc.id,
           ...doc.data()
@@ -465,6 +510,30 @@ const refreshPlaidTransactions = async () => {
           sub.type === 'recurring_bill'
         );
         setRecurringBills(bills);
+        
+        // Auto-generate bill instances when new recurring bills are added or modified
+        snapshot.docChanges().forEach(async (change) => {
+          if (change.type === 'added' || change.type === 'modified') {
+            const template = { id: change.doc.id, ...change.doc.data() };
+            
+            // Only process active recurring bills
+            if (template.status !== 'active' || template.type !== 'recurring_bill') {
+              return;
+            }
+            
+            // Check if bill instance already exists for this template and due date
+            const existingBill = processedBills.find(b => 
+              b.recurringTemplateId === template.id && 
+              (b.dueDate === template.nextRenewal || b.dueDate === template.nextOccurrence)
+            );
+            
+            if (!existingBill) {
+              // AUTO-GENERATE bill instance from template
+              console.log(`🔄 Auto-generating bill from template: ${template.name}`);
+              await autoGenerateBillFromTemplate(template);
+            }
+          }
+        });
       },
       (error) => {
         console.error('Error loading recurring bills:', error);
@@ -472,7 +541,8 @@ const refreshPlaidTransactions = async () => {
     );
 
     return () => unsubscribe();
-  }, [currentUser]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [currentUser, processedBills]);
 
   // Auto-detect recurring bills on first login
   useEffect(() => {
@@ -1114,12 +1184,14 @@ const refreshPlaidTransactions = async () => {
       }
       
       // If bill was generated from recurring template, advance template's nextOccurrence
+      // and auto-generate the NEXT month's bill instance
       if (bill.recurringTemplateId) {
         const settingsDocRef = doc(db, 'users', currentUser.uid, 'settings', 'personal');
         const currentDoc = await getDoc(settingsDocRef);
         const currentData = currentDoc.exists() ? currentDoc.data() : {};
         const recurringItems = currentData.recurringItems || [];
         
+        let updatedTemplate = null;
         const updatedRecurringItems = recurringItems.map(template => {
           if (template.id === bill.recurringTemplateId) {
             // Check if bill's due date matches template's nextOccurrence
@@ -1136,12 +1208,13 @@ const refreshPlaidTransactions = async () => {
               
               console.log(`[Bill Payment] Advancing recurring template "${template.name}" from ${templateNextOccurrence} to ${nextOccurrence.toISOString().split('T')[0]}`);
               
-              return {
+              updatedTemplate = {
                 ...template,
                 nextOccurrence: nextOccurrence.toISOString().split('T')[0],
                 lastPaidDate: paidDate || getPacificTime(),
                 updatedAt: new Date().toISOString()
               };
+              return updatedTemplate;
             }
           }
           return template;
@@ -1152,6 +1225,12 @@ const refreshPlaidTransactions = async () => {
           ...currentData,
           recurringItems: updatedRecurringItems
         });
+        
+        // Auto-generate next month's bill instance
+        if (updatedTemplate) {
+          console.log(`🔄 Auto-generating next month's bill for ${bill.name}`);
+          await autoGenerateBillFromTemplate(updatedTemplate);
+        }
       }
     } catch (error) {
       console.error('❌ Error updating bill status:', error);

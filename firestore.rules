@@ -43,7 +43,7 @@ service cloud.firestore {
       match /billInstances/{billId} {
         allow read, delete: if isOwner(userId);
         
-        // Strict validation on create
+        // Strict validation on create - dueDate can be string (YYYY-MM-DD) or timestamp
         allow create: if isOwner(userId) 
           && request.resource.data.keys().hasAll(['name', 'amount', 'dueDate', 'status', 'isPaid'])
           && request.resource.data.name is string
@@ -53,10 +53,10 @@ service cloud.firestore {
           && request.resource.data.isPaid is bool
           && request.resource.data.status is string
           && request.resource.data.status in ['pending', 'overdue', 'paid', 'skipped']
-          && request.resource.data.dueDate is timestamp
+          && (request.resource.data.dueDate is string || request.resource.data.dueDate is timestamp)
           && isValidSize();
         
-        // Allow updates but maintain data integrity
+        // Allow updates but maintain data integrity - dueDate can be string (YYYY-MM-DD) or timestamp
         allow update: if isOwner(userId)
           && request.resource.data.keys().hasAll(['name', 'amount', 'dueDate', 'status', 'isPaid'])
           && request.resource.data.name is string
@@ -66,7 +66,7 @@ service cloud.firestore {
           && request.resource.data.isPaid is bool
           && request.resource.data.status is string
           && request.resource.data.status in ['pending', 'overdue', 'paid', 'skipped']
-          && request.resource.data.dueDate is timestamp
+          && (request.resource.data.dueDate is string || request.resource.data.dueDate is timestamp)
           && isValidSize();
       }
       
