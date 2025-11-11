@@ -747,11 +747,19 @@ const refreshPlaidTransactions = async () => {
       return 'paid';
     }
     
-    // Normalize both dates to midnight to avoid off-by-one errors
-    const now = new Date();
+    // Use Pacific Time for consistent timezone handling
+    const now = getPacificTime();
     now.setHours(0, 0, 0, 0);
     
-    const dueDate = new Date(bill.nextDueDate || bill.dueDate);
+    // Parse due date properly to avoid timezone issues
+    const dueDateStr = bill.nextDueDate || bill.dueDate;
+    const dueDate = typeof dueDateStr === 'string' ? 
+      (() => {
+        // Parse YYYY-MM-DD as local date
+        const parts = dueDateStr.split('-');
+        return new Date(parseInt(parts[0]), parseInt(parts[1]) - 1, parseInt(parts[2]));
+      })() :
+      new Date(dueDateStr);
     dueDate.setHours(0, 0, 0, 0);
     
     const daysUntilDue = Math.round((dueDate - now) / (1000 * 60 * 60 * 24));
@@ -949,17 +957,22 @@ const refreshPlaidTransactions = async () => {
     const paidDate = paymentData.paidDate || getPacificTime();
     const paidDateStr = formatDateForInput(paidDate);
     
+    // Build transaction object with proper validation to avoid undefined fields
     const transaction = {
       amount: -Math.abs(parseFloat(bill.amount)),
       description: `${bill.name} Payment`,
       category: 'Bills & Utilities',
-      account: 'bofa',
+      account: paymentData.accountId || 'bofa', // Use accountId from paymentData if available
       date: paidDateStr,
       timestamp: Date.now(),
       type: 'expense',
-      source: paymentData.source || 'manual',
-      ...paymentData
+      source: paymentData.source || 'manual'
     };
+    
+    // Only add optional fields if they are defined
+    if (paymentData.method) transaction.method = paymentData.method;
+    if (paymentData.transactionId) transaction.transactionId = paymentData.transactionId;
+    if (paymentData.merchantName) transaction.merchantName = paymentData.merchantName;
 
     const transactionsRef = collection(db, 'users', currentUser.uid, 'transactions');
     await addDoc(transactionsRef, transaction);
@@ -1636,11 +1649,19 @@ const refreshPlaidTransactions = async () => {
       return '⏭️ SKIPPED';
     }
     
-    // Normalize both dates to midnight to avoid off-by-one errors
-    const now = new Date();
+    // Use Pacific Time for consistent timezone handling
+    const now = getPacificTime();
     now.setHours(0, 0, 0, 0);
     
-    const dueDate = new Date(bill.nextDueDate || bill.dueDate);
+    // Parse due date properly to avoid timezone issues
+    const dueDateStr = bill.nextDueDate || bill.dueDate;
+    const dueDate = typeof dueDateStr === 'string' ? 
+      (() => {
+        // Parse YYYY-MM-DD as local date
+        const parts = dueDateStr.split('-');
+        return new Date(parseInt(parts[0]), parseInt(parts[1]) - 1, parseInt(parts[2]));
+      })() :
+      new Date(dueDateStr);
     dueDate.setHours(0, 0, 0, 0);
     
     const daysUntilDue = Math.round((dueDate - now) / (1000 * 60 * 60 * 24));
@@ -2313,26 +2334,67 @@ const refreshPlaidTransactions = async () => {
                     {getCategoryIcon(bill.category)}
                   </div>
                   <div className="bill-details">
-                    <h4>
-                      {bill.name}
-                      {bill.recurringTemplateId && (
-                        <span 
-                          className="recurring-badge" 
-                          title="Generated from recurring template"
-                          style={{
-                            marginLeft: '8px',
-                            padding: '2px 8px',
-                            fontSize: '11px',
-                            background: 'rgba(138, 43, 226, 0.2)',
-                            color: '#ba68c8',
-                            borderRadius: '4px',
-                            fontWeight: 'normal'
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                      <h4 style={{ margin: 0 }}>
+                        {bill.name}
+                        {bill.recurringTemplateId && (
+                          <span 
+                            className="recurring-badge" 
+                            title="Generated from recurring template"
+                            style={{
+                              marginLeft: '8px',
+                              padding: '2px 8px',
+                              fontSize: '11px',
+                              background: 'rgba(138, 43, 226, 0.2)',
+                              color: '#ba68c8',
+                              borderRadius: '4px',
+                              fontWeight: 'normal'
+                            }}
+                          >
+                            🔄 Auto
+                          </span>
+                        )}
+                      </h4>
+                      <div style={{ display: 'flex', gap: '8px' }}>
+                        <button
+                          onClick={() => {
+                            setEditingBill(bill);
+                            setShowModal(true);
                           }}
+                          style={{
+                            padding: '4px 8px',
+                            background: 'rgba(0, 180, 255, 0.2)',
+                            color: '#00b4ff',
+                            border: '1px solid #00b4ff',
+                            borderRadius: '4px',
+                            fontSize: '10px',
+                            fontWeight: '600',
+                            cursor: 'pointer',
+                            transition: 'all 0.2s ease'
+                          }}
+                          title="Edit bill"
                         >
-                          🔄 Auto
-                        </span>
-                      )}
-                    </h4>
+                          ✏️ Edit
+                        </button>
+                        <button
+                          onClick={() => handleDeleteBill(bill)}
+                          style={{
+                            padding: '4px 8px',
+                            background: 'rgba(255, 7, 58, 0.2)',
+                            color: '#ff073a',
+                            border: '1px solid #ff073a',
+                            borderRadius: '4px',
+                            fontSize: '10px',
+                            fontWeight: '600',
+                            cursor: 'pointer',
+                            transition: 'all 0.2s ease'
+                          }}
+                          title="Delete bill"
+                        >
+                          🗑️
+                        </button>
+                      </div>
+                    </div>
                     <div className="bill-meta">
                       <span className="bill-category">{bill.category}</span>
                       <span className="bill-frequency">{bill.recurrence}</span>
@@ -2703,6 +2765,498 @@ const refreshPlaidTransactions = async () => {
             </>
           )}
         </div>
+      )}
+
+      {/* Bill Edit/Add Modal */}
+      {showModal && (
+        <div 
+          className="modal-overlay"
+          onClick={() => setShowModal(false)}
+          style={{
+            position: 'fixed',
+            top: 0,
+            left: 0,
+            right: 0,
+            bottom: 0,
+            background: 'rgba(0, 0, 0, 0.8)',
+            display: 'flex',
+            justifyContent: 'center',
+            alignItems: 'center',
+            zIndex: 1000
+          }}
+        >
+          <div 
+            className="modal-content"
+            onClick={(e) => e.stopPropagation()}
+            style={{
+              background: '#1a1a1a',
+              border: '2px solid #333',
+              borderRadius: '12px',
+              padding: '24px',
+              maxWidth: '500px',
+              width: '90%',
+              maxHeight: '90vh',
+              overflowY: 'auto'
+            }}
+          >
+            <h3 style={{ marginTop: 0, marginBottom: '20px', color: '#fff' }}>
+              {editingBill ? 'Edit Bill' : 'Add New Bill'}
+            </h3>
+            
+            <form onSubmit={(e) => {
+              e.preventDefault();
+              const formData = new FormData(e.target);
+              const billData = {
+                name: formData.get('name'),
+                amount: parseFloat(formData.get('amount')),
+                dueDate: formData.get('dueDate'),
+                category: formData.get('category'),
+                recurrence: formData.get('recurrence')
+              };
+              handleSaveBill(billData);
+            }}>
+              <div style={{ marginBottom: '16px' }}>
+                <label style={{ display: 'block', marginBottom: '8px', color: '#ccc' }}>
+                  Bill Name *
+                </label>
+                <input
+                  type="text"
+                  name="name"
+                  defaultValue={editingBill?.name || ''}
+                  required
+                  style={{
+                    width: '100%',
+                    padding: '10px',
+                    background: '#2a2a2a',
+                    border: '1px solid #444',
+                    borderRadius: '6px',
+                    color: '#fff',
+                    fontSize: '14px'
+                  }}
+                />
+              </div>
+              
+              <div style={{ marginBottom: '16px' }}>
+                <label style={{ display: 'block', marginBottom: '8px', color: '#ccc' }}>
+                  Amount *
+                </label>
+                <input
+                  type="number"
+                  name="amount"
+                  step="0.01"
+                  min="0"
+                  defaultValue={editingBill?.amount || ''}
+                  required
+                  style={{
+                    width: '100%',
+                    padding: '10px',
+                    background: '#2a2a2a',
+                    border: '1px solid #444',
+                    borderRadius: '6px',
+                    color: '#fff',
+                    fontSize: '14px'
+                  }}
+                />
+              </div>
+              
+              <div style={{ marginBottom: '16px' }}>
+                <label style={{ display: 'block', marginBottom: '8px', color: '#ccc' }}>
+                  Due Date *
+                </label>
+                <input
+                  type="date"
+                  name="dueDate"
+                  defaultValue={editingBill?.dueDate || editingBill?.nextDueDate || ''}
+                  required
+                  style={{
+                    width: '100%',
+                    padding: '10px',
+                    background: '#2a2a2a',
+                    border: '1px solid #444',
+                    borderRadius: '6px',
+                    color: '#fff',
+                    fontSize: '14px'
+                  }}
+                />
+              </div>
+              
+              <div style={{ marginBottom: '16px' }}>
+                <label style={{ display: 'block', marginBottom: '8px', color: '#ccc' }}>
+                  Category *
+                </label>
+                <select
+                  name="category"
+                  defaultValue={editingBill?.category || 'Bills & Utilities'}
+                  required
+                  style={{
+                    width: '100%',
+                    padding: '10px',
+                    background: '#2a2a2a',
+                    border: '1px solid #444',
+                    borderRadius: '6px',
+                    color: '#fff',
+                    fontSize: '14px'
+                  }}
+                >
+                  {TRANSACTION_CATEGORIES.map(category => (
+                    <option key={category} value={category}>
+                      {getCategoryIcon(category)} {category}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              
+              <div style={{ marginBottom: '20px' }}>
+                <label style={{ display: 'block', marginBottom: '8px', color: '#ccc' }}>
+                  Frequency *
+                </label>
+                <select
+                  name="recurrence"
+                  defaultValue={editingBill?.recurrence || 'monthly'}
+                  required
+                  style={{
+                    width: '100%',
+                    padding: '10px',
+                    background: '#2a2a2a',
+                    border: '1px solid #444',
+                    borderRadius: '6px',
+                    color: '#fff',
+                    fontSize: '14px'
+                  }}
+                >
+                  <option value="one-time">One-time</option>
+                  <option value="weekly">Weekly</option>
+                  <option value="bi-weekly">Bi-weekly</option>
+                  <option value="monthly">Monthly</option>
+                  <option value="quarterly">Quarterly</option>
+                  <option value="annually">Annually</option>
+                </select>
+              </div>
+              
+              <div style={{ display: 'flex', gap: '12px', justifyContent: 'flex-end' }}>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowModal(false);
+                    setEditingBill(null);
+                  }}
+                  style={{
+                    padding: '10px 20px',
+                    background: '#444',
+                    color: '#fff',
+                    border: 'none',
+                    borderRadius: '6px',
+                    fontSize: '14px',
+                    fontWeight: '600',
+                    cursor: 'pointer'
+                  }}
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  style={{
+                    padding: '10px 20px',
+                    background: 'linear-gradient(135deg, #00ff88 0%, #00d4ff 100%)',
+                    color: '#000',
+                    border: 'none',
+                    borderRadius: '6px',
+                    fontSize: '14px',
+                    fontWeight: '700',
+                    cursor: 'pointer'
+                  }}
+                >
+                  {editingBill ? 'Update Bill' : 'Add Bill'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Import History Modal */}
+      {showImportHistory && (
+        <div 
+          className="modal-overlay"
+          onClick={() => setShowImportHistory(false)}
+          style={{
+            position: 'fixed',
+            top: 0,
+            left: 0,
+            right: 0,
+            bottom: 0,
+            background: 'rgba(0, 0, 0, 0.8)',
+            display: 'flex',
+            justifyContent: 'center',
+            alignItems: 'center',
+            zIndex: 1000
+          }}
+        >
+          <div 
+            className="modal-content"
+            onClick={(e) => e.stopPropagation()}
+            style={{
+              background: '#1a1a1a',
+              border: '2px solid #333',
+              borderRadius: '12px',
+              padding: '24px',
+              maxWidth: '600px',
+              width: '90%',
+              maxHeight: '80vh',
+              overflowY: 'auto'
+            }}
+          >
+            <h3 style={{ marginTop: 0, marginBottom: '20px', color: '#fff' }}>
+              Import History
+            </h3>
+            
+            {importHistory.length > 0 ? (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                {importHistory.map((entry, index) => (
+                  <div 
+                    key={entry.id}
+                    style={{
+                      padding: '16px',
+                      background: '#2a2a2a',
+                      border: '1px solid #444',
+                      borderRadius: '8px'
+                    }}
+                  >
+                    <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '8px' }}>
+                      <span style={{ fontWeight: '600', color: '#fff' }}>
+                        Import #{importHistory.length - index}
+                      </span>
+                      <span style={{ fontSize: '12px', color: '#888' }}>
+                        {new Date(entry.timestamp).toLocaleString()}
+                      </span>
+                    </div>
+                    <div style={{ fontSize: '14px', color: '#ccc' }}>
+                      <div>📋 {entry.billCount} bills imported</div>
+                      {entry.errorsCount > 0 && (
+                        <div style={{ color: '#ff073a' }}>
+                          ⚠️ {entry.errorsCount} errors
+                        </div>
+                      )}
+                      {entry.warningsCount > 0 && (
+                        <div style={{ color: '#ffdd00' }}>
+                          ⚠️ {entry.warningsCount} warnings
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <p style={{ color: '#888' }}>No import history available</p>
+            )}
+            
+            <div style={{ marginTop: '20px', display: 'flex', justifyContent: 'flex-end' }}>
+              <button
+                onClick={() => setShowImportHistory(false)}
+                style={{
+                  padding: '10px 20px',
+                  background: '#444',
+                  color: '#fff',
+                  border: 'none',
+                  borderRadius: '6px',
+                  fontSize: '14px',
+                  fontWeight: '600',
+                  cursor: 'pointer'
+                }}
+              >
+                Close
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Bulk Delete Confirmation Modal */}
+      {showBulkDeleteModal && (
+        <div 
+          className="modal-overlay"
+          onClick={() => setShowBulkDeleteModal(false)}
+          style={{
+            position: 'fixed',
+            top: 0,
+            left: 0,
+            right: 0,
+            bottom: 0,
+            background: 'rgba(0, 0, 0, 0.8)',
+            display: 'flex',
+            justifyContent: 'center',
+            alignItems: 'center',
+            zIndex: 1000
+          }}
+        >
+          <div 
+            className="modal-content"
+            onClick={(e) => e.stopPropagation()}
+            style={{
+              background: '#1a1a1a',
+              border: '2px solid #ff073a',
+              borderRadius: '12px',
+              padding: '24px',
+              maxWidth: '400px',
+              width: '90%'
+            }}
+          >
+            <h3 style={{ marginTop: 0, marginBottom: '16px', color: '#ff073a' }}>
+              ⚠️ Delete All Bills?
+            </h3>
+            <p style={{ color: '#ccc', marginBottom: '20px' }}>
+              Are you sure you want to delete all {processedBills.length} bills? This action can be undone using the "Undo Delete" button.
+            </p>
+            <div style={{ display: 'flex', gap: '12px', justifyContent: 'flex-end' }}>
+              <button
+                onClick={() => setShowBulkDeleteModal(false)}
+                style={{
+                  padding: '10px 20px',
+                  background: '#444',
+                  color: '#fff',
+                  border: 'none',
+                  borderRadius: '6px',
+                  fontSize: '14px',
+                  fontWeight: '600',
+                  cursor: 'pointer'
+                }}
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleBulkDelete}
+                style={{
+                  padding: '10px 20px',
+                  background: '#ff073a',
+                  color: '#fff',
+                  border: 'none',
+                  borderRadius: '6px',
+                  fontSize: '14px',
+                  fontWeight: '700',
+                  cursor: 'pointer'
+                }}
+              >
+                Delete All
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Help Modal */}
+      {showHelpModal && (
+        <div 
+          className="modal-overlay"
+          onClick={() => setShowHelpModal(false)}
+          style={{
+            position: 'fixed',
+            top: 0,
+            left: 0,
+            right: 0,
+            bottom: 0,
+            background: 'rgba(0, 0, 0, 0.8)',
+            display: 'flex',
+            justifyContent: 'center',
+            alignItems: 'center',
+            zIndex: 1000
+          }}
+        >
+          <div 
+            className="modal-content"
+            onClick={(e) => e.stopPropagation()}
+            style={{
+              background: '#1a1a1a',
+              border: '2px solid #333',
+              borderRadius: '12px',
+              padding: '24px',
+              maxWidth: '600px',
+              width: '90%',
+              maxHeight: '80vh',
+              overflowY: 'auto'
+            }}
+          >
+            <h3 style={{ marginTop: 0, marginBottom: '20px', color: '#fff' }}>
+              📚 Bills Page Help
+            </h3>
+            
+            <div style={{ color: '#ccc', lineHeight: '1.6' }}>
+              <h4 style={{ color: '#00ff88', marginTop: '16px' }}>Managing Bills</h4>
+              <ul style={{ paddingLeft: '20px' }}>
+                <li>Click "Add New Bill" to create a new bill</li>
+                <li>Click "Edit" on any bill to modify its details</li>
+                <li>Click "Mark as Paid" to record a payment</li>
+                <li>Click "Skip This Month" to skip a recurring bill</li>
+                <li>Click "Delete" to remove a bill</li>
+              </ul>
+
+              <h4 style={{ color: '#00ff88', marginTop: '16px' }}>Automatic Features</h4>
+              <ul style={{ paddingLeft: '20px' }}>
+                <li>Connect Plaid to automatically match bank transactions with bills</li>
+                <li>Use "Match Transactions" to sync and auto-pay bills</li>
+                <li>Bills with 🔄 Auto badge are generated from recurring templates</li>
+              </ul>
+
+              <h4 style={{ color: '#00ff88', marginTop: '16px' }}>Importing & Exporting</h4>
+              <ul style={{ paddingLeft: '20px' }}>
+                <li>Import bills from CSV files</li>
+                <li>Export your bills to CSV for backup</li>
+                <li>View import history to track changes</li>
+              </ul>
+
+              <h4 style={{ color: '#00ff88', marginTop: '16px' }}>Status Indicators</h4>
+              <ul style={{ paddingLeft: '20px' }}>
+                <li>🚨 <span style={{ color: '#ff073a' }}>OVERDUE</span> - Past due date</li>
+                <li>📅 <span style={{ color: '#ff6b00' }}>DUE TODAY</span> - Due today</li>
+                <li>⚠️ <span style={{ color: '#ffdd00' }}>URGENT</span> - Due in 3 days or less</li>
+                <li>📆 <span style={{ color: '#00b4ff' }}>THIS WEEK</span> - Due within 7 days</li>
+                <li>✅ <span style={{ color: '#00ff88' }}>PAID</span> - Already paid</li>
+                <li>⏭️ <span style={{ color: '#ba68c8' }}>SKIPPED</span> - Skipped for this cycle</li>
+              </ul>
+            </div>
+            
+            <div style={{ marginTop: '24px', display: 'flex', justifyContent: 'flex-end' }}>
+              <button
+                onClick={() => setShowHelpModal(false)}
+                style={{
+                  padding: '10px 20px',
+                  background: 'linear-gradient(135deg, #00ff88 0%, #00d4ff 100%)',
+                  color: '#000',
+                  border: 'none',
+                  borderRadius: '6px',
+                  fontSize: '14px',
+                  fontWeight: '700',
+                  cursor: 'pointer'
+                }}
+              >
+                Got it!
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* CSV Import Modal */}
+      {showCSVImport && (
+        <BillCSVImportModal
+          onClose={() => setShowCSVImport(false)}
+          onImport={handleCSVImport}
+          existingBills={processedBills}
+        />
+      )}
+
+      {/* Payment History Modal */}
+      {showPaymentHistory && (
+        <PaymentHistoryModal
+          userId={currentUser?.uid}
+          onClose={() => setShowPaymentHistory(false)}
+        />
+      )}
+
+      {/* Plaid Error Modal */}
+      {showErrorModal && (
+        <PlaidErrorModal
+          onClose={() => setShowErrorModal(false)}
+        />
       )}
 
     </div>
