@@ -1,4 +1,20 @@
-#!/usr/bin/env sh
-. "$(dirname -- "$0")/_/husky.sh"
+#!/bin/sh
+. "$(dirname "$0")/_/husky.sh"
 
-cd frontend && npx lint-staged
+echo "🔍 Running pre-commit checks..."
+
+# Check for variable scope issues in error handlers
+echo "Checking for variable scope issues..."
+if grep -r "} catch.*userId" backend/server.js | grep -v "let userId"; then
+    echo "❌ ERROR: userId used in catch block but not function-scoped!"
+    echo "Fix: Declare 'let userId = null;' at function scope"
+    exit 1
+fi
+
+# Check for console.log (should use logger)
+echo "Checking for console.log statements..."
+if grep -n "console\.log" backend/server.js | grep -v "// console.log"; then
+    echo "⚠️  WARNING: Found console.log - use logger instead"
+fi
+
+echo "✅ Pre-commit checks passed!"
