@@ -5,7 +5,8 @@
   "main": "index.js",
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1",
-    "start": "node server.js"
+    "start": "node server.js",
+    "prepare": "husky"
   },
   "keywords": [],
   "author": "",
@@ -16,5 +17,9 @@
     "firebase-admin": "^13.5.0",
     "plaid": "^38.1.0"
   },
-  "type": "module"
+  "type": "module",
+  "devDependencies": {
+    "eslint": "^9.39.1",
+    "husky": "^9.1.7"
+  }
 }
