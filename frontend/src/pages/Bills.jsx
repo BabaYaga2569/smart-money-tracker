@@ -657,6 +657,7 @@ const refreshPlaidTransactions = async () => {
             }
             
             if (data?.success === false) {
+              console.log('API returned success=false, falling back to Firebase');
             } else if (data) {
               const accountsList = data?.accounts || data;
               
@@ -694,7 +695,8 @@ const refreshPlaidTransactions = async () => {
               }
             }
           }
-        } catch {
+        } catch (error) {
+          console.warn('Error fetching from API, continuing with Firebase fallback:', error);
         }
       }
       
@@ -2515,42 +2517,27 @@ const refreshPlaidTransactions = async () => {
                       textAlign: 'center'
                     }}>
                       ✅ PAID {formatDate(bill.lastPaidDate)}
-                      {bill.status === 'paid' && bill.lastPaidDate && (
-  <div className="paid-info" style={{
-    marginTop: '8px',
-    padding: '6px 10px',
-    background: 'rgba(0, 255, 136, 0.1)',
-    borderRadius: '6px',
-    border: '1px solid #00ff88',
-    fontSize: '11px',
-    color: '#00ff88',
-    fontWeight: 'bold',
-    textAlign: 'center'
-  }}>
-    ✅ PAID {formatDate(bill.lastPaidDate)}
-    
-    {/* Undo Payment Button */}
-    <button
-      onClick={() => handleUnmarkAsPaid(bill)}
-      style={{
-        marginTop: '6px',
-        width: '100%',
-        padding: '6px 10px',
-        background: 'rgba(255, 107, 0, 0.2)',
-        color: '#ff6b00',
-        border: '1px solid #ff6b00',
-        borderRadius: '4px',
-        fontSize: '10px',
-        fontWeight: '600',
-        cursor: 'pointer',
-        transition: 'all 0.2s ease',
-        textTransform: 'uppercase'
-      }}
-    >
-      ↩️ Undo Payment
-    </button>
-  </div>
-)}
+                      
+                      {/* Undo Payment Button */}
+                      <button
+                        onClick={() => handleUnmarkAsPaid(bill)}
+                        style={{
+                          marginTop: '6px',
+                          width: '100%',
+                          padding: '6px 10px',
+                          background: 'rgba(255, 107, 0, 0.2)',
+                          color: '#ff6b00',
+                          border: '1px solid #ff6b00',
+                          borderRadius: '4px',
+                          fontSize: '10px',
+                          fontWeight: '600',
+                          cursor: 'pointer',
+                          transition: 'all 0.2s ease',
+                          textTransform: 'uppercase'
+                        }}
+                      >
+                        ↩️ Undo Payment
+                      </button>
                     </div>
                   )}
                 </div>
