@@ -849,8 +849,11 @@ app.post("/api/plaid/exchange_token", async (req, res, next) => {
   logger.request('POST', endpoint, { body: req.body });
   logDiagnostic.request(endpoint, req.body);
   
+  let userId = null; // ✅ Declare at function scope
+  
   try {
-    const { public_token, userId } = req.body;
+    const { public_token, userId: userIdFromBody } = req.body;
+    userId = userIdFromBody; // ✅ Assign to outer variable
 
     if (!public_token) {
       logger.error('PLAID_AUTH', 'Missing public_token in request');
