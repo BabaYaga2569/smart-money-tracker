@@ -15,6 +15,7 @@ import BillCSVImportModal from '../components/BillCSVImportModal';
 import PaymentHistoryModal from '../components/PaymentHistoryModal';
 import DuplicatePreviewModal from '../components/DuplicatePreviewModal';
 import { formatDateForDisplay, formatDateForInput, getPacificTime } from '../utils/DateUtils';
+import { getLocalMidnight, parseDueDateLocal } from '../utils/dateHelpers';
 import { TRANSACTION_CATEGORIES, CATEGORY_ICONS, getCategoryIcon, migrateLegacyCategory } from '../constants/categories';
 import NotificationSystem from '../components/NotificationSystem';
 import { BillDeduplicationManager } from '../utils/BillDeduplicationManager';
@@ -819,20 +820,16 @@ const refreshPlaidTransactions = async () => {
       return 'paid';
     }
     
-    // Use Pacific Time for consistent timezone handling
-    const now = getPacificTime();
-    now.setHours(0, 0, 0, 0);
+    // Use timezone-aware helpers to avoid off-by-one errors
+    const now = getLocalMidnight(); // Get current date at LOCAL midnight
     
-    // Parse due date properly to avoid timezone issues
+    // Parse due date as LOCAL date, not UTC
     const dueDateStr = bill.nextDueDate || bill.dueDate;
-    const dueDate = typeof dueDateStr === 'string' ? 
-      (() => {
-        // Parse YYYY-MM-DD as local date
-        const parts = dueDateStr.split('-');
-        return new Date(parseInt(parts[0]), parseInt(parts[1]) - 1, parseInt(parts[2]));
-      })() :
-      new Date(dueDateStr);
-    dueDate.setHours(0, 0, 0, 0);
+    const dueDate = parseDueDateLocal(dueDateStr);
+    
+    if (!dueDate) {
+      return 'pending'; // If date parsing fails, default to pending
+    }
     
     const daysUntilDue = Math.round((dueDate - now) / (1000 * 60 * 60 * 24));
     

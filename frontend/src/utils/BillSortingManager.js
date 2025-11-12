@@ -1,23 +1,24 @@
 // BillSortingManager.js - Smart sorting for bills by due date proximity
-import { parseLocalDate } from './DateUtils.js';
+import { getLocalMidnight, parseDueDateLocal } from './dateHelpers.js';
 
 export class BillSortingManager {
     
     /**
      * Calculate days until due date (can be negative for overdue)
+     * Uses timezone-aware date parsing to avoid off-by-one errors
      * @param {string|Date} dueDate - Due date
      * @returns {number} Days until due (negative if overdue)
      */
     static calculateDaysUntilDue(dueDate) {
         if (!dueDate) return 999; // Bills without due dates go to the end
         
-        const today = new Date();
-        today.setHours(0, 0, 0, 0); // Reset time to start of day
+        // Use timezone-aware helpers to avoid off-by-one errors
+        const today = getLocalMidnight();
         
-        const due = parseLocalDate(dueDate);
-        if (!due) return 999;
+        // Parse due date as LOCAL date, not UTC
+        const due = typeof dueDate === 'string' ? parseDueDateLocal(dueDate) : new Date(dueDate.getFullYear(), dueDate.getMonth(), dueDate.getDate(), 0, 0, 0, 0);
         
-        due.setHours(0, 0, 0, 0); // Reset time to start of day
+        if (!due || isNaN(due.getTime())) return 999;
         
         const diffTime = due.getTime() - today.getTime();
         const diffDays = Math.round(diffTime / (1000 * 60 * 60 * 24));
@@ -179,6 +180,7 @@ export class BillSortingManager {
 
     /**
      * Format due date for display
+     * Uses timezone-aware parsing to ensure correct date display
      * @param {string|Date} dueDate - Due date
      * @param {number} daysUntilDue - Days until due
      * @returns {string} Formatted date string
@@ -186,16 +188,18 @@ export class BillSortingManager {
     static formatDueDate(dueDate, daysUntilDue) {
         if (!dueDate) return 'No due date';
         
-        const due = parseLocalDate(dueDate);
-        if (!due) return 'Invalid date';
+        // Use timezone-aware parsing to avoid off-by-one day errors
+        const due = typeof dueDate === 'string' ? parseDueDateLocal(dueDate) : new Date(dueDate.getFullYear(), dueDate.getMonth(), dueDate.getDate(), 0, 0, 0, 0);
+        
+        if (!due || isNaN(due.getTime())) return 'Invalid date';
         
         const options = { month: 'short', day: 'numeric' };
         const dateStr = due.toLocaleDateString('en-US', options);
         
         if (daysUntilDue === 0) {
-            return `${dateStr} (Today)`;
+            return `${dateStr} (Due today)`;
         } else if (daysUntilDue === 1) {
-            return `${dateStr} (Tomorrow)`;
+            return `${dateStr} (Due tomorrow)`;
         } else if (daysUntilDue === -1) {
             return `${dateStr} (Yesterday)`;
         } else if (daysUntilDue < 0) {
