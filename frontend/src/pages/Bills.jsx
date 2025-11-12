@@ -1585,6 +1585,70 @@ const refreshPlaidTransactions = async () => {
     }
   };
 
+  // 🔥 Force Delete Bills by Name - Direct Firebase cleanup utility
+  const handleForceDeleteByName = async (billName) => {
+    if (!currentUser) return;
+    
+    // Confirm action
+    const confirmMessage = `⚠️ FORCE DELETE ALL "${billName}" bills?\n\n` +
+      `This will permanently delete ALL bill instances matching this name directly from Firebase,\n` +
+      `bypassing any local cache or state.\n\n` +
+      `This action cannot be undone. Continue?`;
+    
+    if (!window.confirm(confirmMessage)) {
+      return;
+    }
+    
+    const loadingId = NotificationManager.showLoading(`🔥 Force deleting all "${billName}" bills...`);
+    
+    try {
+      console.log(`🔥 [Force Delete] Starting deletion for bill name: "${billName}"`);
+      
+      // Query Firebase directly for all bills matching the name
+      const billsRef = collection(db, 'users', currentUser.uid, 'billInstances');
+      const q = query(billsRef, where('name', '==', billName));
+      const snapshot = await getDocs(q);
+      
+      console.log(`🔥 [Force Delete] Found ${snapshot.docs.length} bill(s) matching "${billName}"`);
+      
+      if (snapshot.docs.length === 0) {
+        NotificationManager.removeNotification(loadingId);
+        NotificationManager.showInfo(`No bills found with name "${billName}"`);
+        return;
+      }
+      
+      // Delete all matching bills directly from Firebase
+      const deletedIds = [];
+      for (const docSnap of snapshot.docs) {
+        const billData = docSnap.data();
+        console.log(`🔥 [Force Delete] Deleting bill ID: ${docSnap.id}`, {
+          name: billData.name,
+          amount: billData.amount,
+          dueDate: billData.dueDate || billData.nextDueDate,
+          recurringTemplateId: billData.recurringTemplateId
+        });
+        
+        await deleteDoc(doc(db, 'users', currentUser.uid, 'billInstances', docSnap.id));
+        deletedIds.push(docSnap.id);
+      }
+      
+      console.log(`🔥 [Force Delete] Successfully deleted ${deletedIds.length} bill(s):`, deletedIds);
+      
+      // Reload bills from Firebase
+      await loadBills();
+      
+      NotificationManager.removeNotification(loadingId);
+      NotificationManager.showSuccess(
+        `🔥 Force deleted ${deletedIds.length} "${billName}" bill(s)!\n\nDeleted IDs: ${deletedIds.join(', ')}`
+      );
+      
+    } catch (error) {
+      console.error('🔥 [Force Delete] Error:', error);
+      NotificationManager.removeNotification(loadingId);
+      NotificationManager.showError('Force delete failed', error.message);
+    }
+  };
+
   const handleExportToCSV = () => {
     try {
       const csvData = processedBills.map(bill => ({
@@ -2333,6 +2397,43 @@ const refreshPlaidTransactions = async () => {
               title="Delete all bills"
             >
               🗑️ Delete All Bills
+            </button>
+          )}
+          {processedBills.length > 0 && (
+            <button 
+              className="force-delete-button"
+              onClick={() => {
+                const billName = window.prompt(
+                  '🔥 FORCE DELETE UTILITY\n\n' +
+                  'Enter the EXACT bill name to force delete ALL matching instances from Firebase:\n\n' +
+                  'Examples:\n' +
+                  '  • "NV Energy"\n' +
+                  '  • "Netflix"\n' +
+                  '  • "Rent"\n\n' +
+                  'This bypasses all caches and directly removes bills from the database.\n\n' +
+                  'Bill name:'
+                );
+                if (billName && billName.trim()) {
+                  handleForceDeleteByName(billName.trim());
+                }
+              }}
+              disabled={loading}
+              title="🔥 Force delete all bills with a specific name - bypasses cache, directly queries Firebase"
+              style={{
+                background: 'linear-gradient(135deg, #dc2626 0%, #991b1b 100%)',
+                color: '#fff',
+                border: 'none',
+                borderRadius: '8px',
+                padding: '12px 20px',
+                fontWeight: '600',
+                cursor: loading ? 'not-allowed' : 'pointer',
+                transition: 'all 0.2s ease',
+                whiteSpace: 'nowrap',
+                opacity: loading ? 0.6 : 1,
+                boxShadow: '0 4px 12px rgba(220, 38, 38, 0.4)'
+              }}
+            >
+              🔥 Force Delete by Name
             </button>
           )}
           {processedBills.length > 0 && (
