@@ -19,9 +19,9 @@ const test = (name, fn) => {
     } catch (error) {
         console.error(`❌ ${name}`);
         console.error(error.message);
-        // eslint-disable-next-line no-undef
+         
         if (typeof process !== 'undefined' && process.exit) {
-            // eslint-disable-next-line no-undef
+             
             process.exit(1);
         }
         throw error;
@@ -238,7 +238,7 @@ const runOverdueBillsTests = () => {
 };
 
 // Run tests if this file is executed directly
-// eslint-disable-next-line no-undef
+ 
 if (typeof process !== 'undefined' && process.argv && process.argv[1] === new URL(import.meta.url).pathname) {
     runOverdueBillsTests();
 }

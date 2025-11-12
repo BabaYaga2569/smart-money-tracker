@@ -117,7 +117,7 @@ function test(name, fn) {
 }
 
 // Run tests if this file is executed directly
-/* eslint-disable no-undef */
+ 
 if (typeof process !== 'undefined' && typeof import.meta !== 'undefined' && process.argv && import.meta.url) {
     try {
         const currentFile = new URL(import.meta.url).pathname;
@@ -128,6 +128,6 @@ if (typeof process !== 'undefined' && typeof import.meta !== 'undefined' && proc
         // Ignore errors in non-Node environments
     }
 }
-/* eslint-enable no-undef */
+ 
 
 export { runPayCycleCalculatorTests };
