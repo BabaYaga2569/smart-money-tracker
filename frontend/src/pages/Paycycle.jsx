@@ -5,6 +5,7 @@ import { PaycycleManager } from '../utils/PaycycleManager';
 import { PayCycleCalculator } from '../utils/PayCycleCalculator';
 import { CashFlowAnalytics } from '../utils/CashFlowAnalytics';
 import { useAuth } from '../contexts/AuthContext';
+import { getLocalMidnight, parseDueDateLocal } from '../utils/dateHelpers';
 import {
   IncomeTimelineChart,
   CashFlowForecastChart,
@@ -201,7 +202,10 @@ const PayCycle = () => {
             <div className="metric-content">
               <div className="metric-value">
                 {optimizedSchedule.filter(bill => {
-                  const daysUntil = Math.floor((new Date(bill.dueDate) - new Date()) / (1000 * 60 * 60 * 24));
+                  // Use timezone-aware date parsing to avoid off-by-one errors
+                  const today = getLocalMidnight();
+                  const dueDate = parseDueDateLocal(bill.dueDate);
+                  const daysUntil = dueDate ? Math.floor((dueDate - today) / (1000 * 60 * 60 * 24)) : 999;
                   return daysUntil <= (incomeMetrics?.nextPaycheck?.daysUntil || 0);
                 }).length}
               </div>
@@ -209,7 +213,10 @@ const PayCycle = () => {
               <div className="metric-subtitle">
                 {formatCurrency(optimizedSchedule
                   .filter(bill => {
-                    const daysUntil = Math.floor((new Date(bill.dueDate) - new Date()) / (1000 * 60 * 60 * 24));
+                    // Use timezone-aware date parsing to avoid off-by-one errors
+                    const today = getLocalMidnight();
+                    const dueDate = parseDueDateLocal(bill.dueDate);
+                    const daysUntil = dueDate ? Math.floor((dueDate - today) / (1000 * 60 * 60 * 24)) : 999;
                     return daysUntil <= (incomeMetrics?.nextPaycheck?.daysUntil || 0);
                   })
                   .reduce((sum, bill) => sum + bill.amount, 0)
