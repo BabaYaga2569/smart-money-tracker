@@ -10,8 +10,7 @@ import { runAutoDetection } from '../utils/AutoBillDetection';
 import './Spendability.css';
 import { useAuth } from '../contexts/AuthContext';
 // Force rebuild 2025-11-12 v2 - Fix spendability issues
-const REBUILD_VERSION = '2025-11-12-v2';
-
+const REBUILD_VERSION = '2025-11-12-v3-FORCE-REBUILD';
 const Spendability = () => {
   const { currentUser } = useAuth();
   const [loading, setLoading] = useState(true);
