@@ -458,6 +458,34 @@ const refreshPlaidTransactions = async () => {
         return;
       }
       
+      // Check if bill already exists for this template and due date
+      const existingQuery = query(
+        collection(db, 'users', currentUser.uid, 'billInstances'),
+        where('recurringTemplateId', '==', template.id),
+        where('dueDate', '==', exactDueDate)
+      );
+      
+      const existingBills = await getDocs(existingQuery);
+      
+      if (!existingBills.empty) {
+        console.log(`⚠️ Bill already exists: ${template.name} on ${exactDueDate} - skipping auto-generation`);
+        return;
+      }
+      
+      // Check max unpaid bills limit (2 per template)
+      const unpaidQuery = query(
+        collection(db, 'users', currentUser.uid, 'billInstances'),
+        where('recurringTemplateId', '==', template.id),
+        where('isPaid', '==', false)
+      );
+      
+      const unpaidBills = await getDocs(unpaidQuery);
+      
+      if (unpaidBills.size >= 2) {
+        console.log(`⚠️ Already have ${unpaidBills.size} unpaid bills for template ${template.name} - skipping auto-generation`);
+        return;
+      }
+      
       const billId = generateBillId();
       const billInstance = {
         id: billId,
@@ -1920,7 +1948,10 @@ const refreshPlaidTransactions = async () => {
   };
 
   const handleGenerateAllBills = async () => {
-    if (generatingBills) return;
+    if (generatingBills) {
+      NotificationManager.showWarning('Bill generation is already in progress. Please wait...');
+      return;
+    }
     
     // Confirm with user
     const confirmed = window.confirm(
@@ -1929,7 +1960,8 @@ const refreshPlaidTransactions = async () => {
       '• Read all recurring bill templates\n' +
       '• Update any October dates to current month\n' +
       '• Generate fresh bill instances\n' +
-      '• Show all bills on this page\n\n' +
+      '• Show all bills on this page\n' +
+      '• Prevent duplicates automatically\n\n' +
       'Existing unpaid bills will be replaced. Continue?'
     );
     
@@ -1960,7 +1992,9 @@ const refreshPlaidTransactions = async () => {
           message: `✅ Success!\n\n` +
             `📋 Generated ${generateResult.billsGenerated} bills from ${generateResult.templatesProcessed} templates\n` +
             `🗑️ Cleared ${generateResult.billsCleared} old bill instances\n` +
-            `📅 Updated ${updateResult.templatesUpdated} template dates`,
+            `📅 Updated ${updateResult.templatesUpdated} template dates\n` +
+            `🛡️ Prevented ${generateResult.duplicatesPrevented} duplicates\n` +
+            `⏭️ Skipped ${generateResult.skipped} (max limit reached)`,
           duration: 6000
         });
         
