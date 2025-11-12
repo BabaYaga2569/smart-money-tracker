@@ -8,8 +8,8 @@ import { calculateProjectedBalance, calculateTotalProjectedBalance } from '../ut
 import { autoMigrateBills } from '../utils/FirebaseMigration';
 import { runAutoDetection } from '../utils/AutoBillDetection';
 import './Spendability.css';
-import { useAuth } from '../contexts/AuthContext';
 // Force rebuild 2025-11-12 v2 - Fix spendability issues
+const REBUILD_VERSION = '2025-11-12-v2';
 
 const Spendability = () => {
   const { currentUser } = useAuth();
