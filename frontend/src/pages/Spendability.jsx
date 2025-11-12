@@ -11,7 +11,7 @@ import './Spendability.css';
 import { useAuth } from '../contexts/AuthContext';
 // Force rebuild 2025-11-12 v2 - Fix spendability issues
 const REBUILD_VERSION = '2025-11-12-v3-FORCE-REBUILD';
-const Spendability = () => {
+const SpendabilityV2 = () => {
   const { currentUser } = useAuth();
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -936,5 +936,5 @@ console.log('🔍 PAYDAY CALCULATION DEBUG:', {
   );
 };
 
-export default Spendability;
+export default SpendabilityV2;
  
