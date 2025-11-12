@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { doc, getDoc, updateDoc, collection, addDoc, getDocs, query, where, serverTimestamp, arrayUnion, setDoc } from 'firebase/firestore';
+import { doc, getDoc, updateDoc, collection, addDoc, getDocs, serverTimestamp, arrayUnion, setDoc } from 'firebase/firestore';
 import { db } from '../firebase';
 import { PayCycleCalculator } from '../utils/PayCycleCalculator';
 import { RecurringBillManager } from '../utils/RecurringBillManager';
@@ -170,7 +170,8 @@ if (settingsData.nextPaydayOverride) {
   daysUntilPayday = getDaysUntilDateInPacific(nextPayday);
 } else if (payCycleData && payCycleData.date) {
   nextPayday = payCycleData.date;
-  daysUntilPayday = payCycleData.daysUntil || getDaysUntilDateInPacific(nextPayday);
+  // ✅ FIX ISSUE #2: Use getDaysUntilDateInPacific instead of payCycleData.daysUntil
+  daysUntilPayday = getDaysUntilDateInPacific(nextPayday);
 } else {
   console.log('Spendability: Calculating payday from schedules');
 
@@ -202,7 +203,8 @@ const result = PayCycleCalculator.calculateNextPayday(yoursSchedule, spouseSched
 
 console.log('Spendability: Payday calculation result', result);
 nextPayday = result.date;
-daysUntilPayday = result.daysUntil;
+// ✅ FIX ISSUE #2: Use getDaysUntilDateInPacific instead of result.daysUntil
+daysUntilPayday = getDaysUntilDateInPacific(nextPayday);
 
 // 📅 PAYDAY CALCULATION DEBUG
 console.log('📅 PAYDAY CALCULATION DEBUG:', {
@@ -239,11 +241,9 @@ console.log('🔍 PAYDAY CALCULATION DEBUG:', {
       // Load bills from unified billInstances collection ONLY
       let allBills = [];
       try {
+        // ✅ FIX ISSUE #1: Load ALL bill instances (no where clause)
         const billInstancesSnapshot = await getDocs(
-          query(
-            collection(db, 'users', currentUser.uid, 'billInstances'),
-            where('status', '!=', 'paid')
-          )
+          collection(db, 'users', currentUser.uid, 'billInstances')
         );
         allBills = billInstancesSnapshot.docs
           .map(doc => {
@@ -267,10 +267,10 @@ console.log('🔍 PAYDAY CALCULATION DEBUG:', {
             };
           })
           .filter(bill => {
-            // Exclude paid bills
-            if (bill.isPaid === true || bill.status === 'paid') return false;
-            // Exclude skipped bills
+            // Only exclude if EXPLICITLY paid or skipped
+            if (bill.status === 'paid') return false;
             if (bill.status === 'skipped') return false;
+            if (bill.isPaid === true) return false;
             return true;
           });
         console.log('Spendability: Loaded bills from unified billInstances', {
@@ -293,10 +293,7 @@ console.log('🔍 PAYDAY CALCULATION DEBUG:', {
           
           // Reload bills after auto-detection marked some as paid
           const refreshedBillsSnapshot = await getDocs(
-            query(
-              collection(db, 'users', currentUser.uid, 'billInstances'),
-              where('status', '!=', 'paid')
-            )
+            collection(db, 'users', currentUser.uid, 'billInstances')
           );
           allBills = refreshedBillsSnapshot.docs
             .map(doc => {
@@ -320,10 +317,10 @@ console.log('🔍 PAYDAY CALCULATION DEBUG:', {
               };
             })
             .filter(bill => {
-              // Exclude paid bills
-              if (bill.isPaid === true || bill.status === 'paid') return false;
-              // Exclude skipped bills
+              // Only exclude if EXPLICITLY paid or skipped
+              if (bill.status === 'paid') return false;
               if (bill.status === 'skipped') return false;
+              if (bill.isPaid === true) return false;
               return true;
             });
           console.log('Spendability: Reloaded bills after auto-detection', {
@@ -763,29 +760,33 @@ console.log('🔍 PAYDAY CALCULATION DEBUG:', {
 
       <div className="tiles-grid">
         
-        {/* Tile 1: Can I Spend This Amount? */}
-        <div className="tile spend-input-tile">
-          <h3>Can I spend this amount?</h3>
-          <div className="spend-input-section">
-            <div className="currency-input">
-              <span className="currency-symbol">$</span>
-              <input
-                type="number"
-                value={spendAmount}
-                onChange={handleSpendAmountChange}
-                placeholder="0.00"
-                step="0.01"
-                min="0"
-              />
-            </div>
-            {canSpend !== null && (
-              <div className={`spend-result ${canSpend ? 'can-spend' : 'cannot-spend'}`}>
-                {canSpend 
-                  ? `✅ Yes, you can safely spend ${formatCurrency(parseFloat(spendAmount))}`
-                  : `❌ No, this exceeds your safe spending limit`
-                }
-              </div>
-            )}
+        {/* ✅ FIX ISSUE #3: Tile 1: Next Payday - MOVED TO TOP */}
+        <div className="tile payday-tile">
+          <h3>Next Payday</h3>
+          <div className="payday-date">
+            {formatDate(financialData.nextPayday)}
+          </div>
+          <div className="payday-countdown">
+            {financialData.daysUntilPayday > 0 
+              ? `${financialData.daysUntilPayday} days`
+              : 'Today!'
+            }
+            <button 
+              onClick={forceRefreshPaydayCalculation}
+              style={{
+                marginLeft: '10px',
+                padding: '2px 6px',
+                fontSize: '12px',
+                backgroundColor: '#333',
+                color: '#00ff88',
+                border: '1px solid #555',
+                borderRadius: '4px',
+                cursor: 'pointer'
+              }}
+              title="Refresh payday calculation"
+            >
+              🔄
+            </button>
           </div>
         </div>
 
@@ -817,7 +818,33 @@ console.log('🔍 PAYDAY CALCULATION DEBUG:', {
           </div>
         </div>
 
-        {/* Tile 4: Bills Due Before Payday */}
+        {/* Tile 4: Can I Spend This Amount? - MOVED DOWN */}
+        <div className="tile spend-input-tile">
+          <h3>Can I spend this amount?</h3>
+          <div className="spend-input-section">
+            <div className="currency-input">
+              <span className="currency-symbol">$</span>
+              <input
+                type="number"
+                value={spendAmount}
+                onChange={handleSpendAmountChange}
+                placeholder="0.00"
+                step="0.01"
+                min="0"
+              />
+            </div>
+            {canSpend !== null && (
+              <div className={`spend-result ${canSpend ? 'can-spend' : 'cannot-spend'}`}>
+                {canSpend 
+                  ? `✅ Yes, you can safely spend ${formatCurrency(parseFloat(spendAmount))}`
+                  : `❌ No, this exceeds your safe spending limit`
+                }
+              </div>
+            )}
+          </div>
+        </div>
+
+        {/* Tile 5: Bills Due Before Payday */}
         <div className="tile bills-tile">
           <h3>Bills Due Before Payday</h3>
           <div className="bills-list">
@@ -860,7 +887,7 @@ console.log('🔍 PAYDAY CALCULATION DEBUG:', {
           </div>
         </div>
 
-        {/* Tile 5: Calculation Breakdown */}
+        {/* Tile 6: Calculation Breakdown */}
         <div className="tile calculation-tile">
           <h3>Calculation Breakdown</h3>
           <div className="calculation-list">
@@ -884,36 +911,6 @@ console.log('🔍 PAYDAY CALCULATION DEBUG:', {
               <span><strong>Safe to Spend:</strong></span>
               <span><strong>{formatCurrency(financialData.safeToSpend)}</strong></span>
             </div>
-          </div>
-        </div>
-
-        {/* Tile 6: Next Payday */}
-        <div className="tile payday-tile">
-          <h3>Next Payday</h3>
-          <div className="payday-date">
-            {formatDate(financialData.nextPayday)}
-          </div>
-          <div className="payday-countdown">
-            {financialData.daysUntilPayday > 0 
-              ? `${financialData.daysUntilPayday} days`
-              : 'Today!'
-            }
-            <button 
-              onClick={forceRefreshPaydayCalculation}
-              style={{
-                marginLeft: '10px',
-                padding: '2px 6px',
-                fontSize: '12px',
-                backgroundColor: '#333',
-                color: '#00ff88',
-                border: '1px solid #555',
-                borderRadius: '4px',
-                cursor: 'pointer'
-              }}
-              title="Refresh payday calculation"
-            >
-              🔄
-            </button>
           </div>
         </div>
 
