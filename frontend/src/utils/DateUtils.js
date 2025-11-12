@@ -168,49 +168,21 @@ export const getPacificTime = () => {
 
 /**
  * Calculate days until a target date using manual Pacific Time calculation
- * @param {string|Date} targetDate - Target date (YYYY-MM-DD format or Date object)
+ * @param {string|Date} targetDateStr - Target date (YYYY-MM-DD format or Date object)
  * @returns {number} Number of days until the target date
  */
-export const getDaysUntilDateInPacific = (targetDate) => {
-  // Get current UTC time
-  const now = new Date();
+export const getDaysUntilDateInPacific = (targetDateStr) => {
+  if (!targetDateStr) return 0;
   
-  // Manually subtract 8 hours for Pacific Standard Time
-  const pacificOffset = 8 * 60 * 60 * 1000; // 8 hours in milliseconds
-  const pacificTime = new Date(now.getTime() - pacificOffset);
+  const today = getPacificTime();
+  today.setHours(0, 0, 0, 0);
   
-  // Get just the date part (ignore time of day) 
-  const today = new Date(
-    pacificTime.getFullYear(), 
-    pacificTime.getMonth(), 
-    pacificTime.getDate()
-  );
+  const targetDate = new Date(targetDateStr + 'T00:00:00');
   
-  // Parse payday date - handle both string and Date inputs
-  let payday;
-  if (typeof targetDate === 'string') {
-    // Handle YYYY-MM-DD format
-    if (targetDate.includes('-')) {
-      const parts = targetDate.split('-');
-      payday = new Date(parseInt(parts[0]), parseInt(parts[1]) - 1, parseInt(parts[2]));
-    } else {
-      payday = new Date(targetDate);
-    }
-  } else {
-    payday = new Date(targetDate);
-  }
+  const diffMs = targetDate - today;
+  const diffDays = Math.ceil(diffMs / (1000 * 60 * 60 * 24));
   
-  // Set payday to start of day for accurate comparison
-  payday.setHours(0, 0, 0, 0);
-  
-  // Calculate difference in milliseconds
-  const timeDifference = payday.getTime() - today.getTime();
-  
-  // Convert to days and round up
-  const daysDifference = Math.ceil(timeDifference / (1000 * 60 * 60 * 24));
-  
-  // Return the result, ensuring non-negative
-  return Math.max(0, daysDifference);
+  return Math.max(0, diffDays);
 };
 
 /**

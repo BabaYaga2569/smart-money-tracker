@@ -1,5 +1,5 @@
 // BillsPageFilterIntegration.test.js - Comprehensive integration test for Bills page filters
-/* eslint-disable no-undef */
+ 
 import { RecurringBillManager } from './RecurringBillManager.js';
 
 /**

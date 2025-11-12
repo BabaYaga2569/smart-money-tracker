@@ -1,5 +1,5 @@
 // BillVisibilityAndCount.test.js - Test bill visibility across filters and accurate count display
-/* eslint-disable no-undef */
+ 
 import { RecurringBillManager } from './RecurringBillManager.js';
 
 /**

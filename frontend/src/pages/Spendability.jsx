@@ -696,14 +696,23 @@ console.log('🔍 PAYDAY CALCULATION DEBUG:', {
           status: 'pending',
           category: bill.category,
           recurrence: bill.recurrence,
-          isSubscription: bill.isSubscription || false,
-          subscriptionId: bill.subscriptionId,
           paymentHistory: [],
           linkedTransactionIds: [],
           merchantNames: bill.merchantNames || [],
           createdAt: serverTimestamp(),
           updatedAt: serverTimestamp()
         };
+        
+        // Only add optional fields if they exist
+        if (bill.isSubscription) {
+          nextBillInstance.isSubscription = bill.isSubscription;
+        }
+        if (bill.subscriptionId) {
+          nextBillInstance.subscriptionId = bill.subscriptionId;
+        }
+        if (bill.recurringTemplateId) {
+          nextBillInstance.recurringTemplateId = bill.recurringTemplateId;
+        }
         
         await setDoc(
           doc(db, 'users', currentUser.uid, 'billInstances', nextBillId),

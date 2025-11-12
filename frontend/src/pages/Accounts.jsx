@@ -82,7 +82,7 @@ const Accounts = () => {
   // Reconnect state
   const [reconnectingItemId, setReconnectingItemId] = useState(null);
 
- // eslint-disable-next-line react-hooks/exhaustive-deps
+  
  useEffect(() => {
   // ✅ FIX: Force fresh balances on page load
   const loadWithFreshBalances = async () => {

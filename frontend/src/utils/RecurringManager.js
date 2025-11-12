@@ -203,7 +203,7 @@ export class RecurringManager {
     currentDate.setHours(0, 0, 0, 0);
 
     // Always advance by one period from current occurrence
-    let nextDate = new Date(currentDate);
+    const nextDate = new Date(currentDate);
     const dayOfMonth = currentDate.getDate();
 
     switch (frequency) {
