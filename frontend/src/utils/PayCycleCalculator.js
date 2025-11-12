@@ -90,11 +90,14 @@ export class PayCycleCalculator {
                 throw new Error("No payday information available");
             }
             
+            // Format date to YYYY-MM-DD string before calculating days until
+            const paydayDateStr = nextPayday.toISOString().split('T')[0];
+            
             // Calculate days until payday using Pacific Time
-            const daysUntil = getDaysUntilDateInPacific(nextPayday);
+            const daysUntil = getDaysUntilDateInPacific(paydayDateStr);
             
             return {
-                date: nextPayday.toISOString().split('T')[0], // YYYY-MM-DD format
+                date: paydayDateStr,
                 daysUntil: daysUntil,
                 source: source,
                 amount: amount

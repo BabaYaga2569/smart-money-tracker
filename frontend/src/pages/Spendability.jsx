@@ -242,30 +242,37 @@ console.log('🔍 PAYDAY CALCULATION DEBUG:', {
         const billInstancesSnapshot = await getDocs(
           query(
             collection(db, 'users', currentUser.uid, 'billInstances'),
-            where('isPaid', '==', false),
-            where('status', '!=', 'skipped')
+            where('status', '!=', 'paid')
           )
         );
-        allBills = billInstancesSnapshot.docs.map(doc => {
-          const data = doc.data();
-          return {
-            id: doc.id,
-            name: data.name,
-            amount: data.amount,
-            dueDate: data.dueDate,
-            nextDueDate: data.dueDate,
-            category: data.category,
-            recurrence: data.recurrence || 'monthly',
-            isPaid: data.isPaid,
-            status: data.status,
-            isSubscription: data.isSubscription || false,
-            subscriptionId: data.subscriptionId,
-            paymentHistory: data.paymentHistory || [],
-            linkedTransactionIds: data.linkedTransactionIds || [],
-            merchantNames: data.merchantNames || [],
-            originalDueDate: data.originalDueDate
-          };
-        });
+        allBills = billInstancesSnapshot.docs
+          .map(doc => {
+            const data = doc.data();
+            return {
+              id: doc.id,
+              name: data.name,
+              amount: data.amount,
+              dueDate: data.dueDate,
+              nextDueDate: data.dueDate,
+              category: data.category,
+              recurrence: data.recurrence || 'monthly',
+              isPaid: data.isPaid,
+              status: data.status,
+              isSubscription: data.isSubscription || false,
+              subscriptionId: data.subscriptionId,
+              paymentHistory: data.paymentHistory || [],
+              linkedTransactionIds: data.linkedTransactionIds || [],
+              merchantNames: data.merchantNames || [],
+              originalDueDate: data.originalDueDate
+            };
+          })
+          .filter(bill => {
+            // Exclude paid bills
+            if (bill.isPaid === true || bill.status === 'paid') return false;
+            // Exclude skipped bills
+            if (bill.status === 'skipped') return false;
+            return true;
+          });
         console.log('Spendability: Loaded bills from unified billInstances', {
           count: allBills.length,
           bills: allBills.map(b => ({ name: b.name, amount: b.amount, dueDate: b.dueDate, status: b.status }))
@@ -288,30 +295,37 @@ console.log('🔍 PAYDAY CALCULATION DEBUG:', {
           const refreshedBillsSnapshot = await getDocs(
             query(
               collection(db, 'users', currentUser.uid, 'billInstances'),
-              where('isPaid', '==', false),
-              where('status', '!=', 'skipped')
+              where('status', '!=', 'paid')
             )
           );
-          allBills = refreshedBillsSnapshot.docs.map(doc => {
-            const data = doc.data();
-            return {
-              id: doc.id,
-              name: data.name,
-              amount: data.amount,
-              dueDate: data.dueDate,
-              nextDueDate: data.dueDate,
-              category: data.category,
-              recurrence: data.recurrence || 'monthly',
-              isPaid: data.isPaid,
-              status: data.status,
-              isSubscription: data.isSubscription || false,
-              subscriptionId: data.subscriptionId,
-              paymentHistory: data.paymentHistory || [],
-              linkedTransactionIds: data.linkedTransactionIds || [],
-              merchantNames: data.merchantNames || [],
-              originalDueDate: data.originalDueDate
-            };
-          });
+          allBills = refreshedBillsSnapshot.docs
+            .map(doc => {
+              const data = doc.data();
+              return {
+                id: doc.id,
+                name: data.name,
+                amount: data.amount,
+                dueDate: data.dueDate,
+                nextDueDate: data.dueDate,
+                category: data.category,
+                recurrence: data.recurrence || 'monthly',
+                isPaid: data.isPaid,
+                status: data.status,
+                isSubscription: data.isSubscription || false,
+                subscriptionId: data.subscriptionId,
+                paymentHistory: data.paymentHistory || [],
+                linkedTransactionIds: data.linkedTransactionIds || [],
+                merchantNames: data.merchantNames || [],
+                originalDueDate: data.originalDueDate
+              };
+            })
+            .filter(bill => {
+              // Exclude paid bills
+              if (bill.isPaid === true || bill.status === 'paid') return false;
+              // Exclude skipped bills
+              if (bill.status === 'skipped') return false;
+              return true;
+            });
           console.log('Spendability: Reloaded bills after auto-detection', {
             count: allBills.length
           });
