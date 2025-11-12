@@ -641,11 +641,11 @@ const Recurring = () => {
 
       const updatedItems = (currentData.recurringItems || []).filter((i) => i.id !== item.id);
 
-      // ✅ NEW: Delete bills from billInstances collection if requested
+      // CASCADE DELETION: Always delete unpaid bill instances when template is deleted
       let deletedCount = 0;
       let preservedCount = 0;
 
-      if (alsoDeleteGeneratedBills && item.id) {
+      if (item.id) {
         // Query billInstances for bills from this template
         const billsQuery = query(
           collection(db, 'users', currentUser.uid, 'billInstances'),
@@ -653,43 +653,52 @@ const Recurring = () => {
         );
         const billsSnapshot = await getDocs(billsQuery);
 
-        // Delete unpaid bills, preserve paid ones
+        console.log(`🗑️ Found ${billsSnapshot.size} bill instances for template ${item.name}`);
+
+        // Delete unpaid bills in batch, preserve paid ones for history
+        const deletePromises = [];
         for (const billDoc of billsSnapshot.docs) {
           const billData = billDoc.data();
           const isPaid = billData.isPaid || billData.status === 'paid';
 
           if (isPaid) {
             preservedCount++;
+            console.log(`  ✓ Preserving paid bill: ${billData.name} (${billData.dueDate})`);
             // Keep paid bills for history
           } else {
             deletedCount++;
+            console.log(`  🗑️ Deleting unpaid bill: ${billData.name} (${billData.dueDate})`);
             // Delete unpaid bill
-            await deleteDoc(doc(db, 'users', currentUser.uid, 'billInstances', billDoc.id));
+            deletePromises.push(
+              deleteDoc(doc(db, 'users', currentUser.uid, 'billInstances', billDoc.id))
+            );
           }
         }
 
-        // Update recurring items
-        const { updateData, cleanedItems } = buildUpdateData(currentData, updatedItems);
-        await updateDoc(settingsDocRef, updateData);
+        // Execute all deletions in parallel
+        await Promise.all(deletePromises);
 
-        setRecurringItems(cleanedItems);
-
-        let message = 'Recurring item deleted';
-        if (deletedCount > 0 || preservedCount > 0) {
-          const parts = [];
-          if (deletedCount > 0) parts.push(`${deletedCount} bill(s) removed`);
-          if (preservedCount > 0) parts.push(`${preservedCount} paid bill(s) preserved`);
-          message += ` (${parts.join(', ')})`;
-        }
-
-        showNotification(message, 'success');
-      } else {
-        const { updateData, cleanedItems } = buildUpdateData(currentData, updatedItems);
-        await updateDoc(settingsDocRef, updateData);
-
-        setRecurringItems(cleanedItems);
-        showNotification('Recurring item deleted', 'success');
+        console.log(
+          `🗑️ Deleted ${deletedCount} bill instances for template ${item.name}, preserved ${preservedCount} paid bills`
+        );
       }
+
+      // Update recurring items
+      const { updateData, cleanedItems } = buildUpdateData(currentData, updatedItems);
+      await updateDoc(settingsDocRef, updateData);
+
+      setRecurringItems(cleanedItems);
+
+      // Show notification with cascade deletion stats
+      let message = 'Recurring template deleted';
+      if (deletedCount > 0 || preservedCount > 0) {
+        const parts = [];
+        if (deletedCount > 0) parts.push(`${deletedCount} unpaid bill(s) removed`);
+        if (preservedCount > 0) parts.push(`${preservedCount} paid bill(s) preserved`);
+        message += ` (${parts.join(', ')})`;
+      }
+
+      showNotification(message, 'success');
     } catch (error) {
       console.error('❌ Error deleting recurring item:', error);
       showNotification('Error deleting item: ' + error.message, 'error');

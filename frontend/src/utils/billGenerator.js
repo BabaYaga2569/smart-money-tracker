@@ -13,9 +13,14 @@ import {
   getDocs, 
   setDoc, 
   deleteDoc,
-  serverTimestamp 
+  serverTimestamp,
+  query,
+  where
 } from 'firebase/firestore';
 import { RecurringManager } from './RecurringManager';
+
+// Generation lock to prevent concurrent bill generation
+let isGeneratingBills = false;
 
 /**
  * Generate a unique bill ID
@@ -147,6 +152,53 @@ export const generateBillInstance = (template, dueDate) => {
 };
 
 /**
+ * Check if a bill already exists for a template and due date
+ * @param {string} uid - User ID
+ * @param {object} db - Firestore database instance
+ * @param {string} templateId - Recurring template ID
+ * @param {string} dueDate - Due date in YYYY-MM-DD format
+ * @returns {Promise<boolean>} True if bill exists, false otherwise
+ */
+export const checkBillExists = async (uid, db, templateId, dueDate) => {
+  try {
+    const billsQuery = query(
+      collection(db, 'users', uid, 'billInstances'),
+      where('recurringTemplateId', '==', templateId),
+      where('dueDate', '==', dueDate)
+    );
+    
+    const existingBills = await getDocs(billsQuery);
+    return !existingBills.empty;
+  } catch (error) {
+    console.error('Error checking bill existence:', error);
+    return false;
+  }
+};
+
+/**
+ * Count unpaid bills for a template (for max limit check)
+ * @param {string} uid - User ID
+ * @param {object} db - Firestore database instance
+ * @param {string} templateId - Recurring template ID
+ * @returns {Promise<number>} Count of unpaid bills
+ */
+export const countUnpaidBills = async (uid, db, templateId) => {
+  try {
+    const billsQuery = query(
+      collection(db, 'users', uid, 'billInstances'),
+      where('recurringTemplateId', '==', templateId),
+      where('isPaid', '==', false)
+    );
+    
+    const unpaidBills = await getDocs(billsQuery);
+    return unpaidBills.size;
+  } catch (error) {
+    console.error('Error counting unpaid bills:', error);
+    return 0;
+  }
+};
+
+/**
  * Generate bill instances from all recurring templates
  * @param {string} uid - User ID
  * @param {object} db - Firestore database instance
@@ -154,6 +206,22 @@ export const generateBillInstance = (template, dueDate) => {
  * @returns {Promise<object>} Result object with statistics
  */
 export const generateAllBills = async (uid, db, clearExisting = false) => {
+  // Check generation lock to prevent concurrent runs
+  if (isGeneratingBills) {
+    console.log('⚠️ Bill generation already in progress, skipping');
+    return {
+      success: false,
+      message: 'Bill generation already in progress',
+      templatesProcessed: 0,
+      billsGenerated: 0,
+      billsCleared: 0,
+      skipped: 0,
+      duplicatesPrevented: 0
+    };
+  }
+  
+  isGeneratingBills = true;
+  
   try {
     console.log('Starting bill generation...');
     
@@ -166,7 +234,9 @@ export const generateAllBills = async (uid, db, clearExisting = false) => {
         message: 'No active recurring templates found',
         templatesProcessed: 0,
         billsGenerated: 0,
-        billsCleared: 0
+        billsCleared: 0,
+        skipped: 0,
+        duplicatesPrevented: 0
       };
     }
     
@@ -176,14 +246,32 @@ export const generateAllBills = async (uid, db, clearExisting = false) => {
       billsCleared = await clearBillInstances(uid, db);
     }
     
-    // Step 3: Generate bill instances
+    // Step 3: Generate bill instances with duplicate checking
     const billPromises = [];
     let billsGenerated = 0;
+    let skipped = 0;
+    let duplicatesPrevented = 0;
     
     for (const template of templates) {
       // Get the next occurrence date, updated to current month if overdue
       let dueDate = template.nextOccurrence || new Date().toISOString().split('T')[0];
       dueDate = updateDateToNovember(dueDate);
+      
+      // Check if bill already exists
+      const exists = await checkBillExists(uid, db, template.id, dueDate);
+      if (exists) {
+        console.log(`⚠️ Bill already exists: ${template.name} on ${dueDate} - skipping`);
+        duplicatesPrevented++;
+        continue;
+      }
+      
+      // Check max unpaid bills limit (2 per template)
+      const unpaidCount = await countUnpaidBills(uid, db, template.id);
+      if (unpaidCount >= 2) {
+        console.log(`⚠️ Already have ${unpaidCount} unpaid bills for template ${template.name} - skipping`);
+        skipped++;
+        continue;
+      }
       
       // Generate bill instance
       const billInstance = generateBillInstance(template, dueDate);
@@ -193,20 +281,22 @@ export const generateAllBills = async (uid, db, clearExisting = false) => {
       billPromises.push(setDoc(billRef, billInstance));
       billsGenerated++;
       
-      console.log(`Generated bill: ${template.name} - Due: ${dueDate}`);
+      console.log(`✅ Generated bill: ${template.name} - Due: ${dueDate}`);
     }
     
     // Wait for all bills to be saved
     await Promise.all(billPromises);
     
-    console.log(`✅ Bill generation complete: ${billsGenerated} bills created from ${templates.length} templates`);
+    console.log(`✅ Bill generation complete: ${billsGenerated} bills created, ${duplicatesPrevented} duplicates prevented, ${skipped} skipped due to limits`);
     
     return {
       success: true,
-      message: `Successfully generated ${billsGenerated} bills from ${templates.length} templates`,
+      message: `Successfully generated ${billsGenerated} bills from ${templates.length} templates (${duplicatesPrevented} duplicates prevented, ${skipped} skipped)`,
       templatesProcessed: templates.length,
       billsGenerated: billsGenerated,
-      billsCleared: billsCleared
+      billsCleared: billsCleared,
+      skipped: skipped,
+      duplicatesPrevented: duplicatesPrevented
     };
   } catch (error) {
     console.error('Error generating bills:', error);
@@ -216,8 +306,13 @@ export const generateAllBills = async (uid, db, clearExisting = false) => {
       error: error,
       templatesProcessed: 0,
       billsGenerated: 0,
-      billsCleared: 0
+      billsCleared: 0,
+      skipped: 0,
+      duplicatesPrevented: 0
     };
+  } finally {
+    // Always clear the lock
+    isGeneratingBills = false;
   }
 };
 
