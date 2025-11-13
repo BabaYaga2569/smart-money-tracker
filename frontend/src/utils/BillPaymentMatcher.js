@@ -1,5 +1,6 @@
 // BillPaymentMatcher.js - Smart fuzzy matching for transactions to bills
 import { normalizeString, calculateSimilarity, containsString, extractSignificantWords } from './StringUtils.js';
+import { parseDueDateLocal, daysBetweenLocal } from './dateHelpers.js';
 
 /**
  * Check if transaction name matches bill name using fuzzy matching
@@ -65,13 +66,10 @@ export function isAmountMatch(txAmount, billAmount, tolerance = 0.50) {
 export function isDateMatch(txDate, billDueDate, daysTolerance = 7) {
   if (!txDate || !billDueDate) return false;
   
-  const tx = new Date(txDate);
-  const bill = new Date(billDueDate);
+  // Use local timezone helpers to avoid off-by-one errors
+  const daysDiff = Math.abs(daysBetweenLocal(txDate, billDueDate));
   
-  const diffMs = Math.abs(tx - bill);
-  const diffDays = diffMs / (1000 * 60 * 60 * 24);
-  
-  return diffDays <= daysTolerance;
+  return daysDiff <= daysTolerance;
 }
 
 /**

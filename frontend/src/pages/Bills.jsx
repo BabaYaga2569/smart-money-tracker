@@ -15,7 +15,7 @@ import BillCSVImportModal from '../components/BillCSVImportModal';
 import PaymentHistoryModal from '../components/PaymentHistoryModal';
 import DuplicatePreviewModal from '../components/DuplicatePreviewModal';
 import { formatDateForDisplay, formatDateForInput, getPacificTime } from '../utils/DateUtils';
-import { getLocalMidnight, parseDueDateLocal } from '../utils/dateHelpers';
+import { getLocalMidnight, parseDueDateLocal, getRelativeDateString } from '../utils/dateHelpers';
 import { TRANSACTION_CATEGORIES, CATEGORY_ICONS, getCategoryIcon, migrateLegacyCategory } from '../constants/categories';
 import NotificationSystem from '../components/NotificationSystem';
 import { BillDeduplicationManager } from '../utils/BillDeduplicationManager';
@@ -837,7 +837,7 @@ const refreshPlaidTransactions = async () => {
       return 'pending'; // If date parsing fails, default to pending
     }
     
-    const daysUntilDue = Math.round((dueDate - now) / (1000 * 60 * 60 * 24));
+    const daysUntilDue = Math.ceil((dueDate - now) / (1000 * 60 * 60 * 24));
     
     if (daysUntilDue < 0) {
       return 'overdue';
@@ -1829,22 +1829,16 @@ const refreshPlaidTransactions = async () => {
       return '⏭️ SKIPPED';
     }
     
-    // Use Pacific Time for consistent timezone handling
-    const now = getPacificTime();
-    now.setHours(0, 0, 0, 0);
-    
-    // Parse due date properly to avoid timezone issues
+    // Use LOCAL timezone helpers to avoid off-by-one errors
+    const now = getLocalMidnight();
     const dueDateStr = bill.nextDueDate || bill.dueDate;
-    const dueDate = typeof dueDateStr === 'string' ? 
-      (() => {
-        // Parse YYYY-MM-DD as local date
-        const parts = dueDateStr.split('-');
-        return new Date(parseInt(parts[0]), parseInt(parts[1]) - 1, parseInt(parts[2]));
-      })() :
-      new Date(dueDateStr);
-    dueDate.setHours(0, 0, 0, 0);
+    const dueDate = parseDueDateLocal(dueDateStr);
     
-    const daysUntilDue = Math.round((dueDate - now) / (1000 * 60 * 60 * 24));
+    if (!dueDate) {
+      return 'NO DATE';
+    }
+    
+    const daysUntilDue = Math.ceil((dueDate - now) / (1000 * 60 * 60 * 24));
     const status = determineBillStatus(bill);
     
     switch (status) {
@@ -2631,33 +2625,8 @@ const refreshPlaidTransactions = async () => {
                 <div className="bill-amount-section">
                   <div className="bill-amount">{formatCurrency(bill.amount)}</div>
                   <div className="bill-due-date">
-  {(() => {
-    const dueDateStr = bill.nextDueDate || bill.dueDate;
-    // Parse as LOCAL date, not UTC
-    const [year, month, day] = dueDateStr.split('-').map(Number);
-    const dueDate = new Date(year, month - 1, day); // Local date
-    
-    const today = new Date();
-    today.setHours(0, 0, 0, 0); // Normalize to midnight
-    
-    const daysDiff = Math.ceil((dueDate - today) / (1000 * 60 * 60 * 24));
-    
-    let formattedDate;
-    if (daysDiff < 0) {
-      formattedDate = `Overdue by ${Math.abs(daysDiff)} day${Math.abs(daysDiff) !== 1 ? 's' : ''}`;
-    } else if (daysDiff === 0) {
-      formattedDate = 'Due TODAY';
-    } else if (daysDiff === 1) {
-      formattedDate = 'Due TOMORROW';
-    } else if (daysDiff <= 7) {
-      formattedDate = `Due in ${daysDiff} days`;
-    } else {
-      formattedDate = `Due: ${dueDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}`;
-    }
-    
-    return formattedDate;
-  })()}
-</div>
+                    {getRelativeDateString(bill.nextDueDate || bill.dueDate)}
+                  </div>
                   
                   {bill.status === 'overdue' && (
                     <div className="overdue-warning" style={{
