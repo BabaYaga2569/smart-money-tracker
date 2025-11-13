@@ -20,6 +20,7 @@ import { TRANSACTION_CATEGORIES, CATEGORY_ICONS, getCategoryIcon, migrateLegacyC
 import NotificationSystem from '../components/NotificationSystem';
 import { BillDeduplicationManager } from '../utils/BillDeduplicationManager';
 import { cleanupDuplicateBills, analyzeForCleanup } from '../utils/billCleanupMigration';
+import { runAutoDetection } from '../utils/AutoBillDetection';
 import { detectAndAutoAddRecurringBills } from '../components/SubscriptionDetector';
 import { generateAllBills, updateTemplatesDates } from '../utils/billGenerator';
 import "./Bills.css";
@@ -366,87 +367,64 @@ const refreshPlaidTransactions = async () => {
   }
 };
 
-  // Manual re-match function to re-try matching bills with transactions
-  const handleRematchTransactions = async () => {
-    if (!currentUser) return;
+ const handleRematchTransactions = async () => {
+  if (!currentUser) return;
+  
+  const loadingId = NotificationManager.showLoading('🔄 Scanning transactions with NEW 85% confidence threshold...');
+  
+  try {
+    // Get all unpaid bills from billInstances
+    const unpaidBills = processedBills.filter(b => !b.isPaid && b.status !== 'paid');
     
-    const loadingId = NotificationManager.showLoading('🔄 Scanning transactions and matching bills...');
-    
-    try {
-      // Get all unpaid bills from billInstances
-      const unpaidBills = processedBills.filter(b => !b.isPaid && b.status !== 'paid');
-      
-      if (unpaidBills.length === 0) {
-        NotificationManager.removeNotification(loadingId);
-        NotificationManager.showInfo('No unpaid bills to match');
-        return;
-      }
-      
-      // Get recent transactions (last 30 days)
-      const thirtyDaysAgo = new Date();
-      thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
-      
-      const transactionsRef = collection(db, 'users', currentUser.uid, 'transactions');
-      const q = query(
-        transactionsRef,
-        where('date', '>=', thirtyDaysAgo.toISOString().split('T')[0]),
-        orderBy('date', 'desc')
-      );
-      const snapshot = await getDocs(q);
-      const recentTransactions = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-      
-      console.log(`[Re-match] Found ${unpaidBills.length} unpaid bills and ${recentTransactions.length} recent transactions`);
-      
-      let matchedCount = 0;
-      const matchedBills = [];
-      
-      // Try to match each unpaid bill
-      for (const bill of unpaidBills) {
-        const matchedTransaction = findMatchingTransactionForBill(bill, recentTransactions);
-        
-        if (matchedTransaction && !matchedTransaction.pending) {
-          console.log(`[Re-match] Found match for ${bill.name}:`, matchedTransaction.name || matchedTransaction.merchant_name);
-          
-          // Use full payment processing flow to:
-          // 1. Archive to paidBills collection
-          // 2. Record in bill_payments collection
-          // 3. Generate next month's bill if recurring
-          await processBillPaymentInternal(bill, {
-            paidDate: matchedTransaction.date,
-            method: 'Auto-matched',
-            source: 'manual-rematch',
-            transactionId: matchedTransaction.transaction_id || matchedTransaction.id,
-            accountId: matchedTransaction.account_id,
-            merchantName: matchedTransaction.name || matchedTransaction.merchant_name,
-            amount: Math.abs(parseFloat(matchedTransaction.amount))
-          });
-          
-          matchedCount++;
-          matchedBills.push({
-            name: bill.name,
-            transactionName: matchedTransaction.name || matchedTransaction.merchant_name,
-            transactionDate: matchedTransaction.date
-          });
-        }
-      }
-      
+    if (unpaidBills.length === 0) {
       NotificationManager.removeNotification(loadingId);
-      
-      if (matchedCount > 0) {
-        NotificationManager.showSuccess(`✅ Re-matched ${matchedCount} bill${matchedCount > 1 ? 's' : ''} to transactions!`);
-        // Reload bills to show updated status
-        await loadBills();
-        await loadPaidThisMonth();
-      } else {
-        NotificationManager.showInfo('No matches found. Bills may already be paid or no matching transactions exist.');
-      }
-      
-    } catch (error) {
-      console.error('[Re-match] Error:', error);
-      NotificationManager.removeNotification(loadingId);
-      NotificationManager.showError('Re-matching failed', error.message);
+      NotificationManager.showInfo('No unpaid bills to match');
+      return;
     }
-  };
+    
+    // Get recent transactions (last 30 days)
+    const thirtyDaysAgo = new Date();
+    thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+    
+    const transactionsRef = collection(db, 'users', currentUser.uid, 'transactions');
+    const q = query(
+      transactionsRef,
+      where('date', '>=', thirtyDaysAgo.toISOString().split('T')[0]),
+      orderBy('date', 'desc')
+    );
+    const snapshot = await getDocs(q);
+    const recentTransactions = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+    
+    console.log(`[Re-match] Found ${unpaidBills.length} unpaid bills and ${recentTransactions.length} recent transactions`);
+    
+    // ✅ NEW: Use runAutoDetection with 85% confidence threshold!
+    const { runAutoDetection } = await import('../utils/AutoBillDetection.js');
+    const result = await runAutoDetection(currentUser.uid, recentTransactions, unpaidBills);
+    
+    NotificationManager.removeNotification(loadingId);
+    
+    if (result.success) {
+      // Show detailed results
+      const message = `✅ Auto-Detection Complete!\n\n` +
+        `🎯 Auto-Approved: ${result.autoApproved} bill(s)\n` +
+        `⚠️ Skipped (75-84%): ${result.skipped} bill(s)\n` +
+        `❌ Rejected (<75%): ${result.rejected} bill(s)`;
+      
+      NotificationManager.showSuccess(message);
+      
+      // Reload bills to show updated status
+      await loadBills();
+      await loadPaidThisMonth();
+    } else {
+      NotificationManager.showError('Auto-detection failed', result.error);
+    }
+    
+  } catch (error) {
+    console.error('[Re-match] Error:', error);
+    NotificationManager.removeNotification(loadingId);
+    NotificationManager.showError('Re-matching failed', error.message);
+  }
+};
 
   // Auto-generate bill instance from recurring template
   const autoGenerateBillFromTemplate = async (template) => {
