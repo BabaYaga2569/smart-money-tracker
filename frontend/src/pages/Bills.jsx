@@ -861,7 +861,7 @@ const refreshPlaidTransactions = async () => {
     
     const upcomingBills = processedBills.filter(bill => {
       if (bill.status === 'skipped') return false;
-      const dueDate = new Date(bill.nextDueDate || bill.dueDate);
+      const dueDate = parseDueDateLocal(bill.nextDueDate || bill.dueDate);
       const status = determineBillStatus(bill);
       return ['pending', 'this-week', 'urgent'].includes(status) && dueDate <= nextMonth;
     });
@@ -877,7 +877,11 @@ const refreshPlaidTransactions = async () => {
         const status = determineBillStatus(bill);
         return ['pending', 'this-week', 'urgent', 'due-today'].includes(status);
       })
-      .sort((a, b) => new Date(a.nextDueDate || a.dueDate) - new Date(b.nextDueDate || b.dueDate))[0];
+      .sort((a, b) => {
+        const dateA = parseDueDateLocal(a.nextDueDate || a.dueDate);
+        const dateB = parseDueDateLocal(b.nextDueDate || b.dueDate);
+        return dateA - dateB;
+      })[0];
     
     return {
       totalMonthlyBills,
