@@ -648,24 +648,34 @@ const Recurring = () => {
               `Updating ${billsSnapshot.size} unpaid bill instance(s) for template ${itemData.name}`
             );
 
-            // Update each unpaid bill's due date to match the new template date
+            // Update each unpaid bill to match the template
             const updatePromises = [];
             for (const billDoc of billsSnapshot.docs) {
               const billData = billDoc.data();
 
-              // Only update if the date actually changed
+              // Check if any field changed
               const newDueDate = format(new Date(itemData.nextOccurrence), 'yyyy-MM-dd');
-              if (billData.dueDate !== newDueDate) {
-                console.log(
-                  `  Updating bill ${billData.name}: ${billData.dueDate} → ${newDueDate}`
-                );
+              const newAmount = parseFloat(itemData.amount);
+              const newCategory = itemData.category || billData.category;
+
+              const dateChanged = billData.dueDate !== newDueDate;
+              const amountChanged = billData.amount !== newAmount;
+              const categoryChanged = billData.category !== newCategory;
+
+              if (dateChanged || amountChanged || categoryChanged) {
+                const changes = [];
+                if (dateChanged) changes.push(`date: ${billData.dueDate} → ${newDueDate}`);
+                if (amountChanged) changes.push(`amount: $${billData.amount} → $${newAmount}`);
+                if (categoryChanged) changes.push(`category: ${billData.category} → ${newCategory}`);
+
+                console.log(`  Updating bill ${billData.name}: ${changes.join(', ')}`);
 
                 updatePromises.push(
                   updateDoc(doc(db, 'users', currentUser.uid, 'billInstances', billDoc.id), {
                     dueDate: newDueDate,
                     originalDueDate: newDueDate,
-                    amount: parseFloat(itemData.amount), // Also sync amount if changed
-                    category: itemData.category || billData.category,
+                    amount: newAmount,
+                    category: newCategory,
                     updatedAt: serverTimestamp(),
                   })
                 );
