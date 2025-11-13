@@ -391,7 +391,7 @@
 }
 
 .transaction-account-inline {
-  color: #888;
+  color: #9CA3AF;
   font-size: 0.9rem;
   white-space: nowrap;
   flex-shrink: 0;
@@ -427,7 +427,7 @@
 
 .transaction-date,
 .transaction-account {
-  color: #ccc;
+  color: #D1D5DB;
   font-size: 0.8rem;
 }
 
@@ -479,6 +479,7 @@
 }
 
 .transaction-amount {
+  color: #FFFFFF;
   font-weight: bold;
   font-size: 1.1rem;
   white-space: nowrap;
@@ -498,7 +499,7 @@
 
 .transaction-category {
   background: #333;
-  color: #ccc;
+  color: #D1D5DB;
   padding: 2px 6px;
   border-radius: 4px;
   font-size: 0.7rem;
