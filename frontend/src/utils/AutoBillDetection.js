@@ -133,38 +133,66 @@ export async function runAutoDetection(userId, transactions, bills) {
     const paidBills = [];
     const generatedBills = [];
     
-    // Process each match
-    for (const match of matches) {
-      const { transaction, bill, confidence, matches: criteria, details } = match;
+   // Process each match with confidence-based decisions
+let autoApproved = 0;
+let skipped = 0;
+let rejected = 0;
+
+for (const match of matches) {
+  const { transaction, bill, confidence, matches: criteria, details } = match;
+  
+  console.log(`\n💰 Evaluating: ${bill.name} ($${bill.amount})`);
+  console.log(`   Transaction: "${details.txName}" ($${Math.abs(transaction.amount)})`);
+  console.log(`   Confidence: ${Math.round(confidence * 100)}%`);
+  console.log(`   ✓ Name: ${criteria.name ? 'YES' : 'NO'} | Amount: ${criteria.amount ? 'YES' : 'NO'} | Date: ${criteria.date ? 'YES' : 'NO'}`);
+  
+  // NEW: Confidence-based decision
+  if (confidence >= 0.85) {
+    console.log(`   ✅ AUTO-APPROVED (high confidence)`);
+    
+    try {
+      // Mark bill as paid
+      await markBillAsPaid(userId, bill, transaction);
+      paidBills.push(bill);
+      autoApproved++;
       
-      console.log(`💰 Auto-marking paid: ${bill.name} ($${bill.amount}) - Matched with "${details.txName}" (${Math.round(confidence * 100)}% confidence)`);
-      console.log(`   ✓ Name: ${criteria.name ? 'YES' : 'NO'} | Amount: ${criteria.amount ? 'YES' : 'NO'} | Date: ${criteria.date ? 'YES' : 'NO'}`);
-      
-      try {
-        // Mark bill as paid
-        await markBillAsPaid(userId, bill, transaction);
-        paidBills.push(bill);
-        
-        // Generate next bill if recurring
-        const nextBill = await generateNextBill(userId, bill);
-        if (nextBill) {
-          generatedBills.push(nextBill);
-        }
-      } catch (error) {
-        console.error(`Failed to process bill: ${bill.name}`, error);
+      // Generate next bill if recurring
+      const nextBill = await generateNextBill(userId, bill);
+      if (nextBill) {
+        generatedBills.push(nextBill);
       }
+    } catch (error) {
+      console.error(`Failed to process bill: ${bill.name}`, error);
     }
+    
+  } else if (confidence >= 0.75) {
+    console.log(`   ⚠️ SKIPPED (medium confidence - needs manual review)`);
+    skipped++;
+    
+  } else {
+    console.log(`   ❌ REJECTED (low confidence)`);
+    rejected++;
+  }
+}
+
+console.log('\n🎉 AUTO-DETECTION: Complete');
+console.log(`   Auto-Approved: ${autoApproved} bill(s)`);
+console.log(`   Skipped: ${skipped} bill(s)`);
+console.log(`   Rejected: ${rejected} bill(s)`);
     
     console.log('🎉 AUTO-DETECTION: Complete');
     console.log(`   Paid: ${paidBills.length} bill(s)`);
     console.log(`   Generated: ${generatedBills.length} next bill(s)`);
     
     return {
-      success: true,
-      matchCount: matches.length,
-      paidBills,
-      generatedBills
-    };
+  success: true,
+  matchCount: matches.length,
+  autoApproved: autoApproved,
+  skipped: skipped,
+  rejected: rejected,
+  paidBills,
+  generatedBills
+};
   } catch (error) {
     console.error('❌ AUTO-DETECTION: Error', error);
     return {
