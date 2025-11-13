@@ -1159,6 +1159,85 @@ useEffect(() => {
     }
   };
 
+  // ✅ NEW: Cleanup fake "Unknown Account" transactions
+  const cleanupFakeTransactions = async () => {
+    if (!currentUser) return;
+    
+    const confirmed = window.confirm(
+      '🧹 Clean Up Fake Transactions\n\n' +
+      'This will delete ALL transactions with "Unknown Account".\n' +
+      'These are fake transactions created when bills were marked as paid.\n\n' +
+      'Your real Plaid transactions will NOT be affected.\n\n' +
+      'Continue?'
+    );
+    
+    if (!confirmed) return;
+    
+    try {
+      setSaving(true);
+      showNotification('Searching for fake transactions...', 'info');
+      
+      // Query transactions where account is NOT in the accounts list
+      const transactionsRef = collection(db, 'users', currentUser.uid, 'transactions');
+      const snapshot = await getDocs(transactionsRef);
+      
+      const accountIds = Object.keys(accounts);
+      const fakeTransactions = snapshot.docs.filter(doc => {
+        const transaction = doc.data();
+        const txAccount = transaction.account || transaction.account_id;
+        
+        // A transaction is "fake" if:
+        // 1. Account is not in the user's accounts list
+        // 2. AND it's from manual source (not Plaid)
+        // 3. AND it matches the pattern "X Payment" 
+        const isUnknownAccount = !accountIds.includes(txAccount);
+        const isManual = !transaction.source || transaction.source === 'manual';
+        const isPaymentPattern = transaction.description && transaction.description.includes(' Payment');
+        
+        return isUnknownAccount && isManual && isPaymentPattern;
+      });
+      
+      if (fakeTransactions.length === 0) {
+        showNotification('No fake transactions found! ✅', 'success');
+        setSaving(false);
+        return;
+      }
+      
+      console.log(`🧹 Found ${fakeTransactions.length} fake transactions to delete`);
+      
+      // Delete in batches of 500 (Firestore limit)
+      const batchSize = 500;
+      let totalDeleted = 0;
+      
+      for (let i = 0; i < fakeTransactions.length; i += batchSize) {
+        const batch = writeBatch(db);
+        const batchDocs = fakeTransactions.slice(i, i + batchSize);
+        
+        batchDocs.forEach(doc => {
+          batch.delete(doc.ref);
+        });
+        
+        await batch.commit();
+        totalDeleted += batchDocs.length;
+        console.log(`Deleted batch: ${batchDocs.length} transactions (${totalDeleted}/${fakeTransactions.length})`);
+      }
+      
+      showNotification(
+        `✅ Successfully deleted ${totalDeleted} fake transaction${totalDeleted !== 1 ? 's' : ''}!`,
+        'success'
+      );
+      
+      // Reload transactions
+      await loadInitialData();
+      
+    } catch (error) {
+      console.error('Error cleaning up fake transactions:', error);
+      showNotification('Error cleaning up transactions: ' + error.message, 'error');
+    } finally {
+      setSaving(false);
+    }
+  };
+
   // Remove duplicate transactions with normalized comparison
   const removeDuplicateTransactions = async () => {
     if (!currentUser) return;
@@ -1360,31 +1439,41 @@ useEffect(() => {
     }
     
     if (filters.account) {
-      filtered = filtered.filter(t => {
-        // Match by account_id (primary key)
-        if (t.account_id === filters.account || t.account === filters.account) {
-          return true;
-        }
-        
-        // Fallback: Match by institution name
-        const txAccountObj = currentAccounts[t.account_id] || currentAccounts[t.account];
-        const selectedAccountObj = currentAccounts[filters.account];
-        
-        if (txAccountObj && selectedAccountObj) {
-          // Match if same institution
-          if (txAccountObj.institution_name === selectedAccountObj.institution_name) {
+      // Special handling for "Unknown Account" filter
+      if (filters.account === 'Unknown Account') {
+        filtered = filtered.filter(t => {
+          const txAccount = t.account || t.account_id;
+          const accountIds = Object.keys(currentAccounts);
+          // Transaction is "unknown" if its account is not in the user's accounts list
+          return !accountIds.includes(txAccount);
+        });
+      } else {
+        filtered = filtered.filter(t => {
+          // Match by account_id (primary key)
+          if (t.account_id === filters.account || t.account === filters.account) {
             return true;
           }
           
-          // Match if same account mask (last 4 digits)
-          if (txAccountObj.mask && selectedAccountObj.mask && 
-              txAccountObj.mask === selectedAccountObj.mask) {
-            return true;
+          // Fallback: Match by institution name
+          const txAccountObj = currentAccounts[t.account_id] || currentAccounts[t.account];
+          const selectedAccountObj = currentAccounts[filters.account];
+          
+          if (txAccountObj && selectedAccountObj) {
+            // Match if same institution
+            if (txAccountObj.institution_name === selectedAccountObj.institution_name) {
+              return true;
+            }
+            
+            // Match if same account mask (last 4 digits)
+            if (txAccountObj.mask && selectedAccountObj.mask && 
+                txAccountObj.mask === selectedAccountObj.mask) {
+              return true;
+            }
           }
-        }
-        
-        return false;
-      });
+          
+          return false;
+        });
+      }
     }
     
     if (filters.type) {
@@ -1874,6 +1963,28 @@ useEffect(() => {
               🧹 Remove Duplicates
             </button>
           )}
+          
+          {transactions.length > 0 && (
+            <button
+              onClick={cleanupFakeTransactions}
+              disabled={saving || syncingPlaid || forceRefreshing}
+              style={{
+                background: 'linear-gradient(135deg, #dc2626 0%, #991b1b 100%)',
+                color: '#fff',
+                border: 'none',
+                padding: '10px 20px',
+                borderRadius: '5px',
+                cursor: (saving || syncingPlaid || forceRefreshing) ? 'not-allowed' : 'pointer',
+                fontSize: '14px',
+                fontWeight: 'bold',
+                marginLeft: '10px',
+                opacity: (saving || syncingPlaid || forceRefreshing) ? 0.6 : 1
+              }}
+              title="Delete fake 'Unknown Account' transactions created when marking bills as paid"
+            >
+              🧹 Clean Up Fake Transactions
+            </button>
+          )}
         </div>
         
         {autoSyncing && (
@@ -2147,6 +2258,7 @@ useEffect(() => {
             {Object.entries(accounts).map(([key, account]) => (
               <option key={key} value={key}>{account.name}</option>
             ))}
+            <option value="Unknown Account">⚠️ Unknown Account (Fake Transactions)</option>
           </select>
           <select
             value={filters.type}

@@ -1054,27 +1054,12 @@ const refreshPlaidTransactions = async () => {
     const paidDate = paymentData.paidDate || getPacificTime();
     const paidDateStr = formatDateForInput(paidDate);
     
-    // Build transaction object with proper validation to avoid undefined fields
-    const transaction = {
-      amount: -Math.abs(parseFloat(bill.amount)),
-      description: `${bill.name} Payment`,
-      category: 'Bills & Utilities',
-      account: paymentData.accountId || 'bofa', // Use accountId from paymentData if available
-      date: paidDateStr,
-      timestamp: Date.now(),
-      type: 'expense',
-      source: paymentData.source || 'manual'
-    };
+    // ✅ FIX: Do NOT create fake transaction entries when manually marking bills as paid
+    // Only record payment in bill_payments and paidBills collections
+    // Real transactions come from Plaid and are matched automatically
     
-    // Only add optional fields if they are defined
-    if (paymentData.method) transaction.method = paymentData.method;
-    if (paymentData.transactionId) transaction.transactionId = paymentData.transactionId;
-    if (paymentData.merchantName) transaction.merchantName = paymentData.merchantName;
-
-    const transactionsRef = collection(db, 'users', currentUser.uid, 'transactions');
-    await addDoc(transactionsRef, transaction);
-
-    await updateAccountBalance('bofa', transaction.amount);
+    // If this payment was auto-matched from Plaid, the transaction already exists
+    // If manually marked as paid, we only track it in bill_payments, not transactions
 
     // Calculate if payment is overdue
     const now = new Date(paidDate);
