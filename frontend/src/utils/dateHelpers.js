@@ -142,3 +142,56 @@ export const getBillStatusText = (dueDate) => {
     return `Due in ${daysUntilDue} day${daysUntilDue !== 1 ? 's' : ''}`;
   }
 };
+
+/**
+ * Format Date object to YYYY-MM-DD string (local timezone)
+ * @param {Date} date - Date object
+ * @returns {string} Date in YYYY-MM-DD format
+ */
+export const formatDateLocal = (date) => {
+  if (!date) return '';
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+};
+
+/**
+ * Calculate days between two date strings (YYYY-MM-DD)
+ * @param {string} date1Str - First date
+ * @param {string} date2Str - Second date
+ * @returns {number} Days difference
+ */
+export const daysBetweenLocal = (date1Str, date2Str) => {
+  const date1 = parseDueDateLocal(date1Str);
+  const date2 = parseDueDateLocal(date2Str);
+  if (!date1 || !date2) return 0;
+  const diffTime = date2 - date1;
+  return Math.round(diffTime / (1000 * 60 * 60 * 24));
+};
+
+/**
+ * Get relative date string (e.g., "Due TODAY", "Due in 3 days")
+ * @param {string} dueDateStr - Due date in YYYY-MM-DD format
+ * @returns {string} Formatted relative date string
+ */
+export const getRelativeDateString = (dueDateStr) => {
+  const dueDate = parseDueDateLocal(dueDateStr);
+  if (!dueDate) return 'No date';
+  
+  const today = getLocalMidnight();
+  
+  const daysDiff = Math.ceil((dueDate - today) / (1000 * 60 * 60 * 24));
+  
+  if (daysDiff < 0) {
+    return `Overdue by ${Math.abs(daysDiff)} day${Math.abs(daysDiff) !== 1 ? 's' : ''}`;
+  } else if (daysDiff === 0) {
+    return 'Due TODAY';
+  } else if (daysDiff === 1) {
+    return 'Due TOMORROW';
+  } else if (daysDiff <= 7) {
+    return `Due in ${daysDiff} days`;
+  } else {
+    return `Due: ${dueDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}`;
+  }
+};
