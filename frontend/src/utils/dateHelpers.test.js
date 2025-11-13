@@ -5,7 +5,10 @@ import {
   daysBetween,
   daysUntil,
   getRelativeDateText,
-  getBillStatusText
+  getBillStatusText,
+  formatDateLocal,
+  daysBetweenLocal,
+  getRelativeDateString
 } from './dateHelpers';
 
 describe('dateHelpers', () => {
@@ -259,6 +262,86 @@ describe('dateHelpers', () => {
       // Should now correctly show "2 days ago"
       expect(daysUntil(billDueDate)).toBe(-2);
       expect(getRelativeDateText(billDueDate)).toBe('2 days ago');
+    });
+  });
+
+  describe('formatDateLocal', () => {
+    it('should format Date object to YYYY-MM-DD string', () => {
+      const date = new Date(2025, 10, 15); // Nov 15, 2025
+      expect(formatDateLocal(date)).toBe('2025-11-15');
+    });
+
+    it('should pad month and day with zeros', () => {
+      const date = new Date(2025, 0, 5); // Jan 5, 2025
+      expect(formatDateLocal(date)).toBe('2025-01-05');
+    });
+
+    it('should return empty string for null/undefined', () => {
+      expect(formatDateLocal(null)).toBe('');
+      expect(formatDateLocal(undefined)).toBe('');
+    });
+  });
+
+  describe('daysBetweenLocal', () => {
+    it('should calculate days between two date strings', () => {
+      expect(daysBetweenLocal('2025-11-11', '2025-11-16')).toBe(5);
+    });
+
+    it('should return negative days for past dates', () => {
+      expect(daysBetweenLocal('2025-11-11', '2025-11-09')).toBe(-2);
+    });
+
+    it('should return 0 for same day', () => {
+      expect(daysBetweenLocal('2025-11-11', '2025-11-11')).toBe(0);
+    });
+
+    it('should handle null/invalid dates', () => {
+      expect(daysBetweenLocal(null, '2025-11-11')).toBe(0);
+      expect(daysBetweenLocal('2025-11-11', null)).toBe(0);
+    });
+  });
+
+  describe('getRelativeDateString', () => {
+    it('should return "Due TODAY" for bills due today', () => {
+      const mockDate = new Date('2025-11-11T14:30:00');
+      vi.setSystemTime(mockDate);
+
+      expect(getRelativeDateString('2025-11-11')).toBe('Due TODAY');
+    });
+
+    it('should return "Due TOMORROW" for bills due tomorrow', () => {
+      const mockDate = new Date('2025-11-11T14:30:00');
+      vi.setSystemTime(mockDate);
+
+      expect(getRelativeDateString('2025-11-12')).toBe('Due TOMORROW');
+    });
+
+    it('should return "Due in X days" for future bills', () => {
+      const mockDate = new Date('2025-11-11T14:30:00');
+      vi.setSystemTime(mockDate);
+
+      expect(getRelativeDateString('2025-11-16')).toBe('Due in 5 days');
+    });
+
+    it('should return "Overdue by X days" for overdue bills', () => {
+      const mockDate = new Date('2025-11-11T14:30:00');
+      vi.setSystemTime(mockDate);
+
+      expect(getRelativeDateString('2025-11-09')).toBe('Overdue by 2 days');
+    });
+
+    it('should return formatted date for bills due more than 7 days away', () => {
+      const mockDate = new Date('2025-11-11T14:30:00');
+      vi.setSystemTime(mockDate);
+
+      const result = getRelativeDateString('2025-11-20');
+      expect(result).toContain('Due:');
+      expect(result).toContain('Nov');
+    });
+
+    it('should handle null/invalid dates', () => {
+      expect(getRelativeDateString(null)).toBe('No date');
+      expect(getRelativeDateString('')).toBe('No date');
     });
   });
 });
