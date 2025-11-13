@@ -564,45 +564,64 @@ const Recurring = () => {
 
       if (itemData.type === 'expense' && itemData.status === 'active') {
         try {
-          const billId = `bill_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+          // When adding a new template, create a bill instance (with duplicate prevention)
+          if (!editingItem) {
+            // Check if a bill instance already exists for this template and date
+            const existingBillQuery = query(
+              collection(db, 'users', currentUser.uid, 'billInstances'),
+              where('recurringTemplateId', '==', itemData.id),
+              where('dueDate', '==', format(new Date(itemData.nextOccurrence), 'yyyy-MM-dd'))
+            );
+            const existingBills = await getDocs(existingBillQuery);
 
-          // Create bill instance with proper structure
-          const billInstance = {
-            id: billId,
-            name: itemData.name,
-            amount: parseFloat(itemData.amount),
-            dueDate: format(new Date(itemData.nextOccurrence), 'yyyy-MM-dd'),
-            originalDueDate: format(new Date(itemData.nextOccurrence), 'yyyy-MM-dd'),
-            isPaid: false,
-            status: 'pending',
-            category: itemData.category || 'Other',
-            recurrence: itemData.frequency.toLowerCase(),
-            type: itemData.type,
-            isSubscription: false,
-            paymentHistory: [],
-            linkedTransactionIds: [],
-            description: itemData.description || '',
-            accountId:
-              itemData.linkedAccount !== 'Select Account' && itemData.linkedAccount
-                ? itemData.linkedAccount
-                : null,
-            autoPayEnabled: itemData.autoPay || false,
-            merchantNames: [
-              itemData.name.toLowerCase(),
-              itemData.name.toLowerCase().replace(/[^a-z0-9]/g, ''),
-            ],
-            recurringTemplateId: itemData.id,
-            createdAt: serverTimestamp(),
-            updatedAt: serverTimestamp(),
-            createdFrom: 'recurring-page',
-          };
+            if (existingBills.empty) {
+              // Only create if bill doesn't already exist
+              const billId = `bill_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
 
-          // Save to billInstances collection
-          const billRef = doc(db, 'users', currentUser.uid, 'billInstances', billId);
-          await setDoc(billRef, billInstance);
+              // Create bill instance with proper structure
+              const billInstance = {
+                id: billId,
+                name: itemData.name,
+                amount: parseFloat(itemData.amount),
+                dueDate: format(new Date(itemData.nextOccurrence), 'yyyy-MM-dd'),
+                originalDueDate: format(new Date(itemData.nextOccurrence), 'yyyy-MM-dd'),
+                isPaid: false,
+                status: 'pending',
+                category: itemData.category || 'Other',
+                recurrence: itemData.frequency.toLowerCase(),
+                type: itemData.type,
+                isSubscription: false,
+                paymentHistory: [],
+                linkedTransactionIds: [],
+                description: itemData.description || '',
+                accountId:
+                  itemData.linkedAccount !== 'Select Account' && itemData.linkedAccount
+                    ? itemData.linkedAccount
+                    : null,
+                autoPayEnabled: itemData.autoPay || false,
+                merchantNames: [
+                  itemData.name.toLowerCase(),
+                  itemData.name.toLowerCase().replace(/[^a-z0-9]/g, ''),
+                ],
+                recurringTemplateId: itemData.id,
+                createdAt: serverTimestamp(),
+                updatedAt: serverTimestamp(),
+                createdFrom: 'recurring-page',
+              };
 
-          console.log('✅ Recurring bill saved to billInstances:', billInstance);
-          billSyncStats = { added: 1 };
+              // Save to billInstances collection
+              const billRef = doc(db, 'users', currentUser.uid, 'billInstances', billId);
+              await setDoc(billRef, billInstance);
+
+              console.log('✅ Recurring bill saved to billInstances:', billInstance);
+              billSyncStats = { added: 1 };
+            } else {
+              console.log(
+                `Bill instance already exists for ${itemData.name} on ${format(new Date(itemData.nextOccurrence), 'yyyy-MM-dd')}`
+              );
+              billSyncStats = { skipped: 1 };
+            }
+          }
         } catch (error) {
           console.error('❌ Error saving bill to billInstances:', error);
           // Continue with template save even if bill sync fails
@@ -613,6 +632,60 @@ const Recurring = () => {
       const { updateData, cleanedItems } = buildUpdateData(currentData, updatedItems);
       await updateDoc(settingsDocRef, updateData);
 
+      // ✅ NEW: When editing a recurring template, also update existing unpaid bill instances
+      if (editingItem && itemData.type === 'expense' && itemData.status === 'active') {
+        try {
+          // Find unpaid bill instances from this template
+          const billsQuery = query(
+            collection(db, 'users', currentUser.uid, 'billInstances'),
+            where('recurringTemplateId', '==', itemData.id),
+            where('isPaid', '==', false)
+          );
+          const billsSnapshot = await getDocs(billsQuery);
+
+          if (billsSnapshot.size > 0) {
+            console.log(
+              `Updating ${billsSnapshot.size} unpaid bill instance(s) for template ${itemData.name}`
+            );
+
+            // Update each unpaid bill's due date to match the new template date
+            const updatePromises = [];
+            for (const billDoc of billsSnapshot.docs) {
+              const billData = billDoc.data();
+
+              // Only update if the date actually changed
+              const newDueDate = format(new Date(itemData.nextOccurrence), 'yyyy-MM-dd');
+              if (billData.dueDate !== newDueDate) {
+                console.log(
+                  `  Updating bill ${billData.name}: ${billData.dueDate} → ${newDueDate}`
+                );
+
+                updatePromises.push(
+                  updateDoc(doc(db, 'users', currentUser.uid, 'billInstances', billDoc.id), {
+                    dueDate: newDueDate,
+                    originalDueDate: newDueDate,
+                    amount: parseFloat(itemData.amount), // Also sync amount if changed
+                    category: itemData.category || billData.category,
+                    updatedAt: serverTimestamp(),
+                  })
+                );
+              }
+            }
+
+            await Promise.all(updatePromises);
+
+            if (updatePromises.length > 0) {
+              console.log(`✅ Updated ${updatePromises.length} bill instance(s) with new template data`);
+              if (!billSyncStats) billSyncStats = {};
+              billSyncStats.updated = updatePromises.length;
+            }
+          }
+        } catch (error) {
+          console.error('❌ Error updating bill instances from template:', error);
+          // Don't fail the entire save if bill sync fails
+        }
+      }
+
       setRecurringItems(cleanedItems);
       setShowModal(false);
 
@@ -620,6 +693,9 @@ const Recurring = () => {
       let message = editingItem ? 'Recurring item updated!' : 'Recurring item added!';
       if (billSyncStats && billSyncStats.added > 0) {
         message += ` Bill instance created in Bills Management.`;
+      }
+      if (billSyncStats && billSyncStats.updated > 0) {
+        message += ` ${billSyncStats.updated} bill instance(s) updated.`;
       }
 
       showNotification(message, 'success');
