@@ -48,7 +48,7 @@
 }
 
 .page-header p {
-  color: #ccc;
+  color: #D1D5DB;
   margin: 0 0 var(--spacing-md) 0;
   font-size: 1.1rem;
 }
@@ -211,7 +211,7 @@
 }
 
 .tile-description {
-  color: #ccc;
+  color: #D1D5DB;
   font-size: 0.9rem;
   margin: 0;
 }
@@ -248,13 +248,13 @@
 }
 
 .coming-soon p {
-  color: #ccc;
+  color: #D1D5DB;
   margin: var(--spacing-sm) 0;
 }
 
 .coming-soon ul {
   text-align: left;
-  color: #ccc;
+  color: #D1D5DB;
   max-width: 600px;
   margin: 0 auto;
 }
