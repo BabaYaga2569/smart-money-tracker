@@ -2631,8 +2631,33 @@ const refreshPlaidTransactions = async () => {
                 <div className="bill-amount-section">
                   <div className="bill-amount">{formatCurrency(bill.amount)}</div>
                   <div className="bill-due-date">
-                    {bill.formattedDueDate || `Due: ${formatDate(bill.nextDueDate || bill.dueDate)}`}
-                  </div>
+  {(() => {
+    const dueDateStr = bill.nextDueDate || bill.dueDate;
+    // Parse as LOCAL date, not UTC
+    const [year, month, day] = dueDateStr.split('-').map(Number);
+    const dueDate = new Date(year, month - 1, day); // Local date
+    
+    const today = new Date();
+    today.setHours(0, 0, 0, 0); // Normalize to midnight
+    
+    const daysDiff = Math.ceil((dueDate - today) / (1000 * 60 * 60 * 24));
+    
+    let formattedDate;
+    if (daysDiff < 0) {
+      formattedDate = `Overdue by ${Math.abs(daysDiff)} day${Math.abs(daysDiff) !== 1 ? 's' : ''}`;
+    } else if (daysDiff === 0) {
+      formattedDate = 'Due TODAY';
+    } else if (daysDiff === 1) {
+      formattedDate = 'Due TOMORROW';
+    } else if (daysDiff <= 7) {
+      formattedDate = `Due in ${daysDiff} days`;
+    } else {
+      formattedDate = `Due: ${dueDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}`;
+    }
+    
+    return formattedDate;
+  })()}
+</div>
                   
                   {bill.status === 'overdue' && (
                     <div className="overdue-warning" style={{
