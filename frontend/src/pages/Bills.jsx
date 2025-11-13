@@ -2629,7 +2629,24 @@ const refreshPlaidTransactions = async () => {
                 <div className="bill-amount-section">
                   <div className="bill-amount">{formatCurrency(bill.amount)}</div>
                   <div className="bill-due-date">
-                    {getRelativeDateString(bill.nextDueDate || bill.dueDate)}
+                    {/* Show actual date */}
+                    <div style={{ 
+                      fontWeight: '700', 
+                      fontSize: '14px',
+                      marginBottom: '4px',
+                      color: '#fff'
+                    }}>
+                      {formatDate(bill.nextDueDate || bill.dueDate)}
+                    </div>
+                    
+                    {/* Show relative time below */}
+                    <div style={{ 
+                      fontSize: '11px', 
+                      opacity: 0.85,
+                      color: '#00d4ff'
+                    }}>
+                      {getRelativeDateString(bill.nextDueDate || bill.dueDate)}
+                    </div>
                   </div>
                   
                   {bill.status === 'overdue' && (
