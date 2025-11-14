@@ -42,7 +42,21 @@ const syncResponse = await plaidClient.transactionsSync({
 ### 2. Fixed `/api/accounts` endpoint (Line 591)
 **Removed:** Same invalid `count: 1` parameter
 
-### 3. Added `/api/plaid/webhook` endpoint (Lines 1183-1290)
+### 3. Verified `/api/plaid/refresh_transactions` endpoint (PR #294 + Current PR)
+**Status:** ✅ Correctly excludes unsupported `count` parameter
+**Added:** Documentation comment to prevent reintroduction of the invalid parameter
+
+The endpoint properly uses transactionsSync without the count option:
+```javascript
+const response = await plaidClient.transactionsSync({
+  access_token: item.accessToken,
+  options: {
+    include_personal_finance_category: true
+  }
+});
+```
+
+### 4. Added `/api/plaid/webhook` endpoint (Lines 1183-1290)
 **Added:** New POST endpoint to handle real-time updates from Plaid
 
 **Features:**
@@ -78,9 +92,12 @@ app.post("/api/plaid/webhook", async (req, res) => {
 ## Files Modified
 - `backend/server.js`:
   - Line 506: Removed invalid parameter
-  - Line 591: Removed invalid parameter  
+  - Line 591: Removed invalid parameter
+  - Line 1826: Verified `/api/plaid/refresh_transactions` endpoint (PR #294 + added documentation)
   - Lines 1183-1290: Added webhook endpoint (108 lines)
-  - **Total change:** +111 lines, -4 lines
+  - **Total change:** +115 lines, -4 lines
+- `Md FIles/PLAID_FIX_PR132_SUMMARY.md`:
+  - Added documentation for refresh_transactions endpoint verification
 
 ## Expected Results
 

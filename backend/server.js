@@ -1823,6 +1823,10 @@ app.post("/api/plaid/refresh_transactions", async (req, res, next) => {
     const refreshResults = [];
     for (const item of items) {
       try {
+        // NOTE: Do NOT add 'count' parameter to transactionsSync options
+        // The 'count' parameter is not supported by Plaid's /transactions/sync endpoint
+        // and will cause a 400 INVALID_REQUEST error with error_code UNKNOWN_FIELDS
+        // Reference: https://plaid.com/docs/api/products/transactions/#transactionssync
         const response = await plaidClient.transactionsSync({
           access_token: item.accessToken,
           options: {
