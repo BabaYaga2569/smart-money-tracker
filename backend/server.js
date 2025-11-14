@@ -1826,8 +1826,7 @@ app.post("/api/plaid/refresh_transactions", async (req, res, next) => {
         const response = await plaidClient.transactionsSync({
           access_token: item.accessToken,
           options: {
-            include_personal_finance_category: true,
-            count: 500
+            include_personal_finance_category: true
           }
         });
 
