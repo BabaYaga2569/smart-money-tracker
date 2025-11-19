@@ -227,7 +227,216 @@ const runBalanceCalculatorTests = () => {
         console.log('✅ Mixed pending indicators all counted (matches bank available balance)');
     });
 
-    // Test 8: Credit card accounts should be filtered out before calculation
+    // Test 8: Explicit pending: false should exclude transaction
+    test('Transactions with pending: false are excluded', () => {
+        const accountId = 'bofa_checking_123';
+        const liveBalance = 2000.00;
+        
+        const transactions = [
+            {
+                transaction_id: 'tx_1',
+                account_id: accountId,
+                amount: -350.00,
+                pending: false,  // Explicitly not pending
+                name: 'Zelle Transfer (Cleared)'
+            },
+            {
+                transaction_id: 'tx_2',
+                account_id: accountId,
+                amount: -26.47,
+                pending: true,  // Still pending
+                name: 'Safeway'
+            }
+        ];
+        
+        const projectedBalance = calculateProjectedBalance(accountId, liveBalance, transactions);
+        
+        // Expected: $2000 + (-$26.47) = $1973.53 (only pending transaction)
+        const expectedBalance = 1973.53;
+        
+        assert(
+            Math.abs(projectedBalance - expectedBalance) < 0.01,
+            `Projected balance should be ${expectedBalance}, got ${projectedBalance}`
+        );
+        
+        console.log('✅ Transactions with pending: false correctly excluded');
+    });
+
+    // Test 9: Transactions with status: 'posted' should be excluded
+    test('Transactions with status: posted are excluded', () => {
+        const accountId = 'bofa_checking_123';
+        const liveBalance = 2000.00;
+        
+        const transactions = [
+            {
+                transaction_id: 'tx_1',
+                account_id: accountId,
+                amount: -54.80,
+                status: 'posted',  // Already posted
+                name: 'Walmart'
+            },
+            {
+                transaction_id: 'tx_2',
+                account_id: accountId,
+                amount: -26.47,
+                pending: true,
+                name: 'Safeway'
+            }
+        ];
+        
+        const projectedBalance = calculateProjectedBalance(accountId, liveBalance, transactions);
+        
+        // Expected: $2000 + (-$26.47) = $1973.53
+        const expectedBalance = 1973.53;
+        
+        assert(
+            Math.abs(projectedBalance - expectedBalance) < 0.01,
+            `Projected balance should be ${expectedBalance}, got ${projectedBalance}`
+        );
+        
+        console.log('✅ Transactions with status: posted correctly excluded');
+    });
+
+    // Test 10: Transactions with status: 'cleared' should be excluded
+    test('Transactions with status: cleared are excluded', () => {
+        const accountId = 'bofa_checking_123';
+        const liveBalance = 2000.00;
+        
+        const transactions = [
+            {
+                transaction_id: 'tx_1',
+                account_id: accountId,
+                amount: -17.16,
+                status: 'cleared',  // Already cleared
+                name: 'Burger King'
+            },
+            {
+                transaction_id: 'tx_2',
+                account_id: accountId,
+                amount: -26.47,
+                status: 'pending',
+                name: 'Safeway'
+            }
+        ];
+        
+        const projectedBalance = calculateProjectedBalance(accountId, liveBalance, transactions);
+        
+        // Expected: $2000 + (-$26.47) = $1973.53
+        const expectedBalance = 1973.53;
+        
+        assert(
+            Math.abs(projectedBalance - expectedBalance) < 0.01,
+            `Projected balance should be ${expectedBalance}, got ${projectedBalance}`
+        );
+        
+        console.log('✅ Transactions with status: cleared correctly excluded');
+    });
+
+    // Test 11: Stale pending transactions (>3 days old) should be excluded
+    test('Stale pending transactions older than 3 days are excluded', () => {
+        const accountId = 'bofa_checking_123';
+        const liveBalance = 2000.00;
+        
+        // Create a date 4 days ago
+        const oldDate = new Date();
+        oldDate.setDate(oldDate.getDate() - 4);
+        
+        // Create a date 1 day ago
+        const recentDate = new Date();
+        recentDate.setDate(recentDate.getDate() - 1);
+        
+        const transactions = [
+            {
+                transaction_id: 'tx_1',
+                account_id: accountId,
+                amount: -350.00,
+                pending: true,  // Marked as pending but old
+                date: oldDate.toISOString().split('T')[0],
+                name: 'Old Zelle Transfer (Stale)'
+            },
+            {
+                transaction_id: 'tx_2',
+                account_id: accountId,
+                amount: -26.47,
+                pending: true,  // Recent and pending
+                date: recentDate.toISOString().split('T')[0],
+                name: 'Safeway'
+            }
+        ];
+        
+        const projectedBalance = calculateProjectedBalance(accountId, liveBalance, transactions);
+        
+        // Expected: $2000 + (-$26.47) = $1973.53 (old transaction excluded)
+        const expectedBalance = 1973.53;
+        
+        assert(
+            Math.abs(projectedBalance - expectedBalance) < 0.01,
+            `Projected balance should be ${expectedBalance}, got ${projectedBalance}`
+        );
+        
+        console.log('✅ Stale pending transactions correctly excluded');
+    });
+
+    // Test 12: Complex scenario - mix of cleared, posted, stale, and truly pending
+    test('Complex scenario with multiple transaction states', () => {
+        const accountId = 'bofa_checking_123';
+        const liveBalance = 572.01;
+        
+        // Create a date 4 days ago
+        const oldDate = new Date();
+        oldDate.setDate(oldDate.getDate() - 4);
+        
+        // Create a date 1 day ago
+        const recentDate = new Date();
+        recentDate.setDate(recentDate.getDate() - 1);
+        
+        const transactions = [
+            {
+                transaction_id: 'tx_1',
+                account_id: accountId,
+                amount: -350.00,
+                pending: true,  // Stale pending
+                date: oldDate.toISOString().split('T')[0],
+                name: 'Zelle Transfer (Stale)'
+            },
+            {
+                transaction_id: 'tx_2',
+                account_id: accountId,
+                amount: -17.16,
+                pending: false,  // Explicitly cleared
+                name: 'Burger King'
+            },
+            {
+                transaction_id: 'tx_3',
+                account_id: accountId,
+                amount: -54.80,
+                status: 'posted',  // Posted
+                name: 'Walmart'
+            },
+            {
+                transaction_id: 'tx_4',
+                account_id: accountId,
+                amount: -26.47,
+                pending: true,  // Truly pending
+                date: recentDate.toISOString().split('T')[0],
+                name: 'Safeway'
+            }
+        ];
+        
+        const projectedBalance = calculateProjectedBalance(accountId, liveBalance, transactions);
+        
+        // Expected: $572.01 + (-$26.47) = $545.54 (only Safeway is truly pending)
+        const expectedBalance = 545.54;
+        
+        assert(
+            Math.abs(projectedBalance - expectedBalance) < 0.01,
+            `Projected balance should be ${expectedBalance}, got ${projectedBalance}`
+        );
+        
+        console.log('✅ Complex scenario correctly handled - only 1 truly pending transaction');
+    });
+
+    // Test 13: Credit card accounts should be filtered out before calculation
     test('Credit card accounts excluded from total projected balance', () => {
         const accounts = [
             {
