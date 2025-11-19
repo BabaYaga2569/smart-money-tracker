@@ -596,8 +596,24 @@ async function updateAccountBalances(userId, accounts) {
   });
 
   // Identify new accounts from Plaid not in Firebase
-  const matchedAccountIds = updatedPlaidAccounts.map(acc => acc.account_id);
-  newAccountsFound = accounts.filter(plaidAcc => !matchedAccountIds.includes(plaidAcc.account_id));
+  // We need to check if any Plaid account wasn't matched (either by account_id or institution+mask)
+  const matchedPlaidAccountIds = [];
+  existingPlaidAccounts.forEach(existingAcc => {
+    // Try to find match using same logic
+    let matched = accounts.find(acc => acc.account_id === existingAcc.account_id);
+    if (!matched && existingAcc.mask) {
+      matched = accounts.find(acc => 
+        acc.mask === existingAcc.mask && 
+        (acc.institution_name === existingAcc.institution_name || 
+         acc.institution_id === existingAcc.institution_id)
+      );
+    }
+    if (matched) {
+      matchedPlaidAccountIds.push(matched.account_id);
+    }
+  });
+  
+  newAccountsFound = accounts.filter(plaidAcc => !matchedPlaidAccountIds.includes(plaidAcc.account_id));
   
   if (newAccountsFound.length > 0) {
     logDiagnostic.info('UPDATE_BALANCES_NEW_ACCOUNTS', `Found ${newAccountsFound.length} new accounts in Plaid not in Firebase:`, {
