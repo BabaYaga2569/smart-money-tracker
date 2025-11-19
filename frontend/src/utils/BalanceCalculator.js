@@ -17,22 +17,59 @@ export const calculateProjectedBalance = (accountId, liveBalance, transactions) 
 
   // Calculate the sum of pending transaction adjustments
   const pendingAdjustments = accountTransactions.reduce((sum, transaction) => {
-    // ✅ FIX: Check both boolean AND string 'true' for backward compatibility
-    const isPending = (
+    // ✅ IMPROVED FIX: More reliable pending detection with stale data prevention
+    
+    // Explicit false or posted/cleared status means definitely not pending
+    if (transaction.pending === false || 
+        transaction.status === 'posted' || 
+        transaction.status === 'cleared') {
+      return sum;
+    }
+    
+    // Check if transaction is marked as pending
+    const hasPendingFlag = (
       transaction.pending === true ||
       transaction.pending === 'true' ||
       transaction.status === 'pending'
     );
     
-    if (isPending) {
-      const amount = parseFloat(transaction.amount) || 0;
-      // After PR #154, all transactions use accounting convention:
-      // - Negative amount = Expense (decreases balance)
-      // - Positive amount = Income (increases balance)
-      // So we just add the amount directly (negative amounts will decrease the sum)
-      return sum + amount;
+    if (!hasPendingFlag) {
+      return sum; // No pending indicator
     }
-    return sum;
+    
+    // Additional validation: check transaction age to detect stale pending flags
+    const txDate = new Date(transaction.date);
+    const now = new Date();
+    const daysSinceTransaction = (now - txDate) / (1000 * 60 * 60 * 24);
+    
+    // If transaction is marked pending but is older than 7 days, it's likely stale data
+    if (daysSinceTransaction > 7) {
+      console.warn(`[BalanceCalculator] Stale pending transaction detected (${daysSinceTransaction.toFixed(1)} days old):`, {
+        merchant: transaction.merchant_name || transaction.name,
+        date: transaction.date,
+        amount: transaction.amount,
+        account_id: transaction.account_id
+      });
+      return sum;
+    }
+    
+    // Transaction is truly pending
+    const amount = parseFloat(transaction.amount) || 0;
+    
+    console.log(`[BalanceCalculator] Pending transaction found:`, {
+      merchant: transaction.merchant_name || transaction.name,
+      amount: amount,
+      date: transaction.date,
+      pending: transaction.pending,
+      status: transaction.status,
+      account_id: transaction.account_id
+    });
+    
+    // After PR #154, all transactions use accounting convention:
+    // - Negative amount = Expense (decreases balance)
+    // - Positive amount = Income (increases balance)
+    // So we just add the amount directly (negative amounts will decrease the sum)
+    return sum + amount;
   }, 0);
 
   return liveBalance + pendingAdjustments;
@@ -61,12 +98,57 @@ export const calculateTotalProjectedBalance = (accounts, transactions) => {
   
   console.log('[BalanceCalculator] Live total:', liveTotal);
   
-  // ✅ FIX: Get ALL pending transactions (handle both boolean AND string)
-  const pendingTxs = transactions.filter(tx => 
-    tx.pending === true || tx.pending === 'true'
-  );
+  // ✅ IMPROVED FIX: Get ALL truly pending transactions with better validation
+  const pendingTxs = transactions.filter(tx => {
+    // Explicit false or posted/cleared status means definitely not pending
+    if (tx.pending === false || 
+        tx.status === 'posted' || 
+        tx.status === 'cleared') {
+      return false;
+    }
+    
+    // Check if transaction is marked as pending
+    const hasPendingFlag = (
+      tx.pending === true ||
+      tx.pending === 'true' ||
+      tx.status === 'pending'
+    );
+    
+    if (!hasPendingFlag) {
+      return false; // No pending indicator
+    }
+    
+    // Additional validation: check transaction age to detect stale pending flags
+    const txDate = new Date(tx.date);
+    const now = new Date();
+    const daysSinceTransaction = (now - txDate) / (1000 * 60 * 60 * 24);
+    
+    // If transaction is marked pending but is older than 7 days, it's likely stale data
+    if (daysSinceTransaction > 7) {
+      console.warn(`[BalanceCalculator] Stale pending transaction detected (${daysSinceTransaction.toFixed(1)} days old):`, {
+        merchant: tx.merchant_name || tx.name,
+        date: tx.date,
+        amount: tx.amount
+      });
+      return false;
+    }
+    
+    return true; // Transaction is truly pending
+  });
   
   console.log('[BalanceCalculator] Total pending transactions:', pendingTxs.length);
+  
+  // Log each pending transaction for debugging
+  pendingTxs.forEach(tx => {
+    console.log(`[BalanceCalculator] Pending transaction found:`, {
+      merchant: tx.merchant_name || tx.name,
+      amount: parseFloat(tx.amount) || 0,
+      date: tx.date,
+      pending: tx.pending,
+      status: tx.status,
+      account_id: tx.account_id
+    });
+  });
   
   // Calculate total pending amount using proper accounting convention
   // Negative amount = Expense (decreases balance)
