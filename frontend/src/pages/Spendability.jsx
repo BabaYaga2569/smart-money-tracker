@@ -59,9 +59,21 @@ const SpendabilityV2 = () => {
     console.log(`Auto-updated last pay date to ${formatDateForInput(newLastPayDate)}`);
     return true;
   }
-  
+ 
   return false;
 };
+
+  // Helper function to extract balance data from account object
+  // Prefers available_balance (what you can spend), falls back to balance
+  const extractBalances = (account) => {
+    const balances = account.balances || {};
+    const currentBalance = parseFloat(account.current_balance ?? balances.current ?? 0);
+    const availableBalance = parseFloat(account.available_balance ?? balances.available ?? currentBalance);
+    const liveBalance = availableBalance; // available includes pending
+    const pendingAdjustment = availableBalance - currentBalance;
+    
+    return { currentBalance, availableBalance, liveBalance, pendingAdjustment };
+  };
 
   const fetchFinancialData = async () => {
     try {
@@ -90,7 +102,49 @@ if (wasUpdated) {
   settingsData = refreshedDoc.data();
 }
 
-  const allPlaidAccounts = settingsData.plaidAccounts || [];
+  // ✅ FIX: Load FRESH balances from backend API like Accounts page does
+  let allPlaidAccounts = [];
+  try {
+    const apiUrl = import.meta.env.VITE_API_URL || 'https://smart-money-tracker-09ks.onrender.com';
+    console.log('[Spendability] Fetching fresh balances from backend API...');
+    const response = await fetch(`${apiUrl}/api/accounts?userId=${currentUser.uid}&_t=${Date.now()}`);
+    const data = await response.json();
+
+    if (data.success && data.accounts && data.accounts.length > 0) {
+      // Format backend accounts using the same logic as Accounts page
+      allPlaidAccounts = data.accounts.map(account => {
+        const { currentBalance, availableBalance, liveBalance, pendingAdjustment } = extractBalances(account);
+
+        return {
+          account_id: account.account_id ?? '',
+          name: account.name ?? 'Unknown Account',
+          official_name: account.official_name ?? account.name ?? 'Unknown Account',
+          type: account.subtype || account.type || 'checking',
+          balance: liveBalance.toFixed(2), // ✅ main displayed balance (uses available_balance)
+          available: availableBalance.toFixed(2),
+          current: currentBalance.toFixed(2),
+          pending_adjustment: pendingAdjustment.toFixed(2),
+          mask: account.mask ?? '',
+          isPlaid: true,
+          item_id: account.item_id ?? '',
+          institution_name: account.institution_name ?? data?.institution_name ?? '',
+          institution_id: account.institution_id ?? '',
+          // Store original type and subtype for filtering
+          originalType: account.type,
+          originalSubtype: account.subtype,
+          subtype: account.subtype // Keep subtype for filtering logic
+        };
+      });
+      console.log('[Spendability] ✅ Loaded', allPlaidAccounts.length, 'fresh accounts from backend API');
+    } else {
+      console.warn('[Spendability] ⚠️ Backend returned no accounts, falling back to Firebase cache');
+      allPlaidAccounts = settingsData.plaidAccounts || [];
+    }
+  } catch (error) {
+    console.error('[Spendability] ❌ Error loading from backend API:', error);
+    console.log('[Spendability] Falling back to Firebase cache');
+    allPlaidAccounts = settingsData.plaidAccounts || [];
+  }
 
       // Filter: ONLY depository accounts (checking, savings, money market)
       // Exclude credit cards completely
@@ -426,16 +480,17 @@ console.log('🔍 PAYDAY CALCULATION DEBUG:', {
       });
 
       const checkingTotal = checkingAccounts.reduce((sum, account) => {
+        const liveBalance = parseFloat(account.balance) || 0;
         const projectedBalance = calculateProjectedBalance(
           account.account_id, 
-          parseFloat(account.balance) || 0, 
+          liveBalance, 
           transactions
         );
-        console.log(`  ${account.name}: projected=${projectedBalance.toFixed(2)}`);
+        console.log(`[Spendability] ${account.name}: live=${liveBalance.toFixed(2)}, projected=${projectedBalance.toFixed(2)}`);
         return sum + projectedBalance;
       }, 0);
 
-      console.log(`Total Checking: ${checkingTotal.toFixed(2)}`);
+      console.log(`[Spendability] Total Checking: ${checkingTotal.toFixed(2)}`);
 
       // Sum ALL savings accounts with projected balances (from depository accounts only)
       const savingsAccounts = depositoryAccounts.filter(a => 
@@ -464,14 +519,24 @@ console.log('🔍 PAYDAY CALCULATION DEBUG:', {
       });
 
       // 🏦 CHECKING ACCOUNTS DEBUG
-      console.log('🏦 CHECKING ACCOUNTS DEBUG:', {
+      console.log('🏦 SPENDABILITY CHECKING ACCOUNTS DEBUG:', {
+        totalAccounts: depositoryAccounts.length,
+        checkingAccounts: checkingAccounts.length,
+        checkingAccountNames: checkingAccounts.map(a => a.name),
+        checkingAccountBalances: checkingAccounts.map(a => ({
+          name: a.name,
+          balance: a.balance,
+          available: a.available,
+          current: a.current,
+          subtype: a.subtype
+        })),
         checkingAccountsFound: checkingAccounts.map(a => ({
           name: a.name,
           subtype: a.subtype,
           liveBalance: a.balance,
           projectedBalance: calculateProjectedBalance(a.account_id, parseFloat(a.balance) || 0, transactions)
         })),
-        checkingTotal: checkingTotal,
+        checkingTotal: checkingTotal.toFixed(2),
         savingsAccountsFound: savingsAccounts.map(a => ({
           name: a.name,
           subtype: a.subtype,
