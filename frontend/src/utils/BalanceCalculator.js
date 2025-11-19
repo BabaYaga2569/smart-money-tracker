@@ -42,8 +42,9 @@ export const calculateProjectedBalance = (accountId, liveBalance, transactions) 
     const now = new Date();
     const daysSinceTransaction = (now - txDate) / (1000 * 60 * 60 * 24);
     
-    // If transaction is marked pending but is older than 5 days, it's likely stale data
-    if (daysSinceTransaction > 5) {
+    // If transaction is marked pending but is older than 2 days, it's likely stale data
+    // (Bank of America typically clears transactions within 1-2 business days)
+    if (daysSinceTransaction > 2) {
       console.warn(`⚠️ [BalanceCalculator] Stale pending transaction detected (${daysSinceTransaction.toFixed(1)} days old):`, {
         merchant: transaction.merchant_name || transaction.name,
         date: transaction.date,
@@ -123,8 +124,9 @@ export const calculateTotalProjectedBalance = (accounts, transactions) => {
     const now = new Date();
     const daysSinceTransaction = (now - txDate) / (1000 * 60 * 60 * 24);
     
-    // If transaction is marked pending but is older than 5 days, it's likely stale data
-    if (daysSinceTransaction > 5) {
+    // If transaction is marked pending but is older than 2 days, it's likely stale data
+    // (Bank of America typically clears transactions within 1-2 business days)
+    if (daysSinceTransaction > 2) {
       console.warn(`⚠️ [BalanceCalculator] Stale pending transaction detected (${daysSinceTransaction.toFixed(1)} days old):`, {
         merchant: tx.merchant_name || tx.name,
         date: tx.date,

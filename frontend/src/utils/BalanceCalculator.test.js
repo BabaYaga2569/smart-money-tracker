@@ -332,16 +332,16 @@ const runBalanceCalculatorTests = () => {
         console.log('✅ Transactions with status: cleared correctly excluded');
     });
 
-    // Test 11: Stale pending transactions (>5 days old) should be excluded
-    test('Stale pending transactions older than 5 days are excluded', () => {
+    // Test 11: Stale pending transactions (>2 days old) should be excluded
+    test('Stale pending transactions older than 2 days are excluded', () => {
         const accountId = 'bofa_checking_123';
         const liveBalance = 2000.00;
         
-        // Create a date 6 days ago
+        // Create a date 3 days ago (stale)
         const oldDate = new Date();
-        oldDate.setDate(oldDate.getDate() - 6);
+        oldDate.setDate(oldDate.getDate() - 3);
         
-        // Create a date 1 day ago
+        // Create a date 1 day ago (recent)
         const recentDate = new Date();
         recentDate.setDate(recentDate.getDate() - 1);
         
@@ -382,11 +382,11 @@ const runBalanceCalculatorTests = () => {
         const accountId = 'bofa_checking_123';
         const liveBalance = 572.01;
         
-        // Create a date 6 days ago
+        // Create a date 3 days ago (stale)
         const oldDate = new Date();
-        oldDate.setDate(oldDate.getDate() - 6);
+        oldDate.setDate(oldDate.getDate() - 3);
         
-        // Create a date 1 day ago
+        // Create a date 1 day ago (recent)
         const recentDate = new Date();
         recentDate.setDate(recentDate.getDate() - 1);
         
@@ -436,7 +436,95 @@ const runBalanceCalculatorTests = () => {
         console.log('✅ Complex scenario correctly handled - only 1 truly pending transaction');
     });
 
-    // Test 13: Credit card accounts should be filtered out before calculation
+    // Test 13: Bank of America real-world scenario from issue (2.8 day old transaction)
+    test('BofA scenario: 2.8 day old transaction marked as stale', () => {
+        const accountId = 'bofa_checking_123';
+        const liveBalance = 1540.68;
+        
+        // Simulate the exact scenario from the problem statement
+        // Current date: 2025-11-19 22:33:14 UTC
+        const now = new Date('2025-11-19T22:33:14Z');
+        
+        // Walmart 11/19 (0.8 days old) - should be counted
+        const walmart1119Date = new Date('2025-11-19T00:00:00Z');
+        
+        // Burger King 11/17 (2.8 days old) - should be stale
+        const burgerKing1117Date = new Date('2025-11-17T00:00:00Z');
+        
+        // Zelle 11/18 (1.8 days old) - should be counted (actually pending)
+        const zelle1118Date = new Date('2025-11-18T00:00:00Z');
+        
+        // Safeway 11/18 (1.8 days old) - should be counted (actually pending)
+        const safeway1118Date = new Date('2025-11-18T00:00:00Z');
+        
+        const transactions = [
+            {
+                transaction_id: 'tx_1',
+                account_id: accountId,
+                amount: -54.80,
+                pending: true,
+                date: walmart1119Date.toISOString().split('T')[0],
+                name: 'Walmart'
+            },
+            {
+                transaction_id: 'tx_2',
+                account_id: accountId,
+                amount: -17.16,
+                pending: true,  // Stale flag (cleared at bank but still marked pending)
+                date: burgerKing1117Date.toISOString().split('T')[0],
+                name: 'Burger King'
+            },
+            {
+                transaction_id: 'tx_3',
+                account_id: accountId,
+                amount: -350.00,
+                pending: true,  // Actually should be counted if within 2 days
+                date: zelle1118Date.toISOString().split('T')[0],
+                name: 'Zelle'
+            },
+            {
+                transaction_id: 'tx_4',
+                account_id: accountId,
+                amount: -26.47,
+                pending: true,
+                date: safeway1118Date.toISOString().split('T')[0],
+                name: 'Safeway'
+            }
+        ];
+        
+        // Calculate days since each transaction relative to 'now'
+        const daysSinceWalmart = (now - walmart1119Date) / (1000 * 60 * 60 * 24);
+        const daysSinceBurgerKing = (now - burgerKing1117Date) / (1000 * 60 * 60 * 24);
+        const daysSinceZelle = (now - zelle1118Date) / (1000 * 60 * 60 * 24);
+        const daysSinceSafeway = (now - safeway1118Date) / (1000 * 60 * 60 * 24);
+        
+        console.log('Days since transactions:', {
+            walmart: daysSinceWalmart.toFixed(1),
+            burgerKing: daysSinceBurgerKing.toFixed(1),
+            zelle: daysSinceZelle.toFixed(1),
+            safeway: daysSinceSafeway.toFixed(1)
+        });
+        
+        const projectedBalance = calculateProjectedBalance(accountId, liveBalance, transactions);
+        
+        // Expected with 2-day threshold:
+        // - Walmart (0.9 days) = counted: -$54.80
+        // - Burger King (2.9 days) = STALE, excluded: $0
+        // - Zelle (1.9 days) = counted: -$350.00
+        // - Safeway (1.9 days) = counted: -$26.47
+        // Total pending: -$431.27
+        // Projected: $1540.68 + (-$431.27) = $1109.41
+        const expectedBalance = 1109.41;
+        
+        assert(
+            Math.abs(projectedBalance - expectedBalance) < 0.01,
+            `Projected balance should be ${expectedBalance}, got ${projectedBalance}`
+        );
+        
+        console.log('✅ BofA scenario: 2.8 day old Burger King transaction correctly marked as stale');
+    });
+
+    // Test 14: Credit card accounts should be filtered out before calculation
     test('Credit card accounts excluded from total projected balance', () => {
         const accounts = [
             {
