@@ -74,6 +74,20 @@ const shouldRetryPlaidError = (errorType) => {
   return errorType !== 'INVALID_REQUEST';
 };
 
+/**
+ * Wrap a promise with a timeout
+ * @param {Promise} promise - The promise to wrap
+ * @param {number} timeoutMs - Timeout in milliseconds
+ * @param {string} operationName - Name of the operation for error messages
+ * @returns {Promise} Promise that rejects if timeout is exceeded
+ */
+const withTimeout = (promise, timeoutMs, operationName = 'Operation') => {
+  const timeoutPromise = new Promise((_, reject) => 
+    setTimeout(() => reject(new Error(`${operationName} timeout after ${timeoutMs / 1000} seconds`)), timeoutMs)
+  );
+  return Promise.race([promise, timeoutPromise]);
+};
+
 // ============================================================================
 // AUTO-CATEGORIZATION KEYWORDS & FUNCTION
 // ============================================================================
@@ -459,36 +473,52 @@ async function updateAccountBalances(userId, accounts) {
     return { updated: 0, total: 0, unmatched: 0 };
   }
 
-  // 🔍 NEW: Log all account IDs from Plaid
+  // 🔍 Log all account IDs from Plaid
   logDiagnostic.info('UPDATE_BALANCES_PLAID_ACCOUNTS', 'Fresh account data from Plaid:', {
     count: accounts.length,
     accounts: accounts.map(a => ({
       account_id: a.account_id,
       name: a.name,
       institution: a.institution_name || 'Unknown',
+      mask: a.mask,
       balance_available: a.balances?.available,
       balance_current: a.balances?.current
     }))
   });
 
-  // 🔍 NEW: Log all account IDs in Firebase
+  // 🔍 Log all account IDs in Firebase
   logDiagnostic.info('UPDATE_BALANCES_FIREBASE_ACCOUNTS', 'Existing accounts in Firebase:', {
     count: existingPlaidAccounts.length,
     accounts: existingPlaidAccounts.map(a => ({
       account_id: a.account_id,
       name: a.name,
       institution: a.institution_name || 'Unknown',
+      mask: a.mask,
       current_balance: a.balance
     }))
   });
 
   let updatedCount = 0;
   let unmatchedAccounts = [];
+  let newAccountsFound = [];
 
   // Update balances for matching accounts
   const updatedPlaidAccounts = existingPlaidAccounts.map(existingAcc => {
-    // Find matching account in fresh data by account_id
-    const freshAccount = accounts.find(acc => acc.account_id === existingAcc.account_id);
+    // Strategy 1: Match by account_id (most reliable)
+    let freshAccount = accounts.find(acc => acc.account_id === existingAcc.account_id);
+    let matchStrategy = 'account_id';
+    
+    // Strategy 2: Match by institution + mask (for reconnected accounts)
+    if (!freshAccount && existingAcc.mask) {
+      freshAccount = accounts.find(acc => 
+        acc.mask === existingAcc.mask && 
+        (acc.institution_name === existingAcc.institution_name || 
+         acc.institution_id === existingAcc.institution_id)
+      );
+      if (freshAccount) {
+        matchStrategy = 'institution+mask';
+      }
+    }
     
     if (freshAccount) {
       updatedCount++;
@@ -506,10 +536,13 @@ async function updateAccountBalances(userId, accounts) {
       // Pending amount = current - available (when positive, means pending debits reducing available)
       const pendingAmount = newCurrent - newAvailable;
       
-      // 🔍 Enhanced logging with both balance types
-      logDiagnostic.info('UPDATE_BALANCES_MATCH', `✅ Matched and updated: ${existingAcc.name}`, {
-        account_id: existingAcc.account_id,
+      // 🔍 Enhanced logging with both balance types and match strategy
+      logDiagnostic.info('UPDATE_BALANCES_MATCH', `✅ Matched: ${existingAcc.name} (${matchStrategy})`, {
+        account_id: freshAccount.account_id,
+        match_strategy: matchStrategy,
+        old_account_id: existingAcc.account_id !== freshAccount.account_id ? existingAcc.account_id : null,
         institution: existingAcc.institution_name,
+        mask: existingAcc.mask,
         old_available: oldAvailable,
         new_available: newAvailable,
         available_change: availableChange,
@@ -520,8 +553,10 @@ async function updateAccountBalances(userId, accounts) {
       });
       
       // Update balance fields with fresh data - no undefined values
+      // If account_id changed (reconnection), update it
       return {
         ...existingAcc,
+        account_id: freshAccount.account_id, // Update account_id if it changed
         balance: newAvailable ?? newCurrent ?? 0, // Primary balance = available (what you can spend)
         available_balance: newAvailable ?? newCurrent ?? 0,
         current_balance: newCurrent ?? 0,
@@ -538,18 +573,21 @@ async function updateAccountBalances(userId, accounts) {
       };
     }
     
-    // 🚨 NEW: Track and log unmatched accounts
+    // 🚨 Track and log unmatched accounts
     unmatchedAccounts.push({
       account_id: existingAcc.account_id,
       name: existingAcc.name,
       institution: existingAcc.institution_name,
+      mask: existingAcc.mask,
       balance: existingAcc.balance
     });
     
     logDiagnostic.warn('UPDATE_BALANCES_NO_MATCH', `❌ No fresh data found for account: ${existingAcc.name}`, {
       account_id: existingAcc.account_id,
       institution: existingAcc.institution_name,
+      mask: existingAcc.mask,
       stored_balance: existingAcc.balance,
+      reason: 'No match by account_id or institution+mask',
       action: 'Keeping old balance (DATA MAY BE STALE!)'
     });
     
@@ -557,11 +595,45 @@ async function updateAccountBalances(userId, accounts) {
     return existingAcc;
   });
 
-  // 🔍 NEW: Log final summary
+  // Identify new accounts from Plaid not in Firebase
+  // We need to check if any Plaid account wasn't matched (either by account_id or institution+mask)
+  const matchedPlaidAccountIds = [];
+  existingPlaidAccounts.forEach(existingAcc => {
+    // Try to find match using same logic
+    let matched = accounts.find(acc => acc.account_id === existingAcc.account_id);
+    if (!matched && existingAcc.mask) {
+      matched = accounts.find(acc => 
+        acc.mask === existingAcc.mask && 
+        (acc.institution_name === existingAcc.institution_name || 
+         acc.institution_id === existingAcc.institution_id)
+      );
+    }
+    if (matched) {
+      matchedPlaidAccountIds.push(matched.account_id);
+    }
+  });
+  
+  newAccountsFound = accounts.filter(plaidAcc => !matchedPlaidAccountIds.includes(plaidAcc.account_id));
+  
+  if (newAccountsFound.length > 0) {
+    logDiagnostic.info('UPDATE_BALANCES_NEW_ACCOUNTS', `Found ${newAccountsFound.length} new accounts in Plaid not in Firebase:`, {
+      new_accounts: newAccountsFound.map(acc => ({
+        account_id: acc.account_id,
+        name: acc.name,
+        institution: acc.institution_name,
+        mask: acc.mask,
+        balance_available: acc.balances?.available,
+        balance_current: acc.balances?.current
+      }))
+    });
+  }
+  
+  // 🔍 Enhanced final summary with new accounts
   logDiagnostic.info('UPDATE_BALANCES_SUMMARY', `Balance update complete`, {
-    total_accounts: existingPlaidAccounts.length,
+    total_accounts_in_firebase: existingPlaidAccounts.length,
     updated: updatedCount,
     unmatched: unmatchedAccounts.length,
+    new_accounts_found: newAccountsFound.length,
     success_rate: `${Math.round((updatedCount / existingPlaidAccounts.length) * 100)}%`,
     unmatched_accounts: unmatchedAccounts
   });
@@ -873,10 +945,12 @@ app.post("/api/plaid/exchange_token", async (req, res, next) => {
     logger.info('PLAID_AUTH', 'Exchanging public token', { userId });
     logDiagnostic.info('EXCHANGE_TOKEN', `Exchanging public token for user: ${userId}`);
 
-    // Exchange public token for access token
-    const exchangeResponse = await plaidClient.itemPublicTokenExchange({
-      public_token,
-    });
+    // Exchange public token for access token with 30-second timeout
+    const exchangeResponse = await withTimeout(
+      plaidClient.itemPublicTokenExchange({ public_token }),
+      30000,
+      'Plaid itemPublicTokenExchange'
+    );
 
     const accessToken = exchangeResponse.data.access_token;
     const itemId = exchangeResponse.data.item_id;
@@ -884,17 +958,25 @@ app.post("/api/plaid/exchange_token", async (req, res, next) => {
     logger.info('PLAID_AUTH', 'Successfully exchanged token', { userId, itemId });
     logDiagnostic.info('EXCHANGE_TOKEN', `Successfully exchanged token, item_id: ${itemId}`);
 
-    // Get institution info
-    const itemResponse = await plaidClient.itemGet({ access_token: accessToken });
+    // Get institution info with 15-second timeout
+    const itemResponse = await withTimeout(
+      plaidClient.itemGet({ access_token: accessToken }),
+      15000,
+      'Plaid itemGet'
+    );
     const institutionId = itemResponse.data.item.institution_id;
     
     logger.info('PLAID_AUTH', 'Fetching institution info', { institutionId });
     logDiagnostic.info('EXCHANGE_TOKEN', `Fetching institution info for: ${institutionId}`);
 
-    const institutionResponse = await plaidClient.institutionsGetById({
-      institution_id: institutionId,
-      country_codes: ['US']
-    });
+    const institutionResponse = await withTimeout(
+      plaidClient.institutionsGetById({
+        institution_id: institutionId,
+        country_codes: ['US']
+      }),
+      15000,
+      'Plaid institutionsGetById'
+    );
     const institutionName = institutionResponse.data.institution.name;
     
     logger.info('PLAID_AUTH', 'Retrieved institution', { institutionName });
@@ -903,21 +985,25 @@ app.post("/api/plaid/exchange_token", async (req, res, next) => {
     // Store credentials securely in Firestore (server-side only)
     await storePlaidCredentials(userId, accessToken, itemId, institutionId, institutionName);
 
-    // Get account information
+    // Get account information with 15-second timeout
     logger.info('PLAID_ACCOUNTS', 'Fetching account information', { userId, itemId });
     logDiagnostic.info('EXCHANGE_TOKEN', 'Fetching account information');
-    const accountsResponse = await plaidClient.accountsGet({
-      access_token: accessToken,
-    });
+    const accountsResponse = await withTimeout(
+      plaidClient.accountsGet({ access_token: accessToken }),
+      15000,
+      'Plaid accountsGet'
+    );
 
     const accounts = accountsResponse.data.accounts;
     logger.info('PLAID_ACCOUNTS', 'Retrieved accounts', { userId, accountCount: accounts.length });
     logDiagnostic.info('EXCHANGE_TOKEN', `Retrieved ${accounts.length} accounts`);
 
-    // Get account balances
-    const balanceResponse = await plaidClient.accountsBalanceGet({
-      access_token: accessToken,
-    });
+    // Get account balances with 15-second timeout
+    const balanceResponse = await withTimeout(
+      plaidClient.accountsBalanceGet({ access_token: accessToken }),
+      15000,
+      'Plaid accountsBalanceGet'
+    );
     
     // Validate each account before saving
     balanceResponse.data.accounts.forEach(account => {
@@ -966,6 +1052,14 @@ app.post("/api/plaid/exchange_token", async (req, res, next) => {
     // Check if it's already an AppError
     if (error.statusCode) {
       return next(error);
+    }
+    
+    // Handle timeout errors
+    if (error.message && error.message.includes('timeout')) {
+      return next(createError.gatewayTimeout(
+        'Request to Plaid API timed out. Please try again.',
+        'PLAID_TIMEOUT'
+      ));
     }
     
     // Handle Plaid-specific errors
