@@ -297,6 +297,23 @@ const Accounts = () => {
       
       if (!isPending) return false;
       
+      // ✅ STALE TRANSACTION DETECTION: Check transaction age to prevent counting cleared transactions
+      const txDate = new Date(tx.date);
+      const now = new Date();
+      const daysSinceTransaction = (now - txDate) / (1000 * 60 * 60 * 24);
+      
+      // If transaction is marked pending but is older than 2 days, it's likely stale data
+      // (Bank of America typically clears transactions within 1-2 business days)
+      if (daysSinceTransaction > 2) {
+        console.warn(`⚠️ [ProjectedBalance] Stale pending transaction detected (${daysSinceTransaction.toFixed(1)} days old):`, {
+          merchant: tx.merchant_name || tx.name,
+          date: tx.date,
+          amount: tx.amount,
+          account_id: tx.account_id || tx.account
+        });
+        return false; // Skip this stale transaction
+      }
+      
       const txAccountId = tx.account_id || tx.account;
       
       // Strategy 1: Exact account_id match (fastest)
@@ -365,6 +382,13 @@ const Accounts = () => {
     });
 
     console.log(`[ProjectedBalance] Found ${pendingTxs.length} pending transactions for ${accountId}`);
+    
+    // Log details of each pending transaction with age
+    pendingTxs.forEach(tx => {
+      const txDate = new Date(tx.date);
+      const daysSince = (new Date() - txDate) / (1000 * 60 * 60 * 24);
+      console.log(`[ProjectedBalance] Pending (${daysSince.toFixed(1)} days): ${tx.merchant_name || tx.name} ${tx.amount}`);
+    });
 
     if (pendingTxs.length === 0) {
       return liveBalance;
@@ -373,7 +397,6 @@ const Accounts = () => {
     // Calculate total pending amount
     const pendingTotal = pendingTxs.reduce((sum, tx) => {
       const amount = Math.abs(parseFloat(tx.amount) || 0);
-      console.log(`[ProjectedBalance] Pending: ${tx.merchant_name || tx.name}, Amount: -${amount}`);
       return sum + amount;
     }, 0);
 
@@ -1497,6 +1520,8 @@ const formattedPlaidAccounts = allNewAccounts.filter(account => {
         {/* Plaid-linked accounts */}
         {plaidAccounts.map((account) => {
           const liveBalance = parseFloat(account.balance) || 0;
+          // NOTE: For Bank of America accounts, available_balance already includes pending transactions
+          // So we may be double-subtracting. Consider using available_balance directly without adjustment.
           const projectedBalance = calculateProjectedBalance(
             account.account_id, 
             liveBalance, 
