@@ -332,14 +332,14 @@ const runBalanceCalculatorTests = () => {
         console.log('✅ Transactions with status: cleared correctly excluded');
     });
 
-    // Test 11: Stale pending transactions (>3 days old) should be excluded
-    test('Stale pending transactions older than 3 days are excluded', () => {
+    // Test 11: Stale pending transactions (>5 days old) should be excluded
+    test('Stale pending transactions older than 5 days are excluded', () => {
         const accountId = 'bofa_checking_123';
         const liveBalance = 2000.00;
         
-        // Create a date 4 days ago
+        // Create a date 6 days ago
         const oldDate = new Date();
-        oldDate.setDate(oldDate.getDate() - 4);
+        oldDate.setDate(oldDate.getDate() - 6);
         
         // Create a date 1 day ago
         const recentDate = new Date();
@@ -382,9 +382,9 @@ const runBalanceCalculatorTests = () => {
         const accountId = 'bofa_checking_123';
         const liveBalance = 572.01;
         
-        // Create a date 4 days ago
+        // Create a date 6 days ago
         const oldDate = new Date();
-        oldDate.setDate(oldDate.getDate() - 4);
+        oldDate.setDate(oldDate.getDate() - 6);
         
         // Create a date 1 day ago
         const recentDate = new Date();
