@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { doc, getDoc, updateDoc, collection, addDoc, getDocs, serverTimestamp, arrayUnion, setDoc } from 'firebase/firestore';
+import { doc, getDoc, updateDoc, collection, addDoc, getDocs, serverTimestamp, arrayUnion, setDoc, deleteDoc } from 'firebase/firestore';
 import { db } from '../firebase';
 import { PayCycleCalculator } from '../utils/PayCycleCalculator';
 import { RecurringBillManager } from '../utils/RecurringBillManager';
@@ -39,6 +39,7 @@ const SpendabilityV2 = () => {
   }, [refreshTrigger]); // Re-fetch when refresh is triggered
   const autoUpdatePayday = async (settingsData) => {
   const today = getPacificTime();
+  today.setHours(0, 0, 0, 0);
   const lastPayDateStr = settingsData?.lastPayDate || settingsData?.yoursSchedule?.lastPaydate;
   
   if (!lastPayDateStr) return false;
@@ -56,7 +57,17 @@ const SpendabilityV2 = () => {
       lastPayDate: formatDateForInput(newLastPayDate)
     });
     
-    console.log(`Auto-updated last pay date to ${formatDateForInput(newLastPayDate)}`);
+    console.log(`✅ Auto-updated last pay date from ${formatDateForInput(lastPayDate)} to ${formatDateForInput(newLastPayDate)}`);
+    
+    // ✅ Clear the payCycle cache so it recalculates with the new lastPayDate
+    try {
+      const payCycleDocRef = doc(db, 'users', currentUser.uid, 'financial', 'payCycle');
+      await deleteDoc(payCycleDocRef);
+      console.log('✅ Cleared stale payCycle cache after updating lastPayDate');
+    } catch (error) {
+      console.log('Note: payCycle cache may not exist yet:', error.message);
+    }
+    
     return true;
   }
  
@@ -224,10 +235,26 @@ if (settingsData.nextPaydayOverride) {
   nextPayday = settingsData.nextPaydayOverride;
   daysUntilPayday = getDaysUntilDateInPacific(nextPayday);
 } else if (payCycleData && payCycleData.date) {
-  nextPayday = payCycleData.date;
-  // ✅ FIX ISSUE #2: Use getDaysUntilDateInPacific instead of payCycleData.daysUntil
-  daysUntilPayday = getDaysUntilDateInPacific(nextPayday);
-} else {
+  // ✅ FIX: Validate cached date is in the future
+  const cachedDate = new Date(payCycleData.date);
+  const today = getPacificTime();
+  today.setHours(0, 0, 0, 0);
+  
+  if (cachedDate >= today) {
+    // Cached date is valid (today or future)
+    nextPayday = payCycleData.date;
+    daysUntilPayday = getDaysUntilDateInPacific(nextPayday);
+    console.log('✅ Using valid cached payday:', nextPayday);
+  } else {
+    // Cached date is in the past - recalculate!
+    console.warn('❌ Cached payday is in the past:', payCycleData.date, '- recalculating...');
+    
+    // Fall through to calculation from schedules (set payCycleData to null to trigger calculation)
+    payCycleData.date = null;
+  }
+}
+
+if (!payCycleData || !payCycleData.date) {
   console.log('Spendability: Calculating payday from schedules');
 
 // ✅ FIX: Read from the ACTUAL Settings data structure
@@ -260,6 +287,21 @@ console.log('Spendability: Payday calculation result', result);
 nextPayday = result.date;
 // ✅ FIX ISSUE #2: Use getDaysUntilDateInPacific instead of result.daysUntil
 daysUntilPayday = getDaysUntilDateInPacific(nextPayday);
+
+// ✅ Update Firebase payCycle cache with fresh calculation
+try {
+  const payCycleDocRef = doc(db, 'users', currentUser.uid, 'financial', 'payCycle');
+  await setDoc(payCycleDocRef, {
+    date: nextPayday,
+    daysUntil: daysUntilPayday,
+    source: result.source,
+    amount: result.amount,
+    lastCalculated: new Date().toISOString()
+  }, { merge: true });
+  console.log('✅ Updated payCycle cache with fresh date:', nextPayday);
+} catch (error) {
+  console.error('Error updating payCycle cache:', error);
+}
 
 // 📅 PAYDAY CALCULATION DEBUG
 console.log('📅 PAYDAY CALCULATION DEBUG:', {
