@@ -42,8 +42,8 @@ export const calculateProjectedBalance = (accountId, liveBalance, transactions) 
     const now = new Date();
     const daysSinceTransaction = (now - txDate) / (1000 * 60 * 60 * 24);
     
-    // If transaction is marked pending but is older than 7 days, it's likely stale data
-    if (daysSinceTransaction > 7) {
+    // If transaction is marked pending but is older than 3 days, it's likely stale data
+    if (daysSinceTransaction > 3) {
       console.warn(`[BalanceCalculator] Stale pending transaction detected (${daysSinceTransaction.toFixed(1)} days old):`, {
         merchant: transaction.merchant_name || transaction.name,
         date: transaction.date,
@@ -123,8 +123,8 @@ export const calculateTotalProjectedBalance = (accounts, transactions) => {
     const now = new Date();
     const daysSinceTransaction = (now - txDate) / (1000 * 60 * 60 * 24);
     
-    // If transaction is marked pending but is older than 7 days, it's likely stale data
-    if (daysSinceTransaction > 7) {
+    // If transaction is marked pending but is older than 3 days, it's likely stale data
+    if (daysSinceTransaction > 3) {
       console.warn(`[BalanceCalculator] Stale pending transaction detected (${daysSinceTransaction.toFixed(1)} days old):`, {
         merchant: tx.merchant_name || tx.name,
         date: tx.date,
