@@ -155,9 +155,14 @@ const Accounts = () => {
   // Recalculate projected balance when transactions change
   useEffect(() => {
     if (plaidAccounts.length > 0) {
-      const projectedTotal = calculateTotalProjectedBalance(plaidAccounts, transactions);
+      // For Plaid accounts, sum the available balances directly
+      // Don't calculate - the bank already did the math
+      const projectedTotal = plaidAccounts.reduce((sum, account) => {
+        return sum + (parseFloat(account.available || account.balance) || 0);
+      }, 0);
       setTotalProjectedBalance(projectedTotal);
     } else if (Object.keys(accounts).length > 0) {
+      // For manual accounts, use calculation with pending detection
       const projectedTotal = calculateTotalProjectedBalance(accounts, transactions);
       setTotalProjectedBalance(projectedTotal);
     }
@@ -1519,16 +1524,11 @@ const formattedPlaidAccounts = allNewAccounts.filter(account => {
       <div className="accounts-grid">
         {/* Plaid-linked accounts */}
         {plaidAccounts.map((account) => {
+          // For Plaid accounts, available_balance is already the "projected" balance
+          // The bank has already subtracted pending transactions to calculate it
           const liveBalance = parseFloat(account.balance) || 0;
-          // NOTE: For Bank of America accounts, available_balance already includes pending transactions
-          // So we may be double-subtracting. Consider using available_balance directly without adjustment.
-          const projectedBalance = calculateProjectedBalance(
-            account.account_id, 
-            liveBalance, 
-            transactions,
-            account  // ✅ Pass full account object for mask/institution matching
-          );
-          const hasDifference = projectedBalance !== liveBalance;
+          const projectedBalance = liveBalance; // No calculation needed!
+          const hasDifference = false; // Plaid accounts don't have a difference
           
           return (
             <div 
@@ -1572,21 +1572,22 @@ const formattedPlaidAccounts = allNewAccounts.filter(account => {
                 {(showBalanceType === 'live' || showBalanceType === 'both') && (
   <>
     <div className="balance-row">
-      <span className="balance-label" title="What you can spend (includes pending)">
+      <span className="balance-label" title="What you can spend right now (bank's calculation)">
         💳 Available Balance
       </span>
       <span className="balance-amount">{formatCurrency(parseFloat(account.available || liveBalance))}</span>
     </div>
     <div className="balance-row" style={{ fontSize: '0.9em', opacity: 0.8 }}>
-      <span className="balance-label" title="Ledger balance (before pending)">
+      <span className="balance-label" title="Ledger balance (before pending transactions)">
         📖 Current Balance
       </span>
       <span className="balance-amount">{formatCurrency(parseFloat(account.current || liveBalance))}</span>
     </div>
+    {/* Show pending as informational only - NOT subtracted from available */}
     {account.pending_adjustment && parseFloat(account.pending_adjustment) !== 0 && (
       <div className="balance-row" style={{ fontSize: '0.85em', opacity: 0.7 }}>
-        <span className="balance-label" title="Total pending charges">
-          ⏳ Pending
+        <span className="balance-label" title="Already included in Available Balance">
+          ⏳ Pending (info only)
         </span>
         <span className="balance-amount" style={{ color: parseFloat(account.pending_adjustment) > 0 ? '#10b981' : '#f59e0b' }}>
           {formatCurrency(parseFloat(account.pending_adjustment))}
