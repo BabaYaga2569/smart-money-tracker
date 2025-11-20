@@ -1,5 +1,21 @@
 /**
+ * IMPORTANT: Balance Calculation Philosophy
+ * 
+ * For Plaid-connected accounts:
+ * - available_balance = What you can spend (bank's calculation, already includes pending)
+ * - current_balance = Ledger balance (before pending transactions)
+ * - We should USE available_balance directly, NOT calculate from it
+ * 
+ * For manual accounts:
+ * - Use these functions to calculate projected balance from pending transactions
+ * 
+ * DO NOT subtract pending from available_balance - it's already subtracted by the bank!
+ */
+
+/**
  * Calculate projected balance for a specific account
+ * NOTE: This function is intended for MANUAL accounts only.
+ * For Plaid accounts, use available_balance directly from the bank.
  * @param {string} accountId - The account ID or key
  * @param {number} liveBalance - Current balance from Plaid or manual entry
  * @param {Array} transactions - Array of all transactions (including pending)

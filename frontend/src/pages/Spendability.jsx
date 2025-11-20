@@ -192,14 +192,22 @@ if (wasUpdated) {
         pendingCount: transactions.filter(t => t.pending).length
       });
 
-      // Use PROJECTED balance (includes pending transactions)
-      // Calculate balance using ONLY depository accounts (no credit cards)
-      const totalAvailable = calculateTotalProjectedBalance(depositoryAccounts, transactions);
+      // For Plaid accounts, available_balance is ALREADY the correct spendable amount
+      // The bank has already subtracted pending transactions from current balance
+      const totalAvailable = depositoryAccounts.reduce((sum, account) => {
+        // Use available balance directly - it's already "projected" by the bank
+        const availableBalance = parseFloat(account.available || account.balance) || 0;
+        return sum + availableBalance;
+      }, 0);
 
       console.log('Spendability: Balance calculation', {
-        liveBalance: depositoryAccounts.reduce((sum, a) => sum + parseFloat(a.balance || 0), 0),
-        projectedBalance: totalAvailable,
-        difference: totalAvailable - depositoryAccounts.reduce((sum, a) => sum + parseFloat(a.balance || 0), 0)
+        accountCount: depositoryAccounts.length,
+        totalAvailable: totalAvailable,
+        accounts: depositoryAccounts.map(a => ({
+          name: a.name,
+          available: parseFloat(a.available || a.balance),
+          current: parseFloat(a.current || a.balance)
+        }))
       });
 
       // 🔍 COMPREHENSIVE DEBUG LOGGING
