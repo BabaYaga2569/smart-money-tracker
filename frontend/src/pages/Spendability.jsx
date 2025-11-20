@@ -7,6 +7,7 @@ import { formatDateForDisplay, formatDateForInput, getDaysUntilDateInPacific, ge
 import { calculateProjectedBalance, calculateTotalProjectedBalance } from '../utils/BalanceCalculator';
 import { autoMigrateBills } from '../utils/FirebaseMigration';
 import { runAutoDetection } from '../utils/AutoBillDetection';
+import { matchTransactionToBill } from '../utils/BillPaymentMatcher';
 import './Spendability.css';
 import { useAuth } from '../contexts/AuthContext';
 // Force rebuild 2025-11-12 v2 - Fix spendability issues
@@ -31,7 +32,8 @@ const SpendabilityV2 = () => {
     nextPayday: 'No date',
     daysUntilPayday: 0,
     weeklyEssentials: 0,
-    safetyBuffer: 0
+    safetyBuffer: 0,
+    paidBillsCount: 0
   });
 
   useEffect(() => {
@@ -470,8 +472,60 @@ console.log('🔍 PAYDAY CALCULATION DEBUG:', {
           return new Date(a.nextDueDate) - new Date(b.nextDueDate);
         });
       
-      // Calculate total with detailed logging
-      const totalBillsDue = (billsDueBeforePayday || []).reduce((sum, bill) => {
+      // Filter out bills that have been paid (have matching transactions)
+      // This is a defensive layer on top of auto-detection to catch any bills that were missed
+      const unpaidBillsBeforePayday = billsDueBeforePayday.filter(bill => {
+        // Try to find a matching transaction for this bill
+        let matchingTransaction = null;
+        
+        for (const transaction of transactions) {
+          const match = matchTransactionToBill(transaction, bill);
+          if (match && match.confidence >= 0.67) {
+            // Found a match with at least 2 of 3 criteria
+            matchingTransaction = match;
+            break;
+          }
+        }
+        
+        if (matchingTransaction) {
+          const { matches, details, confidence } = matchingTransaction;
+          console.log(`💳 [Spendability] Bill "${bill.name}" ($${bill.amount}) has matching transaction - excluding from due bills`);
+          console.log(`   ✅ Transaction: "${details.txName}" ($${details.txAmount}) on ${details.txDate}`);
+          console.log(`   📊 Confidence: ${Math.round(confidence * 100)}% | Name: ${matches.name ? '✓' : '✗'} | Amount: ${matches.amount ? '✓' : '✗'} | Date: ${matches.date ? '✓' : '✗'}`);
+          return false; // Exclude this bill (it's paid)
+        }
+        
+        return true; // Include this bill (still unpaid)
+      });
+      
+      // Calculate total of UNPAID bills only
+      const totalUnpaidBills = (unpaidBillsBeforePayday || []).reduce((sum, bill) => {
+        const amount = Number(bill.amount ?? bill.cost) || 0;
+        if (amount === 0 && bill.isSubscription) {
+          console.warn(
+            `Spendability: Subscription bill ${bill.name} has zero/invalid amount`,
+            'amount:', bill.amount,
+            'type:', typeof bill.amount,
+            'cost:', bill.cost,
+            'costType:', typeof bill.cost
+          );
+        }
+        return sum + amount;
+      }, 0);
+      
+      // Keep old variable for backward compatibility but use unpaid bills total
+      const totalBillsDue = totalUnpaidBills;
+      
+      // Log filtering results for transparency
+      const paidBillsCount = billsDueBeforePayday.length - unpaidBillsBeforePayday.length;
+      if (paidBillsCount > 0) {
+        console.log(`💰 [Spendability] Filtered out ${paidBillsCount} paid bill(s) from display`);
+        console.log(`   Total Bills (All): $${billsDueBeforePayday.reduce((sum, b) => sum + Number((b.amount ?? b.cost) || 0), 0).toFixed(2)}`);
+        console.log(`   Total Bills (Unpaid Only): $${totalUnpaidBills.toFixed(2)}`);
+      }
+      
+      // Legacy calculation - keeping for backward compatibility but now points to filtered total
+      const totalBillsDueLegacy = (billsDueBeforePayday || []).reduce((sum, bill) => {
         const amount = Number(bill.amount ?? bill.cost) || 0;
         if (amount === 0 && bill.isSubscription) {
           console.warn(
@@ -600,13 +654,14 @@ console.log('🔍 PAYDAY CALCULATION DEBUG:', {
         totalAvailable,  // Now uses PROJECTED balance
         checking: checkingTotal,  // Sum of all checking accounts
         savings: savingsTotal,    // Sum of all savings accounts
-        billsBeforePayday: billsDueBeforePayday,
-        totalBillsDue,
+        billsBeforePayday: unpaidBillsBeforePayday,  // Only unpaid bills
+        totalBillsDue,  // Total of unpaid bills only
         safeToSpend,
         nextPayday,
         daysUntilPayday: finalDaysUntilPayday,
         weeklyEssentials: essentialsNeeded,
-        safetyBuffer
+        safetyBuffer,
+        paidBillsCount: billsDueBeforePayday.length - unpaidBillsBeforePayday.length
       });
       
       // Force component re-render after state update
@@ -628,7 +683,8 @@ console.log('🔍 PAYDAY CALCULATION DEBUG:', {
     nextPayday: 'Not set',
     daysUntilPayday: 0,
     weeklyEssentials: 0,
-    safetyBuffer: 0
+    safetyBuffer: 0,
+    paidBillsCount: 0
   };
   
   setFinancialData(emptyData);
@@ -1009,6 +1065,18 @@ console.log('🔍 PAYDAY CALCULATION DEBUG:', {
               <span><strong>Total Bills:</strong></span>
               <span><strong>{formatCurrency(financialData.totalBillsDue)}</strong></span>
             </div>
+            {financialData.paidBillsCount > 0 && (
+              <div className="paid-bills-info" style={{ 
+                marginTop: '10px', 
+                padding: '10px', 
+                background: 'rgba(16, 185, 129, 0.1)', 
+                borderRadius: '6px',
+                fontSize: '0.9em',
+                color: '#10b981'
+              }}>
+                ✅ {financialData.paidBillsCount} bill(s) already paid
+              </div>
+            )}
           </div>
         </div>
 
@@ -1022,7 +1090,14 @@ console.log('🔍 PAYDAY CALCULATION DEBUG:', {
             </div>
             <div className="calc-item">
               <span>- Upcoming Bills:</span>
-              <span>-{formatCurrency(financialData.totalBillsDue)}</span>
+              <span>
+                -{formatCurrency(financialData.totalBillsDue)}
+                {financialData.paidBillsCount > 0 && (
+                  <span style={{ fontSize: '0.85em', color: '#10b981', marginLeft: '8px' }}>
+                    ({financialData.paidBillsCount} paid)
+                  </span>
+                )}
+              </span>
             </div>
             <div className="calc-item">
               <span>- Weekly Essentials:</span>
