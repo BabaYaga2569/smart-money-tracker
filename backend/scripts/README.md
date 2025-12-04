@@ -374,4 +374,4 @@ If you encounter issues:
 
 | Version | Date | Changes |
 |---------|------|---------|
-| 1.0.0 | 2024 | Initial migration scripts |
+| 1.0.0 | December 2025 | Initial migration scripts |
