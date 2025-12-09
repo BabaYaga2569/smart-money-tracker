@@ -218,7 +218,7 @@ const Settings = () => {
         bills: bills.filter(bill => bill.name && bill.amount),
         preferences,
         nextPaydayOverride,
-        earlyDeposit,  // Save generic early deposit settings
+        earlyDeposit,
         lastUpdated: new Date().toISOString()
       };
 
