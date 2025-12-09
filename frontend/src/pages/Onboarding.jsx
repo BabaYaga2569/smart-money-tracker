@@ -127,7 +127,6 @@ const Onboarding = () => {
       const settingsData = {
         ...existingData,
         personalInfo: {
-          name: personalInfo.name,
           yourName: personalInfo.name,
           spouseName: personalInfo.spouseName || ''
         },

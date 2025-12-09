@@ -6,7 +6,6 @@ import { db } from '../firebase';
  */
 const getDefaultSettings = () => ({
   personalInfo: { 
-    name: '', 
     yourName: '',
     spouseName: '' 
   },

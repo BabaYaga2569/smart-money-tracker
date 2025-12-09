@@ -268,7 +268,7 @@ const Settings = () => {
   };
 
   const handleDebugModeToggle = (enabled) => {
-    setPreferences({ ...preferences, debugMode: enabled });
+    setPreferences({ ...(preferences || {}), debugMode: enabled });
     localStorage.setItem('debugMode', enabled.toString());
     setMessage(enabled ? '🛠️ Debug mode enabled! Floating debug button will appear.' : '✅ Debug mode disabled.');
     
@@ -310,7 +310,7 @@ const Settings = () => {
               <input
                 type="text"
                 value={personalInfo?.yourName || ''}
-                onChange={(e) => setPersonalInfo({...personalInfo, yourName: e.target.value})}
+                onChange={(e) => setPersonalInfo({...(personalInfo || {}), yourName: e.target.value})}
                 placeholder="Enter your name"
               />
             </div>
@@ -319,7 +319,7 @@ const Settings = () => {
               <input
                 type="text"
                 value={personalInfo?.spouseName || ''}
-                onChange={(e) => setPersonalInfo({...personalInfo, spouseName: e.target.value})}
+                onChange={(e) => setPersonalInfo({...(personalInfo || {}), spouseName: e.target.value})}
                 placeholder="Enter spouse name"
               />
             </div>
@@ -440,7 +440,7 @@ const Settings = () => {
               <input
                 type="number"
                 value={preferences?.safetyBuffer || ''}
-                onChange={(e) => setPreferences({...preferences, safetyBuffer: parseInt(e.target.value)})}
+                onChange={(e) => setPreferences({...(preferences || {}), safetyBuffer: parseInt(e.target.value) || 0})}
                 placeholder="200"
               />
               <small>Emergency cushion amount</small>
@@ -450,7 +450,7 @@ const Settings = () => {
               <input
                 type="number"
                 value={preferences?.weeklyEssentials || ''}
-                onChange={(e) => setPreferences({...preferences, weeklyEssentials: parseInt(e.target.value)})}
+                onChange={(e) => setPreferences({...(preferences || {}), weeklyEssentials: parseInt(e.target.value) || 0})}
                 placeholder="150"
               />
               <small>Groceries, gas, basic needs per week</small>
@@ -463,7 +463,7 @@ const Settings = () => {
                 <label>Default Bill Sort Order</label>
                 <select
                   value={preferences?.billSortOrder || 'dueDate'}
-                  onChange={(e) => setPreferences({...preferences, billSortOrder: e.target.value})}
+                  onChange={(e) => setPreferences({...(preferences || {}), billSortOrder: e.target.value})}
                 >
                   <option value="dueDate">🔥 By Due Date (Recommended)</option>
                   <option value="alphabetical">🔤 Alphabetical</option>
@@ -477,7 +477,7 @@ const Settings = () => {
                   <input
                     type="checkbox"
                     checked={preferences?.dueDateAlerts !== false}
-                    onChange={(e) => setPreferences({...preferences, dueDateAlerts: e.target.checked})}
+                    onChange={(e) => setPreferences({...(preferences || {}), dueDateAlerts: e.target.checked})}
                   />
                   Enable Due Date Alerts
                 </label>
@@ -490,7 +490,7 @@ const Settings = () => {
                   <input
                     type="number"
                     value={preferences?.urgentDays || ''}
-                    onChange={(e) => setPreferences({...preferences, urgentDays: parseInt(e.target.value)})}
+                    onChange={(e) => setPreferences({...(preferences || {}), urgentDays: parseInt(e.target.value) || 1})}
                     min="1"
                     max="30"
                   />
@@ -502,7 +502,7 @@ const Settings = () => {
                   <input
                     type="number"
                     value={preferences?.warningDays || ''}
-                    onChange={(e) => setPreferences({...preferences, warningDays: parseInt(e.target.value)})}
+                    onChange={(e) => setPreferences({...(preferences || {}), warningDays: parseInt(e.target.value) || 1})}
                     min="1"
                     max="60"
                   />
