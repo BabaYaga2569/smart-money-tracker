@@ -1132,50 +1132,12 @@ const refreshPlaidTransactions = async () => {
   const updateBillAsPaid = async (bill, paidDate = null, paymentOptions = {}) => {
     try {
       const billRef = doc(db, 'users', currentUser.uid, 'billInstances', bill.id);
-      const isRecurring = bill.recurrence && bill.recurrence !== 'one-time';
       
-      if (isRecurring) {
-        // For RECURRING bills: Update the same bill with next due date
-        const currentDueDate = bill.dueDate || bill.nextDueDate;
-        const currentDueDateObj = new Date(currentDueDate);
-        
-        // Calculate next due date based on frequency
-        let nextDueDate;
-        const frequency = bill.recurrence;
-        
-        if (frequency === 'monthly') {
-          nextDueDate = RecurringManager.calculateNextOccurrenceAfterPayment(currentDueDate, 'monthly');
-        } else if (frequency === 'weekly') {
-          nextDueDate = RecurringManager.calculateNextOccurrenceAfterPayment(currentDueDate, 'weekly');
-        } else if (frequency === 'bi-weekly') {
-          nextDueDate = RecurringManager.calculateNextOccurrenceAfterPayment(currentDueDate, 'bi-weekly');
-        } else if (frequency === 'quarterly') {
-          nextDueDate = RecurringManager.calculateNextOccurrenceAfterPayment(currentDueDate, 'quarterly');
-        } else if (frequency === 'annually') {
-          nextDueDate = RecurringManager.calculateNextOccurrenceAfterPayment(currentDueDate, 'annually');
-        } else {
-          nextDueDate = new Date(currentDueDateObj);
-          nextDueDate.setMonth(nextDueDate.getMonth() + 1);
-        }
-        
-        const nextDueDateStr = nextDueDate.toISOString().split('T')[0];
-        
-        // Update the bill with new due date and reset payment status
-        await updateDoc(billRef, {
-          dueDate: nextDueDateStr,
-          nextDueDate: nextDueDateStr,
-          isPaid: false,
-          status: 'pending',
-          lastPaidDate: serverTimestamp(),
-          updatedAt: serverTimestamp()
-        });
-        
-        console.log(`✅ Recurring bill updated with next due date: ${bill.name} -> ${nextDueDateStr}`);
-      } else {
-        // For ONE-TIME bills: Delete after payment
-        await deleteDoc(billRef);
-        console.log(`✅ One-time bill deleted after payment: ${bill.name}`);
-      }
+      // ✅ BUG FIX: DELETE bill instance after payment (both recurring and one-time)
+      // The bill generator or template advancement will create the next month's instance
+      // This prevents duplicate bills from being created
+      await deleteDoc(billRef);
+      console.log(`✅ Bill instance deleted after payment: ${bill.name}`);
       
       // If bill was generated from recurring template, advance template's nextOccurrence
       // and auto-generate the NEXT month's bill instance
