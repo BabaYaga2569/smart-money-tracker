@@ -75,11 +75,69 @@ const Settings = () => {
       if (settingsDocSnap.exists()) {
         const data = settingsDocSnap.data();
         
-        setPersonalInfo(data.personalInfo || personalInfo);
-        setPaySchedules(data.paySchedules || paySchedules);
-        setBankAccounts(data.bankAccounts || bankAccounts);
+        // Use optional chaining and provide safe defaults
+        setPersonalInfo({
+          yourName: data.personalInfo?.yourName || '',
+          spouseName: data.personalInfo?.spouseName || ''
+        });
+        
+        setPaySchedules({
+          yours: {
+            type: data.paySchedules?.yours?.type || 'bi-weekly',
+            amount: data.paySchedules?.yours?.amount || '',
+            lastPaydate: data.paySchedules?.yours?.lastPaydate || '',
+            bankSplit: {
+              fixedAmount: {
+                bank: data.paySchedules?.yours?.bankSplit?.fixedAmount?.bank || 'SoFi',
+                amount: data.paySchedules?.yours?.bankSplit?.fixedAmount?.amount || '400'
+              },
+              remainder: {
+                bank: data.paySchedules?.yours?.bankSplit?.remainder?.bank || 'Bank of America'
+              }
+            }
+          },
+          spouse: {
+            type: data.paySchedules?.spouse?.type || 'bi-monthly',
+            amount: data.paySchedules?.spouse?.amount || '',
+            dates: data.paySchedules?.spouse?.dates || [15, 30]
+          }
+        });
+        
+        setBankAccounts({
+          bofa: {
+            name: 'Bank of America',
+            type: 'Checking',
+            balance: data.bankAccounts?.bofa?.balance || ''
+          },
+          sofi: {
+            name: 'SoFi',
+            type: 'Savings',
+            balance: data.bankAccounts?.sofi?.balance || ''
+          },
+          usaa: {
+            name: 'USAA',
+            type: 'Checking',
+            balance: data.bankAccounts?.usaa?.balance || ''
+          },
+          cap1: {
+            name: 'Capital One',
+            type: 'Credit',
+            balance: data.bankAccounts?.cap1?.balance || ''
+          }
+        });
+        
         setBills(data.bills || []);
-        setPreferences(data.preferences || preferences);
+        
+        setPreferences({
+          safetyBuffer: data.preferences?.safetyBuffer || 200,
+          weeklyEssentials: data.preferences?.weeklyEssentials || 150,
+          billSortOrder: data.preferences?.billSortOrder || 'dueDate',
+          urgentDays: data.preferences?.urgentDays || 7,
+          warningDays: data.preferences?.warningDays || 14,
+          dueDateAlerts: data.preferences?.dueDateAlerts !== undefined ? data.preferences.dueDateAlerts : true,
+          debugMode: data.preferences?.debugMode || false
+        });
+        
         setNextPaydayOverride(data.nextPaydayOverride || '');
       }
     } catch (error) {
@@ -210,7 +268,7 @@ const Settings = () => {
   };
 
   const handleDebugModeToggle = (enabled) => {
-    setPreferences({ ...preferences, debugMode: enabled });
+    setPreferences({ ...(preferences || {}), debugMode: enabled });
     localStorage.setItem('debugMode', enabled.toString());
     setMessage(enabled ? '🛠️ Debug mode enabled! Floating debug button will appear.' : '✅ Debug mode disabled.');
     
@@ -251,8 +309,8 @@ const Settings = () => {
               <label>Your Name</label>
               <input
                 type="text"
-                value={personalInfo.yourName}
-                onChange={(e) => setPersonalInfo({...personalInfo, yourName: e.target.value})}
+                value={personalInfo?.yourName || ''}
+                onChange={(e) => setPersonalInfo({...(personalInfo || {}), yourName: e.target.value})}
                 placeholder="Enter your name"
               />
             </div>
@@ -260,8 +318,8 @@ const Settings = () => {
               <label>Spouse Name</label>
               <input
                 type="text"
-                value={personalInfo.spouseName}
-                onChange={(e) => setPersonalInfo({...personalInfo, spouseName: e.target.value})}
+                value={personalInfo?.spouseName || ''}
+                onChange={(e) => setPersonalInfo({...(personalInfo || {}), spouseName: e.target.value})}
                 placeholder="Enter spouse name"
               />
             </div>
@@ -276,10 +334,10 @@ const Settings = () => {
               <label>Pay Amount</label>
               <input
                 type="number"
-                value={paySchedules.yours.amount}
+                value={paySchedules?.yours?.amount || ''}
                 onChange={(e) => setPaySchedules({
                   ...paySchedules,
-                  yours: {...paySchedules.yours, amount: e.target.value}
+                  yours: {...(paySchedules?.yours || {}), amount: e.target.value}
                 })}
                 placeholder="1883.81"
               />
@@ -288,10 +346,10 @@ const Settings = () => {
               <label>Last Pay Date</label>
               <input
                 type="date"
-                value={paySchedules.yours.lastPaydate}
+                value={paySchedules?.yours?.lastPaydate || ''}
                 onChange={(e) => setPaySchedules({
                   ...paySchedules,
-                  yours: {...paySchedules.yours, lastPaydate: e.target.value}
+                  yours: {...(paySchedules?.yours || {}), lastPaydate: e.target.value}
                 })}
               />
               <small>Used for next payday calculation</small>
@@ -300,14 +358,14 @@ const Settings = () => {
               <h4>SoFi Fixed Amount (Early Deposit)</h4>
               <input
                 type="number"
-                value={paySchedules.yours.bankSplit.fixedAmount.amount}
+                value={paySchedules?.yours?.bankSplit?.fixedAmount?.amount || ''}
                 onChange={(e) => setPaySchedules({
                   ...paySchedules,
                   yours: {
-                    ...paySchedules.yours,
+                    ...(paySchedules?.yours || {}),
                     bankSplit: {
-                      ...paySchedules.yours.bankSplit,
-                      fixedAmount: {...paySchedules.yours.bankSplit.fixedAmount, amount: e.target.value}
+                      ...(paySchedules?.yours?.bankSplit || {}),
+                      fixedAmount: {...(paySchedules?.yours?.bankSplit?.fixedAmount || {}), amount: e.target.value}
                     }
                   }
                 })}
@@ -317,13 +375,13 @@ const Settings = () => {
               
               <h4>Remainder Bank</h4>
               <select
-                value={paySchedules.yours.bankSplit.remainder.bank}
+                value={paySchedules?.yours?.bankSplit?.remainder?.bank || 'Bank of America'}
                 onChange={(e) => setPaySchedules({
                   ...paySchedules,
                   yours: {
-                    ...paySchedules.yours,
+                    ...(paySchedules?.yours || {}),
                     bankSplit: {
-                      ...paySchedules.yours.bankSplit,
+                      ...(paySchedules?.yours?.bankSplit || {}),
                       remainder: {bank: e.target.value}
                     }
                   }
@@ -346,10 +404,10 @@ const Settings = () => {
               <label>Pay Amount</label>
               <input
                 type="number"
-                value={paySchedules.spouse.amount}
+                value={paySchedules?.spouse?.amount || ''}
                 onChange={(e) => setPaySchedules({
                   ...paySchedules,
-                  spouse: {...paySchedules.spouse, amount: e.target.value}
+                  spouse: {...(paySchedules?.spouse || {}), amount: e.target.value}
                 })}
                 placeholder="1851.04"
               />
@@ -371,7 +429,7 @@ const Settings = () => {
               <label>Next Payday Date (Override)</label>
               <input
                 type="date"
-                value={nextPaydayOverride}
+                value={nextPaydayOverride || ''}
                 onChange={(e) => setNextPaydayOverride(e.target.value)}
                 placeholder="Override calculated payday"
               />
@@ -381,8 +439,8 @@ const Settings = () => {
               <label>Safety Buffer</label>
               <input
                 type="number"
-                value={preferences.safetyBuffer}
-                onChange={(e) => setPreferences({...preferences, safetyBuffer: parseInt(e.target.value)})}
+                value={preferences?.safetyBuffer || ''}
+                onChange={(e) => setPreferences({...(preferences || {}), safetyBuffer: parseInt(e.target.value) || 0})}
                 placeholder="200"
               />
               <small>Emergency cushion amount</small>
@@ -391,8 +449,8 @@ const Settings = () => {
               <label>Weekly Essentials</label>
               <input
                 type="number"
-                value={preferences.weeklyEssentials}
-                onChange={(e) => setPreferences({...preferences, weeklyEssentials: parseInt(e.target.value)})}
+                value={preferences?.weeklyEssentials || ''}
+                onChange={(e) => setPreferences({...(preferences || {}), weeklyEssentials: parseInt(e.target.value) || 0})}
                 placeholder="150"
               />
               <small>Groceries, gas, basic needs per week</small>
@@ -404,8 +462,8 @@ const Settings = () => {
               <div className="form-group">
                 <label>Default Bill Sort Order</label>
                 <select
-                  value={preferences.billSortOrder}
-                  onChange={(e) => setPreferences({...preferences, billSortOrder: e.target.value})}
+                  value={preferences?.billSortOrder || 'dueDate'}
+                  onChange={(e) => setPreferences({...(preferences || {}), billSortOrder: e.target.value})}
                 >
                   <option value="dueDate">🔥 By Due Date (Recommended)</option>
                   <option value="alphabetical">🔤 Alphabetical</option>
@@ -418,8 +476,8 @@ const Settings = () => {
                 <label>
                   <input
                     type="checkbox"
-                    checked={preferences.dueDateAlerts}
-                    onChange={(e) => setPreferences({...preferences, dueDateAlerts: e.target.checked})}
+                    checked={preferences?.dueDateAlerts !== false}
+                    onChange={(e) => setPreferences({...(preferences || {}), dueDateAlerts: e.target.checked})}
                   />
                   Enable Due Date Alerts
                 </label>
@@ -431,8 +489,8 @@ const Settings = () => {
                   <label>Urgent Alert (Days)</label>
                   <input
                     type="number"
-                    value={preferences.urgentDays}
-                    onChange={(e) => setPreferences({...preferences, urgentDays: parseInt(e.target.value)})}
+                    value={preferences?.urgentDays || ''}
+                    onChange={(e) => setPreferences({...(preferences || {}), urgentDays: parseInt(e.target.value) || 1})}
                     min="1"
                     max="30"
                   />
@@ -443,8 +501,8 @@ const Settings = () => {
                   <label>Warning Alert (Days)</label>
                   <input
                     type="number"
-                    value={preferences.warningDays}
-                    onChange={(e) => setPreferences({...preferences, warningDays: parseInt(e.target.value)})}
+                    value={preferences?.warningDays || ''}
+                    onChange={(e) => setPreferences({...(preferences || {}), warningDays: parseInt(e.target.value) || 1})}
                     min="1"
                     max="60"
                   />
@@ -460,7 +518,7 @@ const Settings = () => {
                 <label>
                   <input
                     type="checkbox"
-                    checked={preferences.debugMode}
+                    checked={preferences?.debugMode || false}
                     onChange={(e) => handleDebugModeToggle(e.target.checked)}
                   />
                   Enable Debug Mode
@@ -483,13 +541,13 @@ const Settings = () => {
         <div className="settings-tile">
           <h3>🏦 Bank Accounts</h3>
           <div className="tile-content">
-            {Object.entries(bankAccounts).map(([key, account]) => (
+            {Object.entries(bankAccounts || {}).map(([key, account]) => (
               <div key={key} className="form-group">
-                <label>{account.name} ({account.type})</label>
+                <label>{account?.name || 'Bank'} ({account?.type || 'Account'})</label>
                 <input
                   type="number"
                   step="0.01"
-                  value={account.balance}
+                  value={account?.balance || ''}
                   onChange={(e) => setBankAccounts({
                     ...bankAccounts,
                     [key]: {...account, balance: e.target.value}

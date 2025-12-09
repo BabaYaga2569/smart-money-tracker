@@ -1,5 +1,7 @@
 import React, { useState, useEffect, lazy, Suspense } from 'react';
 import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
+import { doc, getDoc } from 'firebase/firestore';
+import { db } from './firebase';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
 import ErrorBoundary from './components/ErrorBoundary';
 import Sidebar from './components/Sidebar';
@@ -30,6 +32,7 @@ const PaymentHistory = lazy(() => import('./pages/PaymentHistory'));
 const Reports = lazy(() => import('./pages/Reports'));
 const DebtOptimizer = lazy(() => import('./pages/DebtOptimizer'));
 const Login = lazy(() => import('./pages/Login'));
+const Onboarding = lazy(() => import('./pages/Onboarding'));
 
 // Force bundle hash change to deploy pending fixes
 export const APP_VERSION = '2.0.1-' + Date.now();
@@ -40,6 +43,54 @@ console.log('[App] Initialized at:', new Date().toISOString());
 const PrivateRoute = ({ children }) => {
   const { currentUser } = useAuth();
   return currentUser ? children : <Navigate to="/login" />;
+};
+
+// Onboarding Guard - Redirects to onboarding if not complete
+const OnboardingGuard = ({ children }) => {
+  const { currentUser } = useAuth();
+  const [loading, setLoading] = React.useState(true);
+  const [needsOnboarding, setNeedsOnboarding] = React.useState(false);
+
+  React.useEffect(() => {
+    const checkOnboarding = async () => {
+      if (!currentUser) {
+        setLoading(false);
+        return;
+      }
+
+      try {
+        const settingsDocRef = doc(db, 'users', currentUser.uid, 'settings', 'personal');
+        const settingsDocSnap = await getDoc(settingsDocRef);
+
+        if (settingsDocSnap.exists()) {
+          const data = settingsDocSnap.data();
+          // Check if onboarding is complete
+          setNeedsOnboarding(data.isOnboardingComplete !== true);
+        } else {
+          // No settings document = needs onboarding
+          setNeedsOnboarding(true);
+        }
+      } catch (error) {
+        console.error('[OnboardingGuard] Error checking onboarding status:', error);
+        // On error, assume onboarding is needed
+        setNeedsOnboarding(true);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    checkOnboarding();
+  }, [currentUser]);
+
+  if (loading) {
+    return <LoadingSpinner />;
+  }
+
+  if (needsOnboarding) {
+    return <Navigate to="/onboarding" replace />;
+  }
+
+  return children;
 };
 
 // Main app layout with sidebar
@@ -119,140 +170,181 @@ function App() {
               {/* Public route - Login */}
               <Route path="/login" element={<Login />} />
           
-          {/* Protected routes - require authentication */}
+          {/* Onboarding route - requires authentication but bypasses onboarding guard */}
+          <Route path="/onboarding" element={
+            <PrivateRoute>
+              <Onboarding />
+            </PrivateRoute>
+          } />
+          
+          {/* Protected routes - require authentication and onboarding complete */}
           <Route path="/" element={
             <PrivateRoute>
-              <AppLayout showDebugButton={debugModeEnabled}>
-                <Dashboard />
-              </AppLayout>
+              <OnboardingGuard>
+                <AppLayout showDebugButton={debugModeEnabled}>
+                  <Dashboard />
+                </AppLayout>
+              </OnboardingGuard>
             </PrivateRoute>
           } />
           
           <Route path="/accounts" element={
             <PrivateRoute>
-              <AppLayout showDebugButton={debugModeEnabled}>
-                <Accounts />
-              </AppLayout>
+              <OnboardingGuard>
+                <AppLayout showDebugButton={debugModeEnabled}>
+                  <Accounts />
+                </AppLayout>
+              </OnboardingGuard>
             </PrivateRoute>
           } />
           
           <Route path="/bank/:accountId" element={
             <PrivateRoute>
-              <AppLayout showDebugButton={debugModeEnabled}>
-                <BankDetail />
-              </AppLayout>
+              <OnboardingGuard>
+                <AppLayout showDebugButton={debugModeEnabled}>
+                  <BankDetail />
+                </AppLayout>
+              </OnboardingGuard>
             </PrivateRoute>
           } />
           
           <Route path="/transactions" element={
             <PrivateRoute>
-              <AppLayout showDebugButton={debugModeEnabled}>
-                <Transactions />
-              </AppLayout>
+              <OnboardingGuard>
+                <AppLayout showDebugButton={debugModeEnabled}>
+                  <Transactions />
+                </AppLayout>
+              </OnboardingGuard>
             </PrivateRoute>
           } />
           
           <Route path="/spendability" element={
             <PrivateRoute>
-              <AppLayout showDebugButton={debugModeEnabled}>
-                <Spendability />
-              </AppLayout>
+              <OnboardingGuard>
+                <AppLayout showDebugButton={debugModeEnabled}>
+                  <Spendability />
+                </AppLayout>
+              </OnboardingGuard>
             </PrivateRoute>
           } />
           
           <Route path="/bills" element={
             <PrivateRoute>
-              <AppLayout showDebugButton={debugModeEnabled}>
-                <Bills />
-              </AppLayout>
+              <OnboardingGuard>
+                <AppLayout showDebugButton={debugModeEnabled}>
+                  <Bills />
+                </AppLayout>
+              </OnboardingGuard>
             </PrivateRoute>
           } />
           
           <Route path="/recurring" element={
             <PrivateRoute>
-              <AppLayout showDebugButton={debugModeEnabled}>
-                <Recurring />
-              </AppLayout>
+              <OnboardingGuard>
+                <AppLayout showDebugButton={debugModeEnabled}>
+                  <Recurring />
+                </AppLayout>
+              </OnboardingGuard>
             </PrivateRoute>
           } />
           
           <Route path="/subscriptions" element={
             <PrivateRoute>
-              <AppLayout showDebugButton={debugModeEnabled}>
-                <Subscriptions />
-              </AppLayout>
+              <OnboardingGuard>
+                <AppLayout showDebugButton={debugModeEnabled}>
+                  <Subscriptions />
+                </AppLayout>
+              </OnboardingGuard>
             </PrivateRoute>
           } />
           
           <Route path="/goals" element={
             <PrivateRoute>
-              <AppLayout showDebugButton={debugModeEnabled}>
-                <Goals />
-              </AppLayout>
+              <OnboardingGuard>
+                <AppLayout showDebugButton={debugModeEnabled}>
+                  <Goals />
+                </AppLayout>
+              </OnboardingGuard>
             </PrivateRoute>
           } />
           
           <Route path="/categories" element={
             <PrivateRoute>
-              <AppLayout showDebugButton={debugModeEnabled}>
-                <Categories />
-              </AppLayout>
+              <OnboardingGuard>
+                <AppLayout showDebugButton={debugModeEnabled}>
+                  <Categories />
+                </AppLayout>
+              </OnboardingGuard>
             </PrivateRoute>
           } />
           
           <Route path="/creditcards" element={
             <PrivateRoute>
-              <AppLayout showDebugButton={debugModeEnabled}>
-               <CreditCards />
-             </AppLayout>
+              <OnboardingGuard>
+                <AppLayout showDebugButton={debugModeEnabled}>
+                 <CreditCards />
+               </AppLayout>
+              </OnboardingGuard>
           </PrivateRoute>
          } />     
           
           <Route path="/cashflow" element={
             <PrivateRoute>
-              <AppLayout showDebugButton={debugModeEnabled}>
-                <Cashflow />
-              </AppLayout>
+              <OnboardingGuard>
+                <AppLayout showDebugButton={debugModeEnabled}>
+                  <Cashflow />
+                </AppLayout>
+              </OnboardingGuard>
             </PrivateRoute>
           } />
           
           <Route path="/paycycle" element={
             <PrivateRoute>
-              <AppLayout showDebugButton={debugModeEnabled}>
-                <Paycycle />
-              </AppLayout>
+              <OnboardingGuard>
+                <AppLayout showDebugButton={debugModeEnabled}>
+                  <Paycycle />
+                </AppLayout>
+              </OnboardingGuard>
             </PrivateRoute>
           } />
           
           <Route path="/settings" element={
             <PrivateRoute>
-              <AppLayout showDebugButton={debugModeEnabled}>
-                <Settings />
-              </AppLayout>
+              <OnboardingGuard>
+                <AppLayout showDebugButton={debugModeEnabled}>
+                  <Settings />
+                </AppLayout>
+              </OnboardingGuard>
             </PrivateRoute>
           } />
           
           <Route path="/payment-history" element={
             <PrivateRoute>
-              <AppLayout showDebugButton={debugModeEnabled}>
-                <PaymentHistory />
-              </AppLayout>
+              <OnboardingGuard>
+                <AppLayout showDebugButton={debugModeEnabled}>
+                  <PaymentHistory />
+                </AppLayout>
+              </OnboardingGuard>
             </PrivateRoute>
           } />
           
           <Route path="/reports" element={
             <PrivateRoute>
-              <AppLayout showDebugButton={debugModeEnabled}>
-                <Reports />
-              </AppLayout>
+              <OnboardingGuard>
+                <AppLayout showDebugButton={debugModeEnabled}>
+                  <Reports />
+                </AppLayout>
+              </OnboardingGuard>
             </PrivateRoute>
           } />
           
           <Route path="/debt-optimizer" element={
             <PrivateRoute>
-              <AppLayout showDebugButton={debugModeEnabled}>
-                <DebtOptimizer />
-              </AppLayout>
+              <OnboardingGuard>
+                <AppLayout showDebugButton={debugModeEnabled}>
+                  <DebtOptimizer />
+                </AppLayout>
+              </OnboardingGuard>
             </PrivateRoute>
           } />
               </Routes>

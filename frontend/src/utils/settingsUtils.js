@@ -6,27 +6,48 @@ import { db } from '../firebase';
  */
 const getDefaultSettings = () => ({
   personalInfo: { 
-    name: '', 
+    yourName: '',
     spouseName: '' 
   },
   paySchedules: {
-    user: { 
-      type: 'biweekly', 
-      dayOfWeek: 5 
+    yours: {
+      type: 'bi-weekly',
+      amount: '',
+      lastPaydate: '',
+      bankSplit: {
+        fixedAmount: { bank: 'SoFi', amount: '' },
+        remainder: { bank: 'Bank of America' }
+      }
     },
-    spouse: { 
-      type: 'none' 
+    spouse: {
+      type: 'bi-monthly',
+      amount: '',
+      dates: [15, 30]
     }
   },
+  payAmount: 0,
+  spousePayAmount: 0,
   preferences: {
     warningDays: 3,
     safetyBuffer: 200,
-    weeklyEssentials: 300
+    weeklyEssentials: 300,
+    billSortOrder: 'dueDate',
+    urgentDays: 7,
+    dueDateAlerts: true,
+    debugMode: false
   },
   bills: [],
   recurringItems: [],
   plaidAccounts: [],
-  bankAccounts: {},
+  bankAccounts: {
+    bofa: { name: 'Bank of America', type: 'Checking', balance: '' },
+    sofi: { name: 'SoFi', type: 'Savings', balance: '' },
+    usaa: { name: 'USAA', type: 'Checking', balance: '' },
+    cap1: { name: 'Capital One', type: 'Credit', balance: '' }
+  },
+  lastPayDate: null,
+  nextPaydayOverride: null,
+  isOnboardingComplete: false,
   createdAt: serverTimestamp(),
   updatedAt: serverTimestamp()
 });
