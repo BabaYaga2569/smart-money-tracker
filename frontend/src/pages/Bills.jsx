@@ -70,6 +70,12 @@ export default function Bills() {
   const [userSettings, setUserSettings] = useState(null);
   const [autoGenerationLock, setAutoGenerationLock] = useState(new Set());
 
+  // Helper function to generate lock key for template
+  const getLockKey = (template) => {
+    const dueDate = template.nextRenewal || template.nextOccurrence;
+    return `${template.id}-${dueDate}`;
+  };
+
   // ✅ NEW: Load bills from billInstances collection
   const loadBills = async () => {
     if (!currentUser) return;
@@ -462,13 +468,20 @@ const refreshPlaidTransactions = async () => {
       // Check if merchant is in ignored list
       const ignoredMerchants = userSettings?.ignoredMerchants || [];
       const merchantLower = template.name.toLowerCase();
-      if (ignoredMerchants.some(ignored => merchantLower.includes(ignored.toLowerCase()))) {
+      // Use startsWith, endsWith, or exact match to avoid false positives
+      const isIgnored = ignoredMerchants.some(ignored => {
+        const ignoredLower = ignored.toLowerCase();
+        return merchantLower === ignoredLower || 
+               merchantLower.startsWith(ignoredLower + ' ') || 
+               merchantLower.endsWith(' ' + ignoredLower);
+      });
+      if (isIgnored) {
         console.log('[AutoBillDetection] Merchant is ignored, skipping:', template.name);
         return;
       }
       
       // Check debounce lock to prevent infinite loops
-      const lockKey = `${template.id}-${template.nextRenewal || template.nextOccurrence}`;
+      const lockKey = getLockKey(template);
       if (autoGenerationLock.has(lockKey)) {
         console.log('[AutoBillDetection] Already processing this template, skipping:', template.name);
         return;
@@ -570,7 +583,7 @@ const refreshPlaidTransactions = async () => {
     } catch (error) {
       console.error('❌ Error auto-generating bill:', error);
       // Remove from lock on error
-      const lockKey = `${template.id}-${template.nextRenewal || template.nextOccurrence}`;
+      const lockKey = getLockKey(template);
       setAutoGenerationLock(prev => {
         const newSet = new Set(prev);
         newSet.delete(lockKey);

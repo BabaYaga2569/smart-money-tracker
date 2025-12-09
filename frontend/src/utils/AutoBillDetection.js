@@ -60,7 +60,14 @@ export async function generateNextBill(userId, bill, settings = null) {
     // Check if merchant is in ignored list
     const ignoredMerchants = settings?.ignoredMerchants || [];
     const merchantLower = bill.name.toLowerCase();
-    if (ignoredMerchants.some(ignored => merchantLower.includes(ignored.toLowerCase()))) {
+    // Use startsWith, endsWith, or exact match to avoid false positives
+    const isIgnored = ignoredMerchants.some(ignored => {
+      const ignoredLower = ignored.toLowerCase();
+      return merchantLower === ignoredLower || 
+             merchantLower.startsWith(ignoredLower + ' ') || 
+             merchantLower.endsWith(' ' + ignoredLower);
+    });
+    if (isIgnored) {
       console.log(`[AutoBillDetection] Merchant is ignored, skipping: ${bill.name}`);
       return null;
     }

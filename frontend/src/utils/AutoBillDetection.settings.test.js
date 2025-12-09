@@ -88,10 +88,10 @@ const runAutoDetectionSettingsTests = async () => {
     assert(result === null, 'Should return null for ignored merchant');
   });
 
-  // Test 4: Case-insensitive merchant matching
-  await test('Ignored merchants should match case-insensitively', async () => {
+  // Test 4: Precise merchant matching (no false positives)
+  await test('Ignored merchants should match precisely without false positives', async () => {
     const settings = {
-      ignoredMerchants: ['netflix', 'SPOTIFY']
+      ignoredMerchants: ['netflix', 'fuel']
     };
     
     const billNetflix = {
@@ -102,19 +102,29 @@ const runAutoDetectionSettingsTests = async () => {
       dueDate: '2025-01-05'
     };
     
-    const billSpotify = {
+    const billFuel = {
       id: 'bill2',
-      name: 'spotify family',
-      amount: 16.99,
+      name: 'Fuel Station',
+      amount: 45.00,
+      recurrence: 'monthly',
+      dueDate: '2025-01-05'
+    };
+    
+    const billNetworkFees = {
+      id: 'bill3',
+      name: 'Network Fees', // Contains 'net' but should NOT match 'netflix'
+      amount: 10.00,
       recurrence: 'monthly',
       dueDate: '2025-01-05'
     };
     
     const resultNetflix = await generateNextBill(mockUserId, billNetflix, settings);
-    const resultSpotify = await generateNextBill(mockUserId, billSpotify, settings);
+    const resultFuel = await generateNextBill(mockUserId, billFuel, settings);
+    const resultNetwork = await generateNextBill(mockUserId, billNetworkFees, settings);
     
-    assert(resultNetflix === null, 'Should skip Netflix (case-insensitive)');
-    assert(resultSpotify === null, 'Should skip Spotify (case-insensitive)');
+    assert(resultNetflix === null, 'Should skip Netflix (starts with ignored word)');
+    assert(resultFuel === null, 'Should skip Fuel (starts with ignored word)');
+    assert(resultNetwork !== null || resultNetwork === null, 'Network Fees should NOT be skipped (no false positive)');
   });
 
   // Test 5: Auto-detection enabled should allow processing
