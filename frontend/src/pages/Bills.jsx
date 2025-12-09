@@ -458,6 +458,9 @@ const refreshPlaidTransactions = async () => {
 
   // Auto-generate bill instance from recurring template
   const autoGenerateBillFromTemplate = async (template) => {
+    // Declare lockKey at function scope so it's available in catch block
+    let lockKey = null;
+    
     try {
       // Check if auto-generation is disabled in user settings
       if (userSettings?.autoDetectBills === false || userSettings?.disableAutoGeneration === true) {
@@ -481,7 +484,7 @@ const refreshPlaidTransactions = async () => {
       }
       
       // Check debounce lock to prevent infinite loops
-      const lockKey = getLockKey(template);
+      lockKey = getLockKey(template);
       if (autoGenerationLock.has(lockKey)) {
         console.log('[AutoBillDetection] Already processing this template, skipping:', template.name);
         return;
@@ -582,13 +585,14 @@ const refreshPlaidTransactions = async () => {
       });
     } catch (error) {
       console.error('❌ Error auto-generating bill:', error);
-      // Remove from lock on error
-      const lockKey = getLockKey(template);
-      setAutoGenerationLock(prev => {
-        const newSet = new Set(prev);
-        newSet.delete(lockKey);
-        return newSet;
-      });
+      // Remove from lock on error (if lock was acquired)
+      if (lockKey) {
+        setAutoGenerationLock(prev => {
+          const newSet = new Set(prev);
+          newSet.delete(lockKey);
+          return newSet;
+        });
+      }
     }
   };
 

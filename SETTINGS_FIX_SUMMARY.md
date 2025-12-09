@@ -41,10 +41,16 @@ if (settings?.autoDetectBills === false || settings?.disableAutoGeneration === t
   return;
 }
 
-// 2. Check if merchant is ignored
+// 2. Check if merchant is ignored (precise matching to avoid false positives)
 const ignoredMerchants = settings?.ignoredMerchants || [];
 const merchantLower = merchantName.toLowerCase();
-if (ignoredMerchants.some(ignored => merchantLower.includes(ignored.toLowerCase()))) {
+const isIgnored = ignoredMerchants.some(ignored => {
+  const ignoredLower = ignored.toLowerCase();
+  return merchantLower === ignoredLower || 
+         merchantLower.startsWith(ignoredLower + ' ') || 
+         merchantLower.endsWith(' ' + ignoredLower);
+});
+if (isIgnored) {
   console.log('[AutoBillDetection] Merchant is ignored, skipping:', merchantName);
   return;
 }
