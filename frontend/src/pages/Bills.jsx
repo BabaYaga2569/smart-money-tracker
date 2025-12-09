@@ -68,6 +68,7 @@ export default function Bills() {
   const [showPaidBills, setShowPaidBills] = useState(false);
   const [paidBills, setPaidBills] = useState([]);
   const [userSettings, setUserSettings] = useState(null);
+  const [settingsLoaded, setSettingsLoaded] = useState(false);
   const [autoGenerationLock, setAutoGenerationLock] = useState(new Set());
 
   // Helper function to generate lock key for template
@@ -179,9 +180,15 @@ export default function Bills() {
           disableAutoGeneration: settings.disableAutoGeneration,
           ignoredMerchants: settings.ignoredMerchants || []
         });
+      } else {
+        // If no settings exist, set empty object so we know settings are loaded
+        setUserSettings({});
       }
+      setSettingsLoaded(true);
     } catch (error) {
       console.error('Error loading user settings:', error);
+      // Even on error, mark as loaded to prevent infinite waiting
+      setSettingsLoaded(true);
     }
   };
 
@@ -625,6 +632,18 @@ const refreshPlaidTransactions = async () => {
               return;
             }
             
+            // Don't auto-generate if settings haven't loaded yet
+            if (!settingsLoaded || userSettings === null) {
+              console.log('[AutoBillDetection] Settings not loaded yet, skipping auto-generation');
+              return;
+            }
+
+            // Don't auto-generate if disabled in settings
+            if (userSettings?.autoDetectBills === false || userSettings?.disableAutoGeneration === true) {
+              console.log('[AutoBillDetection] Auto-generation disabled in settings');
+              return;
+            }
+            
             // Check if bill instance already exists for this template and due date
             const existingBill = processedBills.find(b => 
               b.recurringTemplateId === template.id && 
@@ -646,7 +665,7 @@ const refreshPlaidTransactions = async () => {
 
     return () => unsubscribe();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [currentUser, processedBills, userSettings]);
+  }, [currentUser, processedBills, userSettings, settingsLoaded]);
 
   // Auto-detect recurring bills on first login
   useEffect(() => {
@@ -695,13 +714,17 @@ const refreshPlaidTransactions = async () => {
   // Load bills on mount - ADDED
   useEffect(() => {
     if (currentUser) {
-      loadBills();
-      loadAccounts();
-      loadPaidThisMonth();
-      loadUserSettings();
-      if (showPaidBills) {
-        loadPaidBills();
-      }
+      // Load settings FIRST before anything else
+      const loadData = async () => {
+        await loadUserSettings();
+        loadBills();
+        loadAccounts();
+        loadPaidThisMonth();
+        if (showPaidBills) {
+          loadPaidBills();
+        }
+      };
+      loadData();
     }
   }, [currentUser, showPaidBills]);
 
