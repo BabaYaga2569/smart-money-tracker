@@ -9,6 +9,7 @@ import PlaidConnectionManager from '../utils/PlaidConnectionManager';
 import './Accounts.css';
 import { useAuth } from '../contexts/AuthContext';
 import { useSmartBalanceSync } from '../hooks/useSmartBalanceSync';
+import { ensureSettingsDocument } from '../utils/settingsUtils';
 
 const Accounts = () => {
   const { currentUser } = useAuth();
@@ -781,6 +782,10 @@ const formattedPlaidAccounts = allAccounts.filter(account => {
   const saveAccountsToFirebase = async (updatedAccounts) => {
     try {
       setSaving(true);
+      
+      // Ensure settings document exists before attempting to save
+      await ensureSettingsDocument(currentUser.uid);
+      
       const settingsDocRef = doc(db, 'users', currentUser.uid, 'settings', 'personal');
       
       // Get current settings to preserve other data
@@ -1079,6 +1084,9 @@ const formattedPlaidAccounts = allNewAccounts.filter(account => {
 });
 
 
+
+        // Ensure settings document exists before attempting to save
+        await ensureSettingsDocument(currentUser.uid);
 
         // Save to Firebase
         const settingsDocRef = doc(db, 'users', currentUser.uid, 'settings', 'personal');
