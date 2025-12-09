@@ -46,10 +46,32 @@ export async function markBillAsPaid(userId, bill, transaction) {
  * Generate next month's bill for recurring bills
  * @param {string} userId - User ID
  * @param {Object} bill - Current bill instance
+ * @param {Object} settings - User settings (optional)
  * @returns {Promise<Object>} - New bill instance
  */
-export async function generateNextBill(userId, bill) {
+export async function generateNextBill(userId, bill, settings = null) {
   try {
+    // Check if auto-generation is disabled in user settings
+    if (settings?.disableAutoGeneration === true || settings?.autoDetectBills === false) {
+      console.log(`[AutoBillDetection] Auto-generation is disabled in settings, skipping: ${bill.name}`);
+      return null;
+    }
+    
+    // Check if merchant is in ignored list
+    const ignoredMerchants = settings?.ignoredMerchants || [];
+    const merchantLower = bill.name.toLowerCase();
+    // Use startsWith, endsWith, or exact match to avoid false positives
+    const isIgnored = ignoredMerchants.some(ignored => {
+      const ignoredLower = ignored.toLowerCase();
+      return merchantLower === ignoredLower || 
+             merchantLower.startsWith(ignoredLower + ' ') || 
+             merchantLower.endsWith(' ' + ignoredLower);
+    });
+    if (isIgnored) {
+      console.log(`[AutoBillDetection] Merchant is ignored, skipping: ${bill.name}`);
+      return null;
+    }
+    
     // Only generate for recurring/subscription bills
     if (bill.recurrence !== 'monthly' && !bill.isSubscription) {
       console.log(`⏭️  Skipping next bill generation for non-recurring bill: ${bill.name}`);
@@ -104,10 +126,26 @@ export async function generateNextBill(userId, bill) {
  * @param {string} userId - User ID
  * @param {Array} transactions - Array of Plaid transactions
  * @param {Array} bills - Array of unpaid bill instances
+ * @param {Object} settings - User settings (optional)
  * @returns {Promise<Object>} - Results summary
  */
-export async function runAutoDetection(userId, transactions, bills) {
+export async function runAutoDetection(userId, transactions, bills, settings = null) {
   console.log('🤖 AUTO-DETECTION: Starting...');
+  
+  // Check if auto-detection is disabled in user settings
+  if (settings?.autoDetectBills === false || settings?.disableAutoGeneration === true) {
+    console.log('[AutoBillDetection] Auto-detection is disabled in settings, skipping');
+    return {
+      success: true,
+      matchCount: 0,
+      autoApproved: 0,
+      skipped: 0,
+      rejected: 0,
+      paidBills: [],
+      generatedBills: [],
+      message: 'Auto-detection is disabled in settings'
+    };
+  }
   
   try {
     // Filter to unpaid bills only
@@ -157,7 +195,7 @@ for (const match of matches) {
       autoApproved++;
       
       // Generate next bill if recurring
-      const nextBill = await generateNextBill(userId, bill);
+      const nextBill = await generateNextBill(userId, bill, settings);
       if (nextBill) {
         generatedBills.push(nextBill);
       }
