@@ -33,6 +33,22 @@ const Onboarding = () => {
 
   const totalSteps = 5;
 
+  // Helper function to map frequency to pay schedule type
+  const mapFrequencyToType = (frequency) => {
+    switch (frequency) {
+      case 'weekly':
+        return 'weekly';
+      case 'biweekly':
+        return 'bi-weekly';
+      case 'semimonthly':
+        return 'bi-monthly';
+      case 'monthly':
+        return 'monthly';
+      default:
+        return 'bi-weekly';
+    }
+  };
+
   const handleNext = () => {
     if (validateCurrentStep()) {
       setCurrentStep(currentStep + 1);
@@ -88,9 +104,7 @@ const Onboarding = () => {
       // Build pay schedules based on user input
       const paySchedules = {
         yours: {
-          type: paySchedule.frequency === 'biweekly' ? 'bi-weekly' : 
-                paySchedule.frequency === 'weekly' ? 'weekly' : 
-                paySchedule.frequency === 'monthly' ? 'monthly' : 'bi-weekly',
+          type: mapFrequencyToType(paySchedule.frequency),
           amount: paySchedule.amount,
           lastPaydate: '',
           bankSplit: {
@@ -99,9 +113,7 @@ const Onboarding = () => {
           }
         },
         spouse: paySchedule.hasSpouse ? {
-          type: paySchedule.spouseFrequency === 'biweekly' ? 'bi-weekly' : 
-                paySchedule.spouseFrequency === 'weekly' ? 'weekly' : 
-                paySchedule.spouseFrequency === 'monthly' ? 'monthly' : 'bi-weekly',
+          type: mapFrequencyToType(paySchedule.spouseFrequency),
           amount: paySchedule.spouseAmount,
           dates: [15, 30]
         } : {

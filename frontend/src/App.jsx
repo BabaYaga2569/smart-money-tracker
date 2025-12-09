@@ -1,5 +1,7 @@
 import React, { useState, useEffect, lazy, Suspense } from 'react';
 import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
+import { doc, getDoc } from 'firebase/firestore';
+import { db } from './firebase';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
 import ErrorBoundary from './components/ErrorBoundary';
 import Sidebar from './components/Sidebar';
@@ -57,10 +59,6 @@ const OnboardingGuard = ({ children }) => {
       }
 
       try {
-        // Import at runtime to avoid circular dependency
-        const { doc, getDoc } = await import('firebase/firestore');
-        const { db } = await import('./firebase');
-        
         const settingsDocRef = doc(db, 'users', currentUser.uid, 'settings', 'personal');
         const settingsDocSnap = await getDoc(settingsDocRef);
 

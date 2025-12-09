@@ -24,11 +24,6 @@ const getDefaultSettings = () => ({
       type: 'bi-monthly',
       amount: '',
       dates: [15, 30]
-    },
-    user: { 
-      type: 'biweekly', 
-      dayOfWeek: 5,
-      startDate: null
     }
   },
   payAmount: 0,

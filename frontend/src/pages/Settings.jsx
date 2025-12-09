@@ -337,7 +337,7 @@ const Settings = () => {
                 value={paySchedules?.yours?.amount || ''}
                 onChange={(e) => setPaySchedules({
                   ...paySchedules,
-                  yours: {...paySchedules.yours, amount: e.target.value}
+                  yours: {...(paySchedules?.yours || {}), amount: e.target.value}
                 })}
                 placeholder="1883.81"
               />
@@ -349,7 +349,7 @@ const Settings = () => {
                 value={paySchedules?.yours?.lastPaydate || ''}
                 onChange={(e) => setPaySchedules({
                   ...paySchedules,
-                  yours: {...paySchedules.yours, lastPaydate: e.target.value}
+                  yours: {...(paySchedules?.yours || {}), lastPaydate: e.target.value}
                 })}
               />
               <small>Used for next payday calculation</small>
@@ -362,10 +362,10 @@ const Settings = () => {
                 onChange={(e) => setPaySchedules({
                   ...paySchedules,
                   yours: {
-                    ...paySchedules.yours,
+                    ...(paySchedules?.yours || {}),
                     bankSplit: {
-                      ...paySchedules.yours.bankSplit,
-                      fixedAmount: {...paySchedules.yours.bankSplit.fixedAmount, amount: e.target.value}
+                      ...(paySchedules?.yours?.bankSplit || {}),
+                      fixedAmount: {...(paySchedules?.yours?.bankSplit?.fixedAmount || {}), amount: e.target.value}
                     }
                   }
                 })}
@@ -379,9 +379,9 @@ const Settings = () => {
                 onChange={(e) => setPaySchedules({
                   ...paySchedules,
                   yours: {
-                    ...paySchedules.yours,
+                    ...(paySchedules?.yours || {}),
                     bankSplit: {
-                      ...paySchedules.yours.bankSplit,
+                      ...(paySchedules?.yours?.bankSplit || {}),
                       remainder: {bank: e.target.value}
                     }
                   }
@@ -407,7 +407,7 @@ const Settings = () => {
                 value={paySchedules?.spouse?.amount || ''}
                 onChange={(e) => setPaySchedules({
                   ...paySchedules,
-                  spouse: {...paySchedules.spouse, amount: e.target.value}
+                  spouse: {...(paySchedules?.spouse || {}), amount: e.target.value}
                 })}
                 placeholder="1851.04"
               />
