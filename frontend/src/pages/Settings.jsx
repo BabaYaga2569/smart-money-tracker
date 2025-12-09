@@ -58,6 +58,14 @@ const Settings = () => {
 
   const [nextPaydayOverride, setNextPaydayOverride] = useState('');
 
+  const [earlyDeposit, setEarlyDeposit] = useState({
+    enabled: false,
+    bankName: '',
+    amount: '',
+    daysBefore: 2,
+    remainderBank: ''
+  });
+
   useEffect(() => {
     loadSettings();
     // Load debug mode from localStorage
@@ -139,6 +147,27 @@ const Settings = () => {
         });
         
         setNextPaydayOverride(data.nextPaydayOverride || '');
+
+        // Load early deposit settings (migrate from old bankSplit if exists)
+        if (data.earlyDeposit) {
+          setEarlyDeposit({
+            enabled: data.earlyDeposit.enabled || false,
+            bankName: data.earlyDeposit.bankName || '',
+            amount: data.earlyDeposit.amount || '',
+            daysBefore: data.earlyDeposit.daysBefore || 2,
+            remainderBank: data.earlyDeposit.remainderBank || ''
+          });
+        } else if (data.paySchedules?.yours?.bankSplit) {
+          // Migrate old SoFi-specific format to generic early deposit
+          const oldSplit = data.paySchedules.yours.bankSplit;
+          setEarlyDeposit({
+            enabled: !!oldSplit.fixedAmount?.amount,
+            bankName: oldSplit.fixedAmount?.bank || '',
+            amount: oldSplit.fixedAmount?.amount || '',
+            daysBefore: 2,
+            remainderBank: oldSplit.remainder?.bank || ''
+          });
+        }
       }
     } catch (error) {
       console.error('Error loading settings:', error);
@@ -189,6 +218,7 @@ const Settings = () => {
         bills: bills.filter(bill => bill.name && bill.amount),
         preferences,
         nextPaydayOverride,
+        earlyDeposit,
         lastUpdated: new Date().toISOString()
       };
 
@@ -354,45 +384,82 @@ const Settings = () => {
               />
               <small>Used for next payday calculation</small>
             </div>
-            <div className="pay-split-info">
-              <h4>SoFi Fixed Amount (Early Deposit)</h4>
-              <input
-                type="number"
-                value={paySchedules?.yours?.bankSplit?.fixedAmount?.amount || ''}
-                onChange={(e) => setPaySchedules({
-                  ...paySchedules,
-                  yours: {
-                    ...(paySchedules?.yours || {}),
-                    bankSplit: {
-                      ...(paySchedules?.yours?.bankSplit || {}),
-                      fixedAmount: {...(paySchedules?.yours?.bankSplit?.fixedAmount || {}), amount: e.target.value}
-                    }
-                  }
-                })}
-                placeholder="400.00"
-              />
-              <small>Deposits to SoFi 2 days before payday</small>
-              
-              <h4>Remainder Bank</h4>
-              <select
-                value={paySchedules?.yours?.bankSplit?.remainder?.bank || 'Bank of America'}
-                onChange={(e) => setPaySchedules({
-                  ...paySchedules,
-                  yours: {
-                    ...(paySchedules?.yours || {}),
-                    bankSplit: {
-                      ...(paySchedules?.yours?.bankSplit || {}),
-                      remainder: {bank: e.target.value}
-                    }
-                  }
-                })}
-              >
-                <option value="Bank of America">Bank of America</option>
-                <option value="USAA">USAA</option>
-                <option value="Capital One">Capital One</option>
-              </select>
-              <small>Gets remainder on actual payday</small>
+          </div>
+        </div>
+
+        {/* NEW Tile: Early Deposit Settings */}
+        <div className="settings-tile">
+          <h3>⚡ Early Deposit Settings</h3>
+          <div className="tile-content">
+            <div className="form-group">
+              <label>
+                <input
+                  type="checkbox"
+                  checked={earlyDeposit?.enabled || false}
+                  onChange={(e) => setEarlyDeposit({...(earlyDeposit || {}), enabled: e.target.checked})}
+                />
+                Enable Early Deposit
+              </label>
+              <small>Receive a portion of your paycheck early</small>
             </div>
+
+            {earlyDeposit?.enabled && (
+              <>
+                <div className="form-group">
+                  <label>Early Deposit Bank</label>
+                  <select
+                    value={earlyDeposit?.bankName || ''}
+                    onChange={(e) => setEarlyDeposit({...(earlyDeposit || {}), bankName: e.target.value})}
+                  >
+                    <option value="">Select Bank...</option>
+                    <option value="Bank of America">Bank of America</option>
+                    <option value="SoFi">SoFi</option>
+                    <option value="USAA">USAA</option>
+                    <option value="Capital One">Capital One</option>
+                  </select>
+                  <small>Bank that receives the early deposit</small>
+                </div>
+
+                <div className="form-group">
+                  <label>Early Deposit Amount</label>
+                  <input
+                    type="number"
+                    step="0.01"
+                    value={earlyDeposit?.amount || ''}
+                    onChange={(e) => setEarlyDeposit({...(earlyDeposit || {}), amount: e.target.value})}
+                    placeholder="400.00"
+                  />
+                  <small>Fixed amount to deposit early</small>
+                </div>
+
+                <div className="form-group">
+                  <label>Days Before Payday</label>
+                  <input
+                    type="number"
+                    min="1"
+                    max="5"
+                    value={earlyDeposit?.daysBefore || 2}
+                    onChange={(e) => setEarlyDeposit({...(earlyDeposit || {}), daysBefore: parseInt(e.target.value) || 2})}
+                  />
+                  <small>How many days before payday to receive early deposit</small>
+                </div>
+
+                <div className="form-group">
+                  <label>Remainder Bank</label>
+                  <select
+                    value={earlyDeposit?.remainderBank || ''}
+                    onChange={(e) => setEarlyDeposit({...(earlyDeposit || {}), remainderBank: e.target.value})}
+                  >
+                    <option value="">Select Bank...</option>
+                    <option value="Bank of America">Bank of America</option>
+                    <option value="SoFi">SoFi</option>
+                    <option value="USAA">USAA</option>
+                    <option value="Capital One">Capital One</option>
+                  </select>
+                  <small>Bank that receives the remainder on actual payday</small>
+                </div>
+              </>
+            )}
           </div>
         </div>
 
