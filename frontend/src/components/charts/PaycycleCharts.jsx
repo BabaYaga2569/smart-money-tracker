@@ -2,6 +2,7 @@
 import React from 'react';
 import {
   Chart as ChartJS,
+  ArcElement,
   CategoryScale,
   LinearScale,
   PointElement,
@@ -17,6 +18,7 @@ import { Line, Bar, Doughnut } from 'react-chartjs-2';
 import 'chartjs-adapter-date-fns';
 
 ChartJS.register(
+  ArcElement,
   CategoryScale,
   LinearScale,
   PointElement,
