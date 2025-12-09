@@ -6,6 +6,7 @@ import { getDaysUntilDateInPacific } from '../utils/DateUtils';
 import { Link } from 'react-router-dom';
 import './Settings.css';
 import { useAuth } from '../contexts/AuthContext';
+import { ensureSettingsDocument } from '../utils/settingsUtils';
 
 
 const Settings = () => {
@@ -95,6 +96,9 @@ const Settings = () => {
       setMessage('');
 
       console.log('🔵 SAVE SETTINGS CLICKED');
+
+      // Ensure settings document exists before attempting to save
+      await ensureSettingsDocument(currentUser.uid);
 
       const settingsDocRef = doc(db, 'users', currentUser.uid, 'settings', 'personal');
       

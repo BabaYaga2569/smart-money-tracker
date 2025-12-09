@@ -23,6 +23,7 @@ import { cleanupDuplicateBills, analyzeForCleanup } from '../utils/billCleanupMi
 import { runAutoDetection } from '../utils/AutoBillDetection';
 import { detectAndAutoAddRecurringBills } from '../components/SubscriptionDetector';
 import { generateAllBills, updateTemplatesDates } from '../utils/billGenerator';
+import { ensureSettingsDocument } from '../utils/settingsUtils';
 import "./Bills.css";
 
 const generateBillId = () => {
@@ -218,7 +219,8 @@ const refreshPlaidTransactions = async () => {
 
     console.log(`[Plaid Sync] Fetched ${allTransactions.length} transactions from Firebase`);
     
-    // Step 4: Get all bills
+    // Step 4: Ensure settings document exists and get all bills
+    await ensureSettingsDocument(currentUser.uid);
     const settingsDocRef = doc(db, 'users', currentUser.uid, 'settings', 'personal');
     const settingsDoc = await getDoc(settingsDocRef);
     const billsData = settingsDoc.exists() ? settingsDoc.data().bills || [] : [];

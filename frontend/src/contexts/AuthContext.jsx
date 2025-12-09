@@ -7,6 +7,7 @@ import {
   signOut,
 } from 'firebase/auth';
 import { setSentryUser } from '../config/sentry';
+import { ensureSettingsDocument } from '../utils/settingsUtils';
 
 const AuthContext = createContext();
 
@@ -17,8 +18,18 @@ export const AuthProvider = ({ children }) => {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    const unsubscribe = onAuthStateChanged(auth, (user) => {
+    const unsubscribe = onAuthStateChanged(auth, async (user) => {
       setCurrentUser(user);
+      
+      // Ensure settings document exists for authenticated users
+      if (user) {
+        try {
+          await ensureSettingsDocument(user.uid);
+        } catch (error) {
+          console.error('[AuthContext] Error ensuring settings document:', error);
+        }
+      }
+      
       setLoading(false);
 
       // Set Sentry user context

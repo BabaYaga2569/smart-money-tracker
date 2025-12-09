@@ -22,6 +22,7 @@ import { BillDeduplicationManager } from '../utils/BillDeduplicationManager';
 import { format, addMonths } from 'date-fns';
 import './Recurring.css';
 import { useAuth } from '../contexts/AuthContext';
+import { ensureSettingsDocument } from '../utils/settingsUtils';
 
 /**
  * Helper function to build update data without undefined values for Firebase updateDoc.
@@ -489,6 +490,9 @@ const Recurring = () => {
 
     try {
       setSaving(true);
+
+      // Ensure settings document exists before attempting to save
+      await ensureSettingsDocument(currentUser.uid);
 
       const itemData = {
         ...newItem,
@@ -1039,6 +1043,9 @@ const Recurring = () => {
   const handleCSVImport = async (importedItems, conflicts, updatedCustomMapping) => {
     try {
       setSaving(true);
+
+      // Ensure settings document exists before attempting to save
+      await ensureSettingsDocument(currentUser.uid);
 
       const settingsDocRef = doc(db, 'users', currentUser.uid, 'settings', 'personal');
       const currentDoc = await getDoc(settingsDocRef);
