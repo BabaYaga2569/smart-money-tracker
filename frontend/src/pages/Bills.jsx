@@ -67,6 +67,8 @@ export default function Bills() {
   const [generatingBills, setGeneratingBills] = useState(false);
   const [showPaidBills, setShowPaidBills] = useState(false);
   const [paidBills, setPaidBills] = useState([]);
+  const [userSettings, setUserSettings] = useState(null);
+  const [autoGenerationLock, setAutoGenerationLock] = useState(new Set());
 
   // ✅ NEW: Load bills from billInstances collection
   const loadBills = async () => {
@@ -154,6 +156,26 @@ export default function Bills() {
     } catch (error) {
       console.error('Error loading paid bills:', error);
       setPaidBills([]);
+    }
+  };
+
+  // Load user settings
+  const loadUserSettings = async () => {
+    if (!currentUser) return;
+    try {
+      const settingsDocRef = doc(db, 'users', currentUser.uid, 'settings', 'personal');
+      const settingsDoc = await getDoc(settingsDocRef);
+      if (settingsDoc.exists()) {
+        const settings = settingsDoc.data();
+        setUserSettings(settings);
+        console.log('✅ Loaded user settings:', {
+          autoDetectBills: settings.autoDetectBills,
+          disableAutoGeneration: settings.disableAutoGeneration,
+          ignoredMerchants: settings.ignoredMerchants || []
+        });
+      }
+    } catch (error) {
+      console.error('Error loading user settings:', error);
     }
   };
 
@@ -401,7 +423,7 @@ const refreshPlaidTransactions = async () => {
     
     // ✅ NEW: Use runAutoDetection with 85% confidence threshold!
     const { runAutoDetection } = await import('../utils/AutoBillDetection.js');
-    const result = await runAutoDetection(currentUser.uid, recentTransactions, unpaidBills);
+    const result = await runAutoDetection(currentUser.uid, recentTransactions, unpaidBills, userSettings);
     
     NotificationManager.removeNotification(loadingId);
     
@@ -431,11 +453,41 @@ const refreshPlaidTransactions = async () => {
   // Auto-generate bill instance from recurring template
   const autoGenerateBillFromTemplate = async (template) => {
     try {
+      // Check if auto-generation is disabled in user settings
+      if (userSettings?.autoDetectBills === false || userSettings?.disableAutoGeneration === true) {
+        console.log('[AutoBillDetection] Auto-generation is disabled in settings, skipping:', template.name);
+        return;
+      }
+      
+      // Check if merchant is in ignored list
+      const ignoredMerchants = userSettings?.ignoredMerchants || [];
+      const merchantLower = template.name.toLowerCase();
+      if (ignoredMerchants.some(ignored => merchantLower.includes(ignored.toLowerCase()))) {
+        console.log('[AutoBillDetection] Merchant is ignored, skipping:', template.name);
+        return;
+      }
+      
+      // Check debounce lock to prevent infinite loops
+      const lockKey = `${template.id}-${template.nextRenewal || template.nextOccurrence}`;
+      if (autoGenerationLock.has(lockKey)) {
+        console.log('[AutoBillDetection] Already processing this template, skipping:', template.name);
+        return;
+      }
+      
+      // Add to lock
+      setAutoGenerationLock(prev => new Set([...prev, lockKey]));
+      
       // Read date EXACTLY from template (no timezone conversion!)
       const exactDueDate = template.nextRenewal || template.nextOccurrence;
       
       if (!exactDueDate) {
         console.warn(`Template ${template.name} has no nextRenewal/nextOccurrence date`);
+        // Remove from lock
+        setAutoGenerationLock(prev => {
+          const newSet = new Set(prev);
+          newSet.delete(lockKey);
+          return newSet;
+        });
         return;
       }
       
@@ -450,6 +502,12 @@ const refreshPlaidTransactions = async () => {
       
       if (!existingBills.empty) {
         console.log(`⚠️ Bill already exists: ${template.name} on ${exactDueDate} - skipping auto-generation`);
+        // Remove from lock
+        setAutoGenerationLock(prev => {
+          const newSet = new Set(prev);
+          newSet.delete(lockKey);
+          return newSet;
+        });
         return;
       }
       
@@ -464,6 +522,12 @@ const refreshPlaidTransactions = async () => {
       
       if (unpaidBills.size >= 2) {
         console.log(`⚠️ Already have ${unpaidBills.size} unpaid bills for template ${template.name} - skipping auto-generation`);
+        // Remove from lock
+        setAutoGenerationLock(prev => {
+          const newSet = new Set(prev);
+          newSet.delete(lockKey);
+          return newSet;
+        });
         return;
       }
       
@@ -496,8 +560,22 @@ const refreshPlaidTransactions = async () => {
       
       // Reload bills to show new instance
       await loadBills();
+      
+      // Remove from lock after successful generation
+      setAutoGenerationLock(prev => {
+        const newSet = new Set(prev);
+        newSet.delete(lockKey);
+        return newSet;
+      });
     } catch (error) {
       console.error('❌ Error auto-generating bill:', error);
+      // Remove from lock on error
+      const lockKey = `${template.id}-${template.nextRenewal || template.nextOccurrence}`;
+      setAutoGenerationLock(prev => {
+        const newSet = new Set(prev);
+        newSet.delete(lockKey);
+        return newSet;
+      });
     }
   };
 
@@ -551,7 +629,7 @@ const refreshPlaidTransactions = async () => {
 
     return () => unsubscribe();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [currentUser, processedBills]);
+  }, [currentUser, processedBills, userSettings]);
 
   // Auto-detect recurring bills on first login
   useEffect(() => {
@@ -603,6 +681,7 @@ const refreshPlaidTransactions = async () => {
       loadBills();
       loadAccounts();
       loadPaidThisMonth();
+      loadUserSettings();
       if (showPaidBills) {
         loadPaidBills();
       }
