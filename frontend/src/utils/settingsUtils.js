@@ -67,9 +67,19 @@ export async function ensureSettingsDocument(userId) {
  * Safely updates a settings document, ensuring it exists first.
  * This is a wrapper around updateDoc that creates the document if needed.
  * 
+ * NOTE: This is an optional helper function for convenience. The current pattern
+ * of calling ensureSettingsDocument() followed by updateDoc() works fine.
+ * This function is provided for future use if a more concise API is desired.
+ * 
  * @param {string} userId - The Firebase UID of the user
  * @param {Object} updates - The updates to apply to the document
  * @returns {Promise<void>}
+ * @example
+ * // Instead of:
+ * // await ensureSettingsDocument(userId);
+ * // await updateDoc(settingsDocRef, updates);
+ * // You can use:
+ * // await safeUpdateSettings(userId, updates);
  */
 export async function safeUpdateSettings(userId, updates) {
   await ensureSettingsDocument(userId);
