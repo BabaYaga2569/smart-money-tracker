@@ -6,9 +6,10 @@ import { parseDueDateLocal, daysBetweenLocal } from './dateHelpers.js';
  * Check if transaction name matches bill name using fuzzy matching
  * @param {string} txName - Transaction merchant name
  * @param {string} billName - Bill name
+ * @param {Array<string>} merchantNames - Optional array of merchant name aliases
  * @returns {boolean} - True if names match with high confidence
  */
-export function isNameMatch(txName, billName) {
+export function isNameMatch(txName, billName, merchantNames = []) {
   if (!txName || !billName) return false;
   
   const normalizedTx = normalizeString(txName);
@@ -34,9 +35,35 @@ export function isNameMatch(txName, billName) {
     if (matchRatio >= 0.5) return true;
   }
   
-  // Check bill's merchant names if available
-  // This is useful for subscriptions that might have multiple merchant name variations
-  // (e.g., "Google One" subscription might appear as "GOOGLE*ONE" or "GOOGLE STORAGE")
+  // Check bill's merchant names/aliases if available
+  // This is useful for bills that might have multiple merchant name variations
+  // (e.g., "Bankruptcy Payment" bill could have aliases ["CH 13", "CHAPTER 13", "TRUSTEE"])
+  // (e.g., "Food" bill could have aliases ["SMITHS", "WALMART", "KROGER"])
+  if (merchantNames && Array.isArray(merchantNames) && merchantNames.length > 0) {
+    for (const merchantName of merchantNames) {
+      if (!merchantName) continue;
+      
+      const normalizedMerchant = normalizeString(merchantName);
+      
+      // Exact match with alias
+      if (normalizedTx === normalizedMerchant) return true;
+      
+      // Substring match with alias
+      if (containsString(txName, merchantName) || containsString(merchantName, txName)) return true;
+      
+      // Fuzzy similarity with alias (75% threshold)
+      const merchantSimilarity = calculateSimilarity(txName, merchantName);
+      if (merchantSimilarity >= 0.75) return true;
+      
+      // Check if transaction contains merchant alias as a word
+      const merchantWords = extractSignificantWords(merchantName);
+      if (merchantWords.length > 0) {
+        const commonMerchantWords = txWords.filter(word => merchantWords.includes(word));
+        const merchantMatchRatio = commonMerchantWords.length / merchantWords.length;
+        if (merchantMatchRatio >= 0.5) return true;
+      }
+    }
+  }
   
   return false;
 }
@@ -97,9 +124,10 @@ export function matchTransactionToBill(transaction, bill) {
   const billName = bill.name || '';
   const billAmount = parseFloat(bill.amount || 0);
   const billDueDate = bill.nextDueDate || bill.dueDate;
+  const merchantNames = bill.merchantNames || [];
   
   // Check each criterion
-  const nameMatch = isNameMatch(txName, billName);
+  const nameMatch = isNameMatch(txName, billName, merchantNames);
   const amountMatch = isAmountMatch(txAmount, billAmount);
   const dateMatch = isDateMatch(txDate, billDueDate);
   
