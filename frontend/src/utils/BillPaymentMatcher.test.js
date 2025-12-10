@@ -314,6 +314,96 @@ const runBillPaymentMatcherTests = () => {
     assert(results[0].confidence > 0.65, `Expected confidence > 0.65, got ${results[0].confidence}`);
   });
 
+  // Merchant Names / Aliases Tests
+  test('isNameMatch: matches with merchant aliases (exact match)', () => {
+    const merchantNames = ['CH 13', 'CHAPTER 13', 'TRUSTEE'];
+    const result = isNameMatch('CH 13 TRUSTEE', 'Bankruptcy Payment', merchantNames);
+    assert(result === true, `Expected true with merchant alias match, got ${result}`);
+  });
+
+  test('isNameMatch: matches with merchant aliases (substring match)', () => {
+    const merchantNames = ['SMITHS', 'WALMART', 'KROGER'];
+    const result = isNameMatch('SMITHS GROCERY', 'Food', merchantNames);
+    assert(result === true, `Expected true with merchant alias substring match, got ${result}`);
+  });
+
+  test('isNameMatch: matches with merchant aliases (fuzzy match)', () => {
+    const merchantNames = ['AFFIRM'];
+    const result = isNameMatch('AFFIRM INC', 'Charger Payment', merchantNames);
+    assert(result === true, `Expected true with merchant alias fuzzy match, got ${result}`);
+  });
+
+  test('isNameMatch: no match without aliases', () => {
+    const result = isNameMatch('CH 13 TRUSTEE', 'Bankruptcy Payment');
+    assert(result === false, `Expected false without merchant aliases, got ${result}`);
+  });
+
+  test('matchTransactionToBill: matches with merchant aliases (real-world example)', () => {
+    const transaction = {
+      id: 'tx1',
+      name: 'CH 13 TRUSTEE',
+      amount: -583.00,
+      date: '2024-11-01',
+      pending: false
+    };
+    
+    const bill = {
+      id: 'bill1',
+      name: 'Bankruptcy Payment',
+      amount: 583.00,
+      dueDate: '2024-11-01',
+      merchantNames: ['CH 13', 'CHAPTER 13', 'TRUSTEE']
+    };
+    
+    const result = matchTransactionToBill(transaction, bill);
+    assert(result !== null, 'Expected match with merchant aliases');
+    assert(result.confidence === 1, `Expected confidence 1, got ${result.confidence}`);
+  });
+
+  test('matchTransactionToBill: matches Food bill with grocery store (real-world example)', () => {
+    const transaction = {
+      id: 'tx1',
+      name: 'SMITHS FOOD AND DRUG',
+      amount: -150.00,
+      date: '2024-11-15',
+      pending: false
+    };
+    
+    const bill = {
+      id: 'bill1',
+      name: 'Food',
+      amount: 150.00,
+      dueDate: '2024-11-15',
+      merchantNames: ['SMITHS', 'WALMART', 'KROGER', 'ALBERTSONS']
+    };
+    
+    const result = matchTransactionToBill(transaction, bill);
+    assert(result !== null, 'Expected match for Food bill with grocery store');
+    assert(result.confidence === 1, `Expected confidence 1, got ${result.confidence}`);
+  });
+
+  test('matchTransactionToBill: matches Affirm bill (real-world example)', () => {
+    const transaction = {
+      id: 'tx1',
+      name: 'AFFIRM',
+      amount: -21.21,
+      date: '2024-11-01',
+      pending: false
+    };
+    
+    const bill = {
+      id: 'bill1',
+      name: 'Affirm Dog Water Bowl',
+      amount: 21.21,
+      dueDate: '2024-11-01',
+      merchantNames: ['AFFIRM', 'AFFIRM INC']
+    };
+    
+    const result = matchTransactionToBill(transaction, bill);
+    assert(result !== null, 'Expected match for Affirm bill');
+    assert(result.confidence === 1, `Expected confidence 1, got ${result.confidence}`);
+  });
+
   console.log('\n✅ All BillPaymentMatcher tests passed!');
 };
 
