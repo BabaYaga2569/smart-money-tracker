@@ -58,11 +58,11 @@ export class PayCycleCalculator {
             let spouseNextPay = null;
             let spouseAmount = 0;
             
-            // Calculate spouse payday if spouse schedule exists
-            // Check for schedule existence rather than just amount
-            if (spouseSchedule && (spouseSchedule.type === 'bi-monthly' || spouseSchedule.amount)) {
+            // Calculate spouse payday if spouse schedule exists AND has a valid amount
+            // Only consider spouse schedule if amount is actually set and greater than 0
+            if (spouseSchedule && spouseSchedule.amount && parseFloat(spouseSchedule.amount) > 0) {
                 spouseNextPay = this.getWifeNextPayday();
-                spouseAmount = parseFloat(spouseSchedule.amount) || 0;
+                spouseAmount = parseFloat(spouseSchedule.amount);
             }
             
             // Determine which comes first
