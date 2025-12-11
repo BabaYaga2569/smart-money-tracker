@@ -157,7 +157,8 @@ const Onboarding = () => {
         lastUpdated: new Date().toISOString()
       };
 
-      await setDoc(settingsDocRef, settingsData);
+      // Use merge: true to preserve existing settings (e.g., lastPayDate, custom configurations)
+      await setDoc(settingsDocRef, settingsData, { merge: true });
       
       // Navigate to dashboard
       navigate('/');
