@@ -23,12 +23,24 @@
  */
 export function parseLocalDate(dateString) {
   if (!dateString) return null;
-  
+
   // Split to get year, month, day
   const [year, month, day] = dateString.split('-').map(num => parseInt(num, 10));
-  
+
+  // Validate that we got valid numbers
+  if (isNaN(year) || isNaN(month) || isNaN(day)) {
+    return null;
+  }
+
   // Create date in local timezone (month is 0-indexed)
-  return new Date(year, month - 1, day);
+  const date = new Date(year, month - 1, day);
+
+  // Validate the date is valid (e.g., not '2025-13-45')
+  if (isNaN(date.getTime())) {
+    return null;
+  }
+
+  return date;
 }
 
 /**
@@ -57,7 +69,10 @@ export function formatLocalDate(date) {
 export function dateStringToFirestoreFormat(dateString) {
   const localDate = parseLocalDate(dateString);
   if (!localDate) return null;
-  
+
+  // Validate the date is valid before calling toISOString()
+  if (isNaN(localDate.getTime())) return null;
+
   // Return ISO string from local date (maintains the calendar date)
   return localDate.toISOString();
 }
@@ -106,7 +121,10 @@ export function getTodayLocal() {
 export function addDays(dateString, days) {
   const date = parseLocalDate(dateString);
   if (!date) return '';
-  
+
+  // Validate date is valid before manipulation
+  if (isNaN(date.getTime())) return '';
+
   date.setDate(date.getDate() + days);
   return formatLocalDate(date);
 }
@@ -120,10 +138,13 @@ export function addDays(dateString, days) {
 export function isDateInPast(dateString) {
   const date = parseLocalDate(dateString);
   if (!date) return false;
-  
+
+  // Validate date is valid before comparison
+  if (isNaN(date.getTime())) return false;
+
   const today = new Date();
   today.setHours(0, 0, 0, 0);
-  
+
   return date < today;
 }
 
