@@ -86,7 +86,7 @@ function enrichBillsWithAliases(bills, merchantAliases) {
  */
 async function markBillAsPaid(userId, bill, transaction) {
   try {
-    const billRef = doc(db, 'users', userId, 'financialEvents', bill.id);
+    const billRef = doc(db, 'users', userId, 'billInstances', bill.id);
     
     // Calculate days past due
     const now = new Date(transaction.date);
@@ -233,7 +233,7 @@ async function generateNextBill(userId, bill, nextOccurrence) {
     
     // Check if bill already exists for this date
     const existingQuery = query(
-      collection(db, 'users', userId, 'financialEvents'),
+      collection(db, 'users', userId, 'billInstances'),
       where('recurringPatternId', '==', bill.recurringPatternId),
       where('dueDate', '==', nextOccurrence)
     );
@@ -245,9 +245,9 @@ async function generateNextBill(userId, bill, nextOccurrence) {
       return null;
     }
     
-    // Save to financialEvents collection
+    // Save to billInstances collection
     await setDoc(
-      doc(db, 'users', userId, 'financialEvents', nextBillId),
+      doc(db, 'users', userId, 'billInstances', nextBillId),
       nextBillInstance
     );
     
@@ -428,7 +428,7 @@ export async function getRecentTransactions(userId, days = 60) {
  */
 export async function getUnpaidBills(userId) {
   try {
-    const billsRef = collection(db, 'users', userId, 'financialEvents');
+    const billsRef = collection(db, 'users', userId, 'billInstances');
     const q = query(
       billsRef,
       where('isPaid', '==', false)

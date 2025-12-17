@@ -5,7 +5,7 @@
  * 
  * This script:
  * - Scans transactions from last 60 days
- * - Matches them to overdue financialEvents
+ * - Matches them to overdue billInstances
  * - Uses aiLearning/merchantAliases for fuzzy matching
  * - Auto-marks matched bills as PAID
  * - Advances recurringPatterns to correct next due date
@@ -282,9 +282,9 @@ async function cleanupPaidBills(userId) {
     
     console.log(`✅ Loaded ${transactions.length} transactions\n`);
     
-    // 3. Load unpaid financialEvents
+    // 3. Load unpaid billInstances
     console.log('📋 Loading unpaid bills...');
-    const billsSnapshot = await db.collection('users').doc(userId).collection('financialEvents')
+    const billsSnapshot = await db.collection('users').doc(userId).collection('billInstances')
       .where('isPaid', '==', false)
       .get();
     
@@ -331,7 +331,7 @@ async function cleanupPaidBills(userId) {
         
         try {
           // Mark bill as paid
-          await db.collection('users').doc(userId).collection('financialEvents').doc(bill.id).update({
+          await db.collection('users').doc(userId).collection('billInstances').doc(bill.id).update({
             isPaid: true,
             status: 'paid',
             paidDate: transaction.date,
@@ -387,13 +387,13 @@ async function cleanupPaidBills(userId) {
                 const nextBillId = `bill_${Date.now()}_${Math.random().toString(36).substring(2, 15)}`;
                 
                 // Check if bill already exists
-                const existingBills = await db.collection('users').doc(userId).collection('financialEvents')
+                const existingBills = await db.collection('users').doc(userId).collection('billInstances')
                   .where('recurringPatternId', '==', bill.recurringPatternId)
                   .where('dueDate', '==', nextOccurrence)
                   .get();
                 
                 if (existingBills.empty) {
-                  await db.collection('users').doc(userId).collection('financialEvents').doc(nextBillId).set({
+                  await db.collection('users').doc(userId).collection('billInstances').doc(nextBillId).set({
                     id: nextBillId,
                     name: bill.name,
                     amount: bill.amount,
