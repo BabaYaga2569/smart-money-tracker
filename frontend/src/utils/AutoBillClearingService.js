@@ -78,15 +78,15 @@ function enrichBillsWithAliases(bills, merchantAliases) {
 }
 
 /**
- * Mark a bill instance as paid and record payment
+ * Mark a bill in financialEvents as paid and record payment
  * @param {string} userId - User ID
- * @param {Object} bill - Bill instance
+ * @param {Object} bill - Bill from financialEvents
  * @param {Object} transaction - Matched transaction
  * @returns {Promise<void>}
  */
 async function markBillAsPaid(userId, bill, transaction) {
   try {
-    const billRef = doc(db, 'users', userId, 'billInstances', bill.id);
+    const billRef = doc(db, 'users', userId, 'financialEvents', bill.id);
     
     // Extract transaction ID consistently
     const transactionId = transaction.id || transaction.transaction_id;
@@ -96,11 +96,12 @@ async function markBillAsPaid(userId, bill, transaction) {
     const dueDate = new Date(bill.dueDate);
     const daysPastDue = Math.max(0, Math.floor((now - dueDate) / (1000 * 60 * 60 * 24)));
     
-    // Update bill instance to mark as paid
+    // Update financialEvent to mark as paid
     await updateDoc(billRef, {
       isPaid: true,
       status: 'paid',
       paidDate: transaction.date,
+      paidAmount: Math.abs(parseFloat(transaction.amount)),
       linkedTransactionId: transactionId,
       updatedAt: serverTimestamp()
     });
@@ -142,7 +143,7 @@ async function markBillAsPaid(userId, bill, transaction) {
       archivedAt: serverTimestamp()
     });
     
-    console.log(`✅ [AutoClear] Marked bill as paid: ${bill.name} ($${bill.amount})`);
+    console.log(`✅ [AutoClear] Marked bill as paid in financialEvents: ${bill.name} ($${bill.amount})`);
   } catch (error) {
     console.error(`[AutoClear] Error marking bill as paid: ${bill.name}`, error);
     throw error;
@@ -201,9 +202,9 @@ async function advanceRecurringPattern(userId, patternId, currentDueDate, freque
 }
 
 /**
- * Generate next month's bill instance from recurring pattern
+ * Generate next month's bill instance in financialEvents from recurring pattern
  * @param {string} userId - User ID
- * @param {Object} bill - Current bill instance
+ * @param {Object} bill - Current bill from financialEvents
  * @param {string} nextOccurrence - Next due date
  * @returns {Promise<Object|null>} - New bill instance or null
  */
@@ -220,16 +221,23 @@ async function generateNextBill(userId, bill, nextOccurrence) {
     
     const nextBillInstance = {
       id: nextBillId,
+      type: 'bill',
       name: bill.name,
       amount: bill.amount,
       dueDate: nextOccurrence,
       originalDueDate: nextOccurrence,
       isPaid: false,
       status: 'pending',
+      paidDate: null,
+      paidAmount: null,
+      linkedTransactionId: null,
       category: bill.category,
       recurrence: bill.recurrence || 'monthly',
       recurringPatternId: bill.recurringPatternId,
       merchantNames: bill.merchantNames || [],
+      autoPayEnabled: bill.autoPayEnabled || false,
+      paymentHistory: [],
+      notes: null,
       createdAt: serverTimestamp(),
       updatedAt: serverTimestamp(),
       createdFrom: 'auto-bill-clearing'
@@ -237,7 +245,8 @@ async function generateNextBill(userId, bill, nextOccurrence) {
     
     // Check if bill already exists for this date
     const existingQuery = query(
-      collection(db, 'users', userId, 'billInstances'),
+      collection(db, 'users', userId, 'financialEvents'),
+      where('type', '==', 'bill'),
       where('recurringPatternId', '==', bill.recurringPatternId),
       where('dueDate', '==', nextOccurrence)
     );
@@ -249,13 +258,13 @@ async function generateNextBill(userId, bill, nextOccurrence) {
       return null;
     }
     
-    // Save to billInstances collection
+    // Save to financialEvents collection
     await setDoc(
-      doc(db, 'users', userId, 'billInstances', nextBillId),
+      doc(db, 'users', userId, 'financialEvents', nextBillId),
       nextBillInstance
     );
     
-    console.log(`✅ [AutoClear] Generated next bill: ${bill.name} due ${nextOccurrence}`);
+    console.log(`✅ [AutoClear] Generated next bill in financialEvents: ${bill.name} due ${nextOccurrence}`);
     
     return nextBillInstance;
   } catch (error) {
@@ -427,15 +436,16 @@ export async function getRecentTransactions(userId, days = 60) {
 }
 
 /**
- * Helper function to get unpaid bills
+ * Helper function to get unpaid bills from financialEvents
  * @param {string} userId - User ID
  * @returns {Promise<Array>} - Array of unpaid bills
  */
 export async function getUnpaidBills(userId) {
   try {
-    const billsRef = collection(db, 'users', userId, 'billInstances');
+    const eventsRef = collection(db, 'users', userId, 'financialEvents');
     const q = query(
-      billsRef,
+      eventsRef,
+      where('type', '==', 'bill'),
       where('isPaid', '==', false)
     );
     
@@ -445,7 +455,7 @@ export async function getUnpaidBills(userId) {
       ...doc.data()
     }));
     
-    console.log(`✅ [AutoClear] Loaded ${bills.length} unpaid bills`);
+    console.log(`✅ [AutoClear] Loaded ${bills.length} unpaid bills from financialEvents`);
     
     return bills;
   } catch (error) {
