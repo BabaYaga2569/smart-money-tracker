@@ -1,8 +1,9 @@
 // AutoBillDetection.js - Automatic bill payment detection and processing
-import { doc, updateDoc, serverTimestamp, arrayUnion, setDoc, getDoc, collection, getDocs } from 'firebase/firestore';
+import { doc, updateDoc, serverTimestamp, arrayUnion, setDoc, getDoc, collection, getDocs, addDoc, query, where } from 'firebase/firestore';
 import { db } from '../firebase';
 import { matchTransactionsToBills } from './BillPaymentMatcher.js';
 import { formatDateForInput } from './DateUtils.js';
+import { RecurringManager } from './RecurringManager.js';
 
 /**
  * Load merchant aliases from aiLearning/merchantAliases collection
@@ -63,22 +64,105 @@ export async function markBillAsPaid(userId, bill, transaction) {
   try {
     const billRef = doc(db, 'users', userId, 'billInstances', bill.id);
     
+    // Extract transaction ID consistently
+    const transactionId = transaction.id || transaction.transaction_id;
+    
+    // Calculate days past due
+    const now = new Date(transaction.date);
+    const dueDate = new Date(bill.dueDate);
+    const daysPastDue = Math.max(0, Math.floor((now - dueDate) / (1000 * 60 * 60 * 24)));
+    
     // Update bill status
     await updateDoc(billRef, {
       isPaid: true,
       status: 'paid',
-      lastPaidDate: serverTimestamp(),
+      paidDate: transaction.date,
       updatedAt: serverTimestamp(),
-      linkedTransactionIds: arrayUnion(transaction.id),
+      linkedTransactionIds: arrayUnion(transactionId),
       paymentHistory: arrayUnion({
         paidDate: new Date(transaction.date).toISOString(),
         amount: Math.abs(parseFloat(transaction.amount)),
-        transactionId: transaction.id,
+        transactionId: transactionId,
         transactionName: transaction.name || transaction.merchant_name,
         paymentMethod: 'auto-detected',
         source: 'plaid'
       })
     });
+    
+    // Record payment in bill_payments collection
+    const paymentsRef = collection(db, 'users', userId, 'bill_payments');
+    const paidDateStr = transaction.date;
+    const paymentYear = new Date(transaction.date).getFullYear();
+    const paymentQuarter = `Q${Math.ceil((new Date(transaction.date).getMonth() + 1) / 3)}`;
+    
+    await addDoc(paymentsRef, {
+      billId: bill.id,
+      billName: bill.name,
+      amount: Math.abs(parseFloat(transaction.amount)),
+      category: bill.category || 'Bills & Utilities',
+      dueDate: bill.dueDate,
+      paidDate: paidDateStr,
+      paymentMonth: paidDateStr.slice(0, 7),
+      year: paymentYear,
+      quarter: paymentQuarter,
+      paymentMethod: 'Auto (Plaid)',
+      recurringPatternId: bill.recurringPatternId || null,
+      linkedTransactionId: transactionId,
+      isOverdue: daysPastDue > 0,
+      daysPastDue: daysPastDue,
+      createdAt: serverTimestamp()
+    });
+    
+    // Archive to paidBills collection
+    const paidBillsRef = collection(db, 'users', userId, 'paidBills');
+    await addDoc(paidBillsRef, {
+      ...bill,
+      isPaid: true,
+      paidDate: transaction.date,
+      paymentMonth: paidDateStr.slice(0, 7),
+      year: paymentYear,
+      quarter: paymentQuarter,
+      paymentMethod: 'Auto (Plaid)',
+      archivedAt: serverTimestamp()
+    });
+    
+    // ✅ NEW: Advance recurring pattern if applicable
+    if (bill.recurringPatternId) {
+      try {
+        const patternRef = doc(db, 'users', userId, 'recurringPatterns', bill.recurringPatternId);
+        const patternDoc = await getDoc(patternRef);
+        
+        if (patternDoc.exists()) {
+          const pattern = patternDoc.data();
+          
+          // Only advance if bill's due date matches pattern's nextOccurrence
+          // Use date comparison to handle timezone and format variations
+          const patternDate = new Date(pattern.nextOccurrence).toISOString().split('T')[0];
+          const billDate = new Date(bill.dueDate).toISOString().split('T')[0];
+          
+          if (patternDate === billDate) {
+            const frequency = pattern.frequency || bill.recurrence || 'monthly';
+            const nextOccurrence = RecurringManager.calculateNextOccurrenceAfterPayment(
+              bill.dueDate,
+              frequency
+            );
+            
+            const nextOccurrenceStr = nextOccurrence.toISOString().split('T')[0];
+            
+            await updateDoc(patternRef, {
+              nextOccurrence: nextOccurrenceStr,
+              lastPaidDate: transaction.date,
+              updatedAt: serverTimestamp()
+            });
+            
+            console.log(`✅ Advanced recurring pattern ${pattern.name}: ${bill.dueDate} → ${nextOccurrenceStr}`);
+          }
+        }
+      } catch (error) {
+        console.error(`Error advancing recurring pattern for ${bill.name}:`, error);
+        // Don't fail the entire operation if pattern advancement fails
+      }
+    }
     
     console.log(`✅ Marked bill as paid: ${bill.name} ($${bill.amount})`);
     
@@ -120,16 +204,53 @@ export async function generateNextBill(userId, bill, settings = null) {
       return null;
     }
     
-    // Only generate for recurring/subscription bills
-    if (bill.recurrence !== 'monthly' && !bill.isSubscription) {
+    // Only generate for recurring/subscription bills or bills with recurringPatternId
+    if (!bill.recurringPatternId && bill.recurrence !== 'monthly' && !bill.isSubscription) {
       console.log(`⏭️  Skipping next bill generation for non-recurring bill: ${bill.name}`);
       return null;
     }
     
-    // Calculate next due date (one month from current due date)
-    const currentDueDate = new Date(bill.dueDate);
-    const nextDueDate = new Date(currentDueDate);
-    nextDueDate.setMonth(nextDueDate.getMonth() + 1);
+    // ✅ NEW: Get next occurrence from recurring pattern if available
+    let nextDueDateStr;
+    
+    if (bill.recurringPatternId) {
+      try {
+        const patternRef = doc(db, 'users', userId, 'recurringPatterns', bill.recurringPatternId);
+        const patternDoc = await getDoc(patternRef);
+        
+        if (patternDoc.exists()) {
+          const pattern = patternDoc.data();
+          nextDueDateStr = pattern.nextOccurrence;
+          console.log(`Using next occurrence from pattern: ${nextDueDateStr}`);
+        }
+      } catch (error) {
+        console.error(`Error loading recurring pattern:`, error);
+      }
+    }
+    
+    // Fallback: Calculate next due date (one month from current due date)
+    if (!nextDueDateStr) {
+      const currentDueDate = new Date(bill.dueDate);
+      const nextDueDate = new Date(currentDueDate);
+      nextDueDate.setMonth(nextDueDate.getMonth() + 1);
+      nextDueDateStr = formatDateForInput(nextDueDate);
+    }
+    
+    // ✅ NEW: Check if bill already exists for this date
+    if (bill.recurringPatternId) {
+      const existingQuery = query(
+        collection(db, 'users', userId, 'billInstances'),
+        where('recurringPatternId', '==', bill.recurringPatternId),
+        where('dueDate', '==', nextDueDateStr)
+      );
+      
+      const existingBills = await getDocs(existingQuery);
+      
+      if (!existingBills.empty) {
+        console.log(`⚠️  Bill already exists for ${bill.name} on ${nextDueDateStr}`);
+        return null;
+      }
+    }
     
     // Create next bill instance
     // Generate unique ID using timestamp + random string for sufficient uniqueness
@@ -138,19 +259,21 @@ export async function generateNextBill(userId, bill, settings = null) {
       id: nextBillId,
       name: bill.name,
       amount: bill.amount,
-      dueDate: formatDateForInput(nextDueDate),
+      dueDate: nextDueDateStr,
       originalDueDate: bill.originalDueDate || bill.dueDate,
       isPaid: false,
       status: 'pending',
       category: bill.category,
       recurrence: bill.recurrence || 'monthly',
+      recurringPatternId: bill.recurringPatternId || null,
       isSubscription: bill.isSubscription || false,
       subscriptionId: bill.subscriptionId,
       paymentHistory: [],
       linkedTransactionIds: [],
       merchantNames: bill.merchantNames || [],
       createdAt: serverTimestamp(),
-      updatedAt: serverTimestamp()
+      updatedAt: serverTimestamp(),
+      createdFrom: 'auto-bill-detection'
     };
     
     // Save to Firebase
@@ -159,7 +282,7 @@ export async function generateNextBill(userId, bill, settings = null) {
       nextBillInstance
     );
     
-    console.log(`📅 Generated next bill: ${bill.name} due ${formatDateForInput(nextDueDate)}`);
+    console.log(`📅 Generated next bill: ${bill.name} due ${nextDueDateStr}`);
     
     return nextBillInstance;
   } catch (error) {
