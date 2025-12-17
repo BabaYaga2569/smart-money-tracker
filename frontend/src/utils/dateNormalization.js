@@ -4,6 +4,10 @@
  * - "2025-12-23T00:00:00.000Z" (ISO timestamp) -> "2025-12-23"
  * - "2025-12-23" (date only) -> "2025-12-23"
  * 
+ * The function works by splitting on 'T' and taking the first part:
+ * - For ISO timestamps with 'T', returns everything before 'T' (the date)
+ * - For date-only strings without 'T', split returns array with one element (the whole string)
+ * 
  * @param {string|null|undefined} dateStr - Date string in any format
  * @returns {string|null} Date in YYYY-MM-DD format, or null if input is falsy
  */
