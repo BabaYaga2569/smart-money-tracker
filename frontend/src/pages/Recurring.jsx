@@ -147,14 +147,26 @@ const Recurring = () => {
 
   const loadRecurringItems = async () => {
     try {
+      // ✅ FIX: Read from recurringPatterns collection (after Phase 1 & 2 migration)
+      const recurringPatternsRef = collection(db, 'users', currentUser.uid, 'recurringPatterns');
+      const recurringPatternsSnap = await getDocs(recurringPatternsRef);
+      
+      const items = recurringPatternsSnap.docs.map(doc => ({
+        id: doc.id,
+        ...doc.data()
+      }));
+      
+      setRecurringItems(items);
+      
+      // Still load institution mapping from settings (not migrated)
       const settingsDocRef = doc(db, 'users', currentUser.uid, 'settings', 'personal');
       const settingsDocSnap = await getDoc(settingsDocRef);
-
       if (settingsDocSnap.exists()) {
         const data = settingsDocSnap.data();
-        setRecurringItems(data.recurringItems || []);
         setCustomMapping(data.institutionMapping || {});
       }
+      
+      console.log(`✅ Loaded ${items.length} recurring items from recurringPatterns collection`);
     } catch (error) {
       console.error('Error loading recurring items:', error);
       throw error;
@@ -505,16 +517,16 @@ const Recurring = () => {
         customRecurrence: newItem.customRecurrence || undefined,
       };
 
-      const settingsDocRef = doc(db, 'users', currentUser.uid, 'settings', 'personal');
-      const currentDoc = await getDoc(settingsDocRef);
-      const currentData = currentDoc.exists() ? currentDoc.data() : {};
+      // ✅ FIX: Check for duplicates in recurringPatterns collection
+      const recurringPatternsRef = collection(db, 'users', currentUser.uid, 'recurringPatterns');
+      const recurringPatternsSnap = await getDocs(recurringPatternsRef);
+      
+      const existingItems = recurringPatternsSnap.docs.map(doc => ({
+        id: doc.id,
+        ...doc.data()
+      }));
 
-      const existingItems = currentData.recurringItems || [];
-      let updatedItems;
-
-      if (editingItem) {
-        updatedItems = existingItems.map((item) => (item.id === editingItem.id ? itemData : item));
-      } else {
+      if (!editingItem) {
         // Check for potential duplicates before adding
         const isDuplicate = existingItems.some((item) => {
           // Exact duplicate: same name, amount, and next occurrence
@@ -559,8 +571,6 @@ const Recurring = () => {
             return;
           }
         }
-
-        updatedItems = [...existingItems, itemData];
       }
 
       // ✅ NEW: Save to billInstances collection instead of old bills array
@@ -632,9 +642,11 @@ const Recurring = () => {
         }
       }
 
-      // Save recurring template to settings (keep for backward compatibility)
-      const { updateData, cleanedItems } = buildUpdateData(currentData, updatedItems);
-      await updateDoc(settingsDocRef, updateData);
+      // ✅ FIX: Save recurring pattern to recurringPatterns collection
+      const recurringPatternRef = doc(db, 'users', currentUser.uid, 'recurringPatterns', itemData.id);
+      await setDoc(recurringPatternRef, itemData, { merge: true });
+      
+      console.log(`✅ Saved recurring pattern: ${itemData.name} to recurringPatterns collection`);
 
       // ✅ NEW: When editing a recurring template, also update existing unpaid bill instances
       if (editingItem && itemData.type === 'expense' && itemData.status === 'active') {
@@ -700,7 +712,8 @@ const Recurring = () => {
         }
       }
 
-      setRecurringItems(cleanedItems);
+      // ✅ FIX: Reload from recurringPatterns collection
+      await loadRecurringItems();
       setShowModal(false);
 
       // Show success notification with bill sync details
@@ -724,12 +737,6 @@ const Recurring = () => {
   const handleDeleteItem = async (item, alsoDeleteGeneratedBills = false) => {
     try {
       setSaving(true);
-
-      const settingsDocRef = doc(db, 'users', currentUser.uid, 'settings', 'personal');
-      const currentDoc = await getDoc(settingsDocRef);
-      const currentData = currentDoc.exists() ? currentDoc.data() : {};
-
-      const updatedItems = (currentData.recurringItems || []).filter((i) => i.id !== item.id);
 
       // CASCADE DELETION: Always delete unpaid bill instances when template is deleted
       let deletedCount = 0;
@@ -773,11 +780,14 @@ const Recurring = () => {
         );
       }
 
-      // Update recurring items
-      const { updateData, cleanedItems } = buildUpdateData(currentData, updatedItems);
-      await updateDoc(settingsDocRef, updateData);
+      // ✅ FIX: Delete from recurringPatterns collection
+      const recurringPatternRef = doc(db, 'users', currentUser.uid, 'recurringPatterns', item.id);
+      await deleteDoc(recurringPatternRef);
+      
+      console.log(`✅ Deleted recurring pattern: ${item.name} from recurringPatterns collection`);
 
-      setRecurringItems(cleanedItems);
+      // ✅ FIX: Reload from recurringPatterns collection
+      await loadRecurringItems();
 
       // Show notification with cascade deletion stats
       let message = 'Recurring template deleted';
@@ -803,17 +813,22 @@ const Recurring = () => {
     try {
       setSaving(true);
 
-      const settingsDocRef = doc(db, 'users', currentUser.uid, 'settings', 'personal');
-      const currentDoc = await getDoc(settingsDocRef);
-      const currentData = currentDoc.exists() ? currentDoc.data() : {};
-
-      // Store current items for undo
-      const itemsToDelete = currentData.recurringItems || [];
+      // ✅ FIX: Load and store current items from recurringPatterns for undo
+      const recurringPatternsRef = collection(db, 'users', currentUser.uid, 'recurringPatterns');
+      const recurringPatternsSnap = await getDocs(recurringPatternsRef);
+      
+      const itemsToDelete = recurringPatternsSnap.docs.map(doc => ({
+        id: doc.id,
+        ...doc.data()
+      }));
+      
       setDeletedItems(itemsToDelete);
 
-      // Clear all items
-      const { updateData } = buildUpdateData(currentData, []);
-      await updateDoc(settingsDocRef, updateData);
+      // ✅ FIX: Delete all documents from recurringPatterns collection
+      const deletePromises = recurringPatternsSnap.docs.map(doc => 
+        deleteDoc(doc.ref)
+      );
+      await Promise.all(deletePromises);
 
       setRecurringItems([]);
       showNotification(`Deleted ${itemsToDelete.length} items. Click Undo to restore.`, 'success');
@@ -831,14 +846,14 @@ const Recurring = () => {
     try {
       setSaving(true);
 
-      const settingsDocRef = doc(db, 'users', currentUser.uid, 'settings', 'personal');
-      const currentDoc = await getDoc(settingsDocRef);
-      const currentData = currentDoc.exists() ? currentDoc.data() : {};
+      // ✅ FIX: Restore items to recurringPatterns collection
+      const restorePromises = deletedItems.map(item => 
+        setDoc(doc(db, 'users', currentUser.uid, 'recurringPatterns', item.id), item)
+      );
+      await Promise.all(restorePromises);
 
-      const { updateData, cleanedItems } = buildUpdateData(currentData, deletedItems);
-      await updateDoc(settingsDocRef, updateData);
-
-      setRecurringItems(cleanedItems);
+      // ✅ FIX: Reload from recurringPatterns collection
+      await loadRecurringItems();
       setDeletedItems([]);
       showNotification('Items restored successfully!', 'success');
     } catch (error) {
@@ -969,57 +984,41 @@ const Recurring = () => {
     try {
       setSaving(true);
 
-      const settingsDocRef = doc(db, 'users', currentUser.uid, 'settings', 'personal');
-      const currentDoc = await getDoc(settingsDocRef);
-      const currentData = currentDoc.exists() ? currentDoc.data() : {};
-
       const updatedItem = { ...item, status: newStatus, updatedAt: new Date().toISOString() };
-      const updatedItems = (currentData.recurringItems || []).map((i) =>
-        i.id === item.id ? updatedItem : i
-      );
 
       // Auto-sync bills when toggling pause/active status
       let billSyncStats = null;
-      let updatedBills = currentData.bills || [];
 
       if (item.type === 'expense') {
         try {
-          const generateBillId = () =>
-            `bill_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
-
-          if (newStatus === 'active') {
-            // When activating, generate bills for the template
-            const syncResult = RecurringBillManager.syncBillsWithTemplate(
-              updatedItem,
-              updatedBills,
-              3,
-              generateBillId
+          if (newStatus === 'paused') {
+            // When pausing, remove unpaid bill instances from this template
+            const billsQuery = query(
+              collection(db, 'users', currentUser.uid, 'billInstances'),
+              where('recurringTemplateId', '==', item.id),
+              where('isPaid', '==', false)
             );
-            updatedBills = syncResult.updatedBills;
-            billSyncStats = syncResult.stats;
-          } else {
-            // When pausing, remove unpaid bills but preserve paid ones
-            const billsToPreserve = updatedBills.filter((bill) => {
-              if (bill.recurringTemplateId !== item.id) return true; // Keep bills from other templates
-              const isPaid =
-                bill.status === 'paid' || RecurringBillManager.isBillPaidForCurrentCycle(bill);
-              return isPaid; // Only keep paid bills from this template
-            });
-            const removedCount = updatedBills.length - billsToPreserve.length;
-            updatedBills = billsToPreserve;
-            billSyncStats = { removed: removedCount };
+            const billsSnapshot = await getDocs(billsQuery);
+            
+            const deletePromises = billsSnapshot.docs.map(doc => 
+              deleteDoc(doc.ref)
+            );
+            await Promise.all(deletePromises);
+            
+            billSyncStats = { removed: billsSnapshot.size };
           }
+          // Note: When activating, bills will be auto-generated on next load
         } catch (error) {
           console.error('Error syncing bills on pause toggle:', error);
         }
       }
 
-      const { updateData, cleanedItems } = buildUpdateData(currentData, updatedItems, {
-        bills: updatedBills,
-      });
-      await updateDoc(settingsDocRef, updateData);
+      // ✅ FIX: Save to recurringPatterns collection
+      const recurringPatternRef = doc(db, 'users', currentUser.uid, 'recurringPatterns', item.id);
+      await setDoc(recurringPatternRef, updatedItem, { merge: true });
 
-      setRecurringItems(cleanedItems);
+      // ✅ FIX: Reload from recurringPatterns collection
+      await loadRecurringItems();
 
       // Show notification with bill sync details
       let message = newStatus === 'paused' ? 'Item paused' : 'Item resumed';
@@ -1044,40 +1043,34 @@ const Recurring = () => {
     try {
       setSaving(true);
 
-      // Ensure settings document exists before attempting to save
-      await ensureSettingsDocument(currentUser.uid);
-
-      const settingsDocRef = doc(db, 'users', currentUser.uid, 'settings', 'personal');
-      const currentDoc = await getDoc(settingsDocRef);
-      const currentData = currentDoc.exists() ? currentDoc.data() : {};
-
-      const existingItems = currentData.recurringItems || [];
+      // ✅ FIX: Load existing items from recurringPatterns collection
+      const recurringPatternsRef = collection(db, 'users', currentUser.uid, 'recurringPatterns');
+      const recurringPatternsSnap = await getDocs(recurringPatternsRef);
+      
+      const existingItems = recurringPatternsSnap.docs.map(doc => ({
+        id: doc.id,
+        ...doc.data()
+      }));
 
       // Process conflicts - merge items where resolution is 'merge'
       const mergeUpdates = [];
       conflicts.forEach((conflict) => {
         if (conflict.resolution === 'merge') {
-          const existingIndex = existingItems.findIndex((item) => item.id === conflict.existing.id);
-          if (existingIndex !== -1) {
+          const existingItem = existingItems.find((item) => item.id === conflict.existing.id);
+          if (existingItem) {
             // Update existing item with new data, keeping original creation date
             const mergedItem = {
-              ...existingItems[existingIndex],
+              ...existingItem,
               ...conflict.incoming,
               id: conflict.existing.id, // Keep existing ID
-              createdAt: existingItems[existingIndex].createdAt, // Keep original creation date
+              createdAt: existingItem.createdAt, // Keep original creation date
               updatedAt: new Date().toISOString(),
               dataSource: 'csv_import_merged',
               mergedFrom: conflict.incoming.id,
             };
-            mergeUpdates.push({ index: existingIndex, item: mergedItem });
+            mergeUpdates.push(mergedItem);
           }
         }
-      });
-
-      // Apply merge updates
-      let updatedItems = [...existingItems];
-      mergeUpdates.forEach((update) => {
-        updatedItems[update.index] = update.item;
       });
 
       // Add new items (excluding those that were merged or skipped)
@@ -1086,23 +1079,36 @@ const Recurring = () => {
         return !conflict || (conflict.resolution !== 'merge' && conflict.resolution !== 'skip');
       });
 
-      updatedItems = [...updatedItems, ...itemsToAdd];
+      // ✅ FIX: Save all items to recurringPatterns collection
+      const savePromises = [];
+      
+      // Save merged items
+      mergeUpdates.forEach(item => {
+        savePromises.push(
+          setDoc(doc(db, 'users', currentUser.uid, 'recurringPatterns', item.id), item)
+        );
+      });
+      
+      // Save new items
+      itemsToAdd.forEach(item => {
+        savePromises.push(
+          setDoc(doc(db, 'users', currentUser.uid, 'recurringPatterns', item.id), item)
+        );
+      });
+      
+      await Promise.all(savePromises);
 
-      // Update Firebase with items and custom mapping
-      const updateData = {
-        ...currentData,
-        recurringItems: updatedItems,
-      };
-
-      // Save custom mapping if provided
+      // Save custom mapping to settings if provided
       if (updatedCustomMapping && Object.keys(updatedCustomMapping).length > 0) {
-        updateData.institutionMapping = updatedCustomMapping;
+        const settingsDocRef = doc(db, 'users', currentUser.uid, 'settings', 'personal');
+        await setDoc(settingsDocRef, {
+          institutionMapping: updatedCustomMapping
+        }, { merge: true });
         setCustomMapping(updatedCustomMapping);
       }
 
-      await updateDoc(settingsDocRef, updateData);
-
-      setRecurringItems(updatedItems);
+      // ✅ FIX: Reload from recurringPatterns collection
+      await loadRecurringItems();
       setShowCSVImport(false);
 
       const importCount = itemsToAdd.length;
