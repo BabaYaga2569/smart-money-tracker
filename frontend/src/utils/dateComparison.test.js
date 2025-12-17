@@ -1,10 +1,5 @@
 import { describe, it, expect } from 'vitest';
-
-// Helper function to extract date-only portion (YYYY-MM-DD) from date strings
-const getDateOnly = (dateStr) => {
-  if (!dateStr) return null;
-  return dateStr.split('T')[0];
-};
+import { getDateOnly, getMonthOnly } from './dateNormalization';
 
 describe('getDateOnly - Date Format Normalization', () => {
   it('should extract date from full ISO timestamp', () => {
@@ -53,5 +48,33 @@ describe('getDateOnly - Date Format Normalization', () => {
     const date = getDateOnly('2025-12-23T00:00:00.000Z');
     const month = date?.substring(0, 7);
     expect(month).toBe('2025-12');
+  });
+});
+
+describe('getMonthOnly - Month Extraction', () => {
+  it('should extract month from full ISO timestamp', () => {
+    expect(getMonthOnly('2025-12-23T00:00:00.000Z')).toBe('2025-12');
+  });
+
+  it('should extract month from date-only format', () => {
+    expect(getMonthOnly('2025-12-23')).toBe('2025-12');
+  });
+
+  it('should handle null input', () => {
+    expect(getMonthOnly(null)).toBe(null);
+  });
+
+  it('should handle undefined input', () => {
+    expect(getMonthOnly(undefined)).toBe(null);
+  });
+
+  it('should handle empty string', () => {
+    expect(getMonthOnly('')).toBe(null);
+  });
+
+  it('should make different formats comparable by month', () => {
+    const month1 = getMonthOnly('2025-12-23T00:00:00.000Z');
+    const month2 = getMonthOnly('2025-12-15');
+    expect(month1).toBe(month2);
   });
 });

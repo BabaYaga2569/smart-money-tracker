@@ -4,12 +4,7 @@ import { db } from '../firebase';
 import { matchTransactionsToBills } from './BillPaymentMatcher.js';
 import { formatDateForInput } from './DateUtils.js';
 import { RecurringManager } from './RecurringManager.js';
-
-// Helper function to extract date-only portion (YYYY-MM-DD) from date strings
-const getDateOnly = (dateStr) => {
-  if (!dateStr) return null;
-  return dateStr.split('T')[0];
-};
+import { getDateOnly } from './dateNormalization.js';
 
 /**
  * Load merchant aliases from aiLearning/merchantAliases collection

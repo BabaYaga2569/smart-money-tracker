@@ -24,16 +24,11 @@ import { runAutoDetection } from '../utils/AutoBillDetection';
 import { detectAndAutoAddRecurringBills } from '../components/SubscriptionDetector';
 import { generateAllBills, updateTemplatesDates } from '../utils/billGenerator';
 import { ensureSettingsDocument } from '../utils/settingsUtils';
+import { getDateOnly, getMonthOnly } from '../utils/dateNormalization';
 import "./Bills.css";
 
 const generateBillId = () => {
   return `bill_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
-};
-
-// Helper function to extract date-only portion (YYYY-MM-DD) from date strings
-const getDateOnly = (dateStr) => {
-  if (!dateStr) return null;
-  return dateStr.split('T')[0];
 };
 
 export default function Bills() {
@@ -722,16 +717,17 @@ const refreshPlaidTransactions = async () => {
             }
             
             // Check if bill instance already exists for this pattern and due date
-            const patternDate = getDateOnly(pattern.nextOccurrence) || getDateOnly(pattern.nextRenewal);
+            // Prefer nextOccurrence over nextRenewal as it's more specific
+            const patternDate = getDateOnly(pattern.nextOccurrence || pattern.nextRenewal);
             const existingBill = processedBills.find(b => {
               const billDate = getDateOnly(b.dueDate);
               return b.recurringPatternId === pattern.id && billDate === patternDate;
             });
             
             // Also check if a bill with same name exists for this month
-            const patternMonth = patternDate ? patternDate.substring(0, 7) : null; // "2025-12"
+            const patternMonth = getMonthOnly(pattern.nextOccurrence || pattern.nextRenewal);
             const existingByName = processedBills.find(b => {
-              const billMonth = getDateOnly(b.dueDate)?.substring(0, 7);
+              const billMonth = getMonthOnly(b.dueDate);
               return b.name.toLowerCase() === pattern.name.toLowerCase() && 
                      billMonth === patternMonth &&
                      !b.isPaid;
