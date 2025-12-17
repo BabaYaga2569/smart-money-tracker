@@ -24,6 +24,7 @@ import { runAutoDetection } from '../utils/AutoBillDetection';
 import { detectAndAutoAddRecurringBills } from '../components/SubscriptionDetector';
 import { generateAllBills, updateTemplatesDates } from '../utils/billGenerator';
 import { ensureSettingsDocument } from '../utils/settingsUtils';
+import { getDateOnly, getMonthOnly } from '../utils/dateNormalization';
 import "./Bills.css";
 
 const generateBillId = () => {
@@ -554,6 +555,7 @@ const refreshPlaidTransactions = async () => {
       }
       
       // Check if bill already exists for this template and due date
+      // First try exact match query
       const existingQuery = query(
         collection(db, 'users', currentUser.uid, 'financialEvents'),
         where('type', '==', 'bill'),
@@ -565,6 +567,31 @@ const refreshPlaidTransactions = async () => {
       
       if (!existingBills.empty) {
         console.log(`⚠️ Bill already exists: ${template.name} on ${exactDueDate} - skipping auto-generation`);
+        // Remove from lock
+        setAutoGenerationLock(prev => {
+          const newSet = new Set(prev);
+          newSet.delete(lockKey);
+          return newSet;
+        });
+        return;
+      }
+      
+      // Also check with date-only comparison in case of format mismatch
+      const allBillsQuery = query(
+        collection(db, 'users', currentUser.uid, 'financialEvents'),
+        where('type', '==', 'bill'),
+        where('recurringPatternId', '==', template.id)
+      );
+      
+      const allBills = await getDocs(allBillsQuery);
+      const exactDateOnly = getDateOnly(exactDueDate);
+      const duplicateFound = allBills.docs.some(doc => {
+        const billDate = getDateOnly(doc.data().dueDate);
+        return billDate === exactDateOnly;
+      });
+      
+      if (duplicateFound) {
+        console.log(`⚠️ Bill already exists (date-only match): ${template.name} on ${exactDateOnly} - skipping auto-generation`);
         // Remove from lock
         setAutoGenerationLock(prev => {
           const newSet = new Set(prev);
@@ -690,12 +717,23 @@ const refreshPlaidTransactions = async () => {
             }
             
             // Check if bill instance already exists for this pattern and due date
-            const existingBill = processedBills.find(b => 
-              b.recurringPatternId === pattern.id && 
-              (b.dueDate === pattern.nextRenewal || b.dueDate === pattern.nextOccurrence)
-            );
+            // Prefer nextOccurrence over nextRenewal as it's more specific
+            const patternDate = getDateOnly(pattern.nextOccurrence || pattern.nextRenewal);
+            const existingBill = processedBills.find(b => {
+              const billDate = getDateOnly(b.dueDate);
+              return b.recurringPatternId === pattern.id && billDate === patternDate;
+            });
             
-            if (!existingBill) {
+            // Also check if a bill with same name exists for this month
+            const patternMonth = getMonthOnly(pattern.nextOccurrence || pattern.nextRenewal);
+            const existingByName = processedBills.find(b => {
+              const billMonth = getMonthOnly(b.dueDate);
+              return b.name.toLowerCase() === pattern.name.toLowerCase() && 
+                     billMonth === patternMonth &&
+                     !b.isPaid;
+            });
+            
+            if (!existingBill && !existingByName) {
               // AUTO-GENERATE bill instance from pattern
               console.log(`🔄 Auto-generating bill from pattern: ${pattern.name}`);
               await autoGenerateBillFromTemplate(pattern);

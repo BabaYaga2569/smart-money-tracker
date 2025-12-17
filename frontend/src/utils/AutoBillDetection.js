@@ -4,6 +4,7 @@ import { db } from '../firebase';
 import { matchTransactionsToBills } from './BillPaymentMatcher.js';
 import { formatDateForInput } from './DateUtils.js';
 import { RecurringManager } from './RecurringManager.js';
+import { getDateOnly } from './dateNormalization.js';
 
 /**
  * Load merchant aliases from aiLearning/merchantAliases collection
@@ -238,6 +239,7 @@ export async function generateNextBill(userId, bill, settings = null) {
     
     // ✅ NEW: Check if bill already exists for this date
     if (bill.recurringPatternId) {
+      // First try exact match query
       const existingQuery = query(
         collection(db, 'users', userId, 'billInstances'),
         where('recurringPatternId', '==', bill.recurringPatternId),
@@ -248,6 +250,24 @@ export async function generateNextBill(userId, bill, settings = null) {
       
       if (!existingBills.empty) {
         console.log(`⚠️  Bill already exists for ${bill.name} on ${nextDueDateStr}`);
+        return null;
+      }
+      
+      // Also check with date-only comparison in case of format mismatch
+      const allBillsQuery = query(
+        collection(db, 'users', userId, 'billInstances'),
+        where('recurringPatternId', '==', bill.recurringPatternId)
+      );
+      
+      const allBills = await getDocs(allBillsQuery);
+      const nextDateOnly = getDateOnly(nextDueDateStr);
+      const duplicateFound = allBills.docs.some(doc => {
+        const billDate = getDateOnly(doc.data().dueDate);
+        return billDate === nextDateOnly;
+      });
+      
+      if (duplicateFound) {
+        console.log(`⚠️  Bill already exists (date-only match) for ${bill.name} on ${nextDateOnly}`);
         return null;
       }
     }
@@ -351,7 +371,7 @@ export async function runAutoDetection(userId, transactions, bills, settings = n
     
    // Process each match with confidence-based decisions
 let autoApproved = 0;
-let skipped = 0;
+const skipped = 0;
 let rejected = 0;
 
 for (const match of matches) {

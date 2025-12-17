@@ -1,0 +1,80 @@
+import { describe, it, expect } from 'vitest';
+import { getDateOnly, getMonthOnly } from './dateNormalization';
+
+describe('getDateOnly - Date Format Normalization', () => {
+  it('should extract date from full ISO timestamp', () => {
+    expect(getDateOnly('2025-12-23T00:00:00.000Z')).toBe('2025-12-23');
+  });
+
+  it('should handle date-only format (YYYY-MM-DD)', () => {
+    expect(getDateOnly('2025-12-23')).toBe('2025-12-23');
+  });
+
+  it('should handle null input', () => {
+    expect(getDateOnly(null)).toBe(null);
+  });
+
+  it('should handle undefined input', () => {
+    expect(getDateOnly(undefined)).toBe(null);
+  });
+
+  it('should handle empty string', () => {
+    expect(getDateOnly('')).toBe(null);
+  });
+
+  it('should extract date from ISO timestamp with timezone', () => {
+    expect(getDateOnly('2025-12-23T14:30:00.000-08:00')).toBe('2025-12-23');
+  });
+
+  it('should make different timestamp formats comparable', () => {
+    const isoDate = getDateOnly('2025-12-23T00:00:00.000Z');
+    const simpleDate = getDateOnly('2025-12-23');
+    expect(isoDate).toBe(simpleDate);
+  });
+
+  it('should correctly identify same dates', () => {
+    const billDate = '2025-12-23T00:00:00.000Z';
+    const patternDate = '2025-12-23';
+    expect(getDateOnly(billDate)).toBe(getDateOnly(patternDate));
+  });
+
+  it('should correctly identify different dates', () => {
+    const billDate = '2025-12-23T00:00:00.000Z';
+    const patternDate = '2025-12-24';
+    expect(getDateOnly(billDate)).not.toBe(getDateOnly(patternDate));
+  });
+
+  it('should extract month correctly for month-based comparison', () => {
+    const date = getDateOnly('2025-12-23T00:00:00.000Z');
+    const month = date?.substring(0, 7);
+    expect(month).toBe('2025-12');
+  });
+});
+
+describe('getMonthOnly - Month Extraction', () => {
+  it('should extract month from full ISO timestamp', () => {
+    expect(getMonthOnly('2025-12-23T00:00:00.000Z')).toBe('2025-12');
+  });
+
+  it('should extract month from date-only format', () => {
+    expect(getMonthOnly('2025-12-23')).toBe('2025-12');
+  });
+
+  it('should handle null input', () => {
+    expect(getMonthOnly(null)).toBe(null);
+  });
+
+  it('should handle undefined input', () => {
+    expect(getMonthOnly(undefined)).toBe(null);
+  });
+
+  it('should handle empty string', () => {
+    expect(getMonthOnly('')).toBe(null);
+  });
+
+  it('should make different formats comparable by month', () => {
+    const month1 = getMonthOnly('2025-12-23T00:00:00.000Z');
+    const month2 = getMonthOnly('2025-12-15');
+    expect(month1).toBe(month2);
+  });
+});
