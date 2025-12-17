@@ -1,8 +1,32 @@
 // AutoBillDetection.js - Automatic bill payment detection and processing
-import { doc, updateDoc, serverTimestamp, arrayUnion, setDoc } from 'firebase/firestore';
+import { doc, updateDoc, serverTimestamp, arrayUnion, setDoc, getDoc, collection, getDocs } from 'firebase/firestore';
 import { db } from '../firebase';
 import { matchTransactionsToBills } from './BillPaymentMatcher.js';
 import { formatDateForInput } from './DateUtils.js';
+
+/**
+ * Load merchant aliases from aiLearning/merchantAliases collection
+ * @param {string} userId - User ID
+ * @returns {Promise<Object>} - Merchant aliases mapping
+ */
+export async function loadMerchantAliases(userId) {
+  try {
+    const aliasesDocRef = doc(db, 'users', userId, 'aiLearning', 'merchantAliases');
+    const aliasesDoc = await getDoc(aliasesDocRef);
+    
+    if (aliasesDoc.exists()) {
+      const data = aliasesDoc.data();
+      console.log(`✅ Loaded merchant aliases: ${Object.keys(data.aliases || {}).length} merchants`);
+      return data.aliases || {};
+    }
+    
+    console.log('⚠️ No merchant aliases found in aiLearning collection');
+    return {};
+  } catch (error) {
+    console.error('Error loading merchant aliases:', error);
+    return {};
+  }
+}
 
 /**
  * Mark a bill as paid and link to transaction
@@ -148,13 +172,35 @@ export async function runAutoDetection(userId, transactions, bills, settings = n
   }
   
   try {
+    // ✅ NEW: Load merchant aliases from aiLearning collection
+    const merchantAliases = await loadMerchantAliases(userId);
+    
     // Filter to unpaid bills only
     const unpaidBills = bills.filter(b => !b.isPaid && b.status !== 'paid' && b.status !== 'skipped');
     
-    console.log(`📊 Analyzing ${transactions.length} transactions against ${unpaidBills.length} unpaid bills`);
+    // ✅ NEW: Enrich bills with merchant aliases before matching
+    const enrichedBills = unpaidBills.map(bill => {
+      const billName = bill.name?.toLowerCase() || '';
+      const aliasEntry = merchantAliases[billName];
+      
+      if (aliasEntry && aliasEntry.aliases) {
+        return {
+          ...bill,
+          merchantNames: [
+            ...(bill.merchantNames || []),
+            ...aliasEntry.aliases
+          ]
+        };
+      }
+      
+      return bill;
+    });
     
-    // Run matching algorithm
-    const matches = matchTransactionsToBills(transactions, unpaidBills);
+    console.log(`📊 Analyzing ${transactions.length} transactions against ${enrichedBills.length} unpaid bills`);
+    console.log(`🔍 Using merchant aliases for ${Object.keys(merchantAliases).length} merchants`);
+    
+    // Run matching algorithm with enriched bills
+    const matches = matchTransactionsToBills(transactions, enrichedBills);
     
     if (matches.length === 0) {
       console.log('❌ No matches found');
@@ -184,9 +230,9 @@ for (const match of matches) {
   console.log(`   Confidence: ${Math.round(confidence * 100)}%`);
   console.log(`   ✓ Name: ${criteria.name ? 'YES' : 'NO'} | Amount: ${criteria.amount ? 'YES' : 'NO'} | Date: ${criteria.date ? 'YES' : 'NO'}`);
   
-  // NEW: Confidence-based decision
-  if (confidence >= 0.85) {
-    console.log(`   ✅ AUTO-APPROVED (high confidence)`);
+  // ✅ NEW: Confidence-based decision with 67% threshold (2 of 3 criteria)
+  if (confidence >= 0.67) {
+    console.log(`   ✅ AUTO-APPROVED (≥67% confidence - 2 of 3 criteria matched)`);
     
     try {
       // Mark bill as paid
@@ -203,12 +249,8 @@ for (const match of matches) {
       console.error(`Failed to process bill: ${bill.name}`, error);
     }
     
-  } else if (confidence >= 0.75) {
-    console.log(`   ⚠️ SKIPPED (medium confidence - needs manual review)`);
-    skipped++;
-    
   } else {
-    console.log(`   ❌ REJECTED (low confidence)`);
+    console.log(`   ❌ REJECTED (low confidence - less than 2 of 3 criteria matched)`);
     rejected++;
   }
 }

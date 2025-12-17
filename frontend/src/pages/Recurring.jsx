@@ -147,14 +147,26 @@ const Recurring = () => {
 
   const loadRecurringItems = async () => {
     try {
+      // ✅ FIX: Read from recurringPatterns collection (after Phase 1 & 2 migration)
+      const recurringPatternsRef = collection(db, 'users', currentUser.uid, 'recurringPatterns');
+      const recurringPatternsSnap = await getDocs(recurringPatternsRef);
+      
+      const items = recurringPatternsSnap.docs.map(doc => ({
+        id: doc.id,
+        ...doc.data()
+      }));
+      
+      setRecurringItems(items);
+      
+      // Still load institution mapping from settings (not migrated)
       const settingsDocRef = doc(db, 'users', currentUser.uid, 'settings', 'personal');
       const settingsDocSnap = await getDoc(settingsDocRef);
-
       if (settingsDocSnap.exists()) {
         const data = settingsDocSnap.data();
-        setRecurringItems(data.recurringItems || []);
         setCustomMapping(data.institutionMapping || {});
       }
+      
+      console.log(`✅ Loaded ${items.length} recurring items from recurringPatterns collection`);
     } catch (error) {
       console.error('Error loading recurring items:', error);
       throw error;
