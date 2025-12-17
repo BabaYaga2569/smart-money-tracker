@@ -100,15 +100,17 @@ export default function Bills() {
       // Only include bills where:
       // - Due date is within the last 7 days (recently overdue) OR
       // - Due date is in the future (upcoming)
-      const now = new Date();
-      const sevenDaysAgo = new Date();
+      const now = getLocalMidnight();
+      const sevenDaysAgo = new Date(now);
       sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
       
       const filteredBills = allBills.filter(bill => {
         const dueDateStr = bill.nextDueDate || bill.dueDate;
         if (!dueDateStr) return true; // Keep bills without due date for safety
         
-        const dueDate = new Date(dueDateStr);
+        const dueDate = parseDueDateLocal(dueDateStr);
+        if (!dueDate) return true; // Keep bills if date parsing fails
+        
         // Keep if due date is within last 7 days OR in the future
         return dueDate >= sevenDaysAgo;
       });
