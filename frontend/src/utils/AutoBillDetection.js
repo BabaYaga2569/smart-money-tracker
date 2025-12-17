@@ -136,7 +136,11 @@ export async function markBillAsPaid(userId, bill, transaction) {
           const pattern = patternDoc.data();
           
           // Only advance if bill's due date matches pattern's nextOccurrence
-          if (pattern.nextOccurrence === bill.dueDate) {
+          // Use date comparison to handle timezone and format variations
+          const patternDate = new Date(pattern.nextOccurrence).toISOString().split('T')[0];
+          const billDate = new Date(bill.dueDate).toISOString().split('T')[0];
+          
+          if (patternDate === billDate) {
             const frequency = pattern.frequency || bill.recurrence || 'monthly';
             const nextOccurrence = RecurringManager.calculateNextOccurrenceAfterPayment(
               bill.dueDate,

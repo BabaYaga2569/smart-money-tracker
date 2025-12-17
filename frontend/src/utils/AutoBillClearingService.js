@@ -88,6 +88,9 @@ async function markBillAsPaid(userId, bill, transaction) {
   try {
     const billRef = doc(db, 'users', userId, 'billInstances', bill.id);
     
+    // Extract transaction ID consistently
+    const transactionId = transaction.id || transaction.transaction_id;
+    
     // Calculate days past due
     const now = new Date(transaction.date);
     const dueDate = new Date(bill.dueDate);
@@ -98,7 +101,7 @@ async function markBillAsPaid(userId, bill, transaction) {
       isPaid: true,
       status: 'paid',
       paidDate: transaction.date,
-      linkedTransactionId: transaction.id || transaction.transaction_id,
+      linkedTransactionId: transactionId,
       updatedAt: serverTimestamp()
     });
     
@@ -120,7 +123,7 @@ async function markBillAsPaid(userId, bill, transaction) {
       quarter: paymentQuarter,
       paymentMethod: 'Auto (Plaid)',
       recurringPatternId: bill.recurringPatternId || null,
-      linkedTransactionId: transaction.id || transaction.transaction_id,
+      linkedTransactionId: transactionId,
       isOverdue: daysPastDue > 0,
       daysPastDue: daysPastDue,
       createdAt: serverTimestamp()
