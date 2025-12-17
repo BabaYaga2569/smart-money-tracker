@@ -77,14 +77,19 @@ export default function Bills() {
     return `${template.id}-${dueDate}`;
   };
 
-  // ✅ NEW: Load bills from billInstances collection
+  // ✅ UPDATED: Load bills from financialEvents collection (one source of truth)
   const loadBills = async () => {
     if (!currentUser) return;
     try {
-      // Load all bills from billInstances collection
-      const billsSnapshot = await getDocs(
-        collection(db, 'users', currentUser.uid, 'billInstances')
+      // Load unpaid bills from financialEvents collection
+      const eventsRef = collection(db, 'users', currentUser.uid, 'financialEvents');
+      const q = query(
+        eventsRef,
+        where('type', '==', 'bill'),
+        where('isPaid', '==', false)
       );
+      
+      const billsSnapshot = await getDocs(q);
       
       const allBills = billsSnapshot.docs.map(doc => ({
         id: doc.id,
@@ -97,7 +102,7 @@ export default function Bills() {
         status: determineBillStatus(bill)
       }));
       
-      console.log('✅ Loaded bills from billInstances:', {
+      console.log('✅ Loaded bills from financialEvents:', {
         total: allBills.length,
         unpaid: processed.filter(b => !b.isPaid).length,
         paid: processed.filter(b => b.isPaid).length
@@ -147,19 +152,24 @@ export default function Bills() {
     }
   };
 
-  // Load paid bills archive
+  // Load paid bills archive from financialEvents
   const loadPaidBills = async () => {
     if (!currentUser) return;
     try {
-      const paidBillsRef = collection(db, 'users', currentUser.uid, 'paidBills');
-      const q = query(paidBillsRef, orderBy('paidDate', 'desc'));
+      const eventsRef = collection(db, 'users', currentUser.uid, 'financialEvents');
+      const q = query(
+        eventsRef,
+        where('type', '==', 'bill'),
+        where('isPaid', '==', true),
+        orderBy('paidDate', 'desc')
+      );
       const snapshot = await getDocs(q);
       const bills = snapshot.docs.map(doc => ({
         id: doc.id,
         ...doc.data()
       }));
       setPaidBills(bills);
-      console.log(`✅ Loaded ${bills.length} paid bills from archive`);
+      console.log(`✅ Loaded ${bills.length} paid bills from financialEvents`);
     } catch (error) {
       console.error('Error loading paid bills:', error);
       setPaidBills([]);
@@ -410,7 +420,7 @@ const refreshPlaidTransactions = async () => {
   const loadingId = NotificationManager.showLoading('🔄 Scanning transactions with NEW 85% confidence threshold...');
   
   try {
-    // Get all unpaid bills from billInstances
+    // Get all unpaid bills from financialEvents
     const unpaidBills = processedBills.filter(b => !b.isPaid && b.status !== 'paid');
     
     if (unpaidBills.length === 0) {
@@ -516,8 +526,9 @@ const refreshPlaidTransactions = async () => {
       
       // Check if bill already exists for this template and due date
       const existingQuery = query(
-        collection(db, 'users', currentUser.uid, 'billInstances'),
-        where('recurringTemplateId', '==', template.id),
+        collection(db, 'users', currentUser.uid, 'financialEvents'),
+        where('type', '==', 'bill'),
+        where('recurringPatternId', '==', template.id),
         where('dueDate', '==', exactDueDate)
       );
       
@@ -536,8 +547,9 @@ const refreshPlaidTransactions = async () => {
       
       // Check max unpaid bills limit (2 per template)
       const unpaidQuery = query(
-        collection(db, 'users', currentUser.uid, 'billInstances'),
-        where('recurringTemplateId', '==', template.id),
+        collection(db, 'users', currentUser.uid, 'financialEvents'),
+        where('type', '==', 'bill'),
+        where('recurringPatternId', '==', template.id),
         where('isPaid', '==', false)
       );
       
@@ -557,6 +569,7 @@ const refreshPlaidTransactions = async () => {
       const billId = generateBillId();
       const billInstance = {
         id: billId,
+        type: 'bill',
         name: template.name,
         amount: template.cost || template.amount,
         dueDate: exactDueDate, // ← USE EXACT DATE FROM TEMPLATE!
@@ -564,22 +577,26 @@ const refreshPlaidTransactions = async () => {
         originalDueDate: exactDueDate,
         category: template.category || 'Subscriptions',
         recurrence: template.billingCycle || template.frequency || 'monthly',
-        recurringTemplateId: template.id,
+        recurringPatternId: template.id,
         isPaid: false,
         status: 'pending',
+        paidDate: null,
+        paidAmount: null,
+        linkedTransactionId: null,
         paymentHistory: [],
-        linkedTransactionIds: [],
         merchantNames: [
           template.name.toLowerCase(),
           template.name.toLowerCase().replace(/[^a-z0-9]/g, '')
         ],
+        autoPayEnabled: false,
+        notes: null,
         createdAt: serverTimestamp(),
         updatedAt: serverTimestamp(),
         createdFrom: 'auto-generated'
       };
       
-      await setDoc(doc(db, 'users', currentUser.uid, 'billInstances', billId), billInstance);
-      console.log(`✅ Auto-generated bill instance: ${template.name} due ${exactDueDate}`);
+      await setDoc(doc(db, 'users', currentUser.uid, 'financialEvents', billId), billInstance);
+      console.log(`✅ Auto-generated bill to financialEvents: ${template.name} due ${exactDueDate}`);
       
       // Reload bills to show new instance
       await loadBills();
@@ -603,32 +620,31 @@ const refreshPlaidTransactions = async () => {
     }
   };
 
-  // Load recurring bills from subscriptions collection and auto-generate instances
+  // Load recurring bills from recurringPatterns collection and auto-generate instances
   useEffect(() => {
     if (!currentUser) return;
 
-    const subscriptionsRef = collection(db, 'users', currentUser.uid, 'subscriptions');
+    const recurringPatternsRef = collection(db, 'users', currentUser.uid, 'recurringPatterns');
     const unsubscribe = onSnapshot(
-      subscriptionsRef,
+      recurringPatternsRef,
       async (snapshot) => {
-        const subs = snapshot.docs.map(doc => ({
+        const patterns = snapshot.docs.map(doc => ({
           id: doc.id,
           ...doc.data()
         }));
-        // Filter for recurring bills only
-        const bills = subs.filter(sub => 
-          sub.status === 'active' && 
-          sub.type === 'recurring_bill'
+        // Filter for active patterns only
+        const bills = patterns.filter(pattern => 
+          pattern.status === 'active'
         );
         setRecurringBills(bills);
         
-        // Auto-generate bill instances when new recurring bills are added or modified
+        // Auto-generate bill instances when new recurring patterns are added or modified
         snapshot.docChanges().forEach(async (change) => {
           if (change.type === 'added' || change.type === 'modified') {
-            const template = { id: change.doc.id, ...change.doc.data() };
+            const pattern = { id: change.doc.id, ...change.doc.data() };
             
-            // Only process active recurring bills
-            if (template.status !== 'active' || template.type !== 'recurring_bill') {
+            // Only process active recurring patterns
+            if (pattern.status !== 'active') {
               return;
             }
             
@@ -644,16 +660,16 @@ const refreshPlaidTransactions = async () => {
               return;
             }
             
-            // Check if bill instance already exists for this template and due date
+            // Check if bill instance already exists for this pattern and due date
             const existingBill = processedBills.find(b => 
-              b.recurringTemplateId === template.id && 
-              (b.dueDate === template.nextRenewal || b.dueDate === template.nextOccurrence)
+              b.recurringPatternId === pattern.id && 
+              (b.dueDate === pattern.nextRenewal || b.dueDate === pattern.nextOccurrence)
             );
             
             if (!existingBill) {
-              // AUTO-GENERATE bill instance from template
-              console.log(`🔄 Auto-generating bill from template: ${template.name}`);
-              await autoGenerateBillFromTemplate(template);
+              // AUTO-GENERATE bill instance from pattern
+              console.log(`🔄 Auto-generating bill from pattern: ${pattern.name}`);
+              await autoGenerateBillFromTemplate(pattern);
             }
           }
         });
@@ -1250,61 +1266,62 @@ const refreshPlaidTransactions = async () => {
 
   const updateBillAsPaid = async (bill, paidDate = null, paymentOptions = {}) => {
     try {
-      const billRef = doc(db, 'users', currentUser.uid, 'billInstances', bill.id);
+      const billRef = doc(db, 'users', currentUser.uid, 'financialEvents', bill.id);
       
-      // ✅ BUG FIX: DELETE bill instance after payment (both recurring and one-time)
-      // The bill generator or template advancement will create the next month's instance
-      // This prevents duplicate bills from being created
-      await deleteDoc(billRef);
-      console.log(`✅ Bill instance deleted after payment: ${bill.name}`);
+      // ✅ UPDATED: Mark bill as PAID in financialEvents (do NOT delete)
+      // Update the financialEvent document to mark as paid
+      await updateDoc(billRef, {
+        isPaid: true,
+        status: 'paid',
+        paidDate: paidDate || getPacificTime(),
+        paidAmount: Math.abs(parseFloat(bill.amount)),
+        linkedTransactionId: paymentOptions.transactionId || null,
+        updatedAt: serverTimestamp()
+      });
+      console.log(`✅ Bill marked as paid in financialEvents: ${bill.name}`);
       
-      // If bill was generated from recurring template, advance template's nextOccurrence
+      // If bill was generated from recurring pattern, advance pattern's nextOccurrence
       // and auto-generate the NEXT month's bill instance
-      if (bill.recurringTemplateId) {
-        const settingsDocRef = doc(db, 'users', currentUser.uid, 'settings', 'personal');
-        const currentDoc = await getDoc(settingsDocRef);
-        const currentData = currentDoc.exists() ? currentDoc.data() : {};
-        const recurringItems = currentData.recurringItems || [];
+      if (bill.recurringPatternId) {
+        const patternRef = doc(db, 'users', currentUser.uid, 'recurringPatterns', bill.recurringPatternId);
+        const patternDoc = await getDoc(patternRef);
         
-        let updatedTemplate = null;
-        const updatedRecurringItems = recurringItems.map(template => {
-          if (template.id === bill.recurringTemplateId) {
-            // Check if bill's due date matches template's nextOccurrence
-            const billDueDate = bill.dueDate || bill.nextDueDate;
-            const templateNextOccurrence = template.nextOccurrence;
+        if (patternDoc.exists()) {
+          const pattern = patternDoc.data();
+          const billDueDate = bill.dueDate || bill.nextDueDate;
+          const templateNextOccurrence = pattern.nextOccurrence;
+          
+          // Only advance if this bill's due date matches the pattern's current nextOccurrence
+          if (billDueDate === templateNextOccurrence) {
+            // Advance recurring pattern to next occurrence
+            const nextOccurrence = RecurringManager.calculateNextOccurrenceAfterPayment(
+              templateNextOccurrence,
+              pattern.frequency
+            );
             
-            // Only advance if this bill's due date matches the template's current nextOccurrence
-            if (billDueDate === templateNextOccurrence) {
-              // Advance recurring template to next occurrence
-              const nextOccurrence = RecurringManager.calculateNextOccurrenceAfterPayment(
-                templateNextOccurrence,
-                template.frequency
-              );
-              
-              console.log(`[Bill Payment] Advancing recurring template "${template.name}" from ${templateNextOccurrence} to ${nextOccurrence.toISOString().split('T')[0]}`);
-              
-              updatedTemplate = {
-                ...template,
-                nextOccurrence: nextOccurrence.toISOString().split('T')[0],
-                lastPaidDate: paidDate || getPacificTime(),
-                updatedAt: new Date().toISOString()
-              };
-              return updatedTemplate;
-            }
+            console.log(`[Bill Payment] Advancing recurring pattern "${pattern.name}" from ${templateNextOccurrence} to ${nextOccurrence.toISOString().split('T')[0]}`);
+            
+            // Update the recurring pattern
+            await updateDoc(patternRef, {
+              nextOccurrence: nextOccurrence.toISOString().split('T')[0],
+              lastPaidDate: paidDate || getPacificTime(),
+              updatedAt: serverTimestamp()
+            });
+            
+            // Auto-generate next month's bill instance
+            const updatedPattern = {
+              ...pattern,
+              id: bill.recurringPatternId,
+              nextOccurrence: nextOccurrence.toISOString().split('T')[0]
+            };
+            
+            console.log(`🔄 Auto-generating next month's bill for ${bill.name}`);
+            await autoGenerateBillFromTemplate(updatedPattern);
+          } else {
+            console.log(`⚠️ Due date mismatch: bill=${billDueDate}, pattern=${templateNextOccurrence}`);
           }
-          return template;
-        });
-        
-        // Update recurring templates
-        await updateDoc(settingsDocRef, {
-          ...currentData,
-          recurringItems: updatedRecurringItems
-        });
-        
-        // Auto-generate next month's bill instance
-        if (updatedTemplate) {
-          console.log(`🔄 Auto-generating next month's bill for ${bill.name}`);
-          await autoGenerateBillFromTemplate(updatedTemplate);
+        } else {
+          console.log(`⚠️ Recurring pattern not found: ${bill.recurringPatternId}`);
         }
       }
     } catch (error) {
@@ -1345,8 +1362,8 @@ const refreshPlaidTransactions = async () => {
   const handleSaveBill = async (billData) => {
     try {
       if (editingBill) {
-        // ✅ Update existing bill in billInstances
-        const billRef = doc(db, 'users', currentUser.uid, 'billInstances', editingBill.id);
+        // ✅ Update existing bill in financialEvents
+        const billRef = doc(db, 'users', currentUser.uid, 'financialEvents', editingBill.id);
         await updateDoc(billRef, {
           ...billData,
           originalDueDate: billData.dueDate,
@@ -1355,9 +1372,12 @@ const refreshPlaidTransactions = async () => {
         
         showNotification('Bill updated successfully!', 'success');
       } else {
-        // ✅ Check for duplicates in billInstances
+        // ✅ Check for duplicates in financialEvents
         const billsSnapshot = await getDocs(
-          collection(db, 'users', currentUser.uid, 'billInstances')
+          query(
+            collection(db, 'users', currentUser.uid, 'financialEvents'),
+            where('type', '==', 'bill')
+          )
         );
         const existingBills = billsSnapshot.docs.map(doc => doc.data());
         
@@ -1394,28 +1414,34 @@ const refreshPlaidTransactions = async () => {
           }
         }
         
-        // ✅ Add new bill to billInstances
+        // ✅ Add new bill to financialEvents
         const billId = generateBillId();
         const newBill = {
           ...billData,
           id: billId,
+          type: 'bill',
           originalDueDate: billData.dueDate,
           isPaid: false,
           status: 'pending',
+          paidDate: null,
+          paidAmount: null,
+          linkedTransactionId: null,
+          recurringPatternId: null,
           paymentHistory: [],
-          linkedTransactionIds: [],
           merchantNames: [
             billData.name.toLowerCase(),
             billData.name.toLowerCase().replace(/[^a-z0-9]/g, '')
           ],
+          autoPayEnabled: false,
+          notes: null,
           createdAt: serverTimestamp(),
           updatedAt: serverTimestamp(),
           createdFrom: 'bills-page'
         };
         
-        await setDoc(doc(db, 'users', currentUser.uid, 'billInstances', billId), newBill);
+        await setDoc(doc(db, 'users', currentUser.uid, 'financialEvents', billId), newBill);
         
-        console.log('✅ Bill saved to billInstances:', newBill);
+        console.log('✅ Bill saved to financialEvents:', newBill);
         showNotification('Bill added successfully!', 'success');
       }
       
@@ -1439,10 +1465,10 @@ const refreshPlaidTransactions = async () => {
     }
 
     try {
-      // ✅ Delete bill from billInstances collection
-      await deleteDoc(doc(db, 'users', currentUser.uid, 'billInstances', billToDelete.id));
+      // ✅ Delete bill from financialEvents collection
+      await deleteDoc(doc(db, 'users', currentUser.uid, 'financialEvents', billToDelete.id));
       
-      console.log('✅ Bill deleted from billInstances:', billToDelete.id);
+      console.log('✅ Bill deleted from financialEvents:', billToDelete.id);
       await loadBills();
       showNotification('Bill deleted successfully!', 'success');
     } catch (error) {
@@ -1453,7 +1479,7 @@ const refreshPlaidTransactions = async () => {
 
   const handleToggleSkipBill = async (bill) => {
     try {
-      const billRef = doc(db, 'users', currentUser.uid, 'billInstances', bill.id);
+      const billRef = doc(db, 'users', currentUser.uid, 'financialEvents', bill.id);
       
       if (bill.status === 'skipped') {
         // Unskip: Just set status back to pending
@@ -1527,9 +1553,13 @@ const refreshPlaidTransactions = async () => {
     try {
       setLoading(true);
       
-      // ✅ Get all bills from billInstances
+      // ✅ Get all unpaid bills from financialEvents
       const billsSnapshot = await getDocs(
-        collection(db, 'users', currentUser.uid, 'billInstances')
+        query(
+          collection(db, 'users', currentUser.uid, 'financialEvents'),
+          where('type', '==', 'bill'),
+          where('isPaid', '==', false)
+        )
       );
       
       const billsToDelete = billsSnapshot.docs.map(doc => ({
@@ -1539,9 +1569,9 @@ const refreshPlaidTransactions = async () => {
       
       setDeletedBills(billsToDelete);
       
-      // ✅ Delete all bills from billInstances
+      // ✅ Delete all bills from financialEvents
       for (const billDoc of billsSnapshot.docs) {
-        await deleteDoc(doc(db, 'users', currentUser.uid, 'billInstances', billDoc.id));
+        await deleteDoc(doc(db, 'users', currentUser.uid, 'financialEvents', billDoc.id));
       }
       
       await loadBills();
@@ -1563,9 +1593,9 @@ const refreshPlaidTransactions = async () => {
     try {
       setLoading(true);
       
-      // ✅ Restore all bills to billInstances
+      // ✅ Restore all bills to financialEvents
       for (const bill of deletedBills) {
-        await setDoc(doc(db, 'users', currentUser.uid, 'billInstances', bill.id), bill);
+        await setDoc(doc(db, 'users', currentUser.uid, 'financialEvents', bill.id), bill);
       }
       
       await loadBills();
@@ -1583,9 +1613,13 @@ const refreshPlaidTransactions = async () => {
     try {
       setDeduplicating(true);
       
-      // ✅ Load all bills from billInstances
+      // ✅ Load all unpaid bills from financialEvents
       const billsSnapshot = await getDocs(
-        collection(db, 'users', currentUser.uid, 'billInstances')
+        query(
+          collection(db, 'users', currentUser.uid, 'financialEvents'),
+          where('type', '==', 'bill'),
+          where('isPaid', '==', false)
+        )
       );
       
       const existingBills = billsSnapshot.docs.map(doc => ({
@@ -1641,7 +1675,7 @@ const refreshPlaidTransactions = async () => {
       const allBillsToRemove = duplicateReport.groups.flatMap(g => g.removeBills);
       
       for (const bill of allBillsToRemove) {
-        await deleteDoc(doc(db, 'users', currentUser.uid, 'billInstances', bill.id));
+        await deleteDoc(doc(db, 'users', currentUser.uid, 'financialEvents', bill.id));
       }
       
       await loadBills();
@@ -1680,8 +1714,8 @@ const refreshPlaidTransactions = async () => {
       console.log(`🔥 [Force Delete] Starting deletion for bill name: "${billName}"`);
       
       // Query Firebase directly for all bills matching the name
-      const billsRef = collection(db, 'users', currentUser.uid, 'billInstances');
-      const q = query(billsRef, where('name', '==', billName));
+      const billsRef = collection(db, 'users', currentUser.uid, 'financialEvents');
+      const q = query(billsRef, where('type', '==', 'bill'), where('name', '==', billName));
       const snapshot = await getDocs(q);
       
       console.log(`🔥 [Force Delete] Found ${snapshot.docs.length} bill(s) matching "${billName}"`);
@@ -1700,10 +1734,10 @@ const refreshPlaidTransactions = async () => {
           name: billData.name,
           amount: billData.amount,
           dueDate: billData.dueDate || billData.nextDueDate,
-          recurringTemplateId: billData.recurringTemplateId
+          recurringPatternId: billData.recurringPatternId
         });
         
-        await deleteDoc(doc(db, 'users', currentUser.uid, 'billInstances', docSnap.id));
+        await deleteDoc(doc(db, 'users', currentUser.uid, 'financialEvents', docSnap.id));
         deletedIds.push(docSnap.id);
       }
       
@@ -1793,9 +1827,11 @@ const refreshPlaidTransactions = async () => {
         };
       });
       
-      // ✅ Save all bills to billInstances collection
+      // ✅ Save all bills to financialEvents collection
       for (const bill of cleanedBills) {
-        await setDoc(doc(db, 'users', currentUser.uid, 'billInstances', bill.id), bill);
+        // Add type field for financialEvents
+        const billWithType = { ...bill, type: 'bill' };
+        await setDoc(doc(db, 'users', currentUser.uid, 'financialEvents', bill.id), billWithType);
       }
       
       const errorsCount = importedBills.filter(b => b.dateError).length;
@@ -1831,7 +1867,7 @@ const refreshPlaidTransactions = async () => {
         importHistory: newHistory
       });
       
-      console.log('✅ CSV import: Saved', cleanedBills.length, 'bills to billInstances');
+      console.log('✅ CSV import: Saved', cleanedBills.length, 'bills to financialEvents');
       
       await loadBills();
       setShowCSVImport(false);
@@ -1855,11 +1891,11 @@ const refreshPlaidTransactions = async () => {
       setLoading(true);
       const lastImport = importHistory[0];
       
-      // ✅ Delete bills from billInstances collection
+      // ✅ Delete bills from financialEvents collection
       const importedBillIds = new Set(lastImport.bills.map(b => b.id));
       for (const billId of importedBillIds) {
         try {
-          await deleteDoc(doc(db, 'users', currentUser.uid, 'billInstances', billId));
+          await deleteDoc(doc(db, 'users', currentUser.uid, 'financialEvents', billId));
         } catch (err) {
           console.log('Bill already deleted:', billId);
         }
