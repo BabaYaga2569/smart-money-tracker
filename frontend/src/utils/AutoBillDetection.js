@@ -64,6 +64,9 @@ export async function markBillAsPaid(userId, bill, transaction) {
   try {
     const billRef = doc(db, 'users', userId, 'billInstances', bill.id);
     
+    // Extract transaction ID consistently
+    const transactionId = transaction.id || transaction.transaction_id;
+    
     // Calculate days past due
     const now = new Date(transaction.date);
     const dueDate = new Date(bill.dueDate);
@@ -76,11 +79,11 @@ export async function markBillAsPaid(userId, bill, transaction) {
       paidDate: transaction.date,
       lastPaidDate: serverTimestamp(),
       updatedAt: serverTimestamp(),
-      linkedTransactionIds: arrayUnion(transaction.id || transaction.transaction_id),
+      linkedTransactionIds: arrayUnion(transactionId),
       paymentHistory: arrayUnion({
         paidDate: new Date(transaction.date).toISOString(),
         amount: Math.abs(parseFloat(transaction.amount)),
-        transactionId: transaction.id || transaction.transaction_id,
+        transactionId: transactionId,
         transactionName: transaction.name || transaction.merchant_name,
         paymentMethod: 'auto-detected',
         source: 'plaid'
@@ -105,7 +108,7 @@ export async function markBillAsPaid(userId, bill, transaction) {
       quarter: paymentQuarter,
       paymentMethod: 'Auto (Plaid)',
       recurringPatternId: bill.recurringPatternId || null,
-      linkedTransactionId: transaction.id || transaction.transaction_id,
+      linkedTransactionId: transactionId,
       isOverdue: daysPastDue > 0,
       daysPastDue: daysPastDue,
       createdAt: serverTimestamp()
@@ -135,9 +138,10 @@ export async function markBillAsPaid(userId, bill, transaction) {
           
           // Only advance if bill's due date matches pattern's nextOccurrence
           if (pattern.nextOccurrence === bill.dueDate) {
+            const frequency = pattern.frequency || bill.recurrence || 'monthly';
             const nextOccurrence = RecurringManager.calculateNextOccurrenceAfterPayment(
               bill.dueDate,
-              bill.recurrence || pattern.frequency
+              frequency
             );
             
             const nextOccurrenceStr = nextOccurrence.toISOString().split('T')[0];

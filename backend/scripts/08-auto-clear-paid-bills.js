@@ -47,8 +47,8 @@ const initializeFirebase = () => {
 const db = initializeFirebase();
 
 // Configuration
-const MAIN_USER_ID = 'MQWMkJUjTpTYVNJZAMWiSEk0ogj1';
-const DAYS_LOOKBACK = 60;
+const USER_ID = process.env.USER_ID || process.argv[2] || 'MQWMkJUjTpTYVNJZAMWiSEk0ogj1';
+const DAYS_LOOKBACK = parseInt(process.env.DAYS_LOOKBACK || '60');
 
 /**
  * Load merchant aliases from aiLearning collection
@@ -473,8 +473,18 @@ async function cleanupPaidBills(userId) {
   }
 }
 
+// Print configuration
+console.log('='.repeat(60));
+console.log('CONFIGURATION');
+console.log('='.repeat(60));
+console.log(`User ID: ${USER_ID}`);
+console.log(`Days lookback: ${DAYS_LOOKBACK}`);
+console.log('='.repeat(60));
+console.log('\nUsage: node scripts/08-auto-clear-paid-bills.js [USER_ID]');
+console.log('   or: USER_ID=... node scripts/08-auto-clear-paid-bills.js\n');
+
 // Run cleanup
-cleanupPaidBills(MAIN_USER_ID)
+cleanupPaidBills(USER_ID)
   .then(() => {
     console.log('\n✨ Script completed successfully');
     process.exit(0);

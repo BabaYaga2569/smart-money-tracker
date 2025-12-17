@@ -154,7 +154,7 @@ async function markBillAsPaid(userId, bill, transaction) {
  * @param {string} frequency - Recurrence frequency
  * @returns {Promise<string|null>} - Next occurrence date or null
  */
-async function advanceRecurringPattern(userId, patternId, currentDueDate, frequency) {
+async function advanceRecurringPattern(userId, patternId, currentDueDate, frequency, paidDate) {
   try {
     const patternRef = doc(db, 'users', userId, 'recurringPatterns', patternId);
     const patternDoc = await getDoc(patternRef);
@@ -173,9 +173,10 @@ async function advanceRecurringPattern(userId, patternId, currentDueDate, freque
     }
     
     // Calculate next occurrence
+    const useFrequency = pattern.frequency || frequency || 'monthly';
     const nextOccurrence = RecurringManager.calculateNextOccurrenceAfterPayment(
       currentDueDate,
-      frequency || pattern.frequency
+      useFrequency
     );
     
     const nextOccurrenceStr = nextOccurrence.toISOString().split('T')[0];
@@ -183,7 +184,7 @@ async function advanceRecurringPattern(userId, patternId, currentDueDate, freque
     // Update pattern
     await updateDoc(patternRef, {
       nextOccurrence: nextOccurrenceStr,
-      lastPaidDate: new Date().toISOString(),
+      lastPaidDate: paidDate || new Date().toISOString(),
       updatedAt: serverTimestamp()
     });
     
@@ -339,7 +340,8 @@ export async function runAutoBillClearing(userId, transactions, bills, settings 
             userId,
             bill.recurringPatternId,
             bill.dueDate,
-            bill.recurrence
+            bill.recurrence,
+            transaction.date
           );
           
           if (nextOccurrence) {
