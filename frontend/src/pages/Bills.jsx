@@ -96,14 +96,33 @@ export default function Bills() {
         ...doc.data()
       }));
       
+      // Filter to only show recent/upcoming bills
+      // Only include bills where:
+      // - Due date is within the last 7 days (recently overdue) OR
+      // - Due date is in the future (upcoming)
+      const now = new Date();
+      const sevenDaysAgo = new Date();
+      sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
+      
+      const filteredBills = allBills.filter(bill => {
+        const dueDateStr = bill.nextDueDate || bill.dueDate;
+        if (!dueDateStr) return true; // Keep bills without due date for safety
+        
+        const dueDate = new Date(dueDateStr);
+        // Keep if due date is within last 7 days OR in the future
+        return dueDate >= sevenDaysAgo;
+      });
+      
       // Process bills with status
-      const processed = allBills.map(bill => ({
+      const processed = filteredBills.map(bill => ({
         ...bill,
         status: determineBillStatus(bill)
       }));
       
       console.log('✅ Loaded bills from financialEvents:', {
         total: allBills.length,
+        filtered: filteredBills.length,
+        hidden: allBills.length - filteredBills.length,
         unpaid: processed.filter(b => !b.isPaid).length,
         paid: processed.filter(b => b.isPaid).length
       });
@@ -160,14 +179,22 @@ export default function Bills() {
       const q = query(
         eventsRef,
         where('type', '==', 'bill'),
-        where('isPaid', '==', true),
-        orderBy('paidDate', 'desc')
+        where('isPaid', '==', true)
+        // Remove orderBy - will sort client-side instead
       );
       const snapshot = await getDocs(q);
       const bills = snapshot.docs.map(doc => ({
         id: doc.id,
         ...doc.data()
       }));
+      
+      // Sort client-side by paidDate descending
+      bills.sort((a, b) => {
+        const dateA = a.paidDate ? new Date(a.paidDate) : new Date(0);
+        const dateB = b.paidDate ? new Date(b.paidDate) : new Date(0);
+        return dateB - dateA;
+      });
+      
       setPaidBills(bills);
       console.log(`✅ Loaded ${bills.length} paid bills from financialEvents`);
     } catch (error) {
