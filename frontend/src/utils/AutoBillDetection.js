@@ -77,7 +77,6 @@ export async function markBillAsPaid(userId, bill, transaction) {
       isPaid: true,
       status: 'paid',
       paidDate: transaction.date,
-      lastPaidDate: serverTimestamp(),
       updatedAt: serverTimestamp(),
       linkedTransactionIds: arrayUnion(transactionId),
       paymentHistory: arrayUnion({

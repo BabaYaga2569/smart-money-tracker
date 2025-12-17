@@ -47,8 +47,18 @@ const initializeFirebase = () => {
 const db = initializeFirebase();
 
 // Configuration
-const USER_ID = process.env.USER_ID || process.argv[2] || 'MQWMkJUjTpTYVNJZAMWiSEk0ogj1';
+const USER_ID = process.env.USER_ID || process.argv[2];
 const DAYS_LOOKBACK = parseInt(process.env.DAYS_LOOKBACK || '60');
+
+// Validate user ID is provided
+if (!USER_ID) {
+  console.error('❌ Error: USER_ID is required!');
+  console.error('\nUsage:');
+  console.error('  node scripts/08-auto-clear-paid-bills.js USER_ID');
+  console.error('  or');
+  console.error('  USER_ID=... node scripts/08-auto-clear-paid-bills.js\n');
+  process.exit(1);
+}
 
 /**
  * Load merchant aliases from aiLearning collection
@@ -95,12 +105,13 @@ function calculateSimilarity(str1, str2) {
     return 0.8;
   }
   
-  // Levenshtein distance approximation
-  const longer = normalized1.length > normalized2.length ? normalized1 : normalized2;
-  const shorter = normalized1.length > normalized2.length ? normalized2 : normalized1;
+  // Limit string length for performance (max 50 chars)
+  const longer = (normalized1.length > normalized2.length ? normalized1 : normalized2).substring(0, 50);
+  const shorter = (normalized1.length > normalized2.length ? normalized2 : normalized1).substring(0, 50);
   
   if (longer.length === 0) return 1.0;
   
+  // Levenshtein distance approximation
   const costs = [];
   for (let i = 0; i <= longer.length; i++) {
     let lastValue = i;

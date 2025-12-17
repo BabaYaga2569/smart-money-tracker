@@ -181,10 +181,10 @@ async function advanceRecurringPattern(userId, patternId, currentDueDate, freque
     
     const nextOccurrenceStr = nextOccurrence.toISOString().split('T')[0];
     
-    // Update pattern
+    // Update pattern (use paidDate from transaction, not current time)
     await updateDoc(patternRef, {
       nextOccurrence: nextOccurrenceStr,
-      lastPaidDate: paidDate || new Date().toISOString(),
+      lastPaidDate: paidDate,
       updatedAt: serverTimestamp()
     });
     
