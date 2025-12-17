@@ -7,7 +7,8 @@ import { formatDateForInput } from './DateUtils.js';
 /**
  * Load merchant aliases from aiLearning/merchantAliases collection
  * @param {string} userId - User ID
- * @returns {Promise<Object>} - Merchant aliases mapping
+ * @returns {Promise<Object>} - Merchant aliases mapping (empty object on error)
+ * @throws Never throws - returns empty object on any error to prevent breaking bill matching
  */
 export async function loadMerchantAliases(userId) {
   try {
@@ -26,6 +27,29 @@ export async function loadMerchantAliases(userId) {
     console.error('Error loading merchant aliases:', error);
     return {};
   }
+}
+
+/**
+ * Enrich a bill with merchant name aliases for better matching
+ * @param {Object} bill - Bill instance
+ * @param {Object} merchantAliases - Merchant aliases mapping
+ * @returns {Object} - Bill enriched with merchant name aliases
+ */
+function enrichBillWithAliases(bill, merchantAliases) {
+  const billName = bill.name?.toLowerCase() || '';
+  const aliasEntry = merchantAliases[billName];
+  
+  if (aliasEntry && aliasEntry.aliases) {
+    return {
+      ...bill,
+      merchantNames: [
+        ...(bill.merchantNames || []),
+        ...aliasEntry.aliases
+      ]
+    };
+  }
+  
+  return bill;
 }
 
 /**
@@ -179,22 +203,7 @@ export async function runAutoDetection(userId, transactions, bills, settings = n
     const unpaidBills = bills.filter(b => !b.isPaid && b.status !== 'paid' && b.status !== 'skipped');
     
     // ✅ NEW: Enrich bills with merchant aliases before matching
-    const enrichedBills = unpaidBills.map(bill => {
-      const billName = bill.name?.toLowerCase() || '';
-      const aliasEntry = merchantAliases[billName];
-      
-      if (aliasEntry && aliasEntry.aliases) {
-        return {
-          ...bill,
-          merchantNames: [
-            ...(bill.merchantNames || []),
-            ...aliasEntry.aliases
-          ]
-        };
-      }
-      
-      return bill;
-    });
+    const enrichedBills = unpaidBills.map(bill => enrichBillWithAliases(bill, merchantAliases));
     
     console.log(`📊 Analyzing ${transactions.length} transactions against ${enrichedBills.length} unpaid bills`);
     console.log(`🔍 Using merchant aliases for ${Object.keys(merchantAliases).length} merchants`);
