@@ -55,6 +55,13 @@ export const normalizeToDateString = (dateInput) => {
     return `${year}-${month}-${day}`;
   }
   
-  // Fallback: extract date part from any string format
-  return String(dateInput).split('T')[0];
+  // Fallback: attempt to extract date part from any string format
+  const stringInput = String(dateInput);
+  if (stringInput.includes('T')) {
+    return stringInput.split('T')[0];
+  }
+  
+  // If it's a plain string that doesn't match expected formats, return as-is
+  // and let the caller handle any validation
+  return stringInput;
 };

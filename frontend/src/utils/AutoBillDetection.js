@@ -233,9 +233,9 @@ export async function generateNextBill(userId, bill, settings = null) {
     // Fallback: Calculate next due date (one month from current due date)
     if (!nextDueDateStr) {
       const currentDueDate = parseLocalDate(bill.dueDate);
-      const nextDueDate = new Date(currentDueDate);
-      nextDueDate.setMonth(nextDueDate.getMonth() + 1);
-      nextDueDateStr = formatDateForInput(nextDueDate);
+      // Create a copy to avoid mutating the original date
+      currentDueDate.setMonth(currentDueDate.getMonth() + 1);
+      nextDueDateStr = formatDateForInput(currentDueDate);
     }
     
     // ✅ NEW: Check if bill already exists for this date
