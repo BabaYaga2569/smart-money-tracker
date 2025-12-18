@@ -2,7 +2,7 @@
 import { doc, updateDoc, serverTimestamp, arrayUnion, setDoc, getDoc, collection, getDocs, addDoc, query, where } from 'firebase/firestore';
 import { db } from '../firebase';
 import { matchTransactionsToBills } from './BillPaymentMatcher.js';
-import { formatDateForInput } from './DateUtils.js';
+import { formatDateForInput, parseLocalDate } from './DateUtils.js';
 import { RecurringManager } from './RecurringManager.js';
 import { getDateOnly } from './dateNormalization.js';
 
@@ -69,8 +69,8 @@ export async function markBillAsPaid(userId, bill, transaction) {
     const transactionId = transaction.id || transaction.transaction_id;
     
     // Calculate days past due
-    const now = new Date(transaction.date);
-    const dueDate = new Date(bill.dueDate);
+    const now = parseLocalDate(transaction.date);
+    const dueDate = parseLocalDate(bill.dueDate);
     const daysPastDue = Math.max(0, Math.floor((now - dueDate) / (1000 * 60 * 60 * 24)));
     
     // Update bill status
@@ -81,7 +81,7 @@ export async function markBillAsPaid(userId, bill, transaction) {
       updatedAt: serverTimestamp(),
       linkedTransactionIds: arrayUnion(transactionId),
       paymentHistory: arrayUnion({
-        paidDate: new Date(transaction.date).toISOString(),
+        paidDate: parseLocalDate(transaction.date).toISOString(),
         amount: Math.abs(parseFloat(transaction.amount)),
         transactionId: transactionId,
         transactionName: transaction.name || transaction.merchant_name,
@@ -93,8 +93,9 @@ export async function markBillAsPaid(userId, bill, transaction) {
     // Record payment in bill_payments collection
     const paymentsRef = collection(db, 'users', userId, 'bill_payments');
     const paidDateStr = transaction.date;
-    const paymentYear = new Date(transaction.date).getFullYear();
-    const paymentQuarter = `Q${Math.ceil((new Date(transaction.date).getMonth() + 1) / 3)}`;
+    const transactionDateObj = parseLocalDate(transaction.date);
+    const paymentYear = transactionDateObj.getFullYear();
+    const paymentQuarter = `Q${Math.ceil((transactionDateObj.getMonth() + 1) / 3)}`;
     
     await addDoc(paymentsRef, {
       billId: bill.id,
@@ -138,8 +139,8 @@ export async function markBillAsPaid(userId, bill, transaction) {
           
           // Only advance if bill's due date matches pattern's nextOccurrence
           // Use date comparison to handle timezone and format variations
-          const patternDate = new Date(pattern.nextOccurrence).toISOString().split('T')[0];
-          const billDate = new Date(bill.dueDate).toISOString().split('T')[0];
+          const patternDate = getDateOnly(pattern.nextOccurrence);
+          const billDate = getDateOnly(bill.dueDate);
           
           if (patternDate === billDate) {
             const frequency = pattern.frequency || bill.recurrence || 'monthly';
@@ -231,7 +232,7 @@ export async function generateNextBill(userId, bill, settings = null) {
     
     // Fallback: Calculate next due date (one month from current due date)
     if (!nextDueDateStr) {
-      const currentDueDate = new Date(bill.dueDate);
+      const currentDueDate = parseLocalDate(bill.dueDate);
       const nextDueDate = new Date(currentDueDate);
       nextDueDate.setMonth(nextDueDate.getMonth() + 1);
       nextDueDateStr = formatDateForInput(nextDueDate);
