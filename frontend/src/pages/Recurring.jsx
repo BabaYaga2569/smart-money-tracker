@@ -20,6 +20,7 @@ import CSVImportModal from '../components/CSVImportModal';
 import { BillSortingManager } from '../utils/BillSortingManager';
 import { BillDeduplicationManager } from '../utils/BillDeduplicationManager';
 import { format, addMonths } from 'date-fns';
+import { getDateOnly } from '../utils/dateNormalization';
 import './Recurring.css';
 import { useAuth } from '../contexts/AuthContext';
 import { ensureSettingsDocument } from '../utils/settingsUtils';
@@ -481,7 +482,7 @@ const Recurring = () => {
     setEditingItem(item);
     setNewItem({
       ...item,
-      nextOccurrence: formatDateForInput(new Date(item.nextOccurrence)),
+      nextOccurrence: getDateOnly(item.nextOccurrence),
       customRecurrence: item.activeMonths && item.activeMonths.length > 0,
       activeMonths: item.activeMonths || [],
     });
@@ -581,10 +582,11 @@ const Recurring = () => {
           // When adding a new template, create a bill instance (with duplicate prevention)
           if (!editingItem) {
             // Check if a bill instance already exists for this template and date
+            const nextDueDate = getDateOnly(itemData.nextOccurrence);
             const existingBillQuery = query(
               collection(db, 'users', currentUser.uid, 'billInstances'),
               where('recurringTemplateId', '==', itemData.id),
-              where('dueDate', '==', format(new Date(itemData.nextOccurrence), 'yyyy-MM-dd'))
+              where('dueDate', '==', nextDueDate)
             );
             const existingBills = await getDocs(existingBillQuery);
 
@@ -597,8 +599,8 @@ const Recurring = () => {
                 id: billId,
                 name: itemData.name,
                 amount: parseFloat(itemData.amount),
-                dueDate: format(new Date(itemData.nextOccurrence), 'yyyy-MM-dd'),
-                originalDueDate: format(new Date(itemData.nextOccurrence), 'yyyy-MM-dd'),
+                dueDate: nextDueDate,
+                originalDueDate: nextDueDate,
                 isPaid: false,
                 status: 'pending',
                 category: itemData.category || 'Other',
@@ -631,7 +633,7 @@ const Recurring = () => {
               billSyncStats = { added: 1 };
             } else {
               console.log(
-                `Bill instance already exists for ${itemData.name} on ${format(new Date(itemData.nextOccurrence), 'yyyy-MM-dd')}`
+                `Bill instance already exists for ${itemData.name} on ${nextDueDate}`
               );
               billSyncStats = { skipped: 1 };
             }
@@ -670,7 +672,7 @@ const Recurring = () => {
               const billData = billDoc.data();
 
               // Check if any field changed
-              const newDueDate = format(new Date(itemData.nextOccurrence), 'yyyy-MM-dd');
+              const newDueDate = getDateOnly(itemData.nextOccurrence);
               const newAmount = parseFloat(itemData.amount);
               const newCategory = itemData.category || billData.category;
 

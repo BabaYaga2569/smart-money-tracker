@@ -97,7 +97,7 @@ export class RecurringManager {
    */
   static getItemsInRange(items, startDate, endDate) {
     return items.filter((item) => {
-      const nextDate = new Date(item.nextOccurrence);
+      const nextDate = parseLocalDate(item.nextOccurrence);
       return nextDate >= startDate && nextDate <= endDate;
     });
   }
