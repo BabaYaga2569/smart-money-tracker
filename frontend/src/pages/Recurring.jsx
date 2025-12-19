@@ -663,64 +663,107 @@ const Recurring = () => {
       // ✅ NEW: When editing a recurring template, also update existing unpaid bill instances
       if (editingItem && itemData.type === 'expense' && itemData.status === 'active') {
         try {
-          // Find unpaid bill instances from this template
-          const billsQuery = query(
-            collection(db, 'users', currentUser.uid, 'financialEvents'),
+          // Query for related unpaid bills using all possible linking fields
+          const billsCollection = collection(db, 'users', currentUser.uid, 'financialEvents');
+          
+          const queries = [
+            query(billsCollection, where('type', '==', 'bill'), where('recurringPatternId', '==', itemData.id), where('isPaid', '==', false)),
+            query(billsCollection, where('type', '==', 'bill'), where('sourcePatternId', '==', itemData.id), where('isPaid', '==', false)),
+            query(billsCollection, where('type', '==', 'bill'), where('templateId', '==', itemData.id), where('isPaid', '==', false)),
+            query(billsCollection, where('type', '==', 'bill'), where('recurringTemplateId', '==', itemData.id), where('isPaid', '==', false)),
+          ];
+          
+          // Also try matching by name for legacy bills
+          const nameQuery = query(
+            billsCollection,
             where('type', '==', 'bill'),
-            where('recurringPatternId', '==', itemData.id),
+            where('name', '==', itemData.name),
             where('isPaid', '==', false)
           );
-          const billsSnapshot = await getDocs(billsQuery);
-
-          if (billsSnapshot.size > 0) {
-            console.log(
-              `Updating ${billsSnapshot.size} unpaid bill instance(s) for template ${itemData.name}`
-            );
-
-            // Update each unpaid bill to match the template
-            const updatePromises = [];
-            for (const billDoc of billsSnapshot.docs) {
-              const billData = billDoc.data();
-
-              // Check if any field changed
-              const newDueDate = getDateOnly(itemData.nextOccurrence);
-              const newAmount = parseFloat(itemData.amount);
-              const newCategory = itemData.category || billData.category;
-
-              const dateChanged = billData.dueDate !== newDueDate;
-              const amountChanged = billData.amount !== newAmount;
-              const categoryChanged = billData.category !== newCategory;
-
-              if (dateChanged || amountChanged || categoryChanged) {
-                const changes = [];
-                if (dateChanged) changes.push(`date: ${billData.dueDate} → ${newDueDate}`);
-                if (amountChanged) changes.push(`amount: $${billData.amount} → $${newAmount}`);
-                if (categoryChanged) changes.push(`category: ${billData.category} → ${newCategory}`);
-
-                console.log(`  Updating bill ${billData.name}: ${changes.join(', ')}`);
-
-                updatePromises.push(
-                  updateDoc(doc(db, 'users', currentUser.uid, 'financialEvents', billDoc.id), {
-                    dueDate: newDueDate,
-                    originalDueDate: newDueDate,
-                    amount: newAmount,
-                    category: newCategory,
-                    updatedAt: serverTimestamp(),
-                  })
-                );
+          queries.push(nameQuery);
+          
+          // Collect unique bills to update
+          const billsToUpdate = new Map();
+          
+          for (const q of queries) {
+            const snapshot = await getDocs(q);
+            snapshot.docs.forEach(doc => {
+              if (!billsToUpdate.has(doc.id)) {
+                billsToUpdate.set(doc.id, { ref: doc.ref, data: doc.data() });
               }
-            }
-
+            });
+          }
+          
+          if (billsToUpdate.size === 0) {
+            console.log('📝 No unpaid bills found to update');
+          } else {
+            console.log(`🔄 Found ${billsToUpdate.size} unpaid bill(s) to sync with template ${itemData.name}`);
+            
+            // Update each bill with new values from recurring item
+            const updatePromises = [];
+            const newDueDate = getDateOnly(itemData.nextOccurrence);
+            const newAmount = parseFloat(itemData.amount);
+            
+            billsToUpdate.forEach(({ ref, data }, billId) => {
+              const updates = {
+                updatedAt: serverTimestamp(),
+              };
+              
+              const changes = [];
+              
+              // Update amount if changed
+              if (newAmount !== undefined && data.amount !== newAmount) {
+                updates.amount = newAmount;
+                updates.cost = newAmount;
+                changes.push(`amount: $${data.amount || data.cost} → $${newAmount}`);
+              }
+              
+              // Update due date if changed
+              if (newDueDate && data.dueDate !== newDueDate) {
+                updates.dueDate = newDueDate;
+                updates.nextRenewal = newDueDate;
+                updates.nextOccurrence = newDueDate;
+                updates.originalDueDate = newDueDate;
+                changes.push(`date: ${data.dueDate} → ${newDueDate}`);
+              }
+              
+              // Update name if changed
+              if (itemData.name && data.name !== itemData.name) {
+                updates.name = itemData.name;
+                changes.push(`name: ${data.name} → ${itemData.name}`);
+              }
+              
+              // Update category if changed
+              if (itemData.category && data.category !== itemData.category) {
+                updates.category = itemData.category;
+                changes.push(`category: ${data.category} → ${itemData.category}`);
+              }
+              
+              // Update isAutoPay if changed
+              if (itemData.autoPay !== undefined && data.autoPayEnabled !== itemData.autoPay) {
+                updates.autoPayEnabled = itemData.autoPay;
+                changes.push(`autoPay: ${data.autoPayEnabled} → ${itemData.autoPay}`);
+              }
+              
+              // Only update if there are actual changes
+              if (changes.length > 0) {
+                console.log(`  💰 Updating bill "${data.name}": ${changes.join(', ')}`);
+                updatePromises.push(updateDoc(ref, updates));
+              }
+            });
+            
             await Promise.all(updatePromises);
-
+            
             if (updatePromises.length > 0) {
-              console.log(`✅ Updated ${updatePromises.length} bill instance(s) with new template data`);
+              console.log(`✅ Updated ${updatePromises.length} related bill(s) with new values`);
               if (!billSyncStats) billSyncStats = {};
               billSyncStats.updated = updatePromises.length;
+            } else {
+              console.log('✅ All bills already up to date');
             }
           }
         } catch (error) {
-          console.error('❌ Error updating bill instances from template:', error);
+          console.error('❌ Error syncing bill updates:', error);
           // Don't fail the entire save if bill sync fails
         }
       }
@@ -730,12 +773,14 @@ const Recurring = () => {
       setShowModal(false);
 
       // Show success notification with bill sync details
-      let message = editingItem ? 'Recurring item updated!' : 'Recurring item added!';
+      let message = editingItem ? 'Recurring item updated' : 'Recurring item added';
       if (billSyncStats && billSyncStats.added > 0) {
-        message += ` Bill instance created in Bills Management.`;
+        message = `${message} and ${billSyncStats.added} bill instance(s) created`;
       }
       if (billSyncStats && billSyncStats.updated > 0) {
-        message += ` ${billSyncStats.updated} bill instance(s) updated.`;
+        message = editingItem 
+          ? `Updated recurring item and ${billSyncStats.updated} related bill(s)`
+          : `${message} and ${billSyncStats.updated} related bill(s) updated`;
       }
 
       showNotification(message, 'success');
