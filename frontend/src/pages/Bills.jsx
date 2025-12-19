@@ -708,20 +708,20 @@ const refreshPlaidTransactions = async () => {
         setRecurringBills(bills);
         
         // Auto-generate bill instances when new recurring patterns are added or modified
-        snapshot.docChanges().forEach(async (change) => {
-          if (change.type === 'added' || change.type === 'modified') {
-            const pattern = { id: change.doc.id, ...change.doc.data() };
-            
-            // Only process active recurring patterns
-            if (pattern.status !== 'active') {
-              return;
-            }
-            
-            // Don't auto-generate if settings haven't loaded yet
-            if (!settingsLoaded || userSettings === null) {
-              console.log('[AutoBillDetection] Settings not loaded yet, skipping auto-generation');
-              return;
-            }
+// Don't process if settings haven't loaded yet
+if (!settingsLoaded || userSettings === null) {
+  console.log('[AutoBillDetection] Settings not loaded yet, skipping auto-generation');
+  return;
+}
+
+snapshot.docChanges().forEach(async (change) => {
+  if (change.type === 'added' || change.type === 'modified') {
+    const pattern = { id: change. doc.id, ... change.doc.data() };
+
+    // Only process active recurring patterns
+    if (pattern.status !== 'active') {
+      return;
+    }
 
             // Don't auto-generate if disabled in settings
             if (userSettings?.autoDetectBills === false || userSettings?.disableAutoGeneration === true) {
