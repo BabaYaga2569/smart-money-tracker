@@ -29,8 +29,8 @@ export class BillSortingManager {
     /**
      * Get urgency category based on days until due and date comparison
      * @param {number} daysUntilDue - Days until due date
-     * @param {Date} dueDate - The actual due date (used for month comparison)
-     * @returns {Object} Urgency information
+     * @param {string|Date|null} dueDate - The actual due date (optional, used for month comparison to determine "THIS MONTH" badge)
+     * @returns {Object} Urgency information including category, indicator, label, priority, and className
      */
     static getUrgencyInfo(daysUntilDue, dueDate = null) {
         if (daysUntilDue < 0) {

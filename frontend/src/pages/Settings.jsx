@@ -327,7 +327,7 @@ const Settings = () => {
         setTimeout(() => setMessage(''), 3000);
       }).catch((err) => {
         console.error('Failed to copy:', err);
-        setMessage('❌ Failed to copy User ID');
+        setMessage('❌ Failed to copy User ID. Try manually selecting and copying the ID.');
       });
     }
   };
