@@ -1,5 +1,5 @@
 import React, { useMemo, useState, useEffect } from "react";
-import { collection, doc, onSnapshot, orderBy, query, updateDoc, Timestamp, getDoc, addDoc, where, getDocs, setDoc, deleteDoc, serverTimestamp } from "firebase/firestore";
+import { collection, doc, onSnapshot, orderBy, query, updateDoc, Timestamp, getDoc, addDoc, where, getDocs, setDoc, deleteDoc, serverTimestamp, arrayUnion } from "firebase/firestore";
 import { db } from "../firebase";
 import { useAuth } from "../contexts/AuthContext";
 import { findMatchingTransactionForBill } from "../utils/billMatcher";
@@ -545,6 +545,19 @@ const refreshPlaidTransactions = async () => {
       
       if (!exactDueDate) {
         console.warn(`Template ${template.name} has no nextRenewal/nextOccurrence date`);
+        // Remove from lock
+        setAutoGenerationLock(prev => {
+          const newSet = new Set(prev);
+          newSet.delete(lockKey);
+          return newSet;
+        });
+        return;
+      }
+      
+      // ✅ CHECK SKIPPED PERIODS: Don't recreate bills that were manually deleted
+      const currentPeriod = exactDueDate.substring(0, 7); // e.g., "2025-12"
+      if (template.skippedPeriods && Array.isArray(template.skippedPeriods) && template.skippedPeriods.includes(currentPeriod)) {
+        console.log(`⏭️ Skipping auto-generation: ${template.name} was deleted for period ${currentPeriod}`);
         // Remove from lock
         setAutoGenerationLock(prev => {
           const newSet = new Set(prev);
@@ -1536,6 +1549,26 @@ const refreshPlaidTransactions = async () => {
       await deleteDoc(doc(db, 'users', currentUser.uid, 'financialEvents', billToDelete.id));
       
       console.log('✅ Bill deleted from financialEvents:', billToDelete.id);
+      
+      // ✅ ZOMBIE BILL FIX: Add period to skippedPeriods to prevent auto-recreation
+      if (billToDelete.recurringPatternId) {
+        const billDueDate = billToDelete.dueDate || billToDelete.nextDueDate;
+        if (billDueDate) {
+          const period = billDueDate.substring(0, 7); // e.g., "2025-12"
+          const patternRef = doc(db, 'users', currentUser.uid, 'recurringPatterns', billToDelete.recurringPatternId);
+          
+          try {
+            await updateDoc(patternRef, {
+              skippedPeriods: arrayUnion(period),
+              updatedAt: serverTimestamp()
+            });
+            console.log(`✅ Added ${period} to skippedPeriods for pattern ${billToDelete.recurringPatternId}`);
+          } catch (error) {
+            console.warn('Could not update skippedPeriods:', error);
+          }
+        }
+      }
+      
       await loadBills();
       showNotification('Bill deleted successfully!', 'success');
     } catch (error) {
@@ -1828,18 +1861,13 @@ const refreshPlaidTransactions = async () => {
   const handleExportToCSV = () => {
     try {
       const csvData = processedBills.map(bill => ({
-        'Bill Name': bill.name || '',
+        'Name': bill.name || '',
         'Amount': bill.amount || '',
         'Due Date': bill.nextDueDate || bill.dueDate || '',
-        'Frequency': bill.recurrence || '',
         'Category': bill.category || '',
-        'Status': bill.status || '',
-        'Is Paid': bill.isPaid ? 'Yes' : 'No',
-        'Last Paid Date': bill.lastPaidDate || '',
-        'Payment Method': bill.lastPayment?.method || '',
-        'Recurring Template ID': bill.recurringTemplateId || '',
-        'Created From': bill.createdFrom || '',
-        'Bill ID': bill.id || ''
+        'Status': bill.isPaid ? 'paid' : 'unpaid',
+        'Account': bill.accountId ? (accounts[bill.accountId]?.name || bill.accountId) : '',
+        'Frequency': bill.recurrence || ''
       }));
       
       if (csvData.length === 0) {
