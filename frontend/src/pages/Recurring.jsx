@@ -673,7 +673,9 @@ const Recurring = () => {
             query(billsCollection, where('type', '==', 'bill'), where('recurringTemplateId', '==', itemData.id), where('isPaid', '==', false)),
           ];
           
-          // Also try matching by name for legacy bills
+          // Also try matching by name for legacy bills (as a fallback)
+          // Note: This could match multiple bills with the same name, but that's acceptable
+          // for legacy data where linking fields may not have been set properly
           const nameQuery = query(
             billsCollection,
             where('type', '==', 'bill'),
@@ -712,7 +714,10 @@ const Recurring = () => {
               const changes = [];
               
               // Update amount if changed
-              if (newAmount !== undefined && data.amount !== newAmount) {
+              // Check both amount and cost fields to handle all cases
+              if (newAmount !== undefined && (data.amount !== newAmount || data.cost !== newAmount)) {
+                // Update both amount and cost fields for backwards compatibility
+                // Different parts of the codebase may reference either field
                 updates.amount = newAmount;
                 updates.cost = newAmount;
                 changes.push(`amount: $${data.amount || data.cost} → $${newAmount}`);
@@ -720,6 +725,11 @@ const Recurring = () => {
               
               // Update due date if changed
               if (newDueDate && data.dueDate !== newDueDate) {
+                // Update all date-related fields to ensure consistency across the system
+                // - dueDate: primary due date field
+                // - nextRenewal: used by recurring bill logic
+                // - nextOccurrence: used by recurring pattern matching
+                // - originalDueDate: tracks the bill's initial due date before any modifications
                 updates.dueDate = newDueDate;
                 updates.nextRenewal = newDueDate;
                 updates.nextOccurrence = newDueDate;
