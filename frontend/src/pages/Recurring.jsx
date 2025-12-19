@@ -583,7 +583,7 @@ const Recurring = () => {
         }
       }
 
-      // ✅ NEW: Save to billInstances collection instead of old bills array
+      // ✅ NEW: Save to financialEvents collection instead of old bills array
       let billSyncStats = null;
 
       if (itemData.type === 'expense' && itemData.status === 'active') {
@@ -593,8 +593,9 @@ const Recurring = () => {
             // Check if a bill instance already exists for this template and date
             const nextDueDate = getDateOnly(itemData.nextOccurrence);
             const existingBillQuery = query(
-              collection(db, 'users', currentUser.uid, 'billInstances'),
-              where('recurringTemplateId', '==', itemData.id),
+              collection(db, 'users', currentUser.uid, 'financialEvents'),
+              where('type', '==', 'bill'),
+              where('recurringPatternId', '==', itemData.id),
               where('dueDate', '==', nextDueDate)
             );
             const existingBills = await getDocs(existingBillQuery);
@@ -628,17 +629,17 @@ const Recurring = () => {
                   itemData.name.toLowerCase(),
                   itemData.name.toLowerCase().replace(/[^a-z0-9]/g, ''),
                 ],
-                recurringTemplateId: itemData.id,
+                recurringPatternId: itemData.id,
                 createdAt: serverTimestamp(),
                 updatedAt: serverTimestamp(),
                 createdFrom: 'recurring-page',
               };
 
-              // Save to billInstances collection
-              const billRef = doc(db, 'users', currentUser.uid, 'billInstances', billId);
+              // Save to financialEvents collection
+              const billRef = doc(db, 'users', currentUser.uid, 'financialEvents', billId);
               await setDoc(billRef, billInstance);
 
-              console.log('✅ Recurring bill saved to billInstances:', billInstance);
+              console.log('✅ Recurring bill saved to financialEvents:', billInstance);
               billSyncStats = { added: 1 };
             } else {
               console.log(
@@ -648,7 +649,7 @@ const Recurring = () => {
             }
           }
         } catch (error) {
-          console.error('❌ Error saving bill to billInstances:', error);
+          console.error('❌ Error saving bill to financialEvents:', error);
           // Continue with template save even if bill sync fails
         }
       }
@@ -664,8 +665,9 @@ const Recurring = () => {
         try {
           // Find unpaid bill instances from this template
           const billsQuery = query(
-            collection(db, 'users', currentUser.uid, 'billInstances'),
-            where('recurringTemplateId', '==', itemData.id),
+            collection(db, 'users', currentUser.uid, 'financialEvents'),
+            where('type', '==', 'bill'),
+            where('recurringPatternId', '==', itemData.id),
             where('isPaid', '==', false)
           );
           const billsSnapshot = await getDocs(billsQuery);
@@ -698,7 +700,7 @@ const Recurring = () => {
                 console.log(`  Updating bill ${billData.name}: ${changes.join(', ')}`);
 
                 updatePromises.push(
-                  updateDoc(doc(db, 'users', currentUser.uid, 'billInstances', billDoc.id), {
+                  updateDoc(doc(db, 'users', currentUser.uid, 'financialEvents', billDoc.id), {
                     dueDate: newDueDate,
                     originalDueDate: newDueDate,
                     amount: newAmount,
@@ -754,10 +756,11 @@ const Recurring = () => {
       let preservedCount = 0;
 
       if (item.id) {
-        // Query billInstances for bills from this template
+        // Query financialEvents for bills from this template
         const billsQuery = query(
-          collection(db, 'users', currentUser.uid, 'billInstances'),
-          where('recurringTemplateId', '==', item.id)
+          collection(db, 'users', currentUser.uid, 'financialEvents'),
+          where('type', '==', 'bill'),
+          where('recurringPatternId', '==', item.id)
         );
         const billsSnapshot = await getDocs(billsQuery);
 
@@ -778,7 +781,7 @@ const Recurring = () => {
             console.log(`  🗑️ Deleting unpaid bill: ${billData.name} (${billData.dueDate})`);
             // Delete unpaid bill
             deletePromises.push(
-              deleteDoc(doc(db, 'users', currentUser.uid, 'billInstances', billDoc.id))
+              deleteDoc(doc(db, 'users', currentUser.uid, 'financialEvents', billDoc.id))
             );
           }
         }
@@ -1005,8 +1008,9 @@ const Recurring = () => {
           if (newStatus === 'paused') {
             // When pausing, remove unpaid bill instances from this template
             const billsQuery = query(
-              collection(db, 'users', currentUser.uid, 'billInstances'),
-              where('recurringTemplateId', '==', item.id),
+              collection(db, 'users', currentUser.uid, 'financialEvents'),
+              where('type', '==', 'bill'),
+              where('recurringPatternId', '==', item.id),
               where('isPaid', '==', false)
             );
             const billsSnapshot = await getDocs(billsQuery);
