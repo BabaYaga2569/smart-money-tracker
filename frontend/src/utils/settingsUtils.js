@@ -48,6 +48,9 @@ const getDefaultSettings = () => ({
   lastPayDate: null,
   nextPaydayOverride: null,
   isOnboardingComplete: false,
+  // FIX: New users should default to auto-generation ENABLED
+  disableAutoGeneration: false,  // Changed from true to false
+  autoDetectBills: true,          // Changed from false to true
   createdAt: serverTimestamp(),
   updatedAt: serverTimestamp()
 });

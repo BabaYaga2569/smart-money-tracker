@@ -27,11 +27,12 @@ export class BillSortingManager {
     }
 
     /**
-     * Get urgency category based on days until due
+     * Get urgency category based on days until due and date comparison
      * @param {number} daysUntilDue - Days until due date
-     * @returns {Object} Urgency information
+     * @param {string|Date|null} dueDate - The actual due date (optional, used for month comparison to determine "THIS MONTH" badge)
+     * @returns {Object} Urgency information including category, indicator, label, priority, and className
      */
-    static getUrgencyInfo(daysUntilDue) {
+    static getUrgencyInfo(daysUntilDue, dueDate = null) {
         if (daysUntilDue < 0) {
             return {
                 category: 'overdue',
@@ -48,22 +49,38 @@ export class BillSortingManager {
                 priority: 2,
                 className: 'urgency-urgent'
             };
-        } else if (daysUntilDue <= 30) {
-            return {
-                category: 'upcoming',
-                indicator: '🟡',
-                label: 'THIS MONTH',
-                priority: 3,
-                className: 'urgency-upcoming'
-            };
         } else {
-            return {
-                category: 'future',
-                indicator: '🟢',
-                label: 'NEXT MONTH',
-                priority: 4,
-                className: 'urgency-future'
-            };
+            // FIX: Check if due date is in the CURRENT calendar month
+            // This fixes the bug where January 2026 bills show "THIS MONTH" in December 2025
+            const now = new Date();
+            const currentMonth = now.getMonth();
+            const currentYear = now.getFullYear();
+            
+            let isThisMonth = false;
+            if (dueDate) {
+                const due = typeof dueDate === 'string' ? parseDueDateLocal(dueDate) : dueDate;
+                if (due && !isNaN(due.getTime())) {
+                    isThisMonth = due.getMonth() === currentMonth && due.getFullYear() === currentYear;
+                }
+            }
+            
+            if (isThisMonth) {
+                return {
+                    category: 'upcoming',
+                    indicator: '🟡',
+                    label: 'THIS MONTH',
+                    priority: 3,
+                    className: 'urgency-upcoming'
+                };
+            } else {
+                return {
+                    category: 'future',
+                    indicator: '🟢',
+                    label: 'NEXT MONTH',
+                    priority: 4,
+                    className: 'urgency-future'
+                };
+            }
         }
     }
 
@@ -163,14 +180,15 @@ export class BillSortingManager {
 
         // Add urgency information to each bill
         const billsWithUrgency = bills.map(bill => {
-            const daysUntilDue = this.calculateDaysUntilDue(bill.nextOccurrence || bill.nextDueDate || bill.dueDate);
-            const urgencyInfo = this.getUrgencyInfo(daysUntilDue);
+            const dueDate = bill.nextOccurrence || bill.nextDueDate || bill.dueDate;
+            const daysUntilDue = this.calculateDaysUntilDue(dueDate);
+            const urgencyInfo = this.getUrgencyInfo(daysUntilDue, dueDate);
             
             return {
                 ...bill,
                 daysUntilDue,
                 urgencyInfo,
-                formattedDueDate: this.formatDueDate(bill.nextOccurrence || bill.nextDueDate || bill.dueDate, daysUntilDue)
+                formattedDueDate: this.formatDueDate(dueDate, daysUntilDue)
             };
         });
 
