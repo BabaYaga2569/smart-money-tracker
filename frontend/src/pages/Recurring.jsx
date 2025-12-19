@@ -507,16 +507,25 @@ const Recurring = () => {
       // Ensure settings document exists before attempting to save
       await ensureSettingsDocument(currentUser.uid);
 
+      // Build itemData without undefined values
       const itemData = {
         ...newItem,
         id: editingItem ? editingItem.id : `recurring-${Date.now()}`,
         amount: parseFloat(newItem.amount),
         createdAt: editingItem ? editingItem.createdAt : new Date().toISOString(),
         updatedAt: new Date().toISOString(),
-        // Only include activeMonths if customRecurrence is enabled
-        activeMonths: newItem.customRecurrence ? newItem.activeMonths : undefined,
-        customRecurrence: newItem.customRecurrence || undefined,
       };
+
+      // Only include activeMonths and customRecurrence if customRecurrence is enabled
+      // Otherwise, remove them from the object to prevent Firebase errors with undefined values
+      if (newItem.customRecurrence && newItem.activeMonths.length > 0) {
+        itemData.activeMonths = newItem.activeMonths;
+        itemData.customRecurrence = true;
+      } else {
+        // Remove these fields entirely if not using custom recurrence
+        delete itemData.activeMonths;
+        delete itemData.customRecurrence;
+      }
 
       // ✅ FIX: Check for duplicates in recurringPatterns collection
       const recurringPatternsRef = collection(db, 'users', currentUser.uid, 'recurringPatterns');
