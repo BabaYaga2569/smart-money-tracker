@@ -713,6 +713,14 @@ const Recurring = () => {
               
               const changes = [];
               
+              // ✅ FIX: Always add recurringPatternId to enable future syncs
+              // This is critical for legacy bills that were created before PR #325
+              // and don't have proper linking fields (recurringPatternId, sourcePatternId, etc.)
+              if (!data.recurringPatternId || data.recurringPatternId !== itemData.id) {
+                updates.recurringPatternId = itemData.id;
+                changes.push(`added recurringPatternId: ${itemData.id}`);
+              }
+              
               // Update amount if changed
               // Check both amount and cost fields to handle all cases
               if (newAmount !== undefined && (data.amount !== newAmount || data.cost !== newAmount)) {
