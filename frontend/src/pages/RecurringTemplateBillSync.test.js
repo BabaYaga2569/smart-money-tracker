@@ -23,10 +23,25 @@ const createMockFirestore = () => {
           if (clause.field === 'recurringTemplateId' && bill.recurringTemplateId !== clause.value) {
             matches = false;
           }
+          if (clause.field === 'recurringPatternId' && bill.recurringPatternId !== clause.value) {
+            matches = false;
+          }
+          if (clause.field === 'sourcePatternId' && bill.sourcePatternId !== clause.value) {
+            matches = false;
+          }
+          if (clause.field === 'templateId' && bill.templateId !== clause.value) {
+            matches = false;
+          }
+          if (clause.field === 'name' && bill.name !== clause.value) {
+            matches = false;
+          }
           if (clause.field === 'isPaid' && bill.isPaid !== clause.value) {
             matches = false;
           }
           if (clause.field === 'dueDate' && bill.dueDate !== clause.value) {
+            matches = false;
+          }
+          if (clause.field === 'type' && bill.type !== clause.value) {
             matches = false;
           }
         }
@@ -35,6 +50,7 @@ const createMockFirestore = () => {
           results.push({
             id,
             data: () => bill,
+            ref: { id },
           });
         }
       }
@@ -124,40 +140,96 @@ const simulateTemplateUpdate = async (mockDb, templateId, newData, editingItem) 
   // When editing a recurring template, also update existing unpaid bill instances
   if (editingItem && itemData.type === 'expense' && itemData.status === 'active') {
     try {
-      const billsQuery = mockDb.query(
+      // Query for related unpaid bills using all possible linking fields
+      const queries = [
+        mockDb.query(
+          'billInstances',
+          mockDb.where('type', '==', 'bill'),
+          mockDb.where('recurringPatternId', '==', itemData.id),
+          mockDb.where('isPaid', '==', false)
+        ),
+        mockDb.query(
+          'billInstances',
+          mockDb.where('type', '==', 'bill'),
+          mockDb.where('sourcePatternId', '==', itemData.id),
+          mockDb.where('isPaid', '==', false)
+        ),
+        mockDb.query(
+          'billInstances',
+          mockDb.where('type', '==', 'bill'),
+          mockDb.where('templateId', '==', itemData.id),
+          mockDb.where('isPaid', '==', false)
+        ),
+        mockDb.query(
+          'billInstances',
+          mockDb.where('type', '==', 'bill'),
+          mockDb.where('recurringTemplateId', '==', itemData.id),
+          mockDb.where('isPaid', '==', false)
+        ),
+      ];
+      
+      // Also try matching by name for legacy bills
+      const nameQuery = mockDb.query(
         'billInstances',
-        mockDb.where('recurringTemplateId', '==', itemData.id),
+        mockDb.where('type', '==', 'bill'),
+        mockDb.where('name', '==', itemData.name),
         mockDb.where('isPaid', '==', false)
       );
-      const billsSnapshot = await mockDb.getDocs(billsQuery);
+      queries.push(nameQuery);
+      
+      // Collect unique bills to update
+      const billsToUpdate = new Map();
+      
+      for (const q of queries) {
+        const snapshot = await mockDb.getDocs(q);
+        snapshot.docs.forEach(doc => {
+          if (!billsToUpdate.has(doc.id)) {
+            billsToUpdate.set(doc.id, { ref: doc.ref, data: doc.data() });
+          }
+        });
+      }
 
-      if (billsSnapshot.size > 0) {
+      if (billsToUpdate.size > 0) {
         const updatePromises = [];
-        for (const billDoc of billsSnapshot.docs) {
-          const billData = billDoc.data();
-
+        billsToUpdate.forEach(({ ref, data }) => {
           const newDueDate = itemData.nextOccurrence;
           const newAmount = parseFloat(itemData.amount);
-          const newCategory = itemData.category || billData.category;
+          const newCategory = itemData.category || data.category;
 
-          const dateChanged = billData.dueDate !== newDueDate;
-          const amountChanged = billData.amount !== newAmount;
-          const categoryChanged = billData.category !== newCategory;
+          const updates = {};
+          let hasChanges = false;
 
-          if (dateChanged || amountChanged || categoryChanged) {
-            updatePromises.push(
-              mockDb.updateDoc(
-                { id: billDoc.id },
-                {
-                  dueDate: newDueDate,
-                  originalDueDate: newDueDate,
-                  amount: newAmount,
-                  category: newCategory,
-                }
-              )
-            );
+          if (data.dueDate !== newDueDate) {
+            updates.dueDate = newDueDate;
+            updates.originalDueDate = newDueDate;
+            hasChanges = true;
           }
-        }
+
+          if (data.amount !== newAmount) {
+            updates.amount = newAmount;
+            updates.cost = newAmount;
+            hasChanges = true;
+          }
+
+          if (data.category !== newCategory) {
+            updates.category = newCategory;
+            hasChanges = true;
+          }
+
+          if (itemData.name && data.name !== itemData.name) {
+            updates.name = itemData.name;
+            hasChanges = true;
+          }
+
+          if (itemData.autoPay !== undefined && data.autoPayEnabled !== itemData.autoPay) {
+            updates.autoPayEnabled = itemData.autoPay;
+            hasChanges = true;
+          }
+
+          if (hasChanges) {
+            updatePromises.push(mockDb.updateDoc(ref, updates));
+          }
+        });
 
         await Promise.all(updatePromises);
 
@@ -262,6 +334,7 @@ const runTests = () => {
       status: 'pending',
       category: 'Subscriptions',
       recurringTemplateId: 'template-1',
+      type: 'bill', // Add type field
     });
 
     // Edit template to change date from 11/13 to 11/14
@@ -300,6 +373,7 @@ const runTests = () => {
       status: 'pending',
       category: 'Subscriptions',
       recurringTemplateId: 'template-1',
+      type: 'bill', // Add type field
     });
 
     // Edit template to change amount
@@ -338,6 +412,7 @@ const runTests = () => {
       status: 'paid',
       category: 'Subscriptions',
       recurringTemplateId: 'template-1',
+      type: 'bill', // Add type field
     });
 
     mockDb.billInstances.set('bill-unpaid', {
@@ -350,6 +425,7 @@ const runTests = () => {
       status: 'pending',
       category: 'Subscriptions',
       recurringTemplateId: 'template-1',
+      type: 'bill', // Add type field
     });
 
     // Edit template
@@ -395,6 +471,7 @@ const runTests = () => {
       status: 'pending',
       category: 'Subscriptions',
       recurringTemplateId: 'template-1',
+      type: 'bill', // Add type field
     });
 
     // Edit template to change category
@@ -432,6 +509,7 @@ const runTests = () => {
       isPaid: false,
       recurringTemplateId: 'template-1',
       category: 'Subscriptions',
+      type: 'bill',
     });
 
     mockDb.billInstances.set('bill-2', {
@@ -443,6 +521,7 @@ const runTests = () => {
       isPaid: false,
       recurringTemplateId: 'template-1',
       category: 'Subscriptions',
+      type: 'bill',
     });
 
     mockDb.billInstances.set('bill-3', {
@@ -454,6 +533,7 @@ const runTests = () => {
       isPaid: false,
       recurringTemplateId: 'template-1',
       category: 'Subscriptions',
+      type: 'bill',
     });
 
     // Edit template to change amount
@@ -478,6 +558,155 @@ const runTests = () => {
       const bill = mockDb.billInstances.get(`bill-${i}`);
       assert(bill.amount === 19.99, `Bill ${i} amount should be updated to 19.99`);
     }
+  });
+
+  // Test 7: Editing template name updates unpaid bill instances
+  test('Editing template name updates unpaid bill instances', async () => {
+    const mockDb = createMockFirestore();
+
+    mockDb.billInstances.set('bill-1', {
+      id: 'bill-1',
+      name: 'Netflix',
+      amount: 15.99,
+      dueDate: '2025-11-14',
+      originalDueDate: '2025-11-14',
+      isPaid: false,
+      status: 'pending',
+      category: 'Subscriptions',
+      recurringTemplateId: 'template-1',
+      type: 'bill',
+    });
+
+    // Edit template to change name
+    const stats = await simulateTemplateUpdate(
+      mockDb,
+      'template-1',
+      {
+        name: 'Netflix Premium', // Changed name
+        amount: 15.99,
+        nextOccurrence: '2025-11-14',
+        type: 'expense',
+        status: 'active',
+        category: 'Subscriptions',
+      },
+      true // editing
+    );
+
+    assert(stats && stats.updated === 1, 'Should update 1 bill instance');
+
+    const bill = mockDb.billInstances.get('bill-1');
+    assert(bill.name === 'Netflix Premium', 'Bill name should be updated to Netflix Premium');
+  });
+
+  // Test 8: Editing template autoPay updates unpaid bill instances
+  test('Editing template autoPay updates unpaid bill instances', async () => {
+    const mockDb = createMockFirestore();
+
+    mockDb.billInstances.set('bill-1', {
+      id: 'bill-1',
+      name: 'Netflix',
+      amount: 15.99,
+      dueDate: '2025-11-14',
+      originalDueDate: '2025-11-14',
+      isPaid: false,
+      status: 'pending',
+      category: 'Subscriptions',
+      recurringTemplateId: 'template-1',
+      autoPayEnabled: false,
+      type: 'bill',
+    });
+
+    // Edit template to enable autoPay
+    const stats = await simulateTemplateUpdate(
+      mockDb,
+      'template-1',
+      {
+        name: 'Netflix',
+        amount: 15.99,
+        nextOccurrence: '2025-11-14',
+        type: 'expense',
+        status: 'active',
+        category: 'Subscriptions',
+        autoPay: true, // Enable autoPay
+      },
+      true // editing
+    );
+
+    assert(stats && stats.updated === 1, 'Should update 1 bill instance');
+
+    const bill = mockDb.billInstances.get('bill-1');
+    assert(bill.autoPayEnabled === true, 'Bill autoPayEnabled should be updated to true');
+  });
+
+  // Test 9: Query by different linking field names (recurringPatternId, sourcePatternId, etc.)
+  test('Query finds bills by different linking field names', async () => {
+    const mockDb = createMockFirestore();
+
+    // Create bills with different linking field names
+    mockDb.billInstances.set('bill-1', {
+      id: 'bill-1',
+      name: 'T-Mobile',
+      amount: 336.33,
+      dueDate: '2025-12-20',
+      originalDueDate: '2025-12-20',
+      isPaid: false,
+      recurringPatternId: 'template-1', // Different field name
+      category: 'Bills & Utilities',
+      type: 'bill',
+    });
+
+    mockDb.billInstances.set('bill-2', {
+      id: 'bill-2',
+      name: 'T-Mobile',
+      amount: 336.33,
+      dueDate: '2025-12-20',
+      originalDueDate: '2025-12-20',
+      isPaid: false,
+      sourcePatternId: 'template-1', // Different field name
+      category: 'Bills & Utilities',
+      type: 'bill',
+    });
+
+    mockDb.billInstances.set('bill-3', {
+      id: 'bill-3',
+      name: 'T-Mobile',
+      amount: 336.33,
+      dueDate: '2025-12-20',
+      originalDueDate: '2025-12-20',
+      isPaid: false,
+      templateId: 'template-1', // Different field name
+      category: 'Bills & Utilities',
+      type: 'bill',
+    });
+
+    // Edit template
+    const stats = await simulateTemplateUpdate(
+      mockDb,
+      'template-1',
+      {
+        name: 'T-Mobile Cell Phone Bill',
+        amount: 485.26, // Changed amount
+        nextOccurrence: '2025-12-21', // Changed date
+        type: 'expense',
+        status: 'active',
+        category: 'Bills & Utilities',
+      },
+      true // editing
+    );
+
+    assert(stats && stats.updated === 3, 'Should find and update all 3 bills with different linking fields');
+
+    // Verify all bills were updated
+    const bill1 = mockDb.billInstances.get('bill-1');
+    const bill2 = mockDb.billInstances.get('bill-2');
+    const bill3 = mockDb.billInstances.get('bill-3');
+    
+    assert(bill1.amount === 485.26, 'Bill 1 amount should be updated');
+    assert(bill1.dueDate === '2025-12-21', 'Bill 1 date should be updated');
+    assert(bill2.amount === 485.26, 'Bill 2 amount should be updated');
+    assert(bill2.dueDate === '2025-12-21', 'Bill 2 date should be updated');
+    assert(bill3.amount === 485.26, 'Bill 3 amount should be updated');
+    assert(bill3.dueDate === '2025-12-21', 'Bill 3 date should be updated');
   });
 
   console.log(`\n${'='.repeat(50)}`);
