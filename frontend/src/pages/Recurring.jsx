@@ -696,6 +696,32 @@ const Recurring = () => {
             });
           }
           
+          // ✅ FIX: Add case-insensitive name matching fallback
+          // Query ALL unpaid bills and filter by name client-side (handles case sensitivity)
+          const allUnpaidQuery = query(
+            billsCollection,
+            where('type', '==', 'bill'),
+            where('isPaid', '==', false)
+          );
+          
+          const allUnpaidSnapshot = await getDocs(allUnpaidQuery);
+          const templateNameLower = itemData.name.toLowerCase().trim();
+          
+          allUnpaidSnapshot.docs.forEach(doc => {
+            const billName = (doc.data().name || '').toLowerCase().trim();
+            // Match by name (case-insensitive) AND not already in the map
+            if (billName === templateNameLower && !billsToUpdate.has(doc.id)) {
+              billsToUpdate.set(doc.id, { ref: doc.ref, data: doc.data() });
+            }
+          });
+          
+          // ✅ FIX: Add comprehensive debug logging
+          console.log(`🔄 Bill Sync Debug for "${itemData.name}":`);
+          console.log(`  Template ID: ${itemData.id}`);
+          console.log(`  Template amount: $${parseFloat(itemData.amount)}`);
+          console.log(`  Template date: ${itemData.nextOccurrence}`);
+          console.log(`  Bills found: ${billsToUpdate.size}`);
+          
           if (billsToUpdate.size === 0) {
             console.log('📝 No unpaid bills found to update');
           } else {
@@ -707,6 +733,11 @@ const Recurring = () => {
             const newAmount = parseFloat(itemData.amount);
             
             billsToUpdate.forEach(({ ref, data }, billId) => {
+              console.log(`\n  📋 Bill: "${data.name}" (${billId})`);
+              console.log(`    Current amount: $${data.amount || data.cost}`);
+              console.log(`    Current dueDate: ${data.dueDate}`);
+              console.log(`    Has recurringPatternId: ${!!data.recurringPatternId}`);
+              
               const updates = {
                 updatedAt: serverTimestamp(),
               };
@@ -732,17 +763,22 @@ const Recurring = () => {
               }
               
               // Update due date if changed
-              if (newDueDate && data.dueDate !== newDueDate) {
+              // ✅ FIX: Normalize dates for comparison to handle different formats
+              const normalizeDate = (d) => d ? String(d).split('T')[0] : '';
+              const existingDate = normalizeDate(data.dueDate || data.nextDueDate || data.nextOccurrence);
+              const targetDate = normalizeDate(newDueDate);
+              
+              if (targetDate && existingDate !== targetDate) {
                 // Update all date-related fields to ensure consistency across the system
                 // - dueDate: primary due date field
                 // - nextRenewal: used by recurring bill logic
                 // - nextOccurrence: used by recurring pattern matching
                 // - originalDueDate: tracks the bill's initial due date before any modifications
-                updates.dueDate = newDueDate;
-                updates.nextRenewal = newDueDate;
-                updates.nextOccurrence = newDueDate;
-                updates.originalDueDate = newDueDate;
-                changes.push(`date: ${data.dueDate} → ${newDueDate}`);
+                updates.dueDate = targetDate;
+                updates.nextRenewal = targetDate;
+                updates.nextOccurrence = targetDate;
+                updates.originalDueDate = targetDate;
+                changes.push(`date: ${existingDate} → ${targetDate}`);
               }
               
               // Update name if changed
@@ -767,6 +803,8 @@ const Recurring = () => {
               if (changes.length > 0) {
                 console.log(`  💰 Updating bill "${data.name}": ${changes.join(', ')}`);
                 updatePromises.push(updateDoc(ref, updates));
+              } else {
+                console.log(`  ✅ Bill "${data.name}" already up to date`);
               }
             });
             
