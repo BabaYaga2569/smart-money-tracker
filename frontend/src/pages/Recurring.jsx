@@ -730,6 +730,7 @@ const Recurring = () => {
             // Update each bill with new values from recurring item
             const updatePromises = [];
             const newDueDate = getDateOnly(itemData.nextOccurrence);
+            console.log(`  🎯 Target values: amount=$${newAmount}, date="${newDueDate}"`);
             const newAmount = parseFloat(itemData.amount);
             
             billsToUpdate.forEach(({ ref, data }, billId) => {
@@ -752,33 +753,44 @@ const Recurring = () => {
                 changes.push(`added recurringPatternId: ${itemData.id}`);
               }
               
-              // Update amount if changed
-              // Check both amount and cost fields to handle all cases
-              if (newAmount !== undefined && (data.amount !== newAmount || data.cost !== newAmount)) {
-                // Update both amount and cost fields for backwards compatibility
-                // Different parts of the codebase may reference either field
-                updates.amount = newAmount;
-                updates.cost = newAmount;
-                changes.push(`amount: $${data.amount || data.cost} → $${newAmount}`);
-              }
+                           // Update due date if changed
+              // ✅ FIX: More aggressive date normalization to handle all formats
+              const normalizeToYYYYMMDD = (dateVal) => {
+                if (!dateVal) return '';
+                // Handle Date objects
+                if (dateVal instanceof Date) {
+                  return dateVal.toISOString().split('T')[0];
+                }
+                // Handle ISO strings with time
+                if (typeof dateVal === 'string' && dateVal.includes('T')) {
+                  return dateVal.split('T')[0];
+                }
+                // Handle Firestore Timestamps
+                if (dateVal.toDate && typeof dateVal.toDate === 'function') {
+                  return dateVal.toDate().toISOString().split('T')[0];
+                }
+                // Already YYYY-MM-DD format
+                return String(dateVal).trim();
+              };
               
-              // Update due date if changed
-              // ✅ FIX: Normalize dates for comparison to handle different formats
-              const existingDate = getDateOnly(data.dueDate || data.nextDueDate || data.nextOccurrence) || '';
-              const targetDate = getDateOnly(newDueDate) || '';
+              const existingDate = normalizeToYYYYMMDD(data.dueDate) || 
+                                   normalizeToYYYYMMDD(data.nextDueDate) || 
+                                   normalizeToYYYYMMDD(data.nextOccurrence) || '';
+              const targetDate = normalizeToYYYYMMDD(newDueDate) || '';
+              
+              console.log(`    📅 Date comparison:  existing="${existingDate}" vs target="${targetDate}" (equal: ${existingDate === targetDate})`);
               
               if (targetDate && existingDate !== targetDate) {
                 // Update all date-related fields to ensure consistency across the system
-                // - dueDate: primary due date field
-                // - nextRenewal: used by recurring bill logic
-                // - nextOccurrence: used by recurring pattern matching
-                // - originalDueDate: tracks the bill's initial due date before any modifications
-                updates.dueDate = targetDate;
+                updates. dueDate = targetDate;
+                updates. nextDueDate = targetDate;
                 updates.nextRenewal = targetDate;
                 updates.nextOccurrence = targetDate;
-                updates.originalDueDate = targetDate;
-                changes.push(`date: ${existingDate} → ${targetDate}`);
+                updates. originalDueDate = targetDate;
+                changes.push(`date:  ${existingDate} → ${targetDate}`);
               }
+              
+              
               
               // Update name if changed
               if (itemData.name && data.name !== itemData.name) {
