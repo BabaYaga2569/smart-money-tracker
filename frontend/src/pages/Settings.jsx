@@ -66,6 +66,11 @@ const Settings = () => {
     remainderBank: ''
   });
 
+  const [billAutomation, setBillAutomation] = useState({
+    disableAutoGeneration: false,
+    autoDetectBills: true
+  });
+
   useEffect(() => {
     loadSettings();
     // Load debug mode from localStorage
@@ -168,6 +173,12 @@ const Settings = () => {
             remainderBank: oldSplit.remainder?.bank || ''
           });
         }
+
+        // Load bill automation settings
+        setBillAutomation({
+          disableAutoGeneration: data.disableAutoGeneration !== undefined ? data.disableAutoGeneration : false,
+          autoDetectBills: data.autoDetectBills !== undefined ? data.autoDetectBills : true
+        });
       }
     } catch (error) {
       console.error('Error loading settings:', error);
@@ -219,6 +230,9 @@ const Settings = () => {
         preferences,
         nextPaydayOverride,
         earlyDeposit,
+        // Save bill automation settings
+        disableAutoGeneration: billAutomation.disableAutoGeneration,
+        autoDetectBills: billAutomation.autoDetectBills,
         lastUpdated: new Date().toISOString()
       };
 
@@ -304,6 +318,18 @@ const Settings = () => {
     
     // Dispatch custom event to notify App.jsx
     window.dispatchEvent(new CustomEvent('debugModeChanged', { detail: { enabled } }));
+  };
+
+  const handleCopyUserId = () => {
+    if (currentUser?.uid) {
+      navigator.clipboard.writeText(currentUser.uid).then(() => {
+        setMessage('✅ User ID copied to clipboard!');
+        setTimeout(() => setMessage(''), 3000);
+      }).catch((err) => {
+        console.error('Failed to copy:', err);
+        setMessage('❌ Failed to copy User ID');
+      });
+    }
   };
 
   if (loading) {
@@ -578,7 +604,34 @@ const Settings = () => {
               </div>
             </div>
             
-            {/* Debug Mode Toggle */}
+            {/* Bill Automation Section */}
+            <div className="preferences-section" style={{ marginTop: '20px' }}>
+              <h4>🤖 Bill Automation</h4>
+              <div className="form-group">
+                <label>
+                  <input
+                    type="checkbox"
+                    checked={!billAutomation.disableAutoGeneration}
+                    onChange={(e) => setBillAutomation({...billAutomation, disableAutoGeneration: !e.target.checked})}
+                  />
+                  Enable Auto Bill Generation
+                </label>
+                <small>Automatically create bill instances from your recurring items</small>
+              </div>
+              <div className="form-group">
+                <label>
+                  <input
+                    type="checkbox"
+                    checked={billAutomation.autoDetectBills}
+                    onChange={(e) => setBillAutomation({...billAutomation, autoDetectBills: e.target.checked})}
+                  />
+                  Enable Auto Bill Detection
+                </label>
+                <small>Automatically detect when bills are paid from your transactions</small>
+              </div>
+            </div>
+            
+            {/* Developer Tools Section */}
             <div className="preferences-section" style={{ marginTop: '20px' }}>
               <h4>🛠️ Developer Tools</h4>
               <div className="form-group">
@@ -591,6 +644,46 @@ const Settings = () => {
                   Enable Debug Mode
                 </label>
                 <small>Shows floating debug button on all pages with Ctrl+Shift+D shortcut</small>
+              </div>
+              
+              {/* User ID Display */}
+              <div className="form-group" style={{ marginTop: '16px' }}>
+                <label>User ID</label>
+                <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                  <input
+                    type="text"
+                    value={currentUser?.uid || ''}
+                    readOnly
+                    style={{
+                      flex: 1,
+                      padding: '8px',
+                      background: '#1a1a1a',
+                      border: '1px solid #444',
+                      borderRadius: '4px',
+                      color: '#888',
+                      fontSize: '12px',
+                      fontFamily: 'monospace'
+                    }}
+                  />
+                  <button
+                    type="button"
+                    onClick={handleCopyUserId}
+                    style={{
+                      padding: '8px 16px',
+                      background: '#007bff',
+                      color: '#fff',
+                      border: 'none',
+                      borderRadius: '4px',
+                      fontSize: '12px',
+                      fontWeight: '600',
+                      cursor: 'pointer',
+                      whiteSpace: 'nowrap'
+                    }}
+                  >
+                    📋 Copy
+                  </button>
+                </div>
+                <small>Your Firebase User ID for debugging purposes</small>
               </div>
             </div>
             
