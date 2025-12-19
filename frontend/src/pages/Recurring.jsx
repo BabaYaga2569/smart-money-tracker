@@ -768,25 +768,19 @@ const Recurring = () => {
           query(billsCollection, where('type', '==', 'bill'), where('recurringTemplateId', '==', item.id)),
         ];
         
-        // Also query by name match as ultimate fallback
-        const nameQuery = query(
-          billsCollection, 
-          where('type', '==', 'bill'), 
-          where('name', '==', item.name)
-        );
-        queries.push(nameQuery);
-        
-        // Execute all queries and collect unique bills to delete
+        // Execute all queries in parallel and collect unique bills to delete
         const billsToProcess = new Map(); // Use Map to deduplicate by doc ID
         
-        for (const q of queries) {
-          const snapshot = await getDocs(q);
+        const queryPromises = queries.map(q => getDocs(q));
+        const snapshots = await Promise.all(queryPromises);
+        
+        snapshots.forEach(snapshot => {
           snapshot.docs.forEach(doc => {
             if (!billsToProcess.has(doc.id)) {
               billsToProcess.set(doc.id, { ref: doc.ref, data: doc.data() });
             }
           });
-        }
+        });
 
         console.log(`🗑️ Found ${billsToProcess.size} related bills to delete`);
 
@@ -826,7 +820,7 @@ const Recurring = () => {
       let message = `Deleted "${item.name}"`;
       if (deletedCount > 0) {
         message += ` and ${deletedCount} related bill${deletedCount !== 1 ? 's' : ''}`;
-      } else if (billsToProcess && billsToProcess.size === 0) {
+      } else if (billsToProcess.size === 0) {
         message += ` (no related bills found)`;
       }
       if (preservedCount > 0) {
