@@ -518,7 +518,7 @@ const Recurring = () => {
 
       // Only include activeMonths and customRecurrence if customRecurrence is enabled
       // Otherwise, remove them from the object to prevent Firebase errors with undefined values
-      if (newItem.customRecurrence && newItem.activeMonths && newItem.activeMonths.length > 0) {
+      if (newItem.customRecurrence && newItem.activeMonths.length > 0) {
         itemData.activeMonths = newItem.activeMonths;
         itemData.customRecurrence = true;
       } else {
