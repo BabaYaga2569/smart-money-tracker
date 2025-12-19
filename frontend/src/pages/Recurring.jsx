@@ -751,25 +751,46 @@ const Recurring = () => {
     try {
       setSaving(true);
 
-      // CASCADE DELETION: Always delete unpaid bill instances when template is deleted
+      console.log(`🗑️ Deleting recurring item: ${item.name}`);
+
+      // CASCADE DELETION: Multi-field query for bills linked to this template
       let deletedCount = 0;
       let preservedCount = 0;
 
       if (item.id) {
-        // Query financialEvents for bills from this template
-        const billsQuery = query(
-          collection(db, 'users', currentUser.uid, 'financialEvents'),
-          where('type', '==', 'bill'),
-          where('recurringPatternId', '==', item.id)
-        );
-        const billsSnapshot = await getDocs(billsQuery);
+        const billsCollection = collection(db, 'users', currentUser.uid, 'financialEvents');
+        
+        // Query by ALL possible field names that may link bills to templates
+        // - recurringPatternId: current standard (new migrations)
+        // - recurringTemplateId: older standard (widely used)
+        // - sourcePatternId, templateId: alternative/legacy fields (backward compatibility)
+        const queries = [
+          query(billsCollection, where('type', '==', 'bill'), where('recurringPatternId', '==', item.id)),
+          query(billsCollection, where('type', '==', 'bill'), where('sourcePatternId', '==', item.id)),
+          query(billsCollection, where('type', '==', 'bill'), where('templateId', '==', item.id)),
+          query(billsCollection, where('type', '==', 'bill'), where('recurringTemplateId', '==', item.id)),
+        ];
+        
+        // Execute all queries in parallel and collect unique bills to delete
+        // Map stores document references and data to enable deduplication while preserving info for deletion
+        const billsToProcess = new Map();
+        
+        const queryPromises = queries.map(q => getDocs(q));
+        const snapshots = await Promise.all(queryPromises);
+        
+        snapshots.forEach(snapshot => {
+          snapshot.docs.forEach(doc => {
+            if (!billsToProcess.has(doc.id)) {
+              billsToProcess.set(doc.id, { ref: doc.ref, data: doc.data() });
+            }
+          });
+        });
 
-        console.log(`🗑️ Found ${billsSnapshot.size} bill instances for template ${item.name}`);
+        console.log(`🗑️ Found ${billsToProcess.size} related bills to delete`);
 
         // Delete unpaid bills in batch, preserve paid ones for history
         const deletePromises = [];
-        for (const billDoc of billsSnapshot.docs) {
-          const billData = billDoc.data();
+        for (const [, { ref, data: billData }] of billsToProcess.entries()) {
           const isPaid = billData.isPaid || billData.status === 'paid';
 
           if (isPaid) {
@@ -780,18 +801,14 @@ const Recurring = () => {
             deletedCount++;
             console.log(`  🗑️ Deleting unpaid bill: ${billData.name} (${billData.dueDate})`);
             // Delete unpaid bill
-            deletePromises.push(
-              deleteDoc(doc(db, 'users', currentUser.uid, 'financialEvents', billDoc.id))
-            );
+            deletePromises.push(deleteDoc(ref));
           }
         }
 
         // Execute all deletions in parallel
         await Promise.all(deletePromises);
 
-        console.log(
-          `🗑️ Deleted ${deletedCount} bill instances for template ${item.name}, preserved ${preservedCount} paid bills`
-        );
+        console.log(`✅ Successfully deleted recurring item and ${deletedCount} related bills`);
       }
 
       // ✅ FIX: Delete from recurringPatterns collection
@@ -804,12 +821,14 @@ const Recurring = () => {
       await loadRecurringItems();
 
       // Show notification with cascade deletion stats
-      let message = 'Recurring template deleted';
-      if (deletedCount > 0 || preservedCount > 0) {
-        const parts = [];
-        if (deletedCount > 0) parts.push(`${deletedCount} unpaid bill(s) removed`);
-        if (preservedCount > 0) parts.push(`${preservedCount} paid bill(s) preserved`);
-        message += ` (${parts.join(', ')})`;
+      let message = `Deleted "${item.name}"`;
+      if (deletedCount > 0) {
+        message += ` and ${deletedCount} related bill${deletedCount !== 1 ? 's' : ''}`;
+      } else if (billsToProcess.size === 0) {
+        message += ` (no related bills found)`;
+      }
+      if (preservedCount > 0) {
+        message += ` (${preservedCount} paid bill${preservedCount !== 1 ? 's' : ''} preserved)`;
       }
 
       showNotification(message, 'success');
