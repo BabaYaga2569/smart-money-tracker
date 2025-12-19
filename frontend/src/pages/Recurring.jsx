@@ -761,6 +761,9 @@ const Recurring = () => {
         const billsCollection = collection(db, 'users', currentUser.uid, 'financialEvents');
         
         // Query by ALL possible field names that may link bills to templates
+        // - recurringPatternId: current standard (new migrations)
+        // - recurringTemplateId: older standard (widely used)
+        // - sourcePatternId, templateId: alternative/legacy fields (backward compatibility)
         const queries = [
           query(billsCollection, where('type', '==', 'bill'), where('recurringPatternId', '==', item.id)),
           query(billsCollection, where('type', '==', 'bill'), where('sourcePatternId', '==', item.id)),
@@ -769,7 +772,8 @@ const Recurring = () => {
         ];
         
         // Execute all queries in parallel and collect unique bills to delete
-        const billsToProcess = new Map(); // Use Map to deduplicate by doc ID
+        // Map stores document references and data to enable deduplication while preserving info for deletion
+        const billsToProcess = new Map();
         
         const queryPromises = queries.map(q => getDocs(q));
         const snapshots = await Promise.all(queryPromises);
