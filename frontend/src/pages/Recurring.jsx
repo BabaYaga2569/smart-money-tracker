@@ -764,9 +764,8 @@ const Recurring = () => {
               
               // Update due date if changed
               // ✅ FIX: Normalize dates for comparison to handle different formats
-              const normalizeDate = (d) => d ? String(d).split('T')[0] : '';
-              const existingDate = normalizeDate(data.dueDate || data.nextDueDate || data.nextOccurrence);
-              const targetDate = normalizeDate(newDueDate);
+              const existingDate = getDateOnly(data.dueDate || data.nextDueDate || data.nextOccurrence) || '';
+              const targetDate = getDateOnly(newDueDate) || '';
               
               if (targetDate && existingDate !== targetDate) {
                 // Update all date-related fields to ensure consistency across the system
