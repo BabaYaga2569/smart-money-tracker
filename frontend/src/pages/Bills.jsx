@@ -2020,10 +2020,14 @@ const refreshPlaidTransactions = async () => {
   };
 
   const formatCurrency = (amount) => {
+    const value = parseFloat(amount);
+    if (isNaN(value)) {
+      return '$0.00'; // Return default for invalid values
+    }
     return new Intl.NumberFormat('en-US', {
       style: 'currency',
       currency: 'USD'
-    }).format(amount);
+    }).format(value);
   };
 
   const formatDate = (dateStr) => {
@@ -3186,9 +3190,9 @@ const refreshPlaidTransactions = async () => {
                     </div>
                     
                     <div className="bill-amount-section">
-                      <div className="bill-amount">{formatCurrency(bill.cost)}</div>
+                      <div className="bill-amount">{formatCurrency(bill.cost || bill.amount || 0)}</div>
                       <div className="bill-due-date">
-                        Next: {formatDate(bill.nextRenewal)}
+                        Next: {formatDate(bill.nextRenewal || bill.nextOccurrence)}
                       </div>
                       {bill.paymentMethod && (
                         <div style={{ fontSize: '11px', color: '#888', marginTop: '4px' }}>
