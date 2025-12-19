@@ -661,6 +661,7 @@ const Recurring = () => {
       console.log(`✅ Saved recurring pattern: ${itemData.name} to recurringPatterns collection`);
 
       // ✅ NEW: When editing a recurring template, also update existing unpaid bill instances
+      console.log(`🔍 SYNC CHECK: editingItem=${!! editingItem}, type="${itemData.type}", status="${itemData. status}"`);
       if (editingItem && itemData.type === 'expense' && itemData.status === 'active') {
         try {
           // Query for related unpaid bills using all possible linking fields
