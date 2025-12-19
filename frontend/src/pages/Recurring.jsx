@@ -730,9 +730,9 @@ const Recurring = () => {
             
             // Update each bill with new values from recurring item
             const updatePromises = [];
-            const newDueDate = getDateOnly(itemData.nextOccurrence);
-            console.log(`  🎯 Target values: amount=$${newAmount}, date="${newDueDate}"`);
+            const newDueDate = getDateOnly(itemData. nextOccurrence);
             const newAmount = parseFloat(itemData.amount);
+            console.log(`  🎯 Target values: amount=$${newAmount}, date="${newDueDate}"`);
             
             billsToUpdate.forEach(({ ref, data }, billId) => {
               console.log(`\n  📋 Bill: "${data.name}" (${billId})`);
