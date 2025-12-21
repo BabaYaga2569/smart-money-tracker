@@ -1,0 +1,390 @@
+.paid-bill-details-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.85);
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  z-index: 1000;
+  backdrop-filter: blur(4px);
+  padding: 20px;
+}
+
+.paid-bill-details-modal {
+  background: linear-gradient(135deg, #1a1a1a 0%, #2a2a2a 100%);
+  border: 2px solid #00ff88;
+  border-radius: 16px;
+  padding: 0;
+  max-width: 600px;
+  width: 100%;
+  max-height: 90vh;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  box-shadow: 0 20px 60px rgba(0, 255, 136, 0.3);
+  animation: slideIn 0.3s ease-out;
+}
+
+@keyframes slideIn {
+  from {
+    opacity: 0;
+    transform: translateY(-20px) scale(0.95);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+.paid-bill-details-modal .modal-header {
+  padding: 24px;
+  border-bottom: 2px solid #333;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  background: rgba(0, 255, 136, 0.05);
+}
+
+.paid-bill-details-modal .modal-header h2 {
+  margin: 0;
+  color: #00ff88;
+  font-size: 24px;
+  font-weight: 700;
+}
+
+.paid-bill-details-modal .close-button {
+  background: rgba(255, 255, 255, 0.1);
+  border: none;
+  color: #fff;
+  font-size: 32px;
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.2s ease;
+  line-height: 1;
+  padding: 0;
+}
+
+.paid-bill-details-modal .close-button:hover {
+  background: rgba(255, 7, 58, 0.2);
+  transform: rotate(90deg);
+}
+
+.paid-bill-details-modal .modal-body {
+  padding: 24px;
+  overflow-y: auto;
+  flex: 1;
+}
+
+.details-section {
+  margin-bottom: 24px;
+  padding: 20px;
+  background: rgba(0, 0, 0, 0.3);
+  border-radius: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.details-section:last-child {
+  margin-bottom: 0;
+}
+
+.details-section h3 {
+  margin: 0 0 16px 0;
+  color: #00d4ff;
+  font-size: 16px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.detail-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 12px 0;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+.detail-row:last-child {
+  border-bottom: none;
+  padding-bottom: 0;
+}
+
+.detail-row:first-child {
+  padding-top: 0;
+}
+
+.detail-icon {
+  font-size: 24px;
+  min-width: 32px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.detail-content {
+  flex: 1;
+}
+
+.detail-label {
+  font-size: 12px;
+  color: #888;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  margin-bottom: 4px;
+  font-weight: 600;
+}
+
+.detail-value {
+  font-size: 16px;
+  color: #fff;
+  font-weight: 500;
+}
+
+.linked-transaction-card {
+  background: rgba(59, 130, 246, 0.1);
+  border: 2px solid #3b82f6;
+  border-radius: 10px;
+  padding: 16px;
+  transition: all 0.2s ease;
+}
+
+.linked-transaction-card:hover {
+  background: rgba(59, 130, 246, 0.15);
+  border-color: #60a5fa;
+}
+
+.transaction-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.transaction-icon {
+  font-size: 20px;
+}
+
+.transaction-label {
+  font-size: 14px;
+  color: #60a5fa;
+  font-weight: 600;
+}
+
+.transaction-id {
+  font-size: 12px;
+  color: #888;
+  font-family: monospace;
+  margin-bottom: 12px;
+  word-break: break-all;
+}
+
+.view-transaction-btn {
+  width: 100%;
+  padding: 10px 16px;
+  background: linear-gradient(135deg, #3b82f6 0%, #2563eb 100%);
+  color: #fff;
+  border: none;
+  border-radius: 8px;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  text-align: center;
+}
+
+.view-transaction-btn:hover {
+  background: linear-gradient(135deg, #2563eb 0%, #1d4ed8 100%);
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(59, 130, 246, 0.4);
+}
+
+.payment-timeline {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.timeline-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding-left: 8px;
+  position: relative;
+}
+
+.timeline-item:not(:last-child)::before {
+  content: '';
+  position: absolute;
+  left: 19px;
+  top: 32px;
+  bottom: -16px;
+  width: 2px;
+  background: rgba(0, 255, 136, 0.3);
+}
+
+.timeline-marker {
+  font-size: 20px;
+  min-width: 24px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.timeline-content {
+  flex: 1;
+  background: rgba(0, 255, 136, 0.05);
+  padding: 12px;
+  border-radius: 8px;
+  border: 1px solid rgba(0, 255, 136, 0.2);
+}
+
+.timeline-date {
+  font-size: 14px;
+  color: #00ff88;
+  font-weight: 600;
+  margin-bottom: 4px;
+}
+
+.timeline-amount {
+  font-size: 18px;
+  color: #fff;
+  font-weight: 700;
+  margin-bottom: 4px;
+}
+
+.timeline-method {
+  font-size: 12px;
+  color: #888;
+}
+
+.error-message {
+  padding: 12px 16px;
+  background: rgba(255, 7, 58, 0.1);
+  border: 1px solid #ff073a;
+  border-radius: 8px;
+  color: #ff073a;
+  font-size: 14px;
+  font-weight: 600;
+  margin-top: 16px;
+}
+
+.paid-bill-details-modal .modal-footer {
+  padding: 20px 24px;
+  border-top: 2px solid #333;
+  display: flex;
+  gap: 12px;
+  justify-content: flex-end;
+  background: rgba(0, 0, 0, 0.3);
+}
+
+.btn-secondary {
+  padding: 12px 24px;
+  background: rgba(255, 255, 255, 0.1);
+  color: #fff;
+  border: 1px solid rgba(255, 255, 255, 0.3);
+  border-radius: 8px;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.btn-secondary:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.15);
+  border-color: rgba(255, 255, 255, 0.5);
+}
+
+.btn-secondary:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.btn-unmark {
+  padding: 12px 24px;
+  background: linear-gradient(135deg, #ff6b00 0%, #ff5500 100%);
+  color: #fff;
+  border: none;
+  border-radius: 8px;
+  font-size: 14px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.btn-unmark:hover:not(:disabled) {
+  background: linear-gradient(135deg, #ff5500 0%, #ff3300 100%);
+  transform: translateY(-2px);
+  box-shadow: 0 6px 20px rgba(255, 107, 0, 0.4);
+}
+
+.btn-unmark:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+  transform: none;
+}
+
+/* Responsive Design */
+@media (max-width: 768px) {
+  .paid-bill-details-modal {
+    max-width: 95%;
+    max-height: 95vh;
+  }
+
+  .paid-bill-details-modal .modal-header {
+    padding: 16px;
+  }
+
+  .paid-bill-details-modal .modal-header h2 {
+    font-size: 20px;
+  }
+
+  .paid-bill-details-modal .modal-body {
+    padding: 16px;
+  }
+
+  .details-section {
+    padding: 16px;
+  }
+
+  .paid-bill-details-modal .modal-footer {
+    padding: 16px;
+    flex-direction: column;
+  }
+
+  .btn-secondary,
+  .btn-unmark {
+    width: 100%;
+  }
+}
+
+/* Scrollbar Styling */
+.paid-bill-details-modal .modal-body::-webkit-scrollbar {
+  width: 8px;
+}
+
+.paid-bill-details-modal .modal-body::-webkit-scrollbar-track {
+  background: rgba(0, 0, 0, 0.3);
+  border-radius: 4px;
+}
+
+.paid-bill-details-modal .modal-body::-webkit-scrollbar-thumb {
+  background: rgba(0, 255, 136, 0.3);
+  border-radius: 4px;
+}
+
+.paid-bill-details-modal .modal-body::-webkit-scrollbar-thumb:hover {
+  background: rgba(0, 255, 136, 0.5);
+}

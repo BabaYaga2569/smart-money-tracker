@@ -114,6 +114,21 @@ export default function BillTransactionLinker({ bill, onLink, onClose }) {
       return;
     }
 
+    // Show confirmation dialog
+    const confirmed = window.confirm(
+      `⚠️ Link Transaction?\n\n` +
+      `This will link the transaction:\n` +
+      `"${selectedTransaction.merchant_name || selectedTransaction.name}"\n` +
+      `Amount: $${Math.abs(selectedTransaction.amount).toFixed(2)}\n` +
+      `Date: ${selectedTransaction.date}\n\n` +
+      `To bill: "${bill.name}" and mark it as PAID.\n\n` +
+      `Continue?`
+    );
+
+    if (!confirmed) {
+      return;
+    }
+
     try {
       setSaving(true);
       setError(null);
@@ -121,12 +136,23 @@ export default function BillTransactionLinker({ bill, onLink, onClose }) {
       const eventRef = doc(db, 'users', currentUser.uid, 'financialEvents', bill.id);
       const txRef = doc(db, 'users', currentUser.uid, 'transactions', selectedTransaction.id);
 
-      // Update bill with transaction link
+      // Update bill with transaction link and audit trail
       await updateDoc(eventRef, {
         linkedTransactionId: selectedTransaction.id,
         linkedAt: serverTimestamp(),
         linkConfidence: 0.95,
-        linkStrategy: 'manual'
+        linkStrategy: 'manual',
+        // Mark bill as paid when linking transaction
+        isPaid: true,
+        status: 'paid',
+        paidDate: selectedTransaction.date,
+        paidAmount: Math.abs(parseFloat(selectedTransaction.amount)),
+        // Audit trail fields
+        markedBy: 'manual-link',
+        markedAt: serverTimestamp(),
+        markedVia: 'link-transaction',
+        canBeUnmarked: true,
+        updatedAt: serverTimestamp()
       });
 
       // Update transaction with bill link

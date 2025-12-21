@@ -3,6 +3,7 @@ import { collection, getDocs, query, orderBy, where } from 'firebase/firestore';
 import { db } from '../firebase';
 import { useAuth } from '../contexts/AuthContext';
 import { TRANSACTION_CATEGORIES, getCategoryIcon } from '../constants/categories';
+import PaidBillDetailsModal from '../components/PaidBillDetailsModal';
 import './PaymentHistory.css';
 
 export default function PaymentHistory() {
@@ -10,6 +11,8 @@ export default function PaymentHistory() {
   const [payments, setPayments] = useState([]);
   const [filteredPayments, setFilteredPayments] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [selectedBill, setSelectedBill] = useState(null);
+  const [showDetailsModal, setShowDetailsModal] = useState(false);
   
   // Filter states
   const [searchTerm, setSearchTerm] = useState('');
@@ -26,8 +29,14 @@ export default function PaymentHistory() {
     const loadPayments = async () => {
       try {
         setLoading(true);
-        const paymentsRef = collection(db, 'users', currentUser.uid, 'bill_payments');
-        const q = query(paymentsRef, orderBy('paidDate', 'desc'));
+        
+        // Load from financialEvents collection (paid bills)
+        const eventsRef = collection(db, 'users', currentUser.uid, 'financialEvents');
+        const q = query(
+          eventsRef,
+          where('type', '==', 'bill'),
+          where('isPaid', '==', true)
+        );
         const snapshot = await getDocs(q);
         
         const paymentsData = snapshot.docs.map(doc => ({
@@ -35,9 +44,16 @@ export default function PaymentHistory() {
           ...doc.data()
         }));
         
+        // Sort by paidDate descending
+        paymentsData.sort((a, b) => {
+          const dateA = a.paidDate ? new Date(a.paidDate) : new Date(0);
+          const dateB = b.paidDate ? new Date(b.paidDate) : new Date(0);
+          return dateB - dateA;
+        });
+        
         setPayments(paymentsData);
         setFilteredPayments(paymentsData);
-        console.log(`✅ Loaded ${paymentsData.length} payments`);
+        console.log(`✅ Loaded ${paymentsData.length} paid bills from financialEvents`);
       } catch (error) {
         console.error('Error loading payments:', error);
         setPayments([]);
@@ -87,11 +103,52 @@ export default function PaymentHistory() {
 
   // Calculate stats
   const stats = {
-    totalSpent: filteredPayments.reduce((sum, p) => sum + (p.amount || 0), 0),
+    totalSpent: filteredPayments.reduce((sum, p) => sum + (p.amount || p.paidAmount || 0), 0),
     paymentCount: filteredPayments.length,
     averagePayment: filteredPayments.length > 0 
-      ? filteredPayments.reduce((sum, p) => sum + (p.amount || 0), 0) / filteredPayments.length 
+      ? filteredPayments.reduce((sum, p) => sum + (p.amount || p.paidAmount || 0), 0) / filteredPayments.length 
       : 0
+  };
+
+  const handleBillClick = (bill) => {
+    setSelectedBill(bill);
+    setShowDetailsModal(true);
+  };
+
+  const handleUnmark = async (bill) => {
+    // Reload payments after unmarking
+    setShowDetailsModal(false);
+    setSelectedBill(null);
+    
+    // Reload data
+    if (currentUser) {
+      try {
+        const eventsRef = collection(db, 'users', currentUser.uid, 'financialEvents');
+        const q = query(
+          eventsRef,
+          where('type', '==', 'bill'),
+          where('isPaid', '==', true)
+        );
+        const snapshot = await getDocs(q);
+        
+        const paymentsData = snapshot.docs.map(doc => ({
+          id: doc.id,
+          ...doc.data()
+        }));
+        
+        // Sort by paidDate descending
+        paymentsData.sort((a, b) => {
+          const dateA = a.paidDate ? new Date(a.paidDate) : new Date(0);
+          const dateB = b.paidDate ? new Date(b.paidDate) : new Date(0);
+          return dateB - dateA;
+        });
+        
+        setPayments(paymentsData);
+        setFilteredPayments(paymentsData);
+      } catch (error) {
+        console.error('Error reloading payments:', error);
+      }
+    }
   };
 
   // Export to CSV
@@ -294,24 +351,34 @@ export default function PaymentHistory() {
           <tbody>
             {filteredPayments.length > 0 ? (
               filteredPayments.map((payment) => (
-                <tr key={payment.id}>
-                  <td>{payment.billName}</td>
-                  <td className="amount-cell">{formatCurrency(payment.amount)}</td>
+                <tr 
+                  key={payment.id}
+                  onClick={() => handleBillClick(payment)}
+                  style={{ cursor: 'pointer' }}
+                  className="clickable-row"
+                  title="Click to view details"
+                >
+                  <td>{payment.name || payment.billName}</td>
+                  <td className="amount-cell">{formatCurrency(payment.amount || payment.paidAmount)}</td>
                   <td>
                     <span className="category-badge">
                       {getCategoryIcon(payment.category)} {payment.category}
                     </span>
                   </td>
                   <td>{formatDate(payment.paidDate)}</td>
-                  <td>{formatDate(payment.dueDate)}</td>
-                  <td>{payment.paymentMethod}</td>
+                  <td>{formatDate(payment.dueDate || payment.nextDueDate)}</td>
+                  <td>
+                    {payment.markedBy === 'auto-bill-clearing' ? '🤖 Auto (Plaid)' :
+                     payment.markedBy === 'manual-link' ? '🔗 Linked' :
+                     payment.paymentMethod || '👤 Manual'}
+                  </td>
                   <td>
                     {payment.isOverdue ? (
                       <span className="status-badge overdue">
                         ⚠️ {payment.daysPastDue} day{payment.daysPastDue !== 1 ? 's' : ''} late
                       </span>
                     ) : (
-                      <span className="status-badge on-time">✅ On Time</span>
+                      <span className="status-badge on-time">✅ Paid</span>
                     )}
                   </td>
                 </tr>
@@ -328,6 +395,18 @@ export default function PaymentHistory() {
           </tbody>
         </table>
       </div>
+
+      {/* Paid Bill Details Modal */}
+      {showDetailsModal && selectedBill && (
+        <PaidBillDetailsModal
+          bill={selectedBill}
+          onClose={() => {
+            setShowDetailsModal(false);
+            setSelectedBill(null);
+          }}
+          onUnmark={handleUnmark}
+        />
+      )}
     </div>
   );
 }

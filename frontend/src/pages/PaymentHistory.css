@@ -195,6 +195,16 @@
   transition: all 0.2s ease;
 }
 
+.payments-table tbody tr.clickable-row {
+  cursor: pointer;
+}
+
+.payments-table tbody tr.clickable-row:hover {
+  background: rgba(0, 255, 136, 0.1);
+  transform: scale(1.01);
+  box-shadow: 0 2px 8px rgba(0, 255, 136, 0.2);
+}
+
 .payments-table tbody tr:hover {
   background: rgba(0, 255, 136, 0.05);
 }
