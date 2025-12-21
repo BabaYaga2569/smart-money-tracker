@@ -2468,6 +2468,24 @@ useEffect(() => {
                           | {transaction._accountDisplayName || 'Account'}
                         </span>
                         
+                        {/* Show linked bill badge if transaction is linked to a bill */}
+                        {transaction.linkedEventId && (
+                          <span style={{
+                            background: 'rgba(16, 185, 129, 0.15)',
+                            color: '#059669',
+                            padding: '2px 8px',
+                            borderRadius: '4px',
+                            fontSize: '11px',
+                            fontWeight: '600',
+                            marginLeft: '8px',
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            gap: '4px'
+                          }}>
+                            ✅ Linked to Bill
+                          </span>
+                        )}
+                        
                         {transaction.pending && (
                           <span className="transaction-pending" title="Pending transaction - not yet cleared">
                             ⏳ Pending

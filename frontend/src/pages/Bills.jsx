@@ -14,6 +14,7 @@ import PlaidErrorModal from '../components/PlaidErrorModal';
 import BillCSVImportModal from '../components/BillCSVImportModal';
 import PaymentHistoryModal from '../components/PaymentHistoryModal';
 import DuplicatePreviewModal from '../components/DuplicatePreviewModal';
+import BillTransactionLinker from '../components/BillTransactionLinker';
 import { formatDateForDisplay, formatDateForInput, getPacificTime } from '../utils/DateUtils';
 import { getLocalMidnight, parseDueDateLocal, getRelativeDateString } from '../utils/dateHelpers';
 import { TRANSACTION_CATEGORIES, CATEGORY_ICONS, getCategoryIcon, migrateLegacyCategory } from '../constants/categories';
@@ -71,6 +72,8 @@ export default function Bills() {
   const [userSettings, setUserSettings] = useState(null);
   const [settingsLoaded, setSettingsLoaded] = useState(false);
   const [autoGenerationLock, setAutoGenerationLock] = useState(new Set());
+  const [showLinker, setShowLinker] = useState(false);
+  const [selectedBillForLink, setSelectedBillForLink] = useState(null);
 
   // Helper function to generate lock key for template
   const getLockKey = (template) => {
@@ -1247,6 +1250,20 @@ snapshot.docChanges().forEach(async (change) => {
         error.message || 'An unexpected error occurred. Please try again.'
       );
     }
+  };
+
+  // Handler for manual transaction linking
+  const handleLinkTransaction = (bill) => {
+    setSelectedBillForLink(bill);
+    setShowLinker(true);
+  };
+
+  const handleManualLink = async (billId, transactionId) => {
+    console.log('Manual link created:', { billId, transactionId });
+    NotificationManager.showSuccess('Transaction linked successfully!');
+    
+    // Reload bills to show updated link status
+    await loadBills();
   };
   
   const processBillPaymentInternal = async (bill, paymentData = {}) => {
@@ -2913,6 +2930,34 @@ snapshot.docChanges().forEach(async (change) => {
       {payingBill === bill.name ? '⏳ Processing...' : '💳 Mark as Paid'}
     </button>
     
+    {/* Link Transaction Button */}
+    {!bill.linkedTransactionId && (
+      <button
+        onClick={() => handleLinkTransaction(bill)}
+        style={{
+          marginTop: '8px',
+          width: '100%',
+          padding: '8px 12px',
+          background: 'rgba(59, 130, 246, 0.1)',
+          color: '#3b82f6',
+          border: '1px solid #3b82f6',
+          borderRadius: '6px',
+          fontSize: '11px',
+          fontWeight: '600',
+          cursor: 'pointer',
+          transition: 'all 0.2s ease'
+        }}
+        onMouseOver={(e) => {
+          e.target.style.background = 'rgba(59, 130, 246, 0.2)';
+        }}
+        onMouseOut={(e) => {
+          e.target.style.background = 'rgba(59, 130, 246, 0.1)';
+        }}
+      >
+        🔗 Link Transaction
+      </button>
+    )}
+    
     {/* Skip Button */}
     <button
       onClick={() => handleToggleSkipBill(bill)}
@@ -3697,6 +3742,18 @@ snapshot.docChanges().forEach(async (change) => {
       {showErrorModal && (
         <PlaidErrorModal
           onClose={() => setShowErrorModal(false)}
+        />
+      )}
+
+      {/* Bill Transaction Linker Modal */}
+      {showLinker && selectedBillForLink && (
+        <BillTransactionLinker
+          bill={selectedBillForLink}
+          onLink={handleManualLink}
+          onClose={() => {
+            setShowLinker(false);
+            setSelectedBillForLink(null);
+          }}
         />
       )}
 
