@@ -71,7 +71,7 @@ useEffect(() => {
   if (!currentUser) return;
   
   const handleVisibilityChange = () => {
-    if (!document.hidden) {
+    if (!document. hidden) {
       // Page became visible - reload payments
       const loadPayments = async () => {
         try {
@@ -83,9 +83,9 @@ useEffect(() => {
           );
           const snapshot = await getDocs(q);
           
-          const paymentsData = snapshot.docs.map(doc => ({
+          const paymentsData = snapshot.docs. map(doc => ({
             id: doc.id,
-            ...doc.data()
+            ... doc.data()
           }));
           
           // Sort by paidDate descending
@@ -97,6 +97,7 @@ useEffect(() => {
           
           setPayments(paymentsData);
           setFilteredPayments(paymentsData);
+          console.log(`🔄 Auto-reloaded ${paymentsData.length} payments`);
         } catch (error) {
           console.error('Error reloading payments:', error);
         }
@@ -107,6 +108,11 @@ useEffect(() => {
   };
   
   document.addEventListener('visibilitychange', handleVisibilityChange);
+  
+  return () => {
+    document.removeEventListener('visibilitychange', handleVisibilityChange);
+  };
+}, [currentUser]);
   
   return () => {
     document.removeEventListener('visibilitychange', handleVisibilityChange);
