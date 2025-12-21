@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { collection, getDocs, query, orderBy, where } from 'firebase/firestore';
+import { collection, getDocs, query, where } from 'firebase/firestore';
 import { db } from '../firebase';
 import { useAuth } from '../contexts/AuthContext';
 import { TRANSACTION_CATEGORIES, getCategoryIcon } from '../constants/categories';
@@ -24,13 +24,12 @@ export default function PaymentHistory() {
 
   // Load all payments
   useEffect(() => {
-    if (!currentUser) return;
+    if (! currentUser) return;
     
     const loadPayments = async () => {
       try {
         setLoading(true);
         
-        // Load from financialEvents collection (paid bills)
         const eventsRef = collection(db, 'users', currentUser.uid, 'financialEvents');
         const q = query(
           eventsRef,
@@ -40,20 +39,19 @@ export default function PaymentHistory() {
         const snapshot = await getDocs(q);
         
         const paymentsData = snapshot.docs.map(doc => ({
-          id: doc.id,
-          ...doc. data()
+          id: doc. id,
+          ...doc.data()
         }));
         
-        // Sort by paidDate descending
         paymentsData.sort((a, b) => {
-          const dateA = a.paidDate ? new Date(a.paidDate) : new Date(0);
-          const dateB = b.paidDate ?  new Date(b.paidDate) : new Date(0);
+          const dateA = a.paidDate ?  new Date(a.paidDate) : new Date(0);
+          const dateB = b.paidDate ? new Date(b. paidDate) : new Date(0);
           return dateB - dateA;
         });
         
         setPayments(paymentsData);
         setFilteredPayments(paymentsData);
-        console.log(`✅ Loaded ${paymentsData.length} paid bills from financialEvents`);
+        console.log(`✅ Loaded ${paymentsData.length} paid bills`);
       } catch (error) {
         console.error('Error loading payments:', error);
         setPayments([]);
@@ -66,13 +64,12 @@ export default function PaymentHistory() {
     loadPayments();
   }, [currentUser]);
 
-  // Auto-reload when page becomes visible (user switches tabs back)
+  // Auto-reload when page becomes visible
   useEffect(() => {
-    if (!currentUser) return;
+    if (! currentUser) return;
     
     const handleVisibilityChange = () => {
-      if (!document. hidden) {
-        // Page became visible - reload payments
+      if (! document.hidden) {
         const loadPayments = async () => {
           try {
             const eventsRef = collection(db, 'users', currentUser.uid, 'financialEvents');
@@ -84,11 +81,10 @@ export default function PaymentHistory() {
             const snapshot = await getDocs(q);
             
             const paymentsData = snapshot.docs.map(doc => ({
-              id:  doc.id,
-              ... doc.data()
+              id: doc.id,
+              ...doc.data()
             }));
             
-            // Sort by paidDate descending
             paymentsData.sort((a, b) => {
               const dateA = a.paidDate ? new Date(a.paidDate) : new Date(0);
               const dateB = b.paidDate ? new Date(b.paidDate) : new Date(0);
@@ -97,7 +93,7 @@ export default function PaymentHistory() {
             
             setPayments(paymentsData);
             setFilteredPayments(paymentsData);
-            console.log(`🔄 Auto-reloaded ${paymentsData.length} payments`);
+            console.log(`🔄 Auto-reloaded ${paymentsData. length} payments`);
           } catch (error) {
             console.error('Error reloading payments:', error);
           }
@@ -107,10 +103,10 @@ export default function PaymentHistory() {
       }
     };
     
-    document. addEventListener('visibilitychange', handleVisibilityChange);
+    document.addEventListener('visibilitychange', handleVisibilityChange);
     
     return () => {
-      document.removeEventListener('visibilitychange', handleVisibilityChange);
+      document. removeEventListener('visibilitychange', handleVisibilityChange);
     };
   }, [currentUser]);
 
@@ -118,14 +114,12 @@ export default function PaymentHistory() {
   useEffect(() => {
     let filtered = [... payments];
     
-    // Search filter
     if (searchTerm) {
       filtered = filtered. filter(payment => 
-        payment.billName.toLowerCase().includes(searchTerm.toLowerCase())
+        (payment.name || payment.billName || '').toLowerCase().includes(searchTerm.toLowerCase())
       );
     }
     
-    // Date range filter
     if (startDate) {
       filtered = filtered.filter(payment => payment.paidDate >= startDate);
     }
@@ -133,12 +127,10 @@ export default function PaymentHistory() {
       filtered = filtered.filter(payment => payment.paidDate <= endDate);
     }
     
-    // Category filter
     if (categoryFilter !== 'all') {
-      filtered = filtered.filter(payment => payment. category === categoryFilter);
+      filtered = filtered.filter(payment => payment.category === categoryFilter);
     }
     
-    // Amount range filter
     if (minAmount) {
       filtered = filtered.filter(payment => payment.amount >= parseFloat(minAmount));
     }
@@ -169,12 +161,10 @@ export default function PaymentHistory() {
     setShowDetailsModal(true);
   };
 
-  const handleUnmark = async (bill) => {
-    // Reload payments after unmarking
+  const handleUnmark = async () => {
     setShowDetailsModal(false);
     setSelectedBill(null);
     
-    // Reload data using the existing loadPayments logic
     if (currentUser) {
       try {
         const eventsRef = collection(db, 'users', currentUser.uid, 'financialEvents');
@@ -185,15 +175,14 @@ export default function PaymentHistory() {
         );
         const snapshot = await getDocs(q);
         
-        const paymentsData = snapshot.docs.map(doc => ({
-          id: doc. id,
-          ...doc.data()
+        const paymentsData = snapshot.docs. map(doc => ({
+          id: doc.id,
+          ... doc.data()
         }));
         
-        // Sort by paidDate descending
         paymentsData.sort((a, b) => {
           const dateA = a.paidDate ? new Date(a.paidDate) : new Date(0);
-          const dateB = b.paidDate ? new Date(b.paidDate) : new Date(0);
+          const dateB = b.paidDate ?  new Date(b.paidDate) : new Date(0);
           return dateB - dateA;
         });
         
@@ -205,7 +194,38 @@ export default function PaymentHistory() {
     }
   };
 
-  // Export to CSV
+  const handleRefresh = async () => {
+    setLoading(true);
+    try {
+      const eventsRef = collection(db, 'users', currentUser.uid, 'financialEvents');
+      const q = query(
+        eventsRef,
+        where('type', '==', 'bill'),
+        where('isPaid', '==', true)
+      );
+      const snapshot = await getDocs(q);
+      
+      const paymentsData = snapshot.docs.map(doc => ({
+        id: doc.id,
+        ...doc. data()
+      }));
+      
+      paymentsData.sort((a, b) => {
+        const dateA = a.paidDate ? new Date(a. paidDate) : new Date(0);
+        const dateB = b.paidDate ? new Date(b.paidDate) : new Date(0);
+        return dateB - dateA;
+      });
+      
+      setPayments(paymentsData);
+      setFilteredPayments(paymentsData);
+      console.log(`🔄 Manually refreshed ${paymentsData.length} payments`);
+    } catch (error) {
+      console.error('Error refreshing:', error);
+    } finally {
+      setLoading(false);
+    }
+  };
+
   const handleExportCSV = () => {
     if (filteredPayments.length === 0) {
       alert('No payments to export');
@@ -213,11 +233,11 @@ export default function PaymentHistory() {
     }
     
     const csvData = filteredPayments.map(payment => ({
-      'Bill Name': payment.billName || '',
+      'Bill Name': payment.name || payment. billName || '',
       'Amount': payment.amount || '',
       'Category': payment.category || '',
-      'Due Date': payment.dueDate || '',
-      'Paid Date':  payment.paidDate || '',
+      'Due Date': payment. dueDate || '',
+      'Paid Date': payment.paidDate || '',
       'Payment Month': payment.paymentMonth || '',
       'Year': payment.year || '',
       'Quarter': payment.quarter || '',
@@ -233,10 +253,10 @@ export default function PaymentHistory() {
     
     const csv = headers + '\n' + rows;
     const blob = new Blob([csv], { type: 'text/csv' });
-    const url = window. URL.createObjectURL(blob);
-    const a = document.createElement('a');
+    const url = window.URL.createObjectURL(blob);
+    const a = document. createElement('a');
     a.href = url;
-    a.download = `payment-history-${new Date().toISOString().split('T')[0]}.csv`;
+    a. download = `payment-history-${new Date().toISOString().split('T')[0]}.csv`;
     a.click();
     window.URL.revokeObjectURL(url);
   };
@@ -254,29 +274,19 @@ export default function PaymentHistory() {
     try {
       let date;
       
-      // Handle Firestore Timestamp objects
       if (dateStr && typeof dateStr. toDate === 'function') {
         date = dateStr.toDate();
-      }
-      // Handle Date objects
-      else if (dateStr instanceof Date) {
+      } else if (dateStr instanceof Date) {
         date = dateStr;
-      }
-      // Handle YYYY-MM-DD string format (most common from Firebase)
-      else if (typeof dateStr === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(dateStr)) {
+      } else if (typeof dateStr === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(dateStr)) {
         const [year, month, day] = dateStr.split('-');
         date = new Date(parseInt(year), parseInt(month) - 1, parseInt(day));
-      }
-      // Handle ISO 8601 strings or other formats
-      else if (typeof dateStr === 'string') {
+      } else if (typeof dateStr === 'string') {
         date = new Date(dateStr);
-      }
-      // Fallback
-      else {
+      } else {
         date = new Date(dateStr);
       }
       
-      // Validate the date is valid
       if (isNaN(date.getTime())) {
         console.warn('Invalid date:', dateStr);
         return '--';
@@ -297,70 +307,12 @@ export default function PaymentHistory() {
     return (
       <div className="payment-history-container">
         <div className="page-header">
-  <div className="header-content">
-    <div>
-      <h2>💳 Payment History</h2>
-      <p>Complete record of all bill payments</p>
-    </div>
-    <div style={{ display: 'flex', gap: '12px' }}>
-      <button 
-        onClick={async () => {
-          setLoading(true);
-          try {
-            const eventsRef = collection(db, 'users', currentUser.uid, 'financialEvents');
-            const q = query(
-              eventsRef,
-              where('type', '==', 'bill'),
-              where('isPaid', '==', true)
-            );
-            const snapshot = await getDocs(q);
-            
-            const paymentsData = snapshot.docs.map(doc => ({
-              id: doc. id,
-              ...doc.data()
-            }));
-            
-            // Sort by paidDate descending
-            paymentsData. sort((a, b) => {
-              const dateA = a.paidDate ?  new Date(a.paidDate) : new Date(0);
-              const dateB = b.paidDate ? new Date(b.paidDate) : new Date(0);
-              return dateB - dateA;
-            });
-            
-            setPayments(paymentsData);
-            setFilteredPayments(paymentsData);
-            console.log(`🔄 Manually refreshed ${paymentsData. length} payments`);
-          } catch (error) {
-            console.error('Error refreshing:', error);
-          } finally {
-            setLoading(false);
-          }
-        }}
-        className="refresh-btn"
-        style={{
-          background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
-          color: '#fff',
-          border: 'none',
-          borderRadius: '8px',
-          padding: '12px 20px',
-          fontWeight: '600',
-          cursor: 'pointer',
-          fontSize: '14px'
-        }}
-        title="Refresh payment list"
-      >
-        🔄 Refresh
-      </button>
-      <button 
-        onClick={handleExportCSV}
-        disabled={filteredPayments.length === 0}
-        className="export-btn"
-      >
-        📊 Export to CSV
-      </button>
-    </div>
-  </div>
-</div>
+          <h2>💳 Payment History</h2>
+          <p>Loading your payment history...</p>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="payment-history-container">
@@ -370,17 +322,35 @@ export default function PaymentHistory() {
             <h2>💳 Payment History</h2>
             <p>Complete record of all bill payments</p>
           </div>
-          <button 
-            onClick={handleExportCSV}
-            disabled={filteredPayments.length === 0}
-            className="export-btn"
-          >
-            📊 Export to CSV
-          </button>
+          <div style={{ display: 'flex', gap: '12px' }}>
+            <button 
+              onClick={handleRefresh}
+              className="refresh-btn"
+              style={{
+                background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
+                color:  '#fff',
+                border: 'none',
+                borderRadius: '8px',
+                padding: '12px 20px',
+                fontWeight: '600',
+                cursor: 'pointer',
+                fontSize: '14px'
+              }}
+              title="Refresh payment list"
+            >
+              🔄 Refresh
+            </button>
+            <button 
+              onClick={handleExportCSV}
+              disabled={filteredPayments.length === 0}
+              className="export-btn"
+            >
+              📊 Export to CSV
+            </button>
+          </div>
         </div>
       </div>
 
-      {/* Stats Cards */}
       <div className="stats-grid">
         <div className="stat-card">
           <h3>Total Spent</h3>
@@ -399,7 +369,6 @@ export default function PaymentHistory() {
         </div>
       </div>
 
-      {/* Filters */}
       <div className="filters-section">
         <div className="filter-row">
           <input
@@ -411,7 +380,7 @@ export default function PaymentHistory() {
           />
           <select
             value={categoryFilter}
-            onChange={(e) => setCategoryFilter(e.target.value)}
+            onChange={(e) => setCategoryFilter(e.target. value)}
             className="filter-select"
           >
             <option value="all">All Categories</option>
@@ -458,7 +427,7 @@ export default function PaymentHistory() {
               type="number"
               placeholder="$999,999"
               value={maxAmount}
-              onChange={(e) => setMaxAmount(e.target.value)}
+              onChange={(e) => setMaxAmount(e.target. value)}
               className="filter-input"
             />
           </div>
@@ -481,7 +450,6 @@ export default function PaymentHistory() {
         )}
       </div>
 
-      {/* Payments Table */}
       <div className="payments-table-container">
         <table className="payments-table">
           <thead>
@@ -543,7 +511,6 @@ export default function PaymentHistory() {
         </table>
       </div>
 
-      {/* Paid Bill Details Modal */}
       {showDetailsModal && selectedBill && (
         <PaidBillDetailsModal
           bill={selectedBill}
