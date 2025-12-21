@@ -195,14 +195,49 @@ export default function PaymentHistory() {
   };
 
   const formatDate = (dateStr) => {
-    if (!dateStr) return '--';
-    const date = new Date(dateStr);
-    return date.toLocaleDateString('en-US', { 
-      year: 'numeric', 
-      month: 'short', 
-      day: 'numeric' 
+  if (!dateStr) return '--';
+  
+  try {
+    let date;
+    
+    // Handle Firestore Timestamp objects
+    if (dateStr && typeof dateStr. toDate === 'function') {
+      date = dateStr.toDate();
+    }
+    // Handle Date objects
+    else if (dateStr instanceof Date) {
+      date = dateStr;
+    }
+    // Handle YYYY-MM-DD string format (most common from Firebase)
+    else if (typeof dateStr === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(dateStr)) {
+      const [year, month, day] = dateStr.split('-');
+      date = new Date(parseInt(year), parseInt(month) - 1, parseInt(day));
+    }
+    // Handle ISO 8601 strings or other formats
+    else if (typeof dateStr === 'string') {
+      date = new Date(dateStr);
+    }
+    // Fallback
+    else {
+      date = new Date(dateStr);
+    }
+    
+    // Validate the date is valid
+    if (isNaN(date.getTime())) {
+      console.warn('Invalid date:', dateStr);
+      return '--';
+    }
+    
+    return date.toLocaleDateString('en-US', {
+      year:  'numeric',
+      month:  'short',
+      day: 'numeric'
     });
-  };
+  } catch (error) {
+    console.error('Error formatting date:', error, dateStr);
+    return '--';
+  }
+};
 
   if (loading) {
     return (
