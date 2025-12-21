@@ -101,14 +101,20 @@ export default function PaymentHistory() {
     setFilteredPayments(filtered);
   }, [payments, searchTerm, startDate, endDate, categoryFilter, minAmount, maxAmount]);
 
-  // Calculate stats
-  const stats = {
-    totalSpent: filteredPayments.reduce((sum, p) => sum + (p.amount || p.paidAmount || 0), 0),
-    paymentCount: filteredPayments.length,
-    averagePayment: filteredPayments.length > 0 
-      ? filteredPayments.reduce((sum, p) => sum + (p.amount || p.paidAmount || 0), 0) / filteredPayments.length 
-      : 0
-  };
+ // Calculate stats
+const stats = {
+  totalSpent: filteredPayments.reduce((sum, p) => {
+    const amount = parseFloat(p.amount || p.paidAmount || 0);
+    return sum + (isNaN(amount) ? 0 : amount);
+  }, 0),
+  paymentCount: filteredPayments.length,
+  averagePayment: filteredPayments.length > 0 
+    ? filteredPayments. reduce((sum, p) => {
+        const amount = parseFloat(p.amount || p.paidAmount || 0);
+        return sum + (isNaN(amount) ? 0 : amount);
+      }, 0) / filteredPayments.length 
+    : 0
+};
 
   const handleBillClick = (bill) => {
     setSelectedBill(bill);
