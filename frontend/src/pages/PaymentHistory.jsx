@@ -195,36 +195,86 @@ export default function PaymentHistory() {
   };
 
   const handleRefresh = async () => {
-    setLoading(true);
-    try {
-      const eventsRef = collection(db, 'users', currentUser.uid, 'financialEvents');
-      const q = query(
-        eventsRef,
-        where('type', '==', 'bill'),
-        where('isPaid', '==', true)
-      );
-      const snapshot = await getDocs(q);
+  setLoading(true);
+  try {
+    const eventsRef = collection(db, 'users', currentUser.uid, 'financialEvents');
+    const q = query(
+      eventsRef,
+      where('type', '==', 'bill'),
+      where('isPaid', '==', true)
+    );
+    const snapshot = await getDocs(q);
+    
+    const paymentsData = snapshot.docs.map(doc => ({
+      id: doc. id,
+      ...doc.data()
+    }));
+    
+    // Enhanced sorting with better date parsing
+    paymentsData.sort((a, b) => {
+      // Parse dates more robustly
+      let dateA, dateB;
       
-      const paymentsData = snapshot.docs.map(doc => ({
-        id: doc.id,
-        ...doc. data()
-      }));
+      // Try to parse a. paidDate
+      if (a.paidDate) {
+        if (typeof a.paidDate.toDate === 'function') {
+          dateA = a. paidDate.toDate();
+        } else if (a.paidDate instanceof Date) {
+          dateA = a.paidDate;
+        } else if (typeof a.paidDate === 'string') {
+          // Handle YYYY-MM-DD format
+          if (/^\d{4}-\d{2}-\d{2}$/.test(a. paidDate)) {
+            const [year, month, day] = a.paidDate.split('-');
+            dateA = new Date(parseInt(year), parseInt(month) - 1, parseInt(day));
+          } else {
+            dateA = new Date(a. paidDate);
+          }
+        } else {
+          dateA = new Date(0);
+        }
+      } else {
+        dateA = new Date(0);
+      }
       
-      paymentsData.sort((a, b) => {
-        const dateA = a.paidDate ? new Date(a. paidDate) : new Date(0);
-        const dateB = b.paidDate ? new Date(b.paidDate) : new Date(0);
-        return dateB - dateA;
-      });
+      // Try to parse b.paidDate
+      if (b.paidDate) {
+        if (typeof b.paidDate.toDate === 'function') {
+          dateB = b.paidDate.toDate();
+        } else if (b.paidDate instanceof Date) {
+          dateB = b.paidDate;
+        } else if (typeof b.paidDate === 'string') {
+          // Handle YYYY-MM-DD format
+          if (/^\d{4}-\d{2}-\d{2}$/.test(b.paidDate)) {
+            const [year, month, day] = b.paidDate.split('-');
+            dateB = new Date(parseInt(year), parseInt(month) - 1, parseInt(day));
+          } else {
+            dateB = new Date(b.paidDate);
+          }
+        } else {
+          dateB = new Date(0);
+        }
+      } else {
+        dateB = new Date(0);
+      }
       
-      setPayments(paymentsData);
-      setFilteredPayments(paymentsData);
-      console.log(`🔄 Manually refreshed ${paymentsData.length} payments`);
-    } catch (error) {
-      console.error('Error refreshing:', error);
-    } finally {
-      setLoading(false);
-    }
-  };
+      // Log for debugging
+      console.log(`Comparing:  ${a.name || a.billName} (${a.paidDate}) vs ${b.name || b.billName} (${b.paidDate})`);
+      console.log(`  Parsed dates: ${dateA.toISOString()} vs ${dateB.toISOString()}`);
+      
+      // Sort descending (newest first)
+      return dateB.getTime() - dateA.getTime();
+    });
+    
+    setPayments(paymentsData);
+    setFilteredPayments(paymentsData);
+    console.log(`🔄 Manually refreshed ${paymentsData. length} payments`);
+    console.log('First 3 payments:', paymentsData.slice(0, 3).map(p => ({ name: p.name || p.billName, paidDate: p.paidDate })));
+  } catch (error) {
+    console.error('Error refreshing:', error);
+  } finally {
+    setLoading(false);
+  }
+};
 
   const handleExportCSV = () => {
     if (filteredPayments.length === 0) {
