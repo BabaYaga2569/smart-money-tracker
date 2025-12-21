@@ -39,15 +39,15 @@ useEffect(() => {
       );
       const snapshot = await getDocs(q);
       
-      const paymentsData = snapshot.docs. map(doc => ({
-        id: doc.id,
-        ... doc.data()
+      const paymentsData = snapshot.docs.map(doc => ({
+        id: doc. id,
+        ...doc.data()
       }));
       
       // Sort by paidDate descending
-      paymentsData.sort((a, b) => {
-        const dateA = a.paidDate ?  new Date(a.paidDate) : new Date(0);
-        const dateB = b.paidDate ? new Date(b. paidDate) : new Date(0);
+      paymentsData. sort((a, b) => {
+        const dateA = a. paidDate ? new Date(a.paidDate) : new Date(0);
+        const dateB = b.paidDate ? new Date(b.paidDate) : new Date(0);
         return dateB - dateA;
       });
       
@@ -71,7 +71,7 @@ useEffect(() => {
   if (!currentUser) return;
   
   const handleVisibilityChange = () => {
-    if (!document. hidden) {
+    if (!document.hidden) {
       // Page became visible - reload payments
       const loadPayments = async () => {
         try {
@@ -83,15 +83,15 @@ useEffect(() => {
           );
           const snapshot = await getDocs(q);
           
-          const paymentsData = snapshot.docs. map(doc => ({
+          const paymentsData = snapshot.docs.map(doc => ({
             id: doc.id,
-            ... doc.data()
+            ...doc. data()
           }));
           
           // Sort by paidDate descending
           paymentsData.sort((a, b) => {
-            const dateA = a.paidDate ?  new Date(a.paidDate) : new Date(0);
-            const dateB = b.paidDate ? new Date(b. paidDate) : new Date(0);
+            const dateA = a.paidDate ? new Date(a.paidDate) : new Date(0);
+            const dateB = b.paidDate ?  new Date(b.paidDate) : new Date(0);
             return dateB - dateA;
           });
           
@@ -113,12 +113,8 @@ useEffect(() => {
     document.removeEventListener('visibilitychange', handleVisibilityChange);
   };
 }, [currentUser]);
-  
-  return () => {
-    document.removeEventListener('visibilitychange', handleVisibilityChange);
-  };
-}, [currentUser]);
 
+// Apply filters
 // Apply filters
 useEffect(() => {
   // Apply filters
