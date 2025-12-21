@@ -120,7 +120,7 @@ export default function PaymentHistory() {
     setShowDetailsModal(false);
     setSelectedBill(null);
     
-    // Reload data
+    // Reload data using the existing loadPayments logic
     if (currentUser) {
       try {
         const eventsRef = collection(db, 'users', currentUser.uid, 'financialEvents');

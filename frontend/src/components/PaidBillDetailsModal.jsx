@@ -42,7 +42,8 @@ export default function PaidBillDetailsModal({ bill, onClose, onUnmark }) {
 
   const formatDateTime = (dateStr) => {
     if (!dateStr) return '--';
-    const date = new Date(dateStr);
+    // Handle Firestore Timestamp objects
+    const date = dateStr.toDate ? dateStr.toDate() : new Date(dateStr);
     return date.toLocaleString('en-US', {
       year: 'numeric',
       month: 'short',
@@ -102,11 +103,6 @@ export default function PaidBillDetailsModal({ bill, onClose, onUnmark }) {
         lastUnmarkedBy: 'user'
       });
 
-      // Log success (for debugging)
-      if (process.env.NODE_ENV === 'development') {
-        console.log(`✅ Bill unmarked as paid: ${bill.name}`);
-      }
-
       // Callback to parent component
       if (onUnmark) {
         onUnmark(bill);
@@ -124,8 +120,13 @@ export default function PaidBillDetailsModal({ bill, onClose, onUnmark }) {
 
   const handleViewTransaction = () => {
     if (bill.linkedTransactionId) {
-      // Navigate to Transactions page with the transaction ID
-      window.location.href = `/transactions?highlight=${bill.linkedTransactionId}`;
+      // Close modal first
+      onClose();
+      // Use window.location to navigate (React Router not available in this context)
+      // Note: In a full React Router setup, this would use useNavigate() instead
+      setTimeout(() => {
+        window.location.href = `/transactions?highlight=${bill.linkedTransactionId}`;
+      }, 100);
     }
   };
 
@@ -217,7 +218,7 @@ export default function PaidBillDetailsModal({ bill, onClose, onUnmark }) {
                 <span className="detail-icon">🕐</span>
                 <div className="detail-content">
                   <div className="detail-label">Marked At</div>
-                  <div className="detail-value">{formatDateTime(bill.markedAt?.toDate ? bill.markedAt.toDate() : bill.markedAt)}</div>
+                  <div className="detail-value">{formatDateTime(bill.markedAt)}</div>
                 </div>
               </div>
             )}
