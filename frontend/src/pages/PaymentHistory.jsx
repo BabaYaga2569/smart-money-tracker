@@ -297,12 +297,70 @@ export default function PaymentHistory() {
     return (
       <div className="payment-history-container">
         <div className="page-header">
-          <h2>💳 Payment History</h2>
-          <p>Loading your payment history...</p>
-        </div>
-      </div>
-    );
-  }
+  <div className="header-content">
+    <div>
+      <h2>💳 Payment History</h2>
+      <p>Complete record of all bill payments</p>
+    </div>
+    <div style={{ display: 'flex', gap: '12px' }}>
+      <button 
+        onClick={async () => {
+          setLoading(true);
+          try {
+            const eventsRef = collection(db, 'users', currentUser.uid, 'financialEvents');
+            const q = query(
+              eventsRef,
+              where('type', '==', 'bill'),
+              where('isPaid', '==', true)
+            );
+            const snapshot = await getDocs(q);
+            
+            const paymentsData = snapshot.docs.map(doc => ({
+              id: doc. id,
+              ...doc.data()
+            }));
+            
+            // Sort by paidDate descending
+            paymentsData. sort((a, b) => {
+              const dateA = a.paidDate ?  new Date(a.paidDate) : new Date(0);
+              const dateB = b.paidDate ? new Date(b.paidDate) : new Date(0);
+              return dateB - dateA;
+            });
+            
+            setPayments(paymentsData);
+            setFilteredPayments(paymentsData);
+            console.log(`🔄 Manually refreshed ${paymentsData. length} payments`);
+          } catch (error) {
+            console.error('Error refreshing:', error);
+          } finally {
+            setLoading(false);
+          }
+        }}
+        className="refresh-btn"
+        style={{
+          background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
+          color: '#fff',
+          border: 'none',
+          borderRadius: '8px',
+          padding: '12px 20px',
+          fontWeight: '600',
+          cursor: 'pointer',
+          fontSize: '14px'
+        }}
+        title="Refresh payment list"
+      >
+        🔄 Refresh
+      </button>
+      <button 
+        onClick={handleExportCSV}
+        disabled={filteredPayments.length === 0}
+        className="export-btn"
+      >
+        📊 Export to CSV
+      </button>
+    </div>
+  </div>
+</div>
 
   return (
     <div className="payment-history-container">
