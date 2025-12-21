@@ -31,6 +31,7 @@ const CreditCards = lazy(() => import('./pages/CreditCards'));
 const PaymentHistory = lazy(() => import('./pages/PaymentHistory'));
 const Reports = lazy(() => import('./pages/Reports'));
 const DebtOptimizer = lazy(() => import('./pages/DebtOptimizer'));
+const PaymentRulesManager = lazy(() => import('./pages/PaymentRulesManager'));
 const Login = lazy(() => import('./pages/Login'));
 const Onboarding = lazy(() => import('./pages/Onboarding'));
 
@@ -343,6 +344,16 @@ function App() {
               <OnboardingGuard>
                 <AppLayout showDebugButton={debugModeEnabled}>
                   <DebtOptimizer />
+                </AppLayout>
+              </OnboardingGuard>
+            </PrivateRoute>
+          } />
+          
+          <Route path="/payment-rules" element={
+            <PrivateRoute>
+              <OnboardingGuard>
+                <AppLayout showDebugButton={debugModeEnabled}>
+                  <PaymentRulesManager />
                 </AppLayout>
               </OnboardingGuard>
             </PrivateRoute>
