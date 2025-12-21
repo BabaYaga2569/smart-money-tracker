@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { collection, query, where, getDocs, doc, updateDoc, addDoc, serverTimestamp } from 'firebase/firestore';
 import { db } from '../firebase';
 import { useAuth } from '../contexts/AuthContext';
@@ -23,13 +23,7 @@ export default function BillTransactionLinker({ bill, onLink, onClose }) {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState(null);
 
-  useEffect(() => {
-    if (bill && currentUser) {
-      loadTransactions();
-    }
-  }, [bill, currentUser]);
-
-  const loadTransactions = async () => {
+  const loadTransactions = useCallback(async () => {
     try {
       setLoading(true);
       setError(null);
@@ -78,7 +72,13 @@ export default function BillTransactionLinker({ bill, onLink, onClose }) {
     } finally {
       setLoading(false);
     }
-  };
+  }, [bill, currentUser]);
+
+  useEffect(() => {
+    if (bill && currentUser) {
+      loadTransactions();
+    }
+  }, [bill, currentUser, loadTransactions]);
 
   const calculateConfidence = (transaction) => {
     const billAmount = Math.abs(bill.amount || 0);

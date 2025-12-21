@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import { useState } from 'react';
 import { doc, updateDoc, serverTimestamp } from 'firebase/firestore';
 import { db } from '../firebase';
 import { useAuth } from '../contexts/AuthContext';
@@ -102,7 +102,10 @@ export default function PaidBillDetailsModal({ bill, onClose, onUnmark }) {
         lastUnmarkedBy: 'user'
       });
 
-      console.log(`✅ Bill unmarked as paid: ${bill.name}`);
+      // Log success (for debugging)
+      if (process.env.NODE_ENV === 'development') {
+        console.log(`✅ Bill unmarked as paid: ${bill.name}`);
+      }
 
       // Callback to parent component
       if (onUnmark) {
