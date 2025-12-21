@@ -243,6 +243,53 @@ service cloud.firestore {
           && request.resource.data.amount >= 0 && request.resource.data.amount <= 10000000
           && isValidSize();
       }
+      
+      // ---------------------------------------------------------------------------
+      // PAYMENT RULES - User-defined rules for transaction-to-bill matching
+      // ---------------------------------------------------------------------------
+      match /paymentRules/{ruleId} {
+        allow read, delete: if isOwner(userId);
+        
+        // Create validation
+        allow create: if isOwner(userId)
+          && request.resource.data.billName is string
+          && request.resource.data.billName.size() > 0 && request.resource.data.billName.size() <= 200
+          && request.resource.data.enabled is bool
+          && request.resource.data.matchCriteria is map
+          && isValidSize();
+        
+        // Update validation
+        allow update: if isOwner(userId)
+          && request.resource.data.billName is string
+          && request.resource.data.billName.size() > 0 && request.resource.data.billName.size() <= 200
+          && request.resource.data.enabled is bool
+          && request.resource.data.matchCriteria is map
+          && isValidSize();
+      }
+      
+      // ---------------------------------------------------------------------------
+      // AI LEARNING - Machine learning data (merchant aliases, etc.)
+      // ---------------------------------------------------------------------------
+      match /aiLearning/{docId} {
+        allow read, delete: if isOwner(userId);
+        allow create, update: if isOwner(userId) && isValidSize();
+      }
+      
+      // ---------------------------------------------------------------------------
+      // FINANCIAL EVENTS - Unified events collection (bills, income, etc.)
+      // ---------------------------------------------------------------------------
+      match /financialEvents/{eventId} {
+        allow read, delete: if isOwner(userId);
+        allow create, update: if isOwner(userId) && isValidSize();
+      }
+      
+      // ---------------------------------------------------------------------------
+      // RECURRING PATTERNS - Templates for recurring financial events
+      // ---------------------------------------------------------------------------
+      match /recurringPatterns/{patternId} {
+        allow read, delete: if isOwner(userId);
+        allow create, update: if isOwner(userId) && isValidSize();
+      }
     }
   }
 }

@@ -18,6 +18,7 @@
 
 import admin from 'firebase-admin';
 import { readFileSync, existsSync } from 'fs';
+import { TransactionMatcher } from '../utils/TransactionMatcher.js';
 
 // Firebase initialization
 const initializeFirebase = () => {
@@ -272,9 +273,11 @@ async function cleanupPaidBills(userId) {
   };
   
   try {
-    // 1. Load merchant aliases
-    console.log('📚 Loading merchant aliases...');
-    const merchantAliases = await loadMerchantAliases(userId);
+    // 1. Initialize TransactionMatcher
+    console.log('🔧 Initializing TransactionMatcher...');
+    const matcher = new TransactionMatcher(db, userId);
+    await matcher.initialize();
+    console.log('');
     
     // 2. Load transactions from last 60 days
     console.log(`📊 Loading transactions from last ${DAYS_LOOKBACK} days...`);
@@ -288,7 +291,8 @@ async function cleanupPaidBills(userId) {
     
     const transactions = transactionsSnapshot.docs.map(doc => ({
       id: doc.id,
-      ...doc.data()
+      ref: doc.ref,
+      data: doc.data()
     }));
     
     console.log(`✅ Loaded ${transactions.length} transactions\n`);
@@ -308,7 +312,7 @@ async function cleanupPaidBills(userId) {
     
     report.scanned = bills.length;
     
-    // 4. Match transactions to bills
+    // 4. Match transactions to bills using TransactionMatcher
     console.log('🔍 Matching transactions to bills...\n');
     const matchedTransactionIds = new Set();
     const matchedBillIds = new Set();
@@ -316,29 +320,32 @@ async function cleanupPaidBills(userId) {
     for (const bill of bills) {
       if (matchedBillIds.has(bill.id)) continue;
       
-      let bestMatch = null;
+      // Filter out already matched transactions
+      const availableTransactions = transactions.filter(tx => 
+        !matchedTransactionIds.has(tx.id) && !tx.data.linkedEventId
+      );
       
-      for (const transaction of transactions) {
-        if (matchedTransactionIds.has(transaction.id)) continue;
-        
-        const match = matchTransactionToBill(transaction, bill, merchantAliases);
-        
-        if (match && (!bestMatch || match.confidence > bestMatch.confidence)) {
-          bestMatch = match;
-        }
-      }
+      // Use TransactionMatcher to find best match
+      const match = await matcher.findMatch(bill, availableTransactions);
       
-      if (bestMatch) {
+      if (match && match.confidence >= 0.67) {
         report.matched++;
-        matchedTransactionIds.add(bestMatch.transaction.id);
-        matchedBillIds.add(bestMatch.bill.id);
+        matchedTransactionIds.add(match.transaction.id);
+        matchedBillIds.add(bill.id);
         
-        const { transaction, bill, confidence, matches, details } = bestMatch;
+        const transaction = match.transaction.data;
+        const confidence = match.confidence;
         
-        console.log(`💰 Match Found (${Math.round(confidence * 100)}% confidence):`);
+        console.log(`💰 Match Found (${Math.round(confidence * 100)}% confidence, ${match.strategy}):`);
         console.log(`   Bill: ${bill.name} ($${bill.amount}) due ${bill.dueDate}`);
-        console.log(`   Transaction: "${details.txName}" ($${details.txAmount}) on ${details.txDate}`);
-        console.log(`   ✓ Name: ${matches.name ? 'YES' : 'NO'} | Amount: ${matches.amount ? 'YES' : 'NO'} | Date: ${matches.date ? 'YES' : 'NO'}\n`);
+        console.log(`   Transaction: "${transaction.merchant_name || transaction.name}" ($${Math.abs(transaction.amount)}) on ${transaction.date}`);
+        if (match.scores) {
+          console.log(`   ✓ Name: ${(match.scores.name * 100).toFixed(0)}% | Amount: ${(match.scores.amount * 100).toFixed(0)}% | Date: ${(match.scores.date * 100).toFixed(0)}%`);
+        }
+        if (match.paymentType) {
+          console.log(`   ✓ Payment Type: ${match.paymentType}, Recipient: ${match.recipient}`);
+        }
+        console.log('');
         
         try {
           // Mark bill as paid
@@ -346,7 +353,7 @@ async function cleanupPaidBills(userId) {
             isPaid: true,
             status: 'paid',
             paidDate: transaction.date,
-            linkedTransactionId: transaction.id,
+            linkedTransactionId: match.transaction.id,
             updatedAt: admin.firestore.FieldValue.serverTimestamp()
           });
           
@@ -441,8 +448,9 @@ async function cleanupPaidBills(userId) {
             amount: bill.amount,
             dueDate: bill.dueDate,
             paidDate: transaction.date,
-            transactionName: details.txName,
-            confidence: Math.round(confidence * 100)
+            transactionName: transaction.merchant_name || transaction.name,
+            confidence: Math.round(confidence * 100),
+            strategy: match.strategy
           });
           
           console.log('');
@@ -474,7 +482,8 @@ async function cleanupPaidBills(userId) {
       console.log('\n✅ Bills cleared:');
       report.details.forEach(detail => {
         console.log(`   - ${detail.billName} ($${detail.amount}) due ${detail.dueDate}`);
-        console.log(`     Paid on ${detail.paidDate} via "${detail.transactionName}" (${detail.confidence}% match)`);
+        console.log(`     Paid on ${detail.paidDate} via "${detail.transactionName}"`);
+        console.log(`     Confidence: ${detail.confidence}%, Strategy: ${detail.strategy}`);
       });
     }
     
