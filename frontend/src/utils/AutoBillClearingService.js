@@ -96,13 +96,18 @@ async function markBillAsPaid(userId, bill, transaction) {
     const dueDate = new Date(bill.dueDate);
     const daysPastDue = Math.max(0, Math.floor((now - dueDate) / (1000 * 60 * 60 * 24)));
     
-    // Update financialEvent to mark as paid
+    // Update financialEvent to mark as paid with audit trail
     await updateDoc(billRef, {
       isPaid: true,
       status: 'paid',
       paidDate: transaction.date,
       paidAmount: Math.abs(parseFloat(transaction.amount)),
       linkedTransactionId: transactionId,
+      // Audit trail fields
+      markedBy: 'auto-bill-clearing',
+      markedAt: serverTimestamp(),
+      markedVia: 'auto-plaid-match',
+      canBeUnmarked: true,
       updatedAt: serverTimestamp()
     });
     

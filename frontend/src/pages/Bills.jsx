@@ -1366,13 +1366,18 @@ snapshot.docChanges().forEach(async (change) => {
       const billRef = doc(db, 'users', currentUser.uid, 'financialEvents', bill.id);
       
       // ✅ UPDATED: Mark bill as PAID in financialEvents (do NOT delete)
-      // Update the financialEvent document to mark as paid
+      // Update the financialEvent document to mark as paid with audit trail
       await updateDoc(billRef, {
         isPaid: true,
         status: 'paid',
         paidDate: paidDate || getPacificTime(),
         paidAmount: Math.abs(parseFloat(bill.amount)),
         linkedTransactionId: paymentOptions.transactionId || null,
+        // Audit trail fields
+        markedBy: paymentOptions.markedBy || 'user',
+        markedAt: serverTimestamp(),
+        markedVia: paymentOptions.markedVia || 'mark-as-paid-button',
+        canBeUnmarked: true,
         updatedAt: serverTimestamp()
       });
       console.log(`✅ Bill marked as paid in financialEvents: ${bill.name}`);
