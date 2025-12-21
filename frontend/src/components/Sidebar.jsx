@@ -42,20 +42,21 @@ const Sidebar = () => {
 
   const menuItems = [
     { name: "Dashboard", path: "/" },
-    { name: "Accounts", path: "/accounts" },
+    { name: "Accounts", path:  "/accounts" },
     { name: "Transactions", path: "/transactions" },
-    { name: "Spendability", path: "/spendability" },
-    { name: "Bills", path: "/bills" },
+    { name:  "Spendability", path:  "/spendability" },
+    { name: "Bills", path:  "/bills" },
     { name: "💳 Payment History", path: "/payment-history" },
+    { name: "⚙️ Payment Rules", path: "/payment-rules" },  // ← NEW
     { name: "Recurring", path: "/recurring" },
     { name: "Credit Cards", path: "/creditcards" },
     { name: "🧠 Debt Optimizer", path: "/debt-optimizer" },
     { name: "Subscriptions", path: "/subscriptions", badge: detectionCount },
     { name: "Goals", path: "/goals" },
-    { name: "Categories", path: "/categories" },
+    { name:  "Categories", path: "/categories" },
     { name: "Cash Flow", path: "/cashflow" },
     { name: "Pay Cycle", path: "/paycycle" },
-    { name: "📊 Reports", path: "/reports" },
+    { name:  "📊 Reports", path:  "/reports" },
     { name: "Settings", path: "/settings" }
   ];
 
@@ -83,7 +84,7 @@ const Sidebar = () => {
             <li key={item.name}>
               <Link 
                 to={item.path}
-                className={location.pathname === item.path ? "active" : ""}
+                className={location.pathname === item.path ?  "active" : ""}
               >
                 {item.name}
                 {item.badge > 0 && (
