@@ -781,15 +781,27 @@ const Recurring = () => {
               
               console.log(`    📅 Date comparison:  existing="${existingDate}" vs target="${targetDate}" (equal: ${existingDate === targetDate})`);
               
+              // ✅ CRITICAL FIX: Only update date if bill is in the SAME month as template
+              // This prevents overwriting past/overdue bills with future dates
+              const existingMonth = existingDate.substring(0, 7); // e.g., "2025-12"
+              const targetMonth = targetDate.substring(0, 7);     // e.g., "2026-01"
+
               if (targetDate && existingDate !== targetDate) {
-                // Update all date-related fields to ensure consistency across the system
-                updates. dueDate = targetDate;
-                updates. nextDueDate = targetDate;
-                updates.nextRenewal = targetDate;
-                updates.nextOccurrence = targetDate;
-                updates. originalDueDate = targetDate;
-                changes.push(`date:  ${existingDate} → ${targetDate}`);
+             // Only update if bill is in the same month as the template's next occurrence
+             if (existingMonth === targetMonth) {
+             // Same month - safe to update the day within that month
+              updates.dueDate = targetDate;
+              updates. nextDueDate = targetDate;
+              updates.nextRenewal = targetDate;
+              updates. nextOccurrence = targetDate;
+              updates.originalDueDate = targetDate;
+              changes. push(`date: ${existingDate} → ${targetDate}`);
+              console.log(`    ✅ Updating date (same month:  ${targetMonth})`);
+              } else {
+              // Different month - this bill is from a different billing period, DON'T update! 
+               console.log(`    ⏭️ Skipping date update:  bill is from ${existingMonth}, template is ${targetMonth} (different periods)`);
               }
+             }
               
               
               
