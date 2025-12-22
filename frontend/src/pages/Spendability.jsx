@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { doc, getDoc, updateDoc, collection, addDoc, getDocs, serverTimestamp, arrayUnion, setDoc, deleteDoc } from 'firebase/firestore';
+import { doc, getDoc, updateDoc, collection, addDoc, getDocs, serverTimestamp, arrayUnion, setDoc, deleteDoc, query, where } from 'firebase/firestore';
 import { db } from '../firebase';
 import { PayCycleCalculator } from '../utils/PayCycleCalculator';
 import { RecurringBillManager } from '../utils/RecurringBillManager';
@@ -345,14 +345,14 @@ console.log('🔍 PAYDAY CALCULATION DEBUG:', {
 });
 }      
  
-      // Load bills from unified billInstances collection ONLY
+      // ✅ FIX: Load bills from financialEvents collection (where Bills.jsx reads from)
       let allBills = [];
       try {
-        // ✅ FIX ISSUE #1: Load ALL bill instances (no where clause)
-        const billInstancesSnapshot = await getDocs(
-          collection(db, 'users', currentUser.uid, 'billInstances')
-        );
-        allBills = billInstancesSnapshot.docs
+        const financialEventsRef = collection(db, 'users', currentUser.uid, 'financialEvents');
+        const billsQuery = query(financialEventsRef, where('type', '==', 'bill'));
+        const billsSnapshot = await getDocs(billsQuery);
+        
+        allBills = billsSnapshot.docs
           .map(doc => {
             const data = doc.data();
             return {
@@ -380,12 +380,12 @@ console.log('🔍 PAYDAY CALCULATION DEBUG:', {
             if (bill.isPaid === true) return false;
             return true;
           });
-        console.log('Spendability: Loaded bills from unified billInstances', {
+        console.log('✅ Spendability: Loaded bills from financialEvents', {
           count: allBills.length,
           bills: allBills.map(b => ({ name: b.name, amount: b.amount, dueDate: b.dueDate, status: b.status }))
         });
       } catch (error) {
-        console.log('Spendability: Error loading bill instances:', error.message);
+        console.error('❌ Spendability: Error loading bills from financialEvents:', error);
       }
 
       // Run auto-detection for bill payments
@@ -399,9 +399,11 @@ console.log('🔍 PAYDAY CALCULATION DEBUG:', {
           setTimeout(() => setNotification({ message: '', type: '' }), 4000);
           
           // Reload bills after auto-detection marked some as paid
-          const refreshedBillsSnapshot = await getDocs(
-            collection(db, 'users', currentUser.uid, 'billInstances')
+          const refreshedBillsQuery = query(
+            collection(db, 'users', currentUser.uid, 'financialEvents'),
+            where('type', '==', 'bill')
           );
+          const refreshedBillsSnapshot = await getDocs(refreshedBillsQuery);
           allBills = refreshedBillsSnapshot.docs
             .map(doc => {
               const data = doc.data();
@@ -834,8 +836,8 @@ console.log('🔍 PAYDAY CALCULATION DEBUG:', {
 
   const updateBillAsPaid = async (bill) => {
     try {
-      // Update bill in billInstances collection
-      const billRef = doc(db, 'users', currentUser.uid, 'billInstances', bill.id);
+      // ✅ FIX: Update bill in financialEvents collection
+      const billRef = doc(db, 'users', currentUser.uid, 'financialEvents', bill.id);
       
       await updateDoc(billRef, {
         isPaid: true,
@@ -860,6 +862,7 @@ console.log('🔍 PAYDAY CALCULATION DEBUG:', {
         const nextBillId = `bill_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
         const nextBillInstance = {
           id: nextBillId,
+          type: 'bill',
           name: bill.name,
           amount: bill.amount,
           dueDate: formatDateForInput(nextDueDate),
@@ -887,7 +890,7 @@ console.log('🔍 PAYDAY CALCULATION DEBUG:', {
         }
         
         await setDoc(
-          doc(db, 'users', currentUser.uid, 'billInstances', nextBillId),
+          doc(db, 'users', currentUser.uid, 'financialEvents', nextBillId),
           nextBillInstance
         );
         
