@@ -1,67 +1,93 @@
 /**
- * Helper function to extract date-only portion (YYYY-MM-DD) from date strings
- * This normalizes different date formats for accurate comparison:
- * - "2025-12-23T00:00:00.000Z" (ISO timestamp) -> "2025-12-23"
- * - "2025-12-23" (date only) -> "2025-12-23"
- * 
- * The function works by splitting on 'T' and taking the first part:
- * - For ISO timestamps with 'T', returns everything before 'T' (the date)
- * - For date-only strings without 'T', split returns array with one element (the whole string)
- * 
- * @param {string|null|undefined} dateStr - Date string in any format
- * @returns {string|null} Date in YYYY-MM-DD format, or null if input is falsy
+ * Normalize any date format to YYYY-MM-DD string
+ * Handles:  ISO strings, Date objects, Firestore Timestamps, MM/DD/YYYY, etc.
  */
-export const getDateOnly = (dateStr) => {
-  if (!dateStr) return null;
-  return dateStr.split('T')[0];
+export const getDateOnly = (dateValue) => {
+  if (!dateValue) return '';
+  
+  try {
+    // Already in YYYY-MM-DD format
+    if (typeof dateValue === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(dateValue)) {
+      return dateValue;
+    }
+    
+    // Handle MM/DD/YYYY format (from date input fields)
+    if (typeof dateValue === 'string' && /^\d{2}\/\d{2}\/\d{4}$/.test(dateValue)) {
+      const [month, day, year] = dateValue.split('/');
+      return `${year}-${month. padStart(2, '0')}-${day.padStart(2, '0')}`;
+    }
+    
+    // Handle ISO string with time (2025-01-08T00:00:00.000Z)
+    if (typeof dateValue === 'string' && dateValue.includes('T')) {
+      return dateValue.split('T')[0];
+    }
+    
+    // Handle Date objects
+    if (dateValue instanceof Date) {
+      const year = dateValue.getFullYear();
+      const month = String(dateValue.getMonth() + 1).padStart(2, '0');
+      const day = String(dateValue.getDate()).padStart(2, '0');
+      return `${year}-${month}-${day}`;
+    }
+    
+    // Handle Firestore Timestamps
+    if (dateValue. toDate && typeof dateValue.toDate === 'function') {
+      const date = dateValue.toDate();
+      const year = date.getFullYear();
+      const month = String(date.getMonth() + 1).padStart(2, '0');
+      const day = String(date.getDate()).padStart(2, '0');
+      return `${year}-${month}-${day}`;
+    }
+    
+    // Try to parse as Date if string
+    if (typeof dateValue === 'string') {
+      const parsed = new Date(dateValue);
+      if (!isNaN(parsed.getTime())) {
+        const year = parsed.getFullYear();
+        const month = String(parsed.getMonth() + 1).padStart(2, '0');
+        const day = String(parsed.getDate()).padStart(2, '0');
+        return `${year}-${month}-${day}`;
+      }
+    }
+    
+    console.warn('[getDateOnly] Could not normalize date:', dateValue);
+    return String(dateValue);
+  } catch (error) {
+    console.error('[getDateOnly] Error normalizing date:', error, dateValue);
+    return '';
+  }
 };
 
 /**
- * Extract month portion (YYYY-MM) from a date string
- * @param {string|null|undefined} dateStr - Date string in any format
- * @returns {string|null} Month in YYYY-MM format, or null if input is falsy
+ * Get YYYY-MM month from any date format
  */
-export const getMonthOnly = (dateStr) => {
-  const dateOnly = getDateOnly(dateStr);
-  return dateOnly ? dateOnly.substring(0, 7) : null;
+export const getMonthOnly = (dateValue) => {
+  const normalized = getDateOnly(dateValue);
+  return normalized ?  normalized.substring(0, 7) : '';
 };
 
 /**
- * Ensures a date is stored as YYYY-MM-DD string without timezone conversion
- * Handles both "2026-01-13" and "2026-01-13T00:00:00.000Z" formats
- * IMPORTANT: Never uses Date constructor to avoid timezone shifts
- * 
- * @param {string|Date|null|undefined} dateInput - Date in any format
- * @returns {string|null} Date in YYYY-MM-DD format, or null if input is falsy
+ * Compare two dates (returns true if they're the same day)
  */
-export const normalizeToDateString = (dateInput) => {
-  if (!dateInput) return null;
+export const isSameDate = (date1, date2) => {
+  return getDateOnly(date1) === getDateOnly(date2);
+};
+
+/**
+ * Format date for display (returns "Jan 8, 2026")
+ */
+export const formatDateForDisplay = (dateValue) => {
+  const normalized = getDateOnly(dateValue);
+  if (!normalized) return '';
   
-  // If already a simple YYYY-MM-DD string, return as-is
-  if (typeof dateInput === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(dateInput)) {
-    return dateInput;
+  try {
+    const date = new Date(normalized + 'T00:00:00');
+    return date.toLocaleDateString('en-US', { 
+      month: 'short', 
+      day: 'numeric', 
+      year: 'numeric' 
+    });
+  } catch (error) {
+    return normalized;
   }
-  
-  // If ISO string with time, extract just the date part
-  if (typeof dateInput === 'string' && dateInput.includes('T')) {
-    return dateInput.split('T')[0];
-  }
-  
-  // If Date object, format as YYYY-MM-DD using LOCAL timezone
-  if (dateInput instanceof Date) {
-    const year = dateInput.getFullYear();
-    const month = String(dateInput.getMonth() + 1).padStart(2, '0');
-    const day = String(dateInput.getDate()).padStart(2, '0');
-    return `${year}-${month}-${day}`;
-  }
-  
-  // Fallback: attempt to extract date part from any string format
-  const stringInput = String(dateInput);
-  if (stringInput.includes('T')) {
-    return stringInput.split('T')[0];
-  }
-  
-  // If it's a plain string that doesn't match expected formats, return as-is
-  // and let the caller handle any validation
-  return stringInput;
 };

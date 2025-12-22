@@ -543,19 +543,33 @@ const refreshPlaidTransactions = async () => {
       // Add to lock
       setAutoGenerationLock(prev => new Set([...prev, lockKey]));
       
-      // Read date EXACTLY from template (no timezone conversion!)
-      const exactDueDate = template.nextRenewal || template.nextOccurrence;
-      
-      if (!exactDueDate) {
-        console.warn(`Template ${template.name} has no nextRenewal/nextOccurrence date`);
-        // Remove from lock
-        setAutoGenerationLock(prev => {
-          const newSet = new Set(prev);
-          newSet.delete(lockKey);
-          return newSet;
-        });
-        return;
-      }
+      // ✅ FIX: Always normalize template date to YYYY-MM-DD format
+const templateDate = template.nextRenewal || template. nextOccurrence;
+
+if (!templateDate) {
+  console.warn(`Template ${template.name} has no nextRenewal/nextOccurrence date`);
+  setAutoGenerationLock(prev => {
+    const newSet = new Set(prev);
+    newSet.delete(lockKey);
+    return newSet;
+  });
+  return;
+}
+
+// ✅ CRITICAL:  Normalize date to prevent format mismatches
+const exactDueDate = getDateOnly(templateDate);
+
+if (!exactDueDate || exactDueDate. length !== 10) {
+  console.error(`❌ Failed to normalize template date for ${template.name}:`, templateDate, '→', exactDueDate);
+  setAutoGenerationLock(prev => {
+    const newSet = new Set(prev);
+    newSet.delete(lockKey);
+    return newSet;
+  });
+  return;
+}
+
+console.log(`✅ Normalized template date for ${template.name}:  ${templateDate} → ${exactDueDate}`);
       
       // ✅ CHECK SKIPPED PERIODS: Don't recreate bills that were manually deleted
       const currentPeriod = exactDueDate.substring(0, 7); // e.g., "2025-12"
