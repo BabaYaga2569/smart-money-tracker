@@ -448,19 +448,36 @@ console.log('🔍 PAYDAY CALCULATION DEBUG:', {
       }));
 
       const processedBills = RecurringBillManager.processBills(billsWithRecurrence);
-      
-      // Get bills due before payday
-      const billsDueBeforeNextPayday = RecurringBillManager.getBillsDueBefore(processedBills, new Date(nextPayday));
-      
-      // ALSO get overdue bills that haven't been paid yet
-      const overdueBills = RecurringBillManager.getOverdueBills(processedBills);
-      
-      // Combine both arrays and remove duplicates
-      const combinedBills = [...billsDueBeforeNextPayday, ...overdueBills];
-      const unsortedBillsDueBeforePayday = RecurringBillManager.deduplicateBills(combinedBills);
-      
+
+      // ✅ NEW LOGIC: Get bills that should be displayed in Spendability
+      const today = getPacificTime();
+      today.setHours(0, 0, 0, 0);
+      const paydayDate = new Date(nextPayday);
+
+      const relevantBills = processedBills.filter(bill => {
+        const billDueDate = new Date(bill.nextDueDate || bill.dueDate);
+        
+        // Always include if bill is overdue and unpaid
+        if (billDueDate < today) {
+          console.log(`📌 Including overdue bill: ${bill.name} (due ${bill.nextDueDate})`);
+          return true;
+        }
+        
+        // Include if bill is due before next payday
+        if (billDueDate < paydayDate) {
+          console.log(`📌 Including upcoming bill: ${bill.name} (due ${bill.nextDueDate})`);
+          return true;
+        }
+        
+        // Exclude bills due after payday
+        console.log(`⏭️ Excluding future bill: ${bill.name} (due ${bill.nextDueDate}, after payday ${nextPayday})`);
+        return false;
+      });
+
+      console.log(`✅ Spendability: Filtered ${processedBills.length} bills to ${relevantBills.length} relevant bills (overdue + due before payday)`);
+
       // Add status info to each bill and sort by priority (overdue bills first)
-      const billsDueBeforePayday = unsortedBillsDueBeforePayday
+      const billsDueBeforePayday = relevantBills
         .map(bill => ({
           ...bill,
           statusInfo: RecurringBillManager.determineBillStatus(bill)
