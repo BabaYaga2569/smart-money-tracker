@@ -56,6 +56,9 @@ const buildUpdateData = (currentData, recurringItems, additionalFields = {}) => 
   return { updateData, cleanedItems };
 };
 
+// ✅ OPTIMIZATION: Cache TTL for Plaid API responses
+const PLAID_CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutes
+
 const Recurring = () => {
   const { currentUser } = useAuth();
   const [loading, setLoading] = useState(true);
@@ -181,7 +184,7 @@ const Recurring = () => {
     
     if (cached) {
       const { data, timestamp } = JSON.parse(cached);
-      if (Date.now() - timestamp < 5 * 60 * 1000) { // 5 min cache
+      if (Date.now() - timestamp < PLAID_CACHE_TTL_MS) {
         if (import.meta.env.DEV) {
           console.log('[Cache] Using cached Plaid accounts');
         }

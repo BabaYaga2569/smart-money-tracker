@@ -111,7 +111,7 @@ const SpendabilityV2 = () => {
         getDoc(settingsDocRef),
         getDoc(payCycleDocRef),
         fetch(`${apiUrl}/api/accounts?userId=${currentUser.uid}&_t=${Date.now()}`).catch(err => {
-          console.error('[Spendability] Backend API error:', err);
+          console.error('[Spendability] Backend API error, will use Firebase cache as fallback:', err);
           return null;
         })
       ]);
@@ -228,6 +228,8 @@ if (wasUpdated) {
 
       // Load transactions to calculate projected balances
       // ✅ OPTIMIZATION: Load only last 30 days of transactions instead of ALL transactions
+      // Note: Using limit(100) is safe because we primarily care about recent pending transactions
+      // for balance calculations. Historical transactions beyond 30 days don't affect current balances.
       const transactionsRef = collection(db, 'users', currentUser.uid, 'transactions');
       const thirtyDaysAgo = new Date();
       thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
