@@ -33,14 +33,21 @@ export class PayCycleCalculator {
      */
     static calculateNextPayday(yoursSchedule, spouseSchedule) {
         try {
+            const today = getPacificTime();
+            today.setHours(0, 0, 0, 0); // Start of day for comparison
+            
+            console.log('📅 PayCycleCalculator: Calculating next payday...', {
+                today: today.toISOString(),
+                yoursSchedule,
+                spouseSchedule
+            });
+            
             // Calculate your next bi-weekly payday
             let yourNextPay = null;
             let yourAmount = 0;
             
             if (yoursSchedule.lastPaydate && yoursSchedule.amount) {
                 const lastPay = new Date(yoursSchedule.lastPaydate);
-                const today = getPacificTime();
-                today.setHours(0, 0, 0, 0); // Start of day for comparison
                 
                 // Calculate next payday from last pay date
                 yourNextPay = new Date(lastPay);
@@ -52,6 +59,12 @@ export class PayCycleCalculator {
                 }
                 
                 yourAmount = parseFloat(yoursSchedule.amount) || 0;
+                
+                console.log('📅 Your next payday:', {
+                    date: yourNextPay.toISOString(),
+                    amount: yourAmount,
+                    daysUntil: getDaysUntilDateInPacific(yourNextPay.toISOString().split('T')[0])
+                });
             }
             
             // Calculate spouse's next payday (15th or 30th)
@@ -63,29 +76,51 @@ export class PayCycleCalculator {
             if (spouseSchedule && spouseSchedule.amount && parseFloat(spouseSchedule.amount) > 0) {
                 spouseNextPay = this.getWifeNextPayday();
                 spouseAmount = parseFloat(spouseSchedule.amount);
+                
+                console.log('📅 Spouse next payday:', {
+                    date: spouseNextPay.toISOString(),
+                    amount: spouseAmount,
+                    daysUntil: getDaysUntilDateInPacific(spouseNextPay.toISOString().split('T')[0])
+                });
             }
             
             // Determine which comes first
             let nextPayday, source, amount;
             
             if (yourNextPay && spouseNextPay) {
-                if (spouseNextPay < yourNextPay) {
+                // ✅ FIX: Ensure we're comparing Date objects properly
+                const yourTime = yourNextPay.getTime();
+                const spouseTime = spouseNextPay.getTime();
+                
+                console.log('📅 Comparing paydays:', {
+                    yourDate: yourNextPay.toISOString().split('T')[0],
+                    spouseDate: spouseNextPay.toISOString().split('T')[0],
+                    yourTime,
+                    spouseTime,
+                    spouseIsEarlier: spouseTime < yourTime
+                });
+                
+                if (spouseTime < yourTime) {
                     nextPayday = spouseNextPay;
                     source = "spouse";
                     amount = spouseAmount;
+                    console.log('✅ Chose SPOUSE payday (earlier)');
                 } else {
                     nextPayday = yourNextPay;
                     source = "yours";
                     amount = yourAmount;
+                    console.log('✅ Chose YOUR payday (earlier or same)');
                 }
             } else if (yourNextPay) {
                 nextPayday = yourNextPay;
                 source = "yours";
                 amount = yourAmount;
+                console.log('✅ Only YOUR payday available');
             } else if (spouseNextPay) {
                 nextPayday = spouseNextPay;
                 source = "spouse";
                 amount = spouseAmount;
+                console.log('✅ Only SPOUSE payday available');
             } else {
                 throw new Error("No payday information available");
             }
@@ -96,6 +131,13 @@ export class PayCycleCalculator {
             // Calculate days until payday using Pacific Time
             const daysUntil = getDaysUntilDateInPacific(paydayDateStr);
             
+            console.log('📅 Final payday result:', {
+                date: paydayDateStr,
+                daysUntil,
+                source,
+                amount
+            });
+            
             return {
                 date: paydayDateStr,
                 daysUntil: daysUntil,
@@ -104,7 +146,7 @@ export class PayCycleCalculator {
             };
             
         } catch (error) {
-            console.error('PayCycleCalculator error:', error);
+            console.error('❌ PayCycleCalculator error:', error);
             return {
                 date: new Date().toISOString().split('T')[0],
                 daysUntil: 0,
