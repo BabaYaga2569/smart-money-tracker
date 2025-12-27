@@ -1,9 +1,8 @@
-import React, { useState, useEffect } from 'react';
-import { doc, collection, getDocs, setDoc, updateDoc } from 'firebase/firestore';
+import { useState, useEffect } from 'react';
+import { doc, collection, getDocs, setDoc, updateDoc, getDoc, onSnapshot, query, where } from 'firebase/firestore';
 import { db } from '../firebase';
 import { PaycycleManager } from '../utils/PaycycleManager';
 import { PayCycleCalculator } from '../utils/PayCycleCalculator';
-import { CashFlowAnalytics } from '../utils/CashFlowAnalytics';
 import { useAuth } from '../contexts/AuthContext';
 import { getLocalMidnight, parseDueDateLocal } from '../utils/dateHelpers';
 import {
@@ -26,50 +25,330 @@ const PayCycle = () => {
   const [optimizedSchedule, setOptimizedSchedule] = useState([]);
   const [showIncomeModal, setShowIncomeModal] = useState(false);
   const [editingIncome, setEditingIncome] = useState(null);
+  const [billsBeforePay, setBillsBeforePay] = useState([]);
+  const [nextPayday, setNextPayday] = useState(null);
+  const [daysUntilPayday, setDaysUntilPayday] = useState(0);
+  const [billRisks, setBillRisks] = useState({ critical: [], high: [], medium: [], low: [] });
+  const [warnings, setWarnings] = useState([]);
 
-  // Load all data on component mount
-  useEffect(() => {
-    loadPaycycleData();
-  }, []);
-
-  const loadPaycycleData = async () => {
+  // Auto-sync income sources from Settings
+  const syncIncomeSourcesFromSettings = async () => {
+    if (!currentUser) return [];
+    
     try {
-      setLoading(true);
+      const settingsRef = doc(db, 'users', currentUser.uid, 'settings', 'personal');
+      const settingsSnap = await getDoc(settingsRef);
       
-      // Load income sources
-      const incomeSourcesSnap = await getDocs(collection(db, 'users', currentUser.uid, 'incomeSources'));
-      const loadedIncomeSources = incomeSourcesSnap.docs.map(doc => ({
-        id: doc.id,
-        ...doc.data()
-      }));
+      if (!settingsSnap.exists()) {
+        console.warn('⚠️ Settings not found - user needs to configure pay schedules');
+        setWarnings(prev => [...prev, '⚠️ Settings not configured. Go to Settings page to set up your pay schedules.']);
+        return [];
+      }
       
-      // Load bills
-      const billsSnap = await getDocs(collection(db, 'users', currentUser.uid, 'bills'));
-      const loadedBills = billsSnap.docs.map(doc => ({
-        id: doc.id,
-        ...doc.data()
-      }));
+      const data = settingsSnap.data();
+      const sources = [];
       
-      // Load transactions
-      const transactionsSnap = await getDocs(collection(db, 'users', currentUser.uid, 'transactions'));
-      const loadedTransactions = transactionsSnap.docs.map(doc => ({
-        id: doc.id,
-        ...doc.data()
-      }));
+      // ✅ Add YOUR paycheck from paySchedules.yours
+      if (data.paySchedules?.yours?.amount && data.paySchedules?.yours?.lastPaydate) {
+        const yourAmount = parseFloat(data.paySchedules.yours.amount) || 0;
+        
+        if (yourAmount > 0) {
+          // Calculate next payday (bi-weekly)
+          const lastPayDate = new Date(data.paySchedules.yours.lastPaydate);
+          const nextPayDate = new Date(lastPayDate);
+          nextPayDate.setDate(lastPayDate.getDate() + 14);
+          
+          // If next payday is in the past, keep adding 14 days
+          const today = new Date();
+          today.setHours(0, 0, 0, 0);
+          while (nextPayDate < today) {
+            nextPayDate.setDate(nextPayDate.getDate() + 14);
+          }
+          
+          sources.push({
+            id: 'yours-paycheck',
+            name: `${data.personalInfo?.yourName || 'Your'} Paycheck`,
+            amount: yourAmount,
+            frequency: 'bi-weekly',
+            nextDate: nextPayDate.toISOString().split('T')[0],
+            type: 'SALARY',
+            source: 'settings-auto-sync',
+            active: true,
+            lastPayDate: data.paySchedules.yours.lastPaydate
+          });
+        }
+      } else if (data.paySchedules?.yours) {
+        setWarnings(prev => [...prev, '⚠️ Your pay schedule not fully configured. Go to Settings to add your last pay date and amount.']);
+      }
       
-      // Load current balance
-      const accountsSnap = await getDocs(collection(db, 'users', currentUser.uid, 'accounts'));
-      let totalBalance = 0;
-      accountsSnap.forEach(doc => {
-        const account = doc.data();
-        totalBalance += account.balance || 0;
+      // ✅ Add SPOUSE paycheck from paySchedules.spouse
+      const spouseAmount = parseFloat(data.paySchedules?.spouse?.amount || data.spousePayAmount) || 0;
+      
+      if (spouseAmount > 0) {
+        // Calculate next payday (15th or 30th)
+        const nextSpousePayday = PayCycleCalculator.getWifeNextPayday();
+        
+        sources.push({
+          id: 'spouse-paycheck',
+          name: `${data.personalInfo?.spouseName || 'Spouse'} Paycheck`,
+          amount: spouseAmount,
+          frequency: 'bi-monthly',
+          nextDate: nextSpousePayday.toISOString().split('T')[0],
+          type: 'SALARY',
+          source: 'settings-auto-sync',
+          active: true
+        });
+      }
+      
+      // Check for Plaid accounts
+      if (!data.plaidAccounts || data.plaidAccounts.length === 0) {
+        setWarnings(prev => [...prev, 'ℹ️ No bank accounts connected. Connect via Accounts page for automatic balance tracking.']);
+      }
+      
+      console.log(`✅ Auto-synced ${sources.length} income sources from Settings`);
+      return sources;
+      
+    } catch (error) {
+      console.error('Error syncing income sources from Settings:', error);
+      return [];
+    }
+  };
+
+  // Sync current balance from plaidAccounts
+  const syncBalancesFromAccounts = async () => {
+    if (!currentUser) return { totalBalance: 0, accounts: [] };
+    
+    try {
+      const settingsRef = doc(db, 'users', currentUser.uid, 'settings', 'personal');
+      const settingsSnap = await getDoc(settingsRef);
+      
+      if (!settingsSnap.exists()) return { totalBalance: 0, accounts: [] };
+      
+      const allPlaidAccounts = settingsSnap.data()?.plaidAccounts || [];
+      
+      // Filter to depository accounts only (same logic as Accounts.jsx)
+      const depositoryAccounts = allPlaidAccounts.filter(account => {
+        // Exclude if originalType is 'credit'
+        if (account.originalType === 'credit') return false;
+        
+        // Exclude if originalSubtype is 'credit'
+        if (account.originalSubtype === 'credit') return false;
+        
+        // Exclude if formatted type contains 'credit'
+        const accountType = (account.type || '').toLowerCase();
+        if (accountType.includes('credit')) return false;
+        
+        // Include all other accounts (depository accounts like checking, savings, etc.)
+        return true;
       });
       
-      setIncomeSources(loadedIncomeSources);
-      setCurrentBalance(totalBalance);
+      const totalBalance = depositoryAccounts.reduce((sum, account) => 
+        sum + (parseFloat(account.balance) || 0), 0
+      );
       
-      // Calculate metrics and forecasts
-      calculatePaycycleMetrics(loadedIncomeSources, loadedTransactions, loadedBills, totalBalance);
+      console.log(`✅ Synced balance from ${depositoryAccounts.length} accounts: $${totalBalance.toFixed(2)}`);
+      
+      setCurrentBalance(totalBalance);
+      return { totalBalance, accounts: depositoryAccounts };
+      
+    } catch (error) {
+      console.error('Error syncing balances from accounts:', error);
+      return { totalBalance: 0, accounts: [] };
+    }
+  };
+
+  // Sync bills from financialEvents
+  const syncBillsFromFinancialEvents = async () => {
+    if (!currentUser) return [];
+    
+    try {
+      const billsQuery = query(
+        collection(db, 'users', currentUser.uid, 'financialEvents'),
+        where('type', '==', 'bill'),
+        where('isPaid', '==', false)
+      );
+      
+      const billsSnap = await getDocs(billsQuery);
+      
+      const bills = billsSnap.docs.map(doc => ({
+        id: doc.id,
+        ...doc.data()
+      }));
+      
+      console.log(`✅ Synced ${bills.length} unpaid bills from financialEvents`);
+      
+      setBillsBeforePay(bills);
+      return bills;
+      
+    } catch (error) {
+      console.error('Error syncing bills from financialEvents:', error);
+      return [];
+    }
+  };
+
+  // Load next payday from payCycle cache or calculate
+  const loadPayCycleInfo = async () => {
+    if (!currentUser) return;
+    
+    try {
+      const payCycleRef = doc(db, 'users', currentUser.uid, 'financial', 'payCycle');
+      const payCycleSnap = await getDoc(payCycleRef);
+      
+      if (payCycleSnap.exists()) {
+        const data = payCycleSnap.data();
+        
+        // Validate that cached date is still in the future
+        const cachedDate = new Date(data.date);
+        const today = new Date();
+        today.setHours(0, 0, 0, 0);
+        
+        if (cachedDate >= today) {
+          setNextPayday(data.date);
+          setDaysUntilPayday(data.daysUntil);
+          console.log('✅ Loaded next payday from cache:', data.date);
+          return;
+        }
+      }
+      
+      // Fallback: Calculate from Settings if cache is stale
+      console.warn('⚠️ Payday cache is stale or missing - recalculating');
+      
+      const settingsRef = doc(db, 'users', currentUser.uid, 'settings', 'personal');
+      const settingsSnap = await getDoc(settingsRef);
+      
+      if (settingsSnap.exists()) {
+        const data = settingsSnap.data();
+        
+        const yoursSchedule = {
+          lastPaydate: data.paySchedules?.yours?.lastPaydate || data.lastPayDate,
+          amount: parseFloat(data.paySchedules?.yours?.amount || data.payAmount) || 0
+        };
+        
+        const spouseSchedule = {
+          type: 'bi-monthly',
+          amount: parseFloat(data.paySchedules?.spouse?.amount || data.spousePayAmount) || 0,
+          dates: data.paySchedules?.spouse?.dates || [15, 30]
+        };
+        
+        const result = PayCycleCalculator.calculateNextPayday(yoursSchedule, spouseSchedule);
+        
+        setNextPayday(result.date);
+        setDaysUntilPayday(result.daysUntil);
+        
+        // Update cache
+        await setDoc(payCycleRef, {
+          date: result.date,
+          daysUntil: result.daysUntil,
+          source: result.source,
+          amount: result.amount,
+          lastCalculated: new Date().toISOString()
+        });
+        
+        console.log('✅ Calculated and cached next payday:', result.date);
+      }
+    } catch (error) {
+      console.error('Error loading payCycle info:', error);
+    }
+  };
+
+  // Calculate bill risks based on payday and balance
+  const calculateBillRisks = (bills, balance, nextPaydayDate) => {
+    if (!bills || bills.length === 0 || !nextPaydayDate) {
+      return { critical: [], high: [], medium: [], low: [] };
+    }
+    
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const paydayDate = new Date(nextPaydayDate);
+    
+    const risks = {
+      critical: [],    // Due before payday AND balance too low
+      high: [],        // Due soon (< 7 days) before payday
+      medium: [],      // Due before payday but balance OK
+      low: []          // Due after payday
+    };
+    
+    let runningBalance = balance;
+    
+    // Sort bills by due date
+    const sortedBills = [...bills].sort((a, b) => 
+      new Date(a.dueDate) - new Date(b.dueDate)
+    );
+    
+    sortedBills.forEach(bill => {
+      const dueDate = new Date(bill.dueDate);
+      const daysUntilDue = Math.floor((dueDate - today) / (1000 * 60 * 60 * 24));
+      const amount = parseFloat(bill.amount || bill.cost) || 0;
+      
+      // Critical: overdue OR balance insufficient
+      if (daysUntilDue < 0) {
+        risks.critical.push({ ...bill, reason: 'Overdue' });
+      }
+      else if (dueDate < paydayDate && runningBalance < amount) {
+        risks.critical.push({ ...bill, reason: 'Insufficient funds' });
+      }
+      // High: due very soon (< 7 days) before payday
+      else if (daysUntilDue < 7 && dueDate < paydayDate) {
+        risks.high.push(bill);
+      }
+      // Medium: due before payday but balance OK
+      else if (dueDate < paydayDate) {
+        risks.medium.push(bill);
+      }
+      // Low: due after payday
+      else {
+        risks.low.push(bill);
+      }
+      
+      // Subtract bill from running balance if due before payday
+      if (dueDate < paydayDate) {
+        runningBalance -= amount;
+      }
+    });
+    
+    console.log('📊 Bill Risk Analysis:', {
+      critical: risks.critical.length,
+      high: risks.high.length,
+      medium: risks.medium.length,
+      low: risks.low.length
+    });
+    
+    setBillRisks(risks);
+    return risks;
+  };
+
+  // Load all paycycle data
+  const loadPaycycleData = async () => {
+    if (!currentUser) return;
+    
+    try {
+      setLoading(true);
+      setWarnings([]); // Clear previous warnings
+      
+      // ✅ Auto-sync income sources from Settings
+      const sources = await syncIncomeSourcesFromSettings();
+      setIncomeSources(sources);
+      
+      // ✅ Load other data in parallel
+      const [balanceData, bills] = await Promise.all([
+        syncBalancesFromAccounts(),
+        syncBillsFromFinancialEvents(),
+        loadPayCycleInfo()
+      ]);
+      
+      // Calculate metrics for overview tab (legacy support)
+      if (sources.length > 0) {
+        const metrics = PaycycleManager.calculateIncomeMetrics(sources, []);
+        setIncomeMetrics(metrics);
+        
+        // Generate cash flow forecast
+        const forecast = PaycycleManager.generateCashFlowForecast(sources, bills, balanceData.totalBalance, 90);
+        setCashFlowForecast(forecast);
+        
+        // Optimize payment schedule
+        const optimized = PaycycleManager.optimizePaymentSchedule(bills, sources);
+        setOptimizedSchedule(optimized);
+      }
       
     } catch (error) {
       console.error('Error loading paycycle data:', error);
@@ -77,6 +356,41 @@ const PayCycle = () => {
       setLoading(false);
     }
   };
+
+  // Load all data on component mount
+  useEffect(() => {
+    loadPaycycleData();
+  }, [currentUser]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Calculate bill risks when data is ready
+  useEffect(() => {
+    if (billsBeforePay.length > 0 && nextPayday && currentBalance >= 0) {
+      calculateBillRisks(billsBeforePay, currentBalance, nextPayday);
+    }
+  }, [billsBeforePay, nextPayday, currentBalance]);
+
+  // Real-time sync with Settings changes
+  useEffect(() => {
+    if (!currentUser) return;
+    
+    const settingsRef = doc(db, 'users', currentUser.uid, 'settings', 'personal');
+    
+    const unsubscribe = onSnapshot(settingsRef, (snap) => {
+      if (snap.exists()) {
+        console.log('🔄 Settings changed - refreshing Pay Cycle data');
+        
+        // Re-sync income sources
+        syncIncomeSourcesFromSettings().then(sources => {
+          setIncomeSources(sources);
+        });
+        
+        // Re-sync balances
+        syncBalancesFromAccounts();
+      }
+    });
+    
+    return () => unsubscribe();
+  }, [currentUser]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const calculatePaycycleMetrics = (sources, txns, billsList, balance) => {
     // Calculate income metrics
@@ -160,17 +474,34 @@ const PayCycle = () => {
         <h1>💰 Pay Cycle Management</h1>
         <p>Optimize your cash flow and align expenses with income</p>
         
+        {/* Display warnings if any */}
+        {warnings.length > 0 && (
+          <div className="warnings-banner">
+            {warnings.map((warning, idx) => (
+              <div key={idx} className="warning-message">
+                {warning}
+              </div>
+            ))}
+          </div>
+        )}
+        
         {/* Quick Stats */}
         <div className="quick-stats">
           <div className="metric-card electric-green">
             <div className="metric-icon">💸</div>
             <div className="metric-content">
               <div className="metric-value">
-                {incomeMetrics?.nextPaycheck ? formatCurrency(incomeMetrics.nextPaycheck.amount) : 'N/A'}
+                {nextPayday ? formatCurrency(
+                  incomeSources.find(s => {
+                    const nextDate = new Date(s.nextDate);
+                    const payday = new Date(nextPayday);
+                    return Math.abs(nextDate - payday) < 86400000; // Within 24 hours
+                  })?.amount || 0
+                ) : 'N/A'}
               </div>
               <div className="metric-label">Next Paycheck</div>
               <div className="metric-subtitle">
-                {incomeMetrics?.nextPaycheck ? formatDate(incomeMetrics.nextPaycheck.date) : 'No upcoming pay'}
+                {nextPayday ? formatDate(nextPayday) : 'No upcoming pay'}
               </div>
             </div>
           </div>
@@ -179,11 +510,11 @@ const PayCycle = () => {
             <div className="metric-icon">📅</div>
             <div className="metric-content">
               <div className="metric-value">
-                {incomeMetrics?.nextPaycheck?.daysUntil || 0}
+                {daysUntilPayday || 0}
               </div>
               <div className="metric-label">Days Until Pay</div>
               <div className="metric-subtitle">
-                {incomeMetrics?.nextPaycheck ? formatDate(incomeMetrics.nextPaycheck.date) : 'TBD'}
+                {nextPayday ? formatDate(nextPayday) : 'TBD'}
               </div>
             </div>
           </div>
@@ -201,25 +532,25 @@ const PayCycle = () => {
             <div className="metric-icon">📋</div>
             <div className="metric-content">
               <div className="metric-value">
-                {optimizedSchedule.filter(bill => {
-                  // Use timezone-aware date parsing to avoid off-by-one errors
+                {billsBeforePay.filter(bill => {
+                  if (!nextPayday) return false;
                   const today = getLocalMidnight();
                   const dueDate = parseDueDateLocal(bill.dueDate);
-                  const daysUntil = dueDate ? Math.floor((dueDate - today) / (1000 * 60 * 60 * 24)) : 999;
-                  return daysUntil <= (incomeMetrics?.nextPaycheck?.daysUntil || 0);
+                  const payday = new Date(nextPayday);
+                  return dueDate && dueDate < payday;
                 }).length}
               </div>
               <div className="metric-label">Bills Before Pay</div>
               <div className="metric-subtitle">
-                {formatCurrency(optimizedSchedule
+                {formatCurrency(billsBeforePay
                   .filter(bill => {
-                    // Use timezone-aware date parsing to avoid off-by-one errors
+                    if (!nextPayday) return false;
                     const today = getLocalMidnight();
                     const dueDate = parseDueDateLocal(bill.dueDate);
-                    const daysUntil = dueDate ? Math.floor((dueDate - today) / (1000 * 60 * 60 * 24)) : 999;
-                    return daysUntil <= (incomeMetrics?.nextPaycheck?.daysUntil || 0);
+                    const payday = new Date(nextPayday);
+                    return dueDate && dueDate < payday;
                   })
-                  .reduce((sum, bill) => sum + bill.amount, 0)
+                  .reduce((sum, bill) => sum + (parseFloat(bill.amount || bill.cost) || 0), 0)
                 )} total
               </div>
             </div>
@@ -396,10 +727,21 @@ const IncomeTab = ({ incomeSources, onAdd, onEdit }) => {
     <div className="income-tab">
       <div className="section-header">
         <h3>💼 Income Sources Management</h3>
+        {incomeSources.length > 0 && incomeSources[0]?.source === 'settings-auto-sync' && (
+          <span className="auto-sync-badge">✅ Auto-synced from Settings</span>
+        )}
         <button className="add-button" onClick={onAdd}>
-          ➕ Add Income Source
+          ➕ Add Income Source (Manual)
         </button>
       </div>
+
+      {incomeSources.length > 0 && (
+        <div className="auto-sync-notice">
+          <p style={{ fontSize: '13px', color: '#10b981', marginBottom: '16px' }}>
+            ✅ Auto-synced from Settings - updates automatically when you change pay schedules
+          </p>
+        </div>
+      )}
 
       <div className="income-sources-grid">
         {incomeSources.map(source => (
@@ -411,10 +753,15 @@ const IncomeTab = ({ incomeSources, onAdd, onEdit }) => {
               <div className="income-info">
                 <h4>{source.name}</h4>
                 <span className="income-type">{source.type}</span>
+                {source.source === 'settings-auto-sync' && (
+                  <span className="sync-badge">🔄 Auto-sync</span>
+                )}
               </div>
-              <button className="edit-button" onClick={() => onEdit(source)}>
-                ✏️
-              </button>
+              {source.source !== 'settings-auto-sync' && (
+                <button className="edit-button" onClick={() => onEdit(source)}>
+                  ✏️
+                </button>
+              )}
             </div>
             
             <div className="income-details">
@@ -435,9 +782,11 @@ const IncomeTab = ({ incomeSources, onAdd, onEdit }) => {
               <div className="detail-row">
                 <span>Next Pay:</span>
                 <span>
-                  {source.lastPayDate 
-                    ? new Date(PaycycleManager.calculateNextPayDate(source)).toLocaleDateString()
-                    : 'Not set'
+                  {source.nextDate 
+                    ? new Date(source.nextDate).toLocaleDateString()
+                    : source.lastPayDate 
+                      ? new Date(PaycycleManager.calculateNextPayDate(source)).toLocaleDateString()
+                      : 'Not set'
                   }
                 </span>
               </div>
@@ -455,9 +804,10 @@ const IncomeTab = ({ incomeSources, onAdd, onEdit }) => {
           <div className="empty-state">
             <div className="empty-icon">💼</div>
             <h4>No Income Sources</h4>
-            <p>Add your first income source to start optimizing your pay cycle.</p>
+            <p>⚠️ No income sources found in Settings.</p>
+            <p>Please configure your pay schedules in Settings, or:</p>
             <button className="add-button primary" onClick={onAdd}>
-              ➕ Add Income Source
+              ➕ Add Income Source Manually
             </button>
           </div>
         )}
@@ -535,6 +885,7 @@ const ForecastTab = ({ cashFlowForecast, currentBalance }) => {
 
 // Schedule Tab Component
 const ScheduleTab = ({ optimizedSchedule }) => {
+  // Use the component prop if provided, otherwise empty arrays
   const riskLevels = {
     low: optimizedSchedule.filter(bill => bill.riskLevel === 'low'),
     medium: optimizedSchedule.filter(bill => bill.riskLevel === 'medium'),
@@ -550,55 +901,73 @@ const ScheduleTab = ({ optimizedSchedule }) => {
       </div>
 
       <div className="risk-summary">
-        <div className="risk-card low">
-          <div className="risk-count">{riskLevels.low.length}</div>
-          <div className="risk-label">Low Risk</div>
-        </div>
-        <div className="risk-card medium">
-          <div className="risk-count">{riskLevels.medium.length}</div>
-          <div className="risk-label">Medium Risk</div>
+        <div className="risk-card critical">
+          <div className="risk-count">{riskLevels.critical.length}</div>
+          <div className="risk-label">🔴 Critical</div>
         </div>
         <div className="risk-card high">
           <div className="risk-count">{riskLevels.high.length}</div>
-          <div className="risk-label">High Risk</div>
+          <div className="risk-label">🟠 High Risk</div>
         </div>
-        <div className="risk-card critical">
-          <div className="risk-count">{riskLevels.critical.length}</div>
-          <div className="risk-label">Critical</div>
+        <div className="risk-card medium">
+          <div className="risk-count">{riskLevels.medium.length}</div>
+          <div className="risk-label">🟡 Medium Risk</div>
+        </div>
+        <div className="risk-card low">
+          <div className="risk-count">{riskLevels.low.length}</div>
+          <div className="risk-label">🟢 Low Risk</div>
         </div>
       </div>
 
       <div className="schedule-list">
-        {Object.entries(riskLevels).map(([level, bills]) => (
+        {Object.entries(riskLevels).reverse().map(([level, bills]) => (
           bills.length > 0 && (
             <div key={level} className={`risk-section ${level}`}>
-              <h4>{level.charAt(0).toUpperCase() + level.slice(1)} Risk Bills</h4>
+              <h4>{level.charAt(0).toUpperCase() + level.slice(1)} Risk Bills ({bills.length})</h4>
               <div className="bills-grid">
                 {bills.map(bill => (
                   <div key={bill.id} className="bill-card">
                     <div className="bill-header">
                       <h5>{bill.name}</h5>
-                      <span className="bill-amount">${bill.amount}</span>
+                      <span className="bill-amount">${parseFloat(bill.amount || bill.cost || 0).toFixed(2)}</span>
                     </div>
                     <div className="bill-details">
                       <div className="detail">
                         <span>Due Date:</span>
                         <span>{new Date(bill.dueDate).toLocaleDateString()}</span>
                       </div>
-                      <div className="detail">
-                        <span>Suggested Pay Date:</span>
-                        <span>{new Date(bill.suggestedPayDate).toLocaleDateString()}</span>
+                      {bill.suggestedPayDate && (
+                        <div className="detail">
+                          <span>Suggested Pay Date:</span>
+                          <span>{new Date(bill.suggestedPayDate).toLocaleDateString()}</span>
+                        </div>
+                      )}
+                      {bill.reason && (
+                        <div className="detail">
+                          <span>Reason:</span>
+                          <span className="reason">{bill.reason}</span>
+                        </div>
+                      )}
+                    </div>
+                    {bill.recommendations?.paymentTiming && (
+                      <div className="bill-recommendations">
+                        <p>{bill.recommendations.paymentTiming}</p>
                       </div>
-                    </div>
-                    <div className="bill-recommendations">
-                      <p>{bill.recommendations?.paymentTiming}</p>
-                    </div>
+                    )}
                   </div>
                 ))}
               </div>
             </div>
           )
         ))}
+        
+        {Object.values(riskLevels).every(arr => arr.length === 0) && (
+          <div className="empty-state">
+            <div className="empty-icon">📋</div>
+            <h4>No Bills Found</h4>
+            <p>No unpaid bills to schedule. Add bills in the Bills page.</p>
+          </div>
+        )}
       </div>
     </div>
   );
