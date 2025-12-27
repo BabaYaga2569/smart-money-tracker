@@ -8,6 +8,7 @@ import { calculateProjectedBalance, calculateTotalProjectedBalance } from '../ut
 import { autoMigrateBills } from '../utils/FirebaseMigration';
 import { runAutoDetection } from '../utils/AutoBillDetection';
 import { matchTransactionToBill } from '../utils/BillPaymentMatcher';
+import { SettingsSchemaManager } from '../utils/SettingsSchemaManager';
 import './Spendability.css';
 import { useAuth } from '../contexts/AuthContext';
 // Force rebuild 2025-11-12 v2 - Fix spendability issues
@@ -107,6 +108,25 @@ const SpendabilityV2 = () => {
       }
 
       let settingsData = settingsDocSnap.data();
+      
+      // ✅ Validate and migrate if needed
+      if (!settingsData.schemaVersion || settingsData.schemaVersion < SettingsSchemaManager.CURRENT_SCHEMA_VERSION) {
+        console.log('🔄 Spendability: Migrating settings from v', settingsData.schemaVersion || 1, 'to v', SettingsSchemaManager.CURRENT_SCHEMA_VERSION);
+        settingsData = SettingsSchemaManager.migrateSettings(settingsData);
+        
+        // Save migrated version back to Firebase
+        await setDoc(settingsDocRef, settingsData);
+        console.log('✅ Spendability: Migrated settings saved');
+      }
+      
+      const validation = SettingsSchemaManager.validateSettings(settingsData);
+      if (!validation.valid) {
+        console.error('⚠️ Settings validation failed in Spendability:', validation.errors);
+        // Use safe defaults for missing fields
+        settingsData = SettingsSchemaManager.ensureRequiredFields(settingsData);
+        console.log('✅ Spendability: Required fields ensured with defaults');
+      }
+      
       const payCycleData = payCycleDocSnap.exists() ? payCycleDocSnap.data() : null;
       // Auto-update payday if needed
 const wasUpdated = await autoUpdatePayday(settingsData);

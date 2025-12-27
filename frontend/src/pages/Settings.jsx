@@ -7,6 +7,7 @@ import { Link } from 'react-router-dom';
 import './Settings.css';
 import { useAuth } from '../contexts/AuthContext';
 import { ensureSettingsDocument } from '../utils/settingsUtils';
+import { SettingsSchemaManager } from '../utils/SettingsSchemaManager';
 
 
 const Settings = () => {
@@ -86,7 +87,28 @@ const Settings = () => {
       const settingsDocSnap = await getDoc(settingsDocRef);
 
       if (settingsDocSnap.exists()) {
-        const data = settingsDocSnap.data();
+        let data = settingsDocSnap.data();
+        
+        // ✅ Auto-migrate if old version
+        if (!data.schemaVersion || data.schemaVersion < SettingsSchemaManager.CURRENT_SCHEMA_VERSION) {
+          console.log('🔄 Migrating settings from v', data.schemaVersion || 1, 'to v', SettingsSchemaManager.CURRENT_SCHEMA_VERSION);
+          data = SettingsSchemaManager.migrateSettings(data);
+          
+          // Save migrated version back to Firebase
+          await setDoc(settingsDocRef, data);
+          console.log('✅ Migrated settings saved to Firebase');
+        }
+        
+        // ✅ Validate loaded settings
+        const validation = SettingsSchemaManager.validateSettings(data);
+        if (!validation.valid) {
+          console.error('⚠️ Settings validation errors:', validation.errors);
+          // Show warnings but don't block
+          setMessage('⚠️ Settings validation issues found. Please review your settings.');
+        }
+        if (validation.warnings.length > 0) {
+          console.warn('⚠️ Settings validation warnings:', validation.warnings);
+        }
         
         // Use optional chaining and provide safe defaults
         setPersonalInfo({
@@ -200,7 +222,7 @@ const Settings = () => {
 
       const settingsDocRef = doc(db, 'users', currentUser.uid, 'settings', 'personal');
       
-      // READ CURRENT DATA FIRST - THIS PRESERVES plaidAccounts AND ALL OTHER FIELDS
+      // ✅ READ CURRENT DATA FIRST to preserve everything (plaidAccounts, etc.)
       const currentDoc = await getDoc(settingsDocRef);
       const currentData = currentDoc.exists() ? currentDoc.data() : {};
 
@@ -213,9 +235,8 @@ const Settings = () => {
 
       console.log('🔵 Enhanced spouse schedule:', spouseSchedule);
 
-      // MERGE WITH EXISTING DATA
-      const settingsData = {
-        ...currentData,
+      // Prepare new settings data
+      const newSettingsData = {
         personalInfo,
         paySchedules: {
           ...paySchedules,
@@ -236,11 +257,31 @@ const Settings = () => {
         lastUpdated: new Date().toISOString()
       };
 
-      console.log('🔵 Settings data prepared:', settingsData);
+      // ✅ Safe merge with protection for critical fields
+      const settingsData = SettingsSchemaManager.mergeSafely(currentData, newSettingsData);
+      
+      // ✅ Add schema version
+      settingsData.schemaVersion = SettingsSchemaManager.CURRENT_SCHEMA_VERSION;
+      
+      // ✅ Validate before save
+      const validation = SettingsSchemaManager.validateSettings(settingsData);
+      if (!validation.valid) {
+        console.error('❌ Validation failed:', validation.errors);
+        setMessage(`Cannot save: ${validation.errors[0]}`);
+        setSaving(false);
+        return;
+      }
+      
+      if (validation.warnings.length > 0) {
+        console.warn('⚠️ Warnings:', validation.warnings);
+      }
 
+      console.log('🔵 Settings data prepared with schema v', SettingsSchemaManager.CURRENT_SCHEMA_VERSION);
+
+      // ✅ Save with guaranteed data integrity
       await setDoc(settingsDocRef, settingsData);
 
-      console.log('🔵 Settings saved to Firebase');
+      console.log('✅ Settings saved to Firebase with schema v', SettingsSchemaManager.CURRENT_SCHEMA_VERSION);
       console.log('🔵 Now calculating payday...');
 
       // Use override date if provided, otherwise calculate next payday
@@ -330,6 +371,36 @@ const Settings = () => {
         setMessage('❌ Failed to copy User ID. Try manually selecting and copying the ID.');
       });
     }
+  };
+
+  const handleHealthCheck = async () => {
+    const settingsDocRef = doc(db, 'users', currentUser.uid, 'settings', 'personal');
+    const snap = await getDoc(settingsDocRef);
+    const data = snap.data();
+    
+    const validation = SettingsSchemaManager.validateSettings(data);
+    
+    if (validation.valid) {
+      setMessage(`✅ All settings are valid! Schema v${data.schemaVersion || 'unknown'}`);
+    } else {
+      setMessage(`⚠️ Issues found:\n${validation.errors.join('\n')}`);
+    }
+  };
+
+  const handleRepairSettings = async () => {
+    const settingsDocRef = doc(db, 'users', currentUser.uid, 'settings', 'personal');
+    const snap = await getDoc(settingsDocRef);
+    let data = snap.data();
+    
+    // Force repair
+    data = SettingsSchemaManager.ensureRequiredFields(data);
+    data.schemaVersion = SettingsSchemaManager.CURRENT_SCHEMA_VERSION;
+    
+    await setDoc(settingsDocRef, data);
+    setMessage('✅ Settings repaired and validated!');
+    
+    // Reload settings to reflect repairs
+    await loadSettings();
   };
 
   if (loading) {
@@ -807,6 +878,33 @@ const Settings = () => {
                   <p>No bills added yet. Click "Add New Bill" to start.</p>
                 </div>
               )}
+            </div>
+          </div>
+        </div>
+
+        {/* NEW Tile: Settings Health Check */}
+        <div className="settings-tile">
+          <h3>🏥 Settings Health Check</h3>
+          <div className="tile-content">
+            <p style={{ fontSize: '14px', color: '#ccc', marginBottom: '15px' }}>
+              Verify your settings data integrity and repair if needed.
+            </p>
+            <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
+              <button 
+                onClick={handleHealthCheck}
+                className="btn btn-secondary"
+                style={{ flex: '1', minWidth: '150px' }}
+              >
+                🔍 Check Settings Health
+              </button>
+              
+              <button 
+                onClick={handleRepairSettings}
+                className="btn btn-primary"
+                style={{ flex: '1', minWidth: '150px' }}
+              >
+                🔧 Repair Settings
+              </button>
             </div>
           </div>
         </div>
