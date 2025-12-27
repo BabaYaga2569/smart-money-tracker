@@ -373,6 +373,36 @@ const Settings = () => {
     }
   };
 
+  const handleHealthCheck = async () => {
+    const settingsDocRef = doc(db, 'users', currentUser.uid, 'settings', 'personal');
+    const snap = await getDoc(settingsDocRef);
+    const data = snap.data();
+    
+    const validation = SettingsSchemaManager.validateSettings(data);
+    
+    if (validation.valid) {
+      setMessage(`✅ All settings are valid! Schema v${data.schemaVersion || 'unknown'}`);
+    } else {
+      setMessage(`⚠️ Issues found:\n${validation.errors.join('\n')}`);
+    }
+  };
+
+  const handleRepairSettings = async () => {
+    const settingsDocRef = doc(db, 'users', currentUser.uid, 'settings', 'personal');
+    const snap = await getDoc(settingsDocRef);
+    let data = snap.data();
+    
+    // Force repair
+    data = SettingsSchemaManager.ensureRequiredFields(data);
+    data.schemaVersion = SettingsSchemaManager.CURRENT_SCHEMA_VERSION;
+    
+    await setDoc(settingsDocRef, data);
+    setMessage('✅ Settings repaired and validated!');
+    
+    // Reload settings to reflect repairs
+    await loadSettings();
+  };
+
   if (loading) {
     return (
       <div className="settings-container">
@@ -861,19 +891,7 @@ const Settings = () => {
             </p>
             <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
               <button 
-                onClick={async () => {
-                  const settingsDocRef = doc(db, 'users', currentUser.uid, 'settings', 'personal');
-                  const snap = await getDoc(settingsDocRef);
-                  const data = snap.data();
-                  
-                  const validation = SettingsSchemaManager.validateSettings(data);
-                  
-                  if (validation.valid) {
-                    setMessage(`✅ All settings are valid! Schema v${data.schemaVersion || 'unknown'}`);
-                  } else {
-                    setMessage(`⚠️ Issues found:\n${validation.errors.join('\n')}`);
-                  }
-                }}
+                onClick={handleHealthCheck}
                 className="btn btn-secondary"
                 style={{ flex: '1', minWidth: '150px' }}
               >
@@ -881,21 +899,7 @@ const Settings = () => {
               </button>
               
               <button 
-                onClick={async () => {
-                  const settingsDocRef = doc(db, 'users', currentUser.uid, 'settings', 'personal');
-                  const snap = await getDoc(settingsDocRef);
-                  let data = snap.data();
-                  
-                  // Force repair
-                  data = SettingsSchemaManager.ensureRequiredFields(data);
-                  data.schemaVersion = SettingsSchemaManager.CURRENT_SCHEMA_VERSION;
-                  
-                  await setDoc(settingsDocRef, data);
-                  setMessage('✅ Settings repaired and validated!');
-                  
-                  // Reload settings to reflect repairs
-                  setTimeout(() => loadSettings(), 500);
-                }}
+                onClick={handleRepairSettings}
                 className="btn btn-primary"
                 style={{ flex: '1', minWidth: '150px' }}
               >
