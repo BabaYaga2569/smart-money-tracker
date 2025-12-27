@@ -100,7 +100,7 @@ const runPayCycleCalculatorTests = () => {
     // Test 5: Should choose spouse payday when it comes before yours (Issue #3)
     test('Chooses spouse payday (Dec 30) over yours (Jan 9) when spouse comes first', () => {
         const yoursSchedule = {
-            lastPaydate: '2025-11-28',  // Last pay was Nov 28, next is Jan 9 (11/28 + 14 + 14 + 14)
+            lastPaydate: '2025-11-28',  // Last pay was Nov 28, adds 14 days until future date found
             amount: 1883.81
         };
         
