@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { doc, getDoc, updateDoc, collection, addDoc, getDocs, serverTimestamp, arrayUnion, setDoc, deleteDoc, query, where } from 'firebase/firestore';
+import { doc, getDoc, updateDoc, collection, addDoc, getDocs, serverTimestamp, arrayUnion, setDoc, deleteDoc, query, where, orderBy, limit } from 'firebase/firestore';
 import { db } from '../firebase';
 import { PayCycleCalculator } from '../utils/PayCycleCalculator';
 import { RecurringBillManager } from '../utils/RecurringBillManager';
@@ -95,13 +95,26 @@ const SpendabilityV2 = () => {
       setError(null);
 
       // Auto-migrate bills to unified structure (runs once per user)
-      await autoMigrateBills(currentUser.uid);
+      // ✅ OPTIMIZATION: Cache migration runs in sessionStorage to prevent running on every page load
+      const migrationKey = `billsMigrated_${currentUser.uid}`;
+      if (!sessionStorage.getItem(migrationKey)) {
+        await autoMigrateBills(currentUser.uid);
+        sessionStorage.setItem(migrationKey, 'true');
+      }
 
+      // ✅ OPTIMIZATION: Load settings, payCycle, and backend API in parallel
       const settingsDocRef = doc(db, 'users', currentUser.uid, 'settings', 'personal');
-      const settingsDocSnap = await getDoc(settingsDocRef);
-      
       const payCycleDocRef = doc(db, 'users', currentUser.uid, 'financial', 'payCycle');
-      const payCycleDocSnap = await getDoc(payCycleDocRef);
+      const apiUrl = import.meta.env.VITE_API_URL || 'https://smart-money-tracker-09ks.onrender.com';
+      
+      const [settingsDocSnap, payCycleDocSnap, accountsResponse] = await Promise.all([
+        getDoc(settingsDocRef),
+        getDoc(payCycleDocRef),
+        fetch(`${apiUrl}/api/accounts?userId=${currentUser.uid}&_t=${Date.now()}`).catch(err => {
+          console.error('[Spendability] Backend API error:', err);
+          return null;
+        })
+      ]);
 
       if (!settingsDocSnap.exists()) {
         throw new Error('No financial data found. Please set up your Settings first.');
@@ -138,44 +151,54 @@ if (wasUpdated) {
   // ✅ FIX: Load FRESH balances from backend API like Accounts page does
   let allPlaidAccounts = [];
   try {
-    const apiUrl = import.meta.env.VITE_API_URL || 'https://smart-money-tracker-09ks.onrender.com';
-    console.log('[Spendability] Fetching fresh balances from backend API...');
-    const response = await fetch(`${apiUrl}/api/accounts?userId=${currentUser.uid}&_t=${Date.now()}`);
-    const data = await response.json();
+    if (import.meta.env.DEV) {
+      console.log('[Spendability] Fetching fresh balances from backend API...');
+    }
+    
+    if (accountsResponse && accountsResponse.ok) {
+      const data = await accountsResponse.json();
 
-    if (data.success && data.accounts && data.accounts.length > 0) {
-      // Format backend accounts using the same logic as Accounts page
-      allPlaidAccounts = data.accounts.map(account => {
-        const { currentBalance, availableBalance, liveBalance, pendingAdjustment } = extractBalances(account);
+      if (data.success && data.accounts && data.accounts.length > 0) {
+        // Format backend accounts using the same logic as Accounts page
+        allPlaidAccounts = data.accounts.map(account => {
+          const { currentBalance, availableBalance, liveBalance, pendingAdjustment } = extractBalances(account);
 
-        return {
-          account_id: account.account_id ?? '',
-          name: account.name ?? 'Unknown Account',
-          official_name: account.official_name ?? account.name ?? 'Unknown Account',
-          type: account.subtype || account.type || 'checking',
-          balance: liveBalance.toFixed(2), // ✅ main displayed balance (uses available_balance)
-          available: availableBalance.toFixed(2),
-          current: currentBalance.toFixed(2),
-          pending_adjustment: pendingAdjustment.toFixed(2),
-          mask: account.mask ?? '',
-          isPlaid: true,
-          item_id: account.item_id ?? '',
-          institution_name: account.institution_name ?? data?.institution_name ?? '',
-          institution_id: account.institution_id ?? '',
-          // Store original type and subtype for filtering
-          originalType: account.type,
-          originalSubtype: account.subtype,
-          subtype: account.subtype // Keep subtype for filtering logic
-        };
-      });
-      console.log('[Spendability] ✅ Loaded', allPlaidAccounts.length, 'fresh accounts from backend API');
+          return {
+            account_id: account.account_id ?? '',
+            name: account.name ?? 'Unknown Account',
+            official_name: account.official_name ?? account.name ?? 'Unknown Account',
+            type: account.subtype || account.type || 'checking',
+            balance: liveBalance.toFixed(2), // ✅ main displayed balance (uses available_balance)
+            available: availableBalance.toFixed(2),
+            current: currentBalance.toFixed(2),
+            pending_adjustment: pendingAdjustment.toFixed(2),
+            mask: account.mask ?? '',
+            isPlaid: true,
+            item_id: account.item_id ?? '',
+            institution_name: account.institution_name ?? data?.institution_name ?? '',
+            institution_id: account.institution_id ?? '',
+            // Store original type and subtype for filtering
+            originalType: account.type,
+            originalSubtype: account.subtype,
+            subtype: account.subtype // Keep subtype for filtering logic
+          };
+        });
+        if (import.meta.env.DEV) {
+          console.log('[Spendability] ✅ Loaded', allPlaidAccounts.length, 'fresh accounts from backend API');
+        }
+      } else {
+        console.warn('[Spendability] ⚠️ Backend returned no accounts, falling back to Firebase cache');
+        allPlaidAccounts = settingsData.plaidAccounts || [];
+      }
     } else {
-      console.warn('[Spendability] ⚠️ Backend returned no accounts, falling back to Firebase cache');
+      console.warn('[Spendability] ⚠️ Backend API unavailable, falling back to Firebase cache');
       allPlaidAccounts = settingsData.plaidAccounts || [];
     }
   } catch (error) {
     console.error('[Spendability] ❌ Error loading from backend API:', error);
-    console.log('[Spendability] Falling back to Firebase cache');
+    if (import.meta.env.DEV) {
+      console.log('[Spendability] Falling back to Firebase cache');
+    }
     allPlaidAccounts = settingsData.plaidAccounts || [];
   }
 
@@ -199,20 +222,33 @@ if (wasUpdated) {
         return true;
       });
 
-      console.log(`[Spendability] Filtered ${allPlaidAccounts.length} accounts to ${depositoryAccounts.length} depository accounts (excluded credit cards)`);
+      if (import.meta.env.DEV) {
+        console.log(`[Spendability] Filtered ${allPlaidAccounts.length} accounts to ${depositoryAccounts.length} depository accounts (excluded credit cards)`);
+      }
 
       // Load transactions to calculate projected balances
+      // ✅ OPTIMIZATION: Load only last 30 days of transactions instead of ALL transactions
       const transactionsRef = collection(db, 'users', currentUser.uid, 'transactions');
-      const transactionsSnapshot = await getDocs(transactionsRef);
+      const thirtyDaysAgo = new Date();
+      thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+      const transactionsQuery = query(
+        transactionsRef, 
+        where('date', '>=', thirtyDaysAgo.toISOString().split('T')[0]),
+        orderBy('date', 'desc'),
+        limit(100)
+      );
+      const transactionsSnapshot = await getDocs(transactionsQuery);
       const transactions = transactionsSnapshot.docs.map(doc => ({
         id: doc.id,
         ...doc.data()
       }));
 
-      console.log('Spendability: Loaded transactions', {
-        count: transactions.length,
-        pendingCount: transactions.filter(t => t.pending).length
-      });
+      if (import.meta.env.DEV) {
+        console.log('Spendability: Loaded transactions', {
+          count: transactions.length,
+          pendingCount: transactions.filter(t => t.pending).length
+        });
+      }
 
       // For Plaid accounts, available_balance is ALREADY the correct spendable amount
       // The bank has already subtracted pending transactions from current balance
@@ -222,42 +258,46 @@ if (wasUpdated) {
         return sum + availableBalance;
       }, 0);
 
-      console.log('Spendability: Balance calculation', {
-        accountCount: depositoryAccounts.length,
-        totalAvailable: totalAvailable,
-        accounts: depositoryAccounts.map(a => ({
-          name: a.name,
-          available: parseFloat(a.available || a.balance),
-          current: parseFloat(a.current || a.balance)
-        }))
-      });
+      if (import.meta.env.DEV) {
+        console.log('Spendability: Balance calculation', {
+          accountCount: depositoryAccounts.length,
+          totalAvailable: totalAvailable,
+          accounts: depositoryAccounts.map(a => ({
+            name: a.name,
+            available: parseFloat(a.available || a.balance),
+            current: parseFloat(a.current || a.balance)
+          }))
+        });
+      }
 
       // 🔍 COMPREHENSIVE DEBUG LOGGING
-      console.log('🔍 SPENDABILITY DEBUG:', {
-        timestamp: new Date().toISOString(),
-        allAccountsCount: allPlaidAccounts.length,
-        depositoryAccountsCount: depositoryAccounts.length,
-        excludedAccounts: allPlaidAccounts.filter(a => 
-          !depositoryAccounts.some(d => d.account_id === a.account_id)
-        ).map(a => ({
-          name: a.name,
-          type: a.type,
-          subtype: a.subtype,
-          balance: a.balance
-        })),
-        depositoryAccounts: depositoryAccounts.map(a => ({
-          name: a.name,
-          subtype: a.subtype,
-          type: a.type,
-          account_id: a.account_id,
-          liveBalance: a.balance,
-          projectedBalance: calculateProjectedBalance(a.account_id, parseFloat(a.balance) || 0, transactions)
-        })),
-        transactionsCount: transactions.length,
-        pendingTransactionsCount: transactions.filter(t => t.pending).length,
-        totalLiveBalance: depositoryAccounts.reduce((sum, a) => sum + parseFloat(a.balance || 0), 0),
-        totalProjectedBalance: totalAvailable
-      }); 
+      if (import.meta.env.DEV) {
+        console.log('🔍 SPENDABILITY DEBUG:', {
+          timestamp: new Date().toISOString(),
+          allAccountsCount: allPlaidAccounts.length,
+          depositoryAccountsCount: depositoryAccounts.length,
+          excludedAccounts: allPlaidAccounts.filter(a => 
+            !depositoryAccounts.some(d => d.account_id === a.account_id)
+          ).map(a => ({
+            name: a.name,
+            type: a.type,
+            subtype: a.subtype,
+            balance: a.balance
+          })),
+          depositoryAccounts: depositoryAccounts.map(a => ({
+            name: a.name,
+            subtype: a.subtype,
+            type: a.type,
+            account_id: a.account_id,
+            liveBalance: a.balance,
+            projectedBalance: calculateProjectedBalance(a.account_id, parseFloat(a.balance) || 0, transactions)
+          })),
+          transactionsCount: transactions.length,
+          pendingTransactionsCount: transactions.filter(t => t.pending).length,
+          totalLiveBalance: depositoryAccounts.reduce((sum, a) => sum + parseFloat(a.balance || 0), 0),
+          totalProjectedBalance: totalAvailable
+        });
+      } 
      // Get pay cycle data
 let nextPayday, daysUntilPayday;
 
@@ -409,52 +449,27 @@ console.log('🔍 PAYDAY CALCULATION DEBUG:', {
       }
 
       // Run auto-detection for bill payments
+      // ✅ OPTIMIZATION: Only run auto-detection if transactions have changed since last run
       try {
-        const autoDetectionResult = await runAutoDetection(currentUser.uid, transactions, allBills);
-        
-        if (autoDetectionResult.success && autoDetectionResult.matchCount > 0) {
-          // Show notification to user
-          const message = `✅ Auto-detected ${autoDetectionResult.paidBills.length} paid bill(s)!`;
-          setNotification({ message, type: 'success' });
-          setTimeout(() => setNotification({ message: '', type: '' }), 4000);
+        const lastAutoDetection = sessionStorage.getItem(`lastAutoDetect_${currentUser.uid}`);
+        const transactionHash = transactions.map(t => t.id).join(',');
+
+        if (lastAutoDetection !== transactionHash) {
+          const autoDetectionResult = await runAutoDetection(currentUser.uid, transactions, allBills);
           
-          // Reload bills after auto-detection marked some as paid
-          const refreshedBillsQuery = query(
-            collection(db, 'users', currentUser.uid, 'financialEvents'),
-            where('type', '==', 'bill')
-          );
-          const refreshedBillsSnapshot = await getDocs(refreshedBillsQuery);
-          allBills = refreshedBillsSnapshot.docs
-            .map(doc => {
-              const data = doc.data();
-              return {
-                id: doc.id,
-                name: data.name,
-                amount: data.amount,
-                dueDate: data.dueDate,
-                nextDueDate: data.dueDate,
-                category: data.category,
-                recurrence: data.recurrence || 'monthly',
-                isPaid: data.isPaid,
-                status: data.status,
-                isSubscription: data.isSubscription || false,
-                subscriptionId: data.subscriptionId,
-                paymentHistory: data.paymentHistory || [],
-                linkedTransactionIds: data.linkedTransactionIds || [],
-                merchantNames: data.merchantNames || [],
-                originalDueDate: data.originalDueDate
-              };
-            })
-            .filter(bill => {
-              // Only exclude if EXPLICITLY paid or skipped
-              if (bill.status === 'paid') return false;
-              if (bill.status === 'skipped') return false;
-              if (bill.isPaid === true) return false;
-              return true;
-            });
-          console.log('Spendability: Reloaded bills after auto-detection', {
-            count: allBills.length
-          });
+          if (autoDetectionResult.success && autoDetectionResult.matchCount > 0) {
+            // Show notification to user
+            const message = `✅ Auto-detected ${autoDetectionResult.paidBills.length} paid bill(s)!`;
+            setNotification({ message, type: 'success' });
+            setTimeout(() => setNotification({ message: '', type: '' }), 4000);
+          }
+          
+          // Store transaction hash to prevent redundant auto-detection
+          sessionStorage.setItem(`lastAutoDetect_${currentUser.uid}`, transactionHash);
+        } else {
+          if (import.meta.env.DEV) {
+            console.log('[Spendability] Skipping auto-detection - transactions unchanged');
+          }
         }
       } catch (error) {
         console.error('Spendability: Error running auto-detection:', error);
@@ -557,7 +572,7 @@ console.log('🔍 PAYDAY CALCULATION DEBUG:', {
       
       // Log filtering results for transparency
       const paidBillsCount = billsDueBeforePayday.length - unpaidBillsBeforePayday.length;
-      if (paidBillsCount > 0) {
+      if (paidBillsCount > 0 && import.meta.env.DEV) {
         console.log(`💰 [Spendability] Filtered out ${paidBillsCount} paid bill(s) from display`);
         console.log(`   Total Bills (All): $${billsDueBeforePayday.reduce((sum, b) => sum + Number((b.amount ?? b.cost) || 0), 0).toFixed(2)}`);
         console.log(`   Total Bills (Unpaid Only): $${totalUnpaidBills.toFixed(2)}`);

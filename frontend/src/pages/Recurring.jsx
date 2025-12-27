@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import {
   doc,
   getDoc,
@@ -174,11 +174,79 @@ const Recurring = () => {
     }
   };
 
+  // ✅ OPTIMIZATION: Cache Plaid API responses for 5 minutes
+  const loadAccountsFromCache = async () => {
+    const cacheKey = `plaidAccounts_${currentUser.uid}`;
+    const cached = sessionStorage.getItem(cacheKey);
+    
+    if (cached) {
+      const { data, timestamp } = JSON.parse(cached);
+      if (Date.now() - timestamp < 5 * 60 * 1000) { // 5 min cache
+        if (import.meta.env.DEV) {
+          console.log('[Cache] Using cached Plaid accounts');
+        }
+        return data;
+      }
+    }
+    
+    // Fetch fresh data
+    const apiUrl = import.meta.env.VITE_API_URL || 'https://smart-money-tracker-09ks.onrender.com';
+    const response = await fetch(`${apiUrl}/api/accounts?userId=${currentUser.uid}&_t=${Date.now()}`);
+    
+    if (!response.ok) {
+      throw new Error('Failed to fetch accounts from API');
+    }
+    
+    const data = await response.json();
+    
+    // Cache the response
+    sessionStorage.setItem(cacheKey, JSON.stringify({
+      data,
+      timestamp: Date.now()
+    }));
+    
+    return data;
+  };
+
   const loadAccounts = async () => {
     try {
+      // ✅ OPTIMIZATION: Try loading from cache first
+      try {
+        const cachedData = await loadAccountsFromCache();
+        
+        if (cachedData && cachedData.success && cachedData.accounts && cachedData.accounts.length > 0) {
+          const accountsMap = {};
+          cachedData.accounts.forEach((account) => {
+            const accountId = account.account_id || account.id || account._id;
+            let balance = 0;
+            if (account.balances) {
+              balance = account.balances.current || account.balances.available || 0;
+            } else if (account.current_balance !== undefined) {
+              balance = account.current_balance;
+            } else if (account.balance !== undefined) {
+              balance = account.balance;
+            }
+
+            accountsMap[accountId] = {
+              name: account.name || account.official_name || 'Unknown Account',
+              type: account.subtype || account.type || 'checking',
+              balance: balance.toString(),
+              mask: account.mask || '',
+              institution: account.institution_name || '',
+            };
+          });
+          setAccounts(accountsMap);
+          return;
+        }
+      } catch (cacheError) {
+        if (import.meta.env.DEV) {
+          console.log('[Cache] Cache miss or error, falling back to Firebase:', cacheError.message);
+        }
+      }
+
       const token = localStorage.getItem('token');
 
-      // Try to load from Plaid API first
+      // Try to load from Plaid API first (fallback if cache failed)
       if (token) {
         try {
           const response = await fetch(
@@ -196,10 +264,12 @@ const Recurring = () => {
 
             // Check if API returned success flag
             if (data.success === false) {
-              console.log(
-                'Plaid API returned no accounts:',
-                data.message || 'No accounts available'
-              );
+              if (import.meta.env.DEV) {
+                console.log(
+                  'Plaid API returned no accounts:',
+                  data.message || 'No accounts available'
+                );
+              }
               // Fall through to Firebase fallback
             } else {
               const accountsList = data.accounts || data;
@@ -230,11 +300,15 @@ const Recurring = () => {
               }
             }
           } else if (response.status === 404) {
-            console.log('Accounts endpoint not available, using Firebase fallback');
+            if (import.meta.env.DEV) {
+              console.log('Accounts endpoint not available, using Firebase fallback');
+            }
           }
         } catch (apiError) {
           // Network errors are expected when API is not available
-          console.log('Plaid API not available, trying Firebase...', apiError.message || '');
+          if (import.meta.env.DEV) {
+            console.log('Plaid API not available, trying Firebase...', apiError.message || '');
+          }
         }
       }
 
@@ -446,7 +520,8 @@ const Recurring = () => {
   const metrics = calculateMetrics();
 
   // Filter items based on search and filters, then apply smart sorting
-  const filteredItems = (() => {
+  // ✅ OPTIMIZATION: Use useMemo to prevent recalculation on every render
+  const filteredItems = useMemo(() => {
     const filtered = processedItems.filter((item) => {
       const matchesSearch = item.name.toLowerCase().includes(searchTerm.toLowerCase());
       const matchesType = filterType === 'all' || item.type === filterType;
@@ -457,7 +532,7 @@ const Recurring = () => {
 
     // Apply smart sorting with urgency information
     return BillSortingManager.processBillsWithUrgency(filtered, sortOrder);
-  })();
+  }, [processedItems, searchTerm, filterType, filterCategory, filterStatus, sortOrder]);
 
   const handleAddItem = () => {
     setEditingItem(null);
