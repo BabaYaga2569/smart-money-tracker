@@ -289,11 +289,15 @@ const Accounts = () => {
   // Local calculateProjectedBalance with comprehensive logging
   // This overrides the imported function to provide debugging capabilities
   const calculateProjectedBalance = (accountId, liveBalance, transactionsList, currentAccount) => {
-    console.log(`[ProjectedBalance] Calculating for account: ${accountId}`);
-    console.log(`[ProjectedBalance] Live balance: ${liveBalance}`);
+    if (import.meta.env.DEV) {
+      console.log(`[ProjectedBalance] Calculating for account: ${accountId}`);
+      console.log(`[ProjectedBalance] Live balance: ${liveBalance}`);
+    }
     
     if (!transactionsList || transactionsList.length === 0) {
-      console.log(`[ProjectedBalance] No transactions, returning live balance`);
+      if (import.meta.env.DEV) {
+        console.log(`[ProjectedBalance] No transactions, returning live balance`);
+      }
       return liveBalance;
     }
 
@@ -311,12 +315,14 @@ const Accounts = () => {
       // If transaction is marked pending but is older than 2 days, it's likely stale data
       // (Bank of America typically clears transactions within 1-2 business days)
       if (daysSinceTransaction > 2) {
-        console.warn(`⚠️ [ProjectedBalance] Stale pending transaction detected (${daysSinceTransaction.toFixed(1)} days old):`, {
-          merchant: tx.merchant_name || tx.name,
-          date: tx.date,
-          amount: tx.amount,
-          account_id: tx.account_id || tx.account
-        });
+        if (import.meta.env.DEV) {
+          console.warn(`⚠️ [ProjectedBalance] Stale pending transaction detected (${daysSinceTransaction.toFixed(1)} days old):`, {
+            merchant: tx.merchant_name || tx.name,
+            date: tx.date,
+            amount: tx.amount,
+            account_id: tx.account_id || tx.account
+          });
+        }
         return false; // Skip this stale transaction
       }
       
@@ -324,11 +330,13 @@ const Accounts = () => {
       
       // Strategy 1: Exact account_id match (fastest)
       if (txAccountId === accountId) {
-        console.log(`[ProjectedBalance] ✅ Matched by account_id:`, {
-          merchant: tx.merchant_name || tx.name,
-          strategy: 'exact_id',
-          amount: tx.amount
-        });
+        if (import.meta.env.DEV) {
+          console.log(`[ProjectedBalance] ✅ Matched by account_id:`, {
+            merchant: tx.merchant_name || tx.name,
+            strategy: 'exact_id',
+            amount: tx.amount
+          });
+        }
         return true;
       }
       
@@ -342,12 +350,14 @@ const Accounts = () => {
                                 currentAccount.institution_name === tx.institution_name;
         
         if (masksMatch && institutionMatch) {
-          console.log(`[ProjectedBalance] ✅ Matched by mask + institution:`, {
-            merchant: tx.merchant_name || tx.name,
-            strategy: 'mask_match',
-            mask: currentAccount.mask,
-            amount: tx.amount
-          });
+          if (import.meta.env.DEV) {
+            console.log(`[ProjectedBalance] ✅ Matched by mask + institution:`, {
+              merchant: tx.merchant_name || tx.name,
+              strategy: 'mask_match',
+              mask: currentAccount.mask,
+              amount: tx.amount
+            });
+          }
           return true;
         }
       }
@@ -363,38 +373,44 @@ const Accounts = () => {
         
         // Only use institution matching if it's the ONLY account from this bank
         if (institutionMatch && accountsFromBank.length === 1) {
-          console.log(`[ProjectedBalance] ✅ Matched by institution (single account):`, {
-            merchant: tx.merchant_name || tx.name,
-            strategy: 'institution_only',
-            institution: currentAccount.institution_name,
-            amount: tx.amount
-          });
+          if (import.meta.env.DEV) {
+            console.log(`[ProjectedBalance] ✅ Matched by institution (single account):`, {
+              merchant: tx.merchant_name || tx.name,
+              strategy: 'institution_only',
+              institution: currentAccount.institution_name,
+              amount: tx.amount
+            });
+          }
           return true;
         }
       }
       
       // No match found
-      console.log(`[ProjectedBalance] ❌ No match for transaction:`, {
-        merchant: tx.merchant_name || tx.name,
-        tx_account_id: txAccountId,
-        tx_mask: tx.mask,
-        tx_institution: tx.institution_name,
-        looking_for_id: accountId,
-        account_mask: currentAccount?.mask,
-        account_institution: currentAccount?.institution_name
-      });
+      if (import.meta.env.DEV) {
+        console.log(`[ProjectedBalance] ❌ No match for transaction:`, {
+          merchant: tx.merchant_name || tx.name,
+          tx_account_id: txAccountId,
+          tx_mask: tx.mask,
+          tx_institution: tx.institution_name,
+          looking_for_id: accountId,
+          account_mask: currentAccount?.mask,
+          account_institution: currentAccount?.institution_name
+        });
+      }
       
       return false;
     });
 
-    console.log(`[ProjectedBalance] Found ${pendingTxs.length} pending transactions for ${accountId}`);
-    
-    // Log details of each pending transaction with age
-    pendingTxs.forEach(tx => {
-      const txDate = new Date(tx.date);
-      const daysSince = (new Date() - txDate) / (1000 * 60 * 60 * 24);
-      console.log(`[ProjectedBalance] Pending (${daysSince.toFixed(1)} days): ${tx.merchant_name || tx.name} ${tx.amount}`);
-    });
+    if (import.meta.env.DEV) {
+      console.log(`[ProjectedBalance] Found ${pendingTxs.length} pending transactions for ${accountId}`);
+      
+      // Log details of each pending transaction with age
+      pendingTxs.forEach(tx => {
+        const txDate = new Date(tx.date);
+        const daysSince = (new Date() - txDate) / (1000 * 60 * 60 * 24);
+        console.log(`[ProjectedBalance] Pending (${daysSince.toFixed(1)} days): ${tx.merchant_name || tx.name} ${tx.amount}`);
+      });
+    }
 
     if (pendingTxs.length === 0) {
       return liveBalance;
@@ -407,7 +423,9 @@ const Accounts = () => {
     }, 0);
 
     const projected = liveBalance - pendingTotal;
-    console.log(`[ProjectedBalance] Live: ${liveBalance}, Pending: -${pendingTotal}, Projected: ${projected}`);
+    if (import.meta.env.DEV) {
+      console.log(`[ProjectedBalance] Live: ${liveBalance}, Pending: -${pendingTotal}, Projected: ${projected}`);
+    }
     
     return projected;
   };
@@ -529,14 +547,16 @@ const Accounts = () => {
   };
 
   const loadAccountsAndTransactions = async () => {
-    // Real-time listener handles transactions, just load accounts
-    await loadAccounts();
-    
-    // Check connection health after accounts are loaded
+    // ✅ OPTIMIZATION: Load accounts and health check in parallel
     if (currentUser) {
-      checkConnectionHealth().catch(err => {
-        console.error('Health check failed:', err);
-      });
+      await Promise.all([
+        loadAccounts(),
+        checkConnectionHealth().catch(err => {
+          console.error('Health check failed:', err);
+        })
+      ]);
+    } else {
+      await loadAccounts();
     }
   };
 
