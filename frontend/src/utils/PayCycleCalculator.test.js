@@ -5,6 +5,86 @@ import { PayCycleCalculator } from './PayCycleCalculator.js';
 const runPayCycleCalculatorTests = () => {
     console.log('🧪 Testing PayCycleCalculator...\n');
 
+    // Test adjustForWeekend: Weekday (Tuesday) - no adjustment
+    test('adjustForWeekend: Tuesday (Dec 30, 2025) should NOT be adjusted', () => {
+        const tuesday = new Date(2025, 11, 30); // Dec 30, 2025 (Tuesday)
+        const result = PayCycleCalculator.adjustForWeekend(tuesday);
+        
+        console.log('Test adjustForWeekend (Tuesday) Result:', result.toISOString().split('T')[0]);
+        
+        // Should return the same date object (no adjustment)
+        assert(result === tuesday, 'Expected same date object for weekday');
+        assert(result.getDate() === 30, `Expected date 30, got ${result.getDate()}`);
+        assert(result.getMonth() === 11, `Expected month 11 (Dec), got ${result.getMonth()}`);
+        assert(result.getFullYear() === 2025, `Expected year 2025, got ${result.getFullYear()}`);
+        
+        console.log('✅ Test adjustForWeekend (Tuesday) passed: No adjustment for weekday\n');
+    });
+
+    // Test adjustForWeekend: Saturday - adjust to Friday
+    test('adjustForWeekend: Saturday (Dec 27, 2025) should adjust to Friday (Dec 26)', () => {
+        const saturday = new Date(2025, 11, 27); // Dec 27, 2025 (Saturday)
+        const result = PayCycleCalculator.adjustForWeekend(saturday);
+        
+        console.log('Test adjustForWeekend (Saturday) Result:', result.toISOString().split('T')[0]);
+        
+        // Should return a new date object adjusted to Friday
+        assert(result !== saturday, 'Expected different date object for weekend');
+        assert(result.getDate() === 26, `Expected date 26 (Friday), got ${result.getDate()}`);
+        assert(result.getMonth() === 11, `Expected month 11 (Dec), got ${result.getMonth()}`);
+        assert(result.getFullYear() === 2025, `Expected year 2025, got ${result.getFullYear()}`);
+        
+        console.log('✅ Test adjustForWeekend (Saturday) passed: Adjusted to Friday\n');
+    });
+
+    // Test adjustForWeekend: Sunday - adjust to Friday
+    test('adjustForWeekend: Sunday (Dec 28, 2025) should adjust to Friday (Dec 26)', () => {
+        const sunday = new Date(2025, 11, 28); // Dec 28, 2025 (Sunday)
+        const result = PayCycleCalculator.adjustForWeekend(sunday);
+        
+        console.log('Test adjustForWeekend (Sunday) Result:', result.toISOString().split('T')[0]);
+        
+        // Should return a new date object adjusted to Friday
+        assert(result !== sunday, 'Expected different date object for weekend');
+        assert(result.getDate() === 26, `Expected date 26 (Friday), got ${result.getDate()}`);
+        assert(result.getMonth() === 11, `Expected month 11 (Dec), got ${result.getMonth()}`);
+        assert(result.getFullYear() === 2025, `Expected year 2025, got ${result.getFullYear()}`);
+        
+        console.log('✅ Test adjustForWeekend (Sunday) passed: Adjusted to Friday\n');
+    });
+
+    // Test adjustForWeekend: Monday - no adjustment
+    test('adjustForWeekend: Monday (Dec 29, 2025) should NOT be adjusted', () => {
+        const monday = new Date(2025, 11, 29); // Dec 29, 2025 (Monday)
+        const result = PayCycleCalculator.adjustForWeekend(monday);
+        
+        console.log('Test adjustForWeekend (Monday) Result:', result.toISOString().split('T')[0]);
+        
+        // Should return the same date object (no adjustment)
+        assert(result === monday, 'Expected same date object for weekday');
+        assert(result.getDate() === 29, `Expected date 29, got ${result.getDate()}`);
+        assert(result.getMonth() === 11, `Expected month 11 (Dec), got ${result.getMonth()}`);
+        assert(result.getFullYear() === 2025, `Expected year 2025, got ${result.getFullYear()}`);
+        
+        console.log('✅ Test adjustForWeekend (Monday) passed: No adjustment for weekday\n');
+    });
+
+    // Test adjustForWeekend: Friday - no adjustment
+    test('adjustForWeekend: Friday (Jan 2, 2026) should NOT be adjusted', () => {
+        const friday = new Date(2026, 0, 2); // Jan 2, 2026 (Friday)
+        const result = PayCycleCalculator.adjustForWeekend(friday);
+        
+        console.log('Test adjustForWeekend (Friday) Result:', result.toISOString().split('T')[0]);
+        
+        // Should return the same date object (no adjustment)
+        assert(result === friday, 'Expected same date object for weekday');
+        assert(result.getDate() === 2, `Expected date 2, got ${result.getDate()}`);
+        assert(result.getMonth() === 0, `Expected month 0 (Jan), got ${result.getMonth()}`);
+        assert(result.getFullYear() === 2026, `Expected year 2026, got ${result.getFullYear()}`);
+        
+        console.log('✅ Test adjustForWeekend (Friday) passed: No adjustment for weekday\n');
+    });
+
     // Test 1: Should return whichever payday comes first when both schedules have amounts
     test('Returns earliest payday when both schedules have amounts', () => {
         const yoursSchedule = {
