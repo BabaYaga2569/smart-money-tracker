@@ -198,18 +198,29 @@ export class PayCycleCalculator {
     /**
      * Adjust payday to Friday if it falls on weekend
      * @param {Date} date - Original payday
-     * @returns {Date} Adjusted payday
+     * @returns {Date} Adjusted payday (only if weekend)
      */
     static adjustForWeekend(date) {
         const dayOfWeek = date.getDay();
-        const adjustedDate = new Date(date);
         
-        if (dayOfWeek === 0) { // Sunday
-            adjustedDate.setDate(date.getDate() - 2); // Move to Friday
-        } else if (dayOfWeek === 6) { // Saturday
-            adjustedDate.setDate(date.getDate() - 1); // Move to Friday
+        // Sunday - move to Friday (subtract 2 days)
+        if (dayOfWeek === 0) {
+            const adjustedDate = new Date(date);
+            adjustedDate.setDate(date.getDate() - 2);
+            console.log(`📅 Adjusted payday from Sunday ${date.toISOString().split('T')[0]} to Friday ${adjustedDate.toISOString().split('T')[0]}`);
+            return adjustedDate;
+        } 
+        
+        // Saturday - move to Friday (subtract 1 day)
+        if (dayOfWeek === 6) {
+            const adjustedDate = new Date(date);
+            adjustedDate.setDate(date.getDate() - 1);
+            console.log(`📅 Adjusted payday from Saturday ${date.toISOString().split('T')[0]} to Friday ${adjustedDate.toISOString().split('T')[0]}`);
+            return adjustedDate;
         }
         
-        return adjustedDate;
+        // Weekday (Monday-Friday) - return original date unchanged
+        console.log(`📅 No adjustment needed - ${date.toISOString().split('T')[0]} is a weekday`);
+        return date;
     }
 }
