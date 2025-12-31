@@ -148,6 +148,45 @@ export function isDateInPast(dateString) {
   return date < today;
 }
 
+/**
+ * Get current time in Pacific timezone
+ * Uses proper timezone conversion with toLocaleString to handle DST correctly
+ * 
+ * @returns {Date} Date object representing current time in Pacific timezone
+ */
+export function getPacificTime() {
+  // Get current time in Pacific timezone
+  const now = new Date();
+  const pacificTimeString = now.toLocaleString('en-US', {
+    timeZone: 'America/Los_Angeles',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+    hour12: false
+  });
+  
+  // Parse the localized string back to a Date object
+  const [datePart, timePart] = pacificTimeString.split(', ');
+  const [month, day, year] = datePart.split('/');
+  const [hour, minute, second] = timePart.split(':');
+  
+  return new Date(year, month - 1, day, hour, minute, second);
+}
+
+/**
+ * Get midnight (start of day) in Pacific timezone
+ * 
+ * @returns {Date} Date object representing midnight today in Pacific timezone
+ */
+export function getLocalMidnight() {
+  const now = getPacificTime();
+  now.setHours(0, 0, 0, 0);
+  return now;
+}
+
 export default {
   parseLocalDate,
   formatLocalDate,
@@ -155,5 +194,7 @@ export default {
   firestoreDateToLocalString,
   getTodayLocal,
   addDays,
-  isDateInPast
+  isDateInPast,
+  getPacificTime,
+  getLocalMidnight
 };

@@ -1,5 +1,6 @@
 // PayCycleCalculator.js - Dynamic pay cycle calculations
-import { getPacificTime, getDaysUntilDateInPacific } from './DateUtils.js';
+import { getPacificTime } from './timezoneHelpers.js';
+import { getDaysUntilDateInPacific } from './DateUtils.js';
 
 export class PayCycleCalculator {
     
