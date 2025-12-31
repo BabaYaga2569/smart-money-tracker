@@ -26,7 +26,8 @@ import {
 import { db } from '../firebase';
 import { matchTransactionsToBills } from './BillPaymentMatcher.js';
 import { RecurringManager } from './RecurringManager.js';
-import { formatDateForInput, getPacificTime } from './DateUtils.js';
+import { formatDateForInput } from './DateUtils.js';
+import { getPacificTime } from './timezoneHelpers.js';
 
 /**
  * Load merchant aliases from aiLearning/merchantAliases collection

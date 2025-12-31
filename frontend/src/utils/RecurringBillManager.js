@@ -1,6 +1,6 @@
 // RecurringBillManager.js - Automatic bill date calculations
 import { parseLocalDate } from './DateUtils.js';
-import { getPacificTime } from './DateUtils.js';
+import { getPacificTime } from './timezoneHelpers.js';
 
 export class RecurringBillManager {
   /**
