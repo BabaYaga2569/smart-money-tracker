@@ -19,7 +19,7 @@ export function calculateNextPayday(lastPayDate, payFrequency = 'biweekly') {
   const lastPay = new Date(lastPayDate);
   lastPay.setHours(0, 0, 0, 0);
   
-  let nextPayday = new Date(lastPay);
+  const nextPayday = new Date(lastPay);
   
   if (payFrequency === 'biweekly') {
     // Add 14 days
@@ -47,7 +47,6 @@ export function calculateNextPayday(lastPayDate, payFrequency = 'biweekly') {
     }
   } else if (payFrequency === 'bi-monthly') {
     // Pay on 15th and last day of month
-    const currentDay = today.getDate();
     const currentMonth = today.getMonth();
     const currentYear = today.getFullYear();
     
