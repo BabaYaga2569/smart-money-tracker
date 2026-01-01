@@ -489,6 +489,11 @@ const Accounts = () => {
         `Successfully synced ${added} new transaction${added !== 1 ? 's' : ''} from Plaid${pendingText}${dedupeText}.`,
         'success'
       );
+      
+      // ✅ NEW: Trigger automatic bill clearing if transactions were added
+      if (added > 0) {
+        triggerAutoBillClearing();
+      }
     } catch (error) {
       console.error('[Accounts] Error syncing Plaid transactions:', error);
       showNotification(
@@ -497,6 +502,33 @@ const Accounts = () => {
       );
     } finally {
       setSyncingPlaid(false);
+    }
+  };
+
+  const triggerAutoBillClearing = async () => {
+    try {
+      console.log('[AUTO_CLEAR] Triggering automatic bill clearing...');
+      
+      const backendUrl = import.meta.env.VITE_API_URL || 
+        (window.location.hostname === 'localhost' 
+          ? 'http://localhost:5000' 
+          : 'https://smart-money-tracker-09ks.onrender.com');
+      
+      const clearResponse = await fetch(`${backendUrl}/api/bills/auto_clear`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ userId: currentUser.uid })
+      });
+      
+      if (clearResponse.ok) {
+        const clearData = await clearResponse.json();
+        if (clearData.success && clearData.cleared > 0) {
+          console.log(`[AUTO_CLEAR] ✅ Cleared ${clearData.cleared} bills, advanced ${clearData.advanced} patterns, generated ${clearData.generated} bills`);
+        }
+      }
+    } catch (clearError) {
+      console.error('[AUTO_CLEAR] Failed:', clearError);
+      // Silently fail - don't interrupt user experience
     }
   };
 
