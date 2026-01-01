@@ -12,6 +12,20 @@
 
 import { FieldValue } from 'firebase-admin/firestore';
 
+// ===== MATCHING CONFIGURATION =====
+
+// Matching thresholds
+const NAME_SIMILARITY_THRESHOLD = 0.75; // 75% similarity for fuzzy name matching
+const AMOUNT_TOLERANCE = 0.50; // ±$0.50 tolerance for amount matching
+const DATE_TOLERANCE_DAYS = 7; // ±7 days tolerance for date matching
+const MINIMUM_MATCH_COUNT = 2; // Require 2 of 3 criteria (67% confidence)
+
+// Skip words for significant word extraction
+const SKIP_WORDS = [
+  'the', 'a', 'an', 'and', 'or', 'but', 'in', 'on', 'at', 'to', 'for', 
+  'of', 'with', 'by', 'from', 'payment', 'bill', 'monthly', 'annual'
+];
+
 // ===== STRING UTILITIES =====
 
 /**
@@ -96,12 +110,9 @@ function containsString(haystack, needle) {
 function extractSignificantWords(str) {
   if (!str) return [];
   
-  const skipWords = ['the', 'a', 'an', 'and', 'or', 'but', 'in', 'on', 'at', 'to', 'for', 
-                     'of', 'with', 'by', 'from', 'payment', 'bill', 'monthly', 'annual'];
-  
   const normalized = normalizeString(str);
   const words = normalized.split(' ').filter(word => 
-    word.length > 2 && !skipWords.includes(word)
+    word.length > 2 && !SKIP_WORDS.includes(word)
   );
   
   return words;
@@ -168,7 +179,7 @@ function isNameMatch(txName, billName, merchantNames = []) {
   
   // Fuzzy similarity (75% threshold)
   const similarity = calculateSimilarity(txName, billName);
-  if (similarity >= 0.75) return true;
+  if (similarity >= NAME_SIMILARITY_THRESHOLD) return true;
   
   // Significant word matches
   const txWords = extractSignificantWords(txName);
@@ -191,7 +202,7 @@ function isNameMatch(txName, billName, merchantNames = []) {
       if (containsString(txName, merchantName) || containsString(merchantName, txName)) return true;
       
       const merchantSimilarity = calculateSimilarity(txName, merchantName);
-      if (merchantSimilarity >= 0.75) return true;
+      if (merchantSimilarity >= NAME_SIMILARITY_THRESHOLD) return true;
       
       const merchantWords = extractSignificantWords(merchantName);
       if (merchantWords.length > 0) {
@@ -208,7 +219,7 @@ function isNameMatch(txName, billName, merchantNames = []) {
 /**
  * Check if transaction amount matches bill amount
  */
-function isAmountMatch(txAmount, billAmount, tolerance = 0.50) {
+function isAmountMatch(txAmount, billAmount, tolerance = AMOUNT_TOLERANCE) {
   const txAbs = Math.abs(parseFloat(txAmount) || 0);
   const billAbs = Math.abs(parseFloat(billAmount) || 0);
   
@@ -219,7 +230,7 @@ function isAmountMatch(txAmount, billAmount, tolerance = 0.50) {
 /**
  * Check if transaction date is within acceptable range
  */
-function isDateMatch(txDate, billDueDate, daysTolerance = 7) {
+function isDateMatch(txDate, billDueDate, daysTolerance = DATE_TOLERANCE_DAYS) {
   if (!txDate || !billDueDate) return false;
   
   const daysDiff = Math.abs(daysBetweenLocal(txDate, billDueDate));
@@ -254,7 +265,7 @@ function matchTransactionToBill(transaction, bill) {
   const confidence = matchCount / 3;
   
   // Require at least 2 of 3 criteria (67% threshold)
-  if (matchCount < 2) return null;
+  if (matchCount < MINIMUM_MATCH_COUNT) return null;
   
   return {
     transaction,
