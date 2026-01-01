@@ -9,6 +9,7 @@ import performanceTracker from './middleware/performanceTracker.js';
 import logger from './utils/logger.js';
 import { atomicTransaction, createOperation } from './utils/atomicTransaction.js';
 import { validateAccount as validateAccountConsistency, validateTransaction as validateTransactionConsistency, validateBalanceConsistency, checkDuplicateTransaction } from './utils/consistencyValidators.js';
+import { runBillMatching } from './utils/BillMatchingService.js';
 
 const app = express();
 app.use(cors({
@@ -1810,6 +1811,57 @@ app.post("/api/plaid/sync_transactions", async (req, res, next) => {
       logDiagnostic.info('SYNC_TRANSACTIONS', `Synced atomically: ${addedCount} new, ${updatedCount} updated, ${pendingCount} pending, ${deduplicatedCount} deduplicated, ${allRemoved.length} removed, ${skippedCount} skipped`);
     }
     
+    // ✅ NEW: Trigger automatic bill clearing if transactions were added or updated
+    if (addedCount > 0 || updatedCount > 0) {
+      // Run in background - don't await or block the response
+      setImmediate(async () => {
+        try {
+          console.log('[AUTO_BILL_CLEAR] Triggering automatic bill clearing after transaction sync...');
+          
+          // Load unpaid bills
+          const billsSnapshot = await db.collection('users').doc(userId)
+            .collection('financialEvents')
+            .where('type', '==', 'bill')
+            .where('isPaid', '==', false)
+            .get();
+          
+          const unpaidBills = billsSnapshot.docs.map(doc => ({
+            id: doc.id,
+            ...doc.data()
+          }));
+          
+          // Load recent transactions (last 60 days)
+          const sixtyDaysAgo = new Date();
+          sixtyDaysAgo.setDate(sixtyDaysAgo.getDate() - 60);
+          const startDate = sixtyDaysAgo.toISOString().split('T')[0];
+          
+          const txSnapshot = await db.collection('users').doc(userId)
+            .collection('transactions')
+            .where('date', '>=', startDate)
+            .get();
+          
+          const transactions = txSnapshot.docs.map(doc => ({
+            id: doc.id,
+            ...doc.data()
+          }));
+          
+          console.log(`[AUTO_BILL_CLEAR] Found ${unpaidBills.length} unpaid bills and ${transactions.length} transactions`);
+          
+          // Run matching and clearing
+          const results = await runBillMatching(db, userId, transactions, unpaidBills);
+          
+          if (results.success) {
+            console.log(`[AUTO_BILL_CLEAR] ✅ Cleared ${results.cleared} bills, advanced ${results.advanced} patterns, generated ${results.generated} bills`);
+          } else {
+            console.error('[AUTO_BILL_CLEAR] ❌ Failed:', results.error);
+          }
+        } catch (clearingError) {
+          console.error('[AUTO_BILL_CLEAR] Error running automatic bill clearing:', clearingError);
+          // Don't fail the transaction sync if bill clearing fails
+        }
+      });
+    }
+    
     logDiagnostic.response(endpoint, 200, { 
       success: true, 
       added: addedCount,
@@ -1884,6 +1936,80 @@ app.post("/api/plaid/sync_transactions", async (req, res, next) => {
     
     // Generic error
     next(createError.plaidError(error.message || errorMessage));
+  }
+});
+
+// Automatic bill clearing endpoint - matches transactions to bills and clears them
+app.post("/api/bills/auto_clear", async (req, res, next) => {
+  const endpoint = "/api/bills/auto_clear";
+  logDiagnostic.request(endpoint, req.body);
+  
+  try {
+    const { userId } = req.body;
+    
+    if (!userId) {
+      logger.error('AUTO_BILL_CLEAR', 'Missing userId in request', null, {});
+      logDiagnostic.error('AUTO_BILL_CLEAR', 'Missing userId in request');
+      throw createError.badRequest('userId is required', 'MISSING_USER_ID');
+    }
+    
+    // Validate userId
+    validators.validateUserId(userId);
+    
+    logger.info('AUTO_BILL_CLEAR', 'Starting automatic bill clearing', { userId });
+    logDiagnostic.info('AUTO_BILL_CLEAR', `Starting automatic bill clearing for user ${userId}`);
+    
+    // Load unpaid bills from financialEvents
+    const billsSnapshot = await db.collection('users').doc(userId)
+      .collection('financialEvents')
+      .where('type', '==', 'bill')
+      .where('isPaid', '==', false)
+      .get();
+    
+    const unpaidBills = billsSnapshot.docs.map(doc => ({
+      id: doc.id,
+      ...doc.data()
+    }));
+    
+    // Load recent transactions (last 60 days for better matching)
+    const sixtyDaysAgo = new Date();
+    sixtyDaysAgo.setDate(sixtyDaysAgo.getDate() - 60);
+    const startDate = sixtyDaysAgo.toISOString().split('T')[0];
+    
+    const txSnapshot = await db.collection('users').doc(userId)
+      .collection('transactions')
+      .where('date', '>=', startDate)
+      .get();
+    
+    const transactions = txSnapshot.docs.map(doc => ({
+      id: doc.id,
+      ...doc.data()
+    }));
+    
+    console.log(`[AUTO_BILL_CLEAR] Found ${unpaidBills.length} unpaid bills and ${transactions.length} recent transactions`);
+    logDiagnostic.info('AUTO_BILL_CLEAR', `Found ${unpaidBills.length} unpaid bills and ${transactions.length} transactions`);
+    
+    // Run matching algorithm
+    const results = await runBillMatching(db, userId, transactions, unpaidBills);
+    
+    if (results.success) {
+      logger.info('AUTO_BILL_CLEAR', 'Bill clearing completed', { 
+        cleared: results.cleared, 
+        advanced: results.advanced, 
+        generated: results.generated 
+      });
+      logDiagnostic.info('AUTO_BILL_CLEAR', `Cleared ${results.cleared} bills, advanced ${results.advanced} patterns, generated ${results.generated} bills`);
+    } else {
+      logger.error('AUTO_BILL_CLEAR', 'Bill clearing failed', new Error(results.error), {});
+      logDiagnostic.error('AUTO_BILL_CLEAR', 'Bill clearing failed', { error: results.error });
+    }
+    
+    logDiagnostic.response(endpoint, 200, results);
+    res.json(results);
+  } catch (error) {
+    logger.error('AUTO_BILL_CLEAR', 'Failed to run automatic bill clearing', error, {});
+    logDiagnostic.error('AUTO_BILL_CLEAR', 'Failed to run automatic bill clearing', error);
+    next(error.statusCode ? error : createError.internal(error.message || 'Failed to clear bills'));
   }
 });
 
