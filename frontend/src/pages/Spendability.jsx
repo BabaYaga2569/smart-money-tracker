@@ -29,6 +29,7 @@ const SpendabilityV2 = () => {
     checking: 0,
     savings: 0,
     billsBeforePayday: [],
+    billsAfterPayday: [],
     totalBillsDue: 0,
     safeToSpend: 0,
     nextPayday: 'No date',
@@ -37,6 +38,10 @@ const SpendabilityV2 = () => {
     safetyBuffer: 0,
     paidBillsCount: 0
   });
+  
+  // State for collapsible sections
+  const [billsBeforeCollapsed, setBillsBeforeCollapsed] = useState(false);
+  const [billsAfterCollapsed, setBillsAfterCollapsed] = useState(true); // Start collapsed
 
   useEffect(() => {
     fetchFinancialData();
@@ -487,35 +492,34 @@ console.log('🔍 PAYDAY CALCULATION DEBUG:', {
 
       const processedBills = RecurringBillManager.processBills(billsWithRecurrence);
 
-      // ✅ NEW LOGIC: Get bills that should be displayed in Spendability
+      // ✅ NEW LOGIC: Split bills into "before payday" and "after payday" groups
       const today = getPacificTime();
       today.setHours(0, 0, 0, 0);
       const paydayDate = new Date(nextPayday);
 
-      const relevantBills = processedBills.filter(bill => {
+      // Separate bills into before and after payday
+      const billsBeforePaydayRaw = [];
+      const billsAfterPaydayRaw = [];
+      
+      processedBills.forEach(bill => {
         const billDueDate = new Date(bill.nextDueDate || bill.dueDate);
         
-        // Always include if bill is overdue and unpaid
-        if (billDueDate < today) {
-          console.log(`📌 Including overdue bill: ${bill.name} (due ${bill.nextDueDate})`);
-          return true;
+        // Classify based on due date relative to payday
+        if (billDueDate < paydayDate || billDueDate < today) {
+          // Overdue or due before payday
+          billsBeforePaydayRaw.push(bill);
+          console.log(`📌 Bill before payday: ${bill.name} (due ${bill.nextDueDate})`);
+        } else {
+          // Due on or after payday
+          billsAfterPaydayRaw.push(bill);
+          console.log(`📅 Bill after payday: ${bill.name} (due ${bill.nextDueDate})`);
         }
-        
-        // Include if bill is due before next payday
-        if (billDueDate < paydayDate) {
-          console.log(`📌 Including upcoming bill: ${bill.name} (due ${bill.nextDueDate})`);
-          return true;
-        }
-        
-        // Exclude bills due after payday
-        console.log(`⏭️ Excluding future bill: ${bill.name} (due ${bill.nextDueDate}, after payday ${nextPayday})`);
-        return false;
       });
 
-      console.log(`✅ Spendability: Filtered ${processedBills.length} bills to ${relevantBills.length} relevant bills (overdue + due before payday)`);
+      console.log(`✅ Spendability: Split ${processedBills.length} bills into ${billsBeforePaydayRaw.length} before payday, ${billsAfterPaydayRaw.length} after payday`);
 
-      // Add status info to each bill and sort by priority (overdue bills first)
-      const billsDueBeforePayday = relevantBills
+      // Add status info to bills before payday and sort by priority (overdue bills first)
+      const billsDueBeforePayday = billsBeforePaydayRaw
         .map(bill => ({
           ...bill,
           statusInfo: RecurringBillManager.determineBillStatus(bill)
@@ -529,31 +533,48 @@ console.log('🔍 PAYDAY CALCULATION DEBUG:', {
           return new Date(a.nextDueDate) - new Date(b.nextDueDate);
         });
       
+      // Add status info to bills after payday and sort by due date
+      const billsDueAfterPayday = billsAfterPaydayRaw
+        .map(bill => ({
+          ...bill,
+          statusInfo: RecurringBillManager.determineBillStatus(bill)
+        }))
+        .sort((a, b) => {
+          // Sort by due date
+          return new Date(a.nextDueDate) - new Date(b.nextDueDate);
+        });
+      
       // Filter out bills that have been paid (have matching transactions)
-      // This is a defensive layer on top of auto-detection to catch any bills that were missed
-      const unpaidBillsBeforePayday = billsDueBeforePayday.filter(bill => {
-        // Try to find a matching transaction for this bill
-        let matchingTransaction = null;
-        
-        for (const transaction of transactions) {
-          const match = matchTransactionToBill(transaction, bill);
-          if (match && match.confidence >= 0.67) {
-            // Found a match with at least 2 of 3 criteria
-            matchingTransaction = match;
-            break;
+      // Helper function to filter unpaid bills
+      const filterUnpaidBills = (bills) => {
+        return bills.filter(bill => {
+          // Try to find a matching transaction for this bill
+          let matchingTransaction = null;
+          
+          for (const transaction of transactions) {
+            const match = matchTransactionToBill(transaction, bill);
+            if (match && match.confidence >= 0.67) {
+              // Found a match with at least 2 of 3 criteria
+              matchingTransaction = match;
+              break;
+            }
           }
-        }
-        
-        if (matchingTransaction) {
-          const { matches, details, confidence } = matchingTransaction;
-          console.log(`💳 [Spendability] Bill "${bill.name}" ($${bill.amount}) has matching transaction - excluding from due bills`);
-          console.log(`   ✅ Transaction: "${details.txName}" ($${details.txAmount}) on ${details.txDate}`);
-          console.log(`   📊 Confidence: ${Math.round(confidence * 100)}% | Name: ${matches.name ? '✓' : '✗'} | Amount: ${matches.amount ? '✓' : '✗'} | Date: ${matches.date ? '✓' : '✗'}`);
-          return false; // Exclude this bill (it's paid)
-        }
-        
-        return true; // Include this bill (still unpaid)
-      });
+          
+          if (matchingTransaction) {
+            const { matches, details, confidence } = matchingTransaction;
+            console.log(`💳 [Spendability] Bill "${bill.name}" ($${bill.amount}) has matching transaction - excluding from due bills`);
+            console.log(`   ✅ Transaction: "${details.txName}" ($${details.txAmount}) on ${details.txDate}`);
+            console.log(`   📊 Confidence: ${Math.round(confidence * 100)}% | Name: ${matches.name ? '✓' : '✗'} | Amount: ${matches.amount ? '✓' : '✗'} | Date: ${matches.date ? '✓' : '✗'}`);
+            return false; // Exclude this bill (it's paid)
+          }
+          
+          return true; // Include this bill (still unpaid)
+        });
+      };
+      
+      // Apply filtering to both before and after payday bills
+      const unpaidBillsBeforePayday = filterUnpaidBills(billsDueBeforePayday);
+      const unpaidBillsAfterPayday = filterUnpaidBills(billsDueAfterPayday);
       
       // Calculate total of UNPAID bills only
       const totalUnpaidBills = (unpaidBillsBeforePayday || []).reduce((sum, bill) => {
@@ -711,7 +732,8 @@ console.log('🔍 PAYDAY CALCULATION DEBUG:', {
         totalAvailable,  // Now uses PROJECTED balance
         checking: checkingTotal,  // Sum of all checking accounts
         savings: savingsTotal,    // Sum of all savings accounts
-        billsBeforePayday: unpaidBillsBeforePayday,  // Only unpaid bills
+        billsBeforePayday: unpaidBillsBeforePayday,  // Only unpaid bills before payday
+        billsAfterPayday: unpaidBillsAfterPayday,    // Only unpaid bills after payday
         totalBillsDue,  // Total of unpaid bills only
         safeToSpend,
         nextPayday,
@@ -735,6 +757,7 @@ console.log('🔍 PAYDAY CALCULATION DEBUG:', {
     checking: 0,
     savings: 0,
     billsBeforePayday: [],
+    billsAfterPayday: [],
     totalBillsDue: 0,
     safeToSpend: 0,
     nextPayday: 'Not set',
@@ -1083,10 +1106,22 @@ console.log('🔍 PAYDAY CALCULATION DEBUG:', {
           </div>
         </div>
 
-        {/* Tile 5: Bills Due Before Payday */}
+        {/* Tile 5: Bills Due Before Payday - Collapsible */}
         <div className="tile bills-tile">
-          <h3>Bills Due Before Payday</h3>
-          <div className="bills-list">
+          <div className="bills-tile-header" onClick={() => setBillsBeforeCollapsed(!billsBeforeCollapsed)}>
+            <h3>
+              Bills Due Before Payday 
+              {financialData.billsBeforePayday.length > 0 && (
+                <span style={{ marginLeft: '10px', fontSize: '0.9em', color: '#ccc' }}>
+                  ({financialData.billsBeforePayday.length})
+                </span>
+              )}
+            </h3>
+            <span className={`collapse-icon ${billsBeforeCollapsed ? 'collapsed' : ''}`}>
+              ▼
+            </span>
+          </div>
+          <div className={`bills-list ${billsBeforeCollapsed ? 'collapsed' : ''}`}>
             {financialData.billsBeforePayday.length > 0 ? (
               financialData.billsBeforePayday.map((bill, index) => (
                 <div key={index} className={`bill-item ${bill.statusInfo?.status === 'overdue' ? 'overdue' : ''}`}>
@@ -1134,6 +1169,62 @@ console.log('🔍 PAYDAY CALCULATION DEBUG:', {
               }}>
                 ✅ {financialData.paidBillsCount} bill(s) already paid
               </div>
+            )}
+          </div>
+        </div>
+
+        {/* NEW: Bills Due After Payday - Collapsible */}
+        <div className="tile bills-tile">
+          <div className="bills-tile-header" onClick={() => setBillsAfterCollapsed(!billsAfterCollapsed)}>
+            <h3>
+              Bills Due After Payday
+              {financialData.billsAfterPayday && financialData.billsAfterPayday.length > 0 && (
+                <span style={{ marginLeft: '10px', fontSize: '0.9em', color: '#ccc' }}>
+                  ({financialData.billsAfterPayday.length})
+                </span>
+              )}
+            </h3>
+            <span className={`collapse-icon ${billsAfterCollapsed ? 'collapsed' : ''}`}>
+              ▼
+            </span>
+          </div>
+          <div className={`bills-list ${billsAfterCollapsed ? 'collapsed' : ''}`}>
+            {financialData.billsAfterPayday && financialData.billsAfterPayday.length > 0 ? (
+              <>
+                {financialData.billsAfterPayday.map((bill, index) => (
+                  <div key={index} className="bill-item">
+                    <div className="bill-info">
+                      <span className="bill-name">{bill.name}</span>
+                      <span className="bill-due-date">Due: {formatDate(bill.nextDueDate)}</span>
+                      <span className="bill-amount">{formatCurrency(bill.amount ?? bill.cost)}</span>
+                    </div>
+                    <div className="bill-actions">
+                      <button 
+                        className="mark-paid-btn"
+                        onClick={() => handleMarkBillAsPaid(bill)}
+                        disabled={payingBill === bill.name || RecurringBillManager.isBillPaidForCurrentCycle(bill)}
+                      >
+                        {payingBill === bill.name 
+                          ? 'Processing...' 
+                          : RecurringBillManager.isBillPaidForCurrentCycle(bill) 
+                          ? 'Already Paid' 
+                          : 'Mark as Paid'
+                        }
+                      </button>
+                    </div>
+                  </div>
+                ))}
+                <div className="total-bills">
+                  <span><strong>Total:</strong></span>
+                  <span><strong>
+                    {formatCurrency(
+                      financialData.billsAfterPayday.reduce((sum, b) => sum + (Number(b.amount ?? b.cost) || 0), 0)
+                    )}
+                  </strong></span>
+                </div>
+              </>
+            ) : (
+              <p className="no-bills">No bills due after payday</p>
             )}
           </div>
         </div>

@@ -43,13 +43,47 @@
   background: #00ff88;
 }
 
-/* Tile Grid Layout */
+/* Tile Grid Layout - 4 columns for better space usage */
 .tiles-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(350px, 1fr));
+  grid-template-columns: repeat(4, 1fr);
   gap: 20px;
   max-width: 1400px;
   margin: 0 auto;
+}
+
+/* Responsive layout for smaller screens */
+@media (max-width: 1200px) {
+  .tiles-grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+
+@media (max-width: 768px) {
+  .tiles-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* Full-width tiles for bills sections and calculation */
+/* Note: These span values match the main grid column count above */
+.bills-tile,
+.calculation-tile {
+  grid-column: span 4; /* Matches main grid: 4 columns */
+}
+
+@media (max-width: 1200px) {
+  .bills-tile,
+  .calculation-tile {
+    grid-column: span 2; /* Matches tablet grid: 2 columns */
+  }
+}
+
+@media (max-width: 768px) {
+  .bills-tile,
+  .calculation-tile {
+    grid-column: span 1; /* Matches mobile grid: 1 column */
+  }
 }
 
 .tile {
@@ -178,9 +212,36 @@
 }
 
 /* Bills Tile */
+.bills-tile-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  cursor: pointer;
+  user-select: none;
+}
+
+.bills-tile-header h3 {
+  margin: 0;
+}
+
+.collapse-icon {
+  font-size: 1.2rem;
+  transition: transform 0.3s ease;
+  color: #00ff88;
+}
+
+.collapse-icon.collapsed {
+  transform: rotate(-90deg);
+}
+
 .bills-list {
-  max-height: 200px;
+  max-height: 400px;
   overflow-y: auto;
+  margin-top: 15px;
+}
+
+.bills-list.collapsed {
+  display: none;
 }
 
 .bill-item {
