@@ -545,51 +545,36 @@ console.log('🔍 PAYDAY CALCULATION DEBUG:', {
         });
       
       // Filter out bills that have been paid (have matching transactions)
-      // Apply to both before and after payday bills
-      const unpaidBillsBeforePayday = billsDueBeforePayday.filter(bill => {
-        // Try to find a matching transaction for this bill
-        let matchingTransaction = null;
-        
-        for (const transaction of transactions) {
-          const match = matchTransactionToBill(transaction, bill);
-          if (match && match.confidence >= 0.67) {
-            // Found a match with at least 2 of 3 criteria
-            matchingTransaction = match;
-            break;
+      // Helper function to filter unpaid bills
+      const filterUnpaidBills = (bills) => {
+        return bills.filter(bill => {
+          // Try to find a matching transaction for this bill
+          let matchingTransaction = null;
+          
+          for (const transaction of transactions) {
+            const match = matchTransactionToBill(transaction, bill);
+            if (match && match.confidence >= 0.67) {
+              // Found a match with at least 2 of 3 criteria
+              matchingTransaction = match;
+              break;
+            }
           }
-        }
-        
-        if (matchingTransaction) {
-          const { matches, details, confidence } = matchingTransaction;
-          console.log(`💳 [Spendability] Bill "${bill.name}" ($${bill.amount}) has matching transaction - excluding from due bills`);
-          console.log(`   ✅ Transaction: "${details.txName}" ($${details.txAmount}) on ${details.txDate}`);
-          console.log(`   📊 Confidence: ${Math.round(confidence * 100)}% | Name: ${matches.name ? '✓' : '✗'} | Amount: ${matches.amount ? '✓' : '✗'} | Date: ${matches.date ? '✓' : '✗'}`);
-          return false; // Exclude this bill (it's paid)
-        }
-        
-        return true; // Include this bill (still unpaid)
-      });
+          
+          if (matchingTransaction) {
+            const { matches, details, confidence } = matchingTransaction;
+            console.log(`💳 [Spendability] Bill "${bill.name}" ($${bill.amount}) has matching transaction - excluding from due bills`);
+            console.log(`   ✅ Transaction: "${details.txName}" ($${details.txAmount}) on ${details.txDate}`);
+            console.log(`   📊 Confidence: ${Math.round(confidence * 100)}% | Name: ${matches.name ? '✓' : '✗'} | Amount: ${matches.amount ? '✓' : '✗'} | Date: ${matches.date ? '✓' : '✗'}`);
+            return false; // Exclude this bill (it's paid)
+          }
+          
+          return true; // Include this bill (still unpaid)
+        });
+      };
       
-      // Filter unpaid bills after payday (same logic)
-      const unpaidBillsAfterPayday = billsDueAfterPayday.filter(bill => {
-        // Try to find a matching transaction for this bill
-        let matchingTransaction = null;
-        
-        for (const transaction of transactions) {
-          const match = matchTransactionToBill(transaction, bill);
-          if (match && match.confidence >= 0.67) {
-            matchingTransaction = match;
-            break;
-          }
-        }
-        
-        if (matchingTransaction) {
-          console.log(`💳 [Spendability] Bill "${bill.name}" (after payday) has matching transaction - excluding`);
-          return false;
-        }
-        
-        return true;
-      });
+      // Apply filtering to both before and after payday bills
+      const unpaidBillsBeforePayday = filterUnpaidBills(billsDueBeforePayday);
+      const unpaidBillsAfterPayday = filterUnpaidBills(billsDueAfterPayday);
       
       // Calculate total of UNPAID bills only
       const totalUnpaidBills = (unpaidBillsBeforePayday || []).reduce((sum, bill) => {
@@ -1233,7 +1218,7 @@ console.log('🔍 PAYDAY CALCULATION DEBUG:', {
                   <span><strong>Total:</strong></span>
                   <span><strong>
                     {formatCurrency(
-                      financialData.billsAfterPayday.reduce((sum, b) => sum + parseFloat(b.amount || 0), 0)
+                      financialData.billsAfterPayday.reduce((sum, b) => sum + (Number(b.amount ?? b.cost) || 0), 0)
                     )}
                   </strong></span>
                 </div>

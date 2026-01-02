@@ -66,22 +66,23 @@
 }
 
 /* Full-width tiles for bills sections and calculation */
+/* Note: These span values match the main grid column count above */
 .bills-tile,
 .calculation-tile {
-  grid-column: span 4;
+  grid-column: span 4; /* Matches main grid: 4 columns */
 }
 
 @media (max-width: 1200px) {
   .bills-tile,
   .calculation-tile {
-    grid-column: span 2;
+    grid-column: span 2; /* Matches tablet grid: 2 columns */
   }
 }
 
 @media (max-width: 768px) {
   .bills-tile,
   .calculation-tile {
-    grid-column: span 1;
+    grid-column: span 1; /* Matches mobile grid: 1 column */
   }
 }
 
