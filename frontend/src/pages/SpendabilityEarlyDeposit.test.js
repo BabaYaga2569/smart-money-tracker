@@ -183,7 +183,8 @@ describe('Spendability Early Deposit Integration', () => {
         earlyDeposit: {
           enabled: true,
           amount: 2000, // More than total pay
-          daysBefore: 2
+          daysBefore: 2,
+          remainderBank: 'Main Bank'
         },
         payAmount: 1883.81
       };
@@ -193,10 +194,11 @@ describe('Spendability Early Deposit Integration', () => {
       // Act
       const result = calculatePaydays(settings, nextPayday);
       
-      // Assert - Should still calculate but main amount will be negative
-      expect(result.paydays).toHaveLength(2);
-      expect(result.paydays[0].amount).toBe(2000);
-      expect(result.paydays[1].amount).toBe(-116.19); // This might need validation in actual code
+      // Assert - Should fall back to single payday with total amount
+      expect(result.paydays).toHaveLength(1);
+      expect(result.paydays[0].type).toBe('main');
+      expect(result.paydays[0].amount).toBe(1883.81);
+      expect(result.totalPaydayAmount).toBe(1883.81);
     });
     
   });
@@ -220,22 +222,37 @@ function calculatePaydays(settingsData, nextPayday) {
     const totalPayAmount = parseFloat(settingsData.payAmount) || 0;
     const mainAmount = totalPayAmount - earlyAmount;
     
-    paydays = [
-      { 
-        date: earlyDepositDate.toISOString().split('T')[0], 
-        amount: earlyAmount, 
-        bank: settingsData.earlyDeposit.bankName || 'Early Deposit Bank', 
-        type: 'early'
-      },
-      { 
-        date: nextPayday, 
-        amount: mainAmount, 
-        bank: settingsData.earlyDeposit.remainderBank || 'Main Bank', 
-        type: 'main'
-      }
-    ];
-    
-    totalPaydayAmount = earlyAmount + mainAmount;
+    // Validation: Ensure early deposit doesn't exceed total pay
+    if (earlyAmount > totalPayAmount) {
+      // Fallback to single payday
+      paydays = [
+        { 
+          date: nextPayday, 
+          amount: totalPayAmount, 
+          bank: settingsData.earlyDeposit.remainderBank || 'Main Bank', 
+          type: 'main'
+        }
+      ];
+      totalPaydayAmount = totalPayAmount;
+    } else {
+      // Normal case - split between early and main
+      paydays = [
+        { 
+          date: earlyDepositDate.toISOString().split('T')[0], 
+          amount: earlyAmount, 
+          bank: settingsData.earlyDeposit.bankName || 'Early Deposit Bank', 
+          type: 'early'
+        },
+        { 
+          date: nextPayday, 
+          amount: mainAmount, 
+          bank: settingsData.earlyDeposit.remainderBank || 'Main Bank', 
+          type: 'main'
+        }
+      ];
+      
+      totalPaydayAmount = earlyAmount + mainAmount;
+    }
   } else {
     // Single payday (default)
     const payAmount = parseFloat(settingsData.payAmount) || 0;

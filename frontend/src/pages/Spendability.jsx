@@ -426,34 +426,56 @@ console.log('🔍 PAYDAY CALCULATION DEBUG:', {
         earlyDepositDate.setDate(earlyDepositDate.getDate() - (settingsData.earlyDeposit.daysBefore || 2));
         
         const earlyAmount = parseFloat(settingsData.earlyDeposit.amount) || 0;
+        // NOTE: Fallback chain for backward compatibility with different settings schema versions
+        // Newer schema uses payAmount, older schema uses paySchedules.yours.amount
         const totalPayAmount = parseFloat(settingsData.payAmount || settingsData.paySchedules?.yours?.amount) || 0;
         const mainAmount = totalPayAmount - earlyAmount;
         
-        paydays = [
-          { 
-            date: formatDateForInput(earlyDepositDate), 
-            amount: earlyAmount, 
-            bank: settingsData.earlyDeposit.bankName || 'Early Deposit Bank', 
-            type: 'early',
-            daysUntil: getDaysUntilDateInPacific(formatDateForInput(earlyDepositDate))
-          },
-          { 
-            date: nextPayday, 
-            amount: mainAmount, 
-            bank: settingsData.earlyDeposit.remainderBank || 'Main Bank', 
-            type: 'main',
-            daysUntil: daysUntilPayday
-          }
-        ];
+        // ✅ VALIDATION: Ensure early deposit doesn't exceed total pay
+        if (earlyAmount > totalPayAmount) {
+          console.warn('⚠️ Early deposit amount exceeds total pay amount. Using total pay as early deposit.');
+          console.warn(`   Early: $${earlyAmount}, Total: $${totalPayAmount}`);
+          
+          // Fallback to single payday with warning
+          paydays = [
+            { 
+              date: nextPayday, 
+              amount: totalPayAmount, 
+              bank: settingsData.earlyDeposit.remainderBank || 'Main Bank', 
+              type: 'main',
+              daysUntil: daysUntilPayday
+            }
+          ];
+          totalPaydayAmount = totalPayAmount;
+        } else {
+          // Normal case - split between early and main
+          paydays = [
+            { 
+              date: formatDateForInput(earlyDepositDate), 
+              amount: earlyAmount, 
+              bank: settingsData.earlyDeposit.bankName || 'Early Deposit Bank', 
+              type: 'early',
+              daysUntil: getDaysUntilDateInPacific(formatDateForInput(earlyDepositDate))
+            },
+            { 
+              date: nextPayday, 
+              amount: mainAmount, 
+              bank: settingsData.earlyDeposit.remainderBank || 'Main Bank', 
+              type: 'main',
+              daysUntil: daysUntilPayday
+            }
+          ];
+          
+          totalPaydayAmount = earlyAmount + mainAmount;
+        }
         
-        totalPaydayAmount = earlyAmount + mainAmount;
         lastPaydayDate = nextPayday; // Use main payday as the cutoff for bills
         
         console.log('✅ Early deposit enabled:', {
-          earlyDate: formatDateForInput(earlyDepositDate),
-          earlyAmount,
-          mainDate: nextPayday,
-          mainAmount,
+          earlyDate: paydays[0]?.date,
+          earlyAmount: paydays[0]?.amount,
+          mainDate: paydays[paydays.length - 1]?.date,
+          mainAmount: paydays[paydays.length - 1]?.amount,
           total: totalPaydayAmount
         });
       } else {
@@ -690,6 +712,10 @@ console.log('🔍 PAYDAY CALCULATION DEBUG:', {
       const essentialsNeeded = weeklyEssentials * weeksUntilPayday;
 
       // ✅ NEW: Include all payday amounts in safe-to-spend calculation
+      // NOTE: This represents "safe to spend by next payday", not "safe to spend right now"
+      // The calculation intentionally includes future income to show what will be available
+      // after all upcoming paydays are received. This helps users plan spending across
+      // the entire pay period rather than just with current cash on hand.
       const safeToSpend = totalAvailable + totalPaydayAmount - totalBillsDue - safetyBuffer - essentialsNeeded;
       
       console.log('💰 Safe to Spend Calculation:', {
