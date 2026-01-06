@@ -36,7 +36,8 @@ const SpendabilityV2 = () => {
     daysUntilPayday: 0,
     weeklyEssentials: 0,
     safetyBuffer: 0,
-    paidBillsCount: 0
+    paidBillsCount: 0,
+    paydays: [] // Array of payday objects: { date, amount, bank, type }
   });
   
   // State for collapsible sections
@@ -413,6 +414,92 @@ console.log('🔍 PAYDAY CALCULATION DEBUG:', {
 });
 }      
  
+      // ✅ NEW: Calculate multiple paydays if early deposit is enabled
+      let paydays = [];
+      let totalPaydayAmount = 0;
+      let lastPaydayDate = nextPayday;
+      
+      if (settingsData.earlyDeposit?.enabled && settingsData.earlyDeposit?.amount > 0) {
+        // Early deposit is enabled - calculate both deposits
+        const mainPaydayDate = new Date(nextPayday);
+        const earlyDepositDate = new Date(mainPaydayDate);
+        earlyDepositDate.setDate(earlyDepositDate.getDate() - (settingsData.earlyDeposit.daysBefore || 2));
+        
+        const earlyAmount = parseFloat(settingsData.earlyDeposit.amount) || 0;
+        // NOTE: Fallback chain for backward compatibility with different settings schema versions
+        // Newer schema uses payAmount, older schema uses paySchedules.yours.amount
+        const totalPayAmount = parseFloat(settingsData.payAmount || settingsData.paySchedules?.yours?.amount) || 0;
+        const mainAmount = totalPayAmount - earlyAmount;
+        
+        // ✅ VALIDATION: Ensure early deposit doesn't exceed total pay
+        if (earlyAmount > totalPayAmount) {
+          console.warn('⚠️ Early deposit amount exceeds total pay amount. Using total pay as early deposit.');
+          console.warn(`   Early: $${earlyAmount}, Total: $${totalPayAmount}`);
+          
+          // Fallback to single payday with warning
+          paydays = [
+            { 
+              date: nextPayday, 
+              amount: totalPayAmount, 
+              bank: settingsData.earlyDeposit.remainderBank || 'Main Bank', 
+              type: 'main',
+              daysUntil: daysUntilPayday
+            }
+          ];
+          totalPaydayAmount = totalPayAmount;
+        } else {
+          // Normal case - split between early and main
+          paydays = [
+            { 
+              date: formatDateForInput(earlyDepositDate), 
+              amount: earlyAmount, 
+              bank: settingsData.earlyDeposit.bankName || 'Early Deposit Bank', 
+              type: 'early',
+              daysUntil: getDaysUntilDateInPacific(formatDateForInput(earlyDepositDate))
+            },
+            { 
+              date: nextPayday, 
+              amount: mainAmount, 
+              bank: settingsData.earlyDeposit.remainderBank || 'Main Bank', 
+              type: 'main',
+              daysUntil: daysUntilPayday
+            }
+          ];
+          
+          totalPaydayAmount = earlyAmount + mainAmount;
+        }
+        
+        lastPaydayDate = nextPayday; // Use main payday as the cutoff for bills
+        
+        console.log('✅ Early deposit enabled:', {
+          earlyDate: paydays[0]?.date,
+          earlyAmount: paydays[0]?.amount,
+          mainDate: paydays[paydays.length - 1]?.date,
+          mainAmount: paydays[paydays.length - 1]?.amount,
+          total: totalPaydayAmount
+        });
+      } else {
+        // Single payday (default)
+        const payAmount = parseFloat(settingsData.payAmount || settingsData.paySchedules?.yours?.amount) || 0;
+        paydays = [
+          { 
+            date: nextPayday, 
+            amount: payAmount, 
+            bank: 'Main Bank', 
+            type: 'main',
+            daysUntil: daysUntilPayday
+          }
+        ];
+        
+        totalPaydayAmount = payAmount;
+        lastPaydayDate = nextPayday;
+        
+        console.log('✅ Single payday mode:', {
+          date: nextPayday,
+          amount: payAmount
+        });
+      }
+ 
       // ✅ FIX: Load bills from financialEvents collection (where Bills.jsx reads from)
       let allBills = [];
       try {
@@ -495,7 +582,8 @@ console.log('🔍 PAYDAY CALCULATION DEBUG:', {
       // ✅ NEW LOGIC: Split bills into "before payday" and "after payday" groups
       const today = getPacificTime();
       today.setHours(0, 0, 0, 0);
-      const paydayDate = new Date(nextPayday);
+      // Use the last (furthest) payday date as the cutoff for bills
+      const paydayDate = new Date(lastPaydayDate);
 
       // Separate bills into before and after payday
       const billsBeforePaydayRaw = [];
@@ -623,7 +711,22 @@ console.log('🔍 PAYDAY CALCULATION DEBUG:', {
       const weeksUntilPayday = Math.ceil(daysUntilPayday / 7);
       const essentialsNeeded = weeklyEssentials * weeksUntilPayday;
 
-      const safeToSpend = totalAvailable - totalBillsDue - safetyBuffer - essentialsNeeded;
+      // ✅ NEW: Include all payday amounts in safe-to-spend calculation
+      // NOTE: This represents "safe to spend by next payday", not "safe to spend right now"
+      // The calculation intentionally includes future income to show what will be available
+      // after all upcoming paydays are received. This helps users plan spending across
+      // the entire pay period rather than just with current cash on hand.
+      const safeToSpend = totalAvailable + totalPaydayAmount - totalBillsDue - safetyBuffer - essentialsNeeded;
+      
+      console.log('💰 Safe to Spend Calculation:', {
+        totalAvailable,
+        totalPaydayAmount,
+        totalBillsDue,
+        safetyBuffer,
+        essentialsNeeded,
+        safeToSpend,
+        paydays: paydays.map(p => ({ date: p.date, amount: p.amount, type: p.type }))
+      });
 
       const finalDaysUntilPayday = Math.max(0, daysUntilPayday);
       
@@ -740,7 +843,8 @@ console.log('🔍 PAYDAY CALCULATION DEBUG:', {
         daysUntilPayday: finalDaysUntilPayday,
         weeklyEssentials: essentialsNeeded,
         safetyBuffer,
-        paidBillsCount: billsDueBeforePayday.length - unpaidBillsBeforePayday.length
+        paidBillsCount: billsDueBeforePayday.length - unpaidBillsBeforePayday.length,
+        paydays  // Array of payday objects
       });
       
       // Force component re-render after state update
@@ -764,7 +868,8 @@ console.log('🔍 PAYDAY CALCULATION DEBUG:', {
     daysUntilPayday: 0,
     weeklyEssentials: 0,
     safetyBuffer: 0,
-    paidBillsCount: 0
+    paidBillsCount: 0,
+    paydays: []
   };
   
   setFinancialData(emptyData);
@@ -1023,33 +1128,106 @@ console.log('🔍 PAYDAY CALCULATION DEBUG:', {
       <div className="tiles-grid">
         
         {/* ✅ FIX ISSUE #3: Tile 1: Next Payday - MOVED TO TOP */}
+        {/* ✅ NEW: Support multiple paydays when early deposit is enabled */}
         <div className="tile payday-tile">
-          <h3>Next Payday</h3>
-          <div className="payday-date">
-            {formatDate(financialData.nextPayday)}
-          </div>
-          <div className="payday-countdown">
-            {financialData.daysUntilPayday > 0 
-              ? `${financialData.daysUntilPayday} days`
-              : 'Today!'
-            }
-            <button 
-              onClick={forceRefreshPaydayCalculation}
-              style={{
-                marginLeft: '10px',
-                padding: '2px 6px',
-                fontSize: '12px',
-                backgroundColor: '#333',
-                color: '#00ff88',
-                border: '1px solid #555',
-                borderRadius: '4px',
-                cursor: 'pointer'
-              }}
-              title="Refresh payday calculation"
-            >
-              🔄
-            </button>
-          </div>
+          {financialData.paydays && financialData.paydays.length > 1 ? (
+            // Multiple paydays (early deposit enabled)
+            <>
+              <h3>💰 Upcoming Income</h3>
+              {financialData.paydays.map((payday, index) => (
+                <div key={index} className="payday-entry" style={{
+                  marginBottom: index < financialData.paydays.length - 1 ? '15px' : '0',
+                  paddingBottom: index < financialData.paydays.length - 1 ? '15px' : '0',
+                  borderBottom: index < financialData.paydays.length - 1 ? '1px solid #333' : 'none'
+                }}>
+                  <div style={{ display: 'flex', alignItems: 'center', marginBottom: '5px' }}>
+                    <span style={{ fontSize: '1.2em', marginRight: '8px' }}>
+                      {payday.type === 'early' ? '⚡' : '💵'}
+                    </span>
+                    <span style={{ fontWeight: 'bold', fontSize: '1.1em' }}>
+                      {payday.type === 'early' ? 'Early Deposit' : 'Main Payday'}
+                    </span>
+                  </div>
+                  <div className="payday-date">{formatDate(payday.date)}</div>
+                  <div className="payday-countdown">
+                    {payday.daysUntil > 0 ? `${payday.daysUntil} days` : 'Today!'}
+                  </div>
+                  <div style={{ fontSize: '1.4em', fontWeight: 'bold', color: '#00ff88', marginTop: '5px' }}>
+                    {formatCurrency(payday.amount)}
+                  </div>
+                  <div style={{ fontSize: '0.9em', color: '#888', marginTop: '2px' }}>
+                    {payday.bank}
+                  </div>
+                </div>
+              ))}
+              <div style={{
+                marginTop: '15px',
+                paddingTop: '15px',
+                borderTop: '2px solid #444',
+                fontSize: '1.1em',
+                fontWeight: 'bold'
+              }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                  <span>Total:</span>
+                  <span style={{ color: '#00ff88' }}>
+                    {formatCurrency(financialData.paydays.reduce((sum, p) => sum + p.amount, 0))}
+                  </span>
+                </div>
+              </div>
+              <button 
+                onClick={forceRefreshPaydayCalculation}
+                style={{
+                  marginTop: '10px',
+                  padding: '6px 12px',
+                  fontSize: '12px',
+                  backgroundColor: '#333',
+                  color: '#00ff88',
+                  border: '1px solid #555',
+                  borderRadius: '4px',
+                  cursor: 'pointer',
+                  width: '100%'
+                }}
+                title="Refresh payday calculation"
+              >
+                🔄 Refresh
+              </button>
+            </>
+          ) : (
+            // Single payday (default)
+            <>
+              <h3>Next Payday</h3>
+              <div className="payday-date">
+                {formatDate(financialData.nextPayday)}
+              </div>
+              <div className="payday-countdown">
+                {financialData.daysUntilPayday > 0 
+                  ? `${financialData.daysUntilPayday} days`
+                  : 'Today!'
+                }
+                <button 
+                  onClick={forceRefreshPaydayCalculation}
+                  style={{
+                    marginLeft: '10px',
+                    padding: '2px 6px',
+                    fontSize: '12px',
+                    backgroundColor: '#333',
+                    color: '#00ff88',
+                    border: '1px solid #555',
+                    borderRadius: '4px',
+                    cursor: 'pointer'
+                  }}
+                  title="Refresh payday calculation"
+                >
+                  🔄
+                </button>
+              </div>
+              {financialData.paydays && financialData.paydays.length === 1 && financialData.paydays[0].amount > 0 && (
+                <div style={{ fontSize: '1.2em', fontWeight: 'bold', color: '#00ff88', marginTop: '10px' }}>
+                  {formatCurrency(financialData.paydays[0].amount)}
+                </div>
+              )}
+            </>
+          )}
         </div>
 
         {/* Tile 2: Safe to Spend */}
@@ -1234,9 +1412,19 @@ console.log('🔍 PAYDAY CALCULATION DEBUG:', {
           <h3>Calculation Breakdown</h3>
           <div className="calculation-list">
             <div className="calc-item">
-              <span>- Total Available:</span>
+              <span>Current Balance:</span>
               <span>{formatCurrency(financialData.totalAvailable)}</span>
             </div>
+            {financialData.paydays && financialData.paydays.length > 0 && financialData.paydays.some(p => p.amount > 0) && (
+              <>
+                {financialData.paydays.map((payday, index) => (
+                  <div key={index} className="calc-item" style={{ color: '#00ff88' }}>
+                    <span>+ {payday.type === 'early' ? 'Early Deposit' : 'Main Payday'} ({formatDate(payday.date)}):</span>
+                    <span>+{formatCurrency(payday.amount)}</span>
+                  </div>
+                ))}
+              </>
+            )}
             <div className="calc-item">
               <span>- Upcoming Bills:</span>
               <span>
