@@ -1145,8 +1145,8 @@ console.log('🔍 PAYDAY CALCULATION DEBUG:', {
                         {payday.type === 'early' ? 'Early Deposit' : 'Main Payday'}
                       </span>
                     </div>
-                    <div className="payday-date">{formatDate(payday.date)}</div>
-                    <div className="payday-countdown">
+                    <div className="payday-item-date">{formatDate(payday.date)}</div>
+                    <div className="payday-item-countdown">
                       ({payday.daysUntil > 0 ? `${payday.daysUntil} days` : 'Today!'})
                     </div>
                     <div className="payday-amount">{formatCurrency(payday.amount)}</div>

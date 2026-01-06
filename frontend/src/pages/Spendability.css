@@ -394,7 +394,7 @@
 }
 
 .payday-single-amount {
-  font-size: 1.2em;
+  font-size: 1.2rem;
   font-weight: bold;
   color: #00ff88;
   margin-top: 10px;
@@ -446,14 +446,14 @@
   color: #fff;
 }
 
-.payday-item .payday-date {
+.payday-item-date {
   font-size: 1.1rem;
   font-weight: 600;
   color: #00ff88;
   margin: 4px 0;
 }
 
-.payday-item .payday-countdown {
+.payday-item-countdown {
   font-size: 0.85rem;
   color: #888;
   margin-bottom: 4px;
