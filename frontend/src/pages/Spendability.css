@@ -393,6 +393,13 @@
   color: #ccc;
 }
 
+.payday-single-amount {
+  font-size: 1.2em;
+  font-weight: bold;
+  color: #00ff88;
+  margin-top: 10px;
+}
+
 /* Multiple paydays list */
 .paydays-list {
   display: flex;

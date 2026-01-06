@@ -1180,28 +1180,19 @@ console.log('🔍 PAYDAY CALCULATION DEBUG:', {
                   ? `${financialData.daysUntilPayday} days`
                   : 'Today!'
                 }
-                <button 
-                  onClick={forceRefreshPaydayCalculation}
-                  style={{
-                    marginLeft: '10px',
-                    padding: '2px 6px',
-                    fontSize: '12px',
-                    backgroundColor: '#333',
-                    color: '#00ff88',
-                    border: '1px solid #555',
-                    borderRadius: '4px',
-                    cursor: 'pointer'
-                  }}
-                  title="Refresh payday calculation"
-                >
-                  🔄
-                </button>
               </div>
               {financialData.paydays && financialData.paydays.length === 1 && financialData.paydays[0].amount > 0 && (
-                <div style={{ fontSize: '1.2em', fontWeight: 'bold', color: '#00ff88', marginTop: '10px' }}>
+                <div className="payday-single-amount">
                   {formatCurrency(financialData.paydays[0].amount)}
                 </div>
               )}
+              <button 
+                onClick={forceRefreshPaydayCalculation}
+                className="refresh-button"
+                title="Refresh payday calculation"
+              >
+                🔄 Refresh
+              </button>
             </>
           )}
         </div>
