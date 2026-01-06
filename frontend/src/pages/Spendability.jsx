@@ -1404,14 +1404,14 @@ console.log('🔍 PAYDAY CALCULATION DEBUG:', {
             {financialData.paydays && financialData.paydays.length > 0 && financialData.paydays.some(p => p.amount > 0) && (
               <>
                 {financialData.paydays.map((payday, index) => (
-                  <div key={index} className="calc-item" style={{ color: '#00ff88' }}>
+                  <div key={index} className="calc-item positive">
                     <span>+ {payday.type === 'early' ? 'Early Deposit' : 'Main Payday'} ({formatDate(payday.date)}):</span>
                     <span>+{formatCurrency(payday.amount)}</span>
                   </div>
                 ))}
               </>
             )}
-            <div className="calc-item">
+            <div className="calc-item negative">
               <span>- Upcoming Bills:</span>
               <span>
                 -{formatCurrency(financialData.totalBillsDue)}
@@ -1422,11 +1422,11 @@ console.log('🔍 PAYDAY CALCULATION DEBUG:', {
                 )}
               </span>
             </div>
-            <div className="calc-item">
+            <div className="calc-item negative">
               <span>- Weekly Essentials:</span>
               <span>-{formatCurrency(financialData.weeklyEssentials)}</span>
             </div>
-            <div className="calc-item">
+            <div className="calc-item negative">
               <span>- Safety Buffer:</span>
               <span>-{formatCurrency(financialData.safetyBuffer)}</span>
             </div>
