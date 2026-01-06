@@ -260,6 +260,8 @@ describe('Spendability Early Deposit Integration', () => {
 
 /**
  * Helper function to simulate payday calculation logic from Spendability.jsx
+ * NOTE: This duplicates the logic from Spendability.jsx intentionally to test
+ * the actual implementation behavior without importing React components.
  */
 function calculatePaydays(settingsData, nextPayday) {
   let paydays = [];
