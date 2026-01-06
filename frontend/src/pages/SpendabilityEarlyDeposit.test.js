@@ -8,7 +8,6 @@
  * 1. Early deposit enabled: Shows both deposits, includes both in calculation
  * 2. Early deposit disabled: Shows single payday, single amount in calculation
  * 3. Edge cases: Missing settings, invalid amounts
- * 4. Backward compatibility: Various field name formats
  */
 
 describe('Spendability Early Deposit Integration', () => {
@@ -66,7 +65,7 @@ describe('Spendability Early Deposit Integration', () => {
       
       // Assert
       expect(result.paydays).toHaveLength(1);
-      expect(result.paydays[0].type).toBe('single');
+      expect(result.paydays[0].type).toBe('main');
       expect(result.paydays[0].amount).toBe(1883.81);
       expect(result.paydays[0].date).toBe('2026-01-09');
       expect(result.totalPaydayAmount).toBe(1883.81);
@@ -86,59 +85,7 @@ describe('Spendability Early Deposit Integration', () => {
       
       // Assert
       expect(result.paydays).toHaveLength(1);
-      expect(result.paydays[0].type).toBe('single');
-      expect(result.totalPaydayAmount).toBe(1883.81);
-    });
-    
-  });
-  
-  describe('Backward Compatibility - Field Name Variations', () => {
-    
-    test('should handle enableEarlyDeposit field (alternate naming)', () => {
-      // Arrange - This simulates old data format
-      const settings = {
-        enableEarlyDeposit: true,
-        earlyDepositAmount: 400,
-        daysBeforePayday: 2,
-        earlyDepositBank: 'SoFi',
-        remainderBank: 'Bank of America',
-        payAmount: 1883.81
-      };
-      
-      const nextPayday = '2026-01-09';
-      
-      // Act
-      const result = calculatePaydays(settings, nextPayday);
-      
-      // Assert - Should work with alternate field names
-      expect(result.paydays).toHaveLength(2);
-      expect(result.paydays[0].type).toBe('early');
-      expect(result.paydays[0].amount).toBe(400);
-      expect(result.paydays[1].amount).toBe(1483.81);
-      expect(result.totalPaydayAmount).toBe(1883.81);
-    });
-    
-    test('should handle mixed field formats (partial migration)', () => {
-      // Arrange - Mix of old and new formats
-      const settings = {
-        earlyDeposit: {
-          enabled: true
-        },
-        earlyDepositAmount: 400, // Old format
-        daysBeforePayday: 2, // Old format
-        earlyDepositBank: 'SoFi', // Old format
-        remainderBank: 'Bank of America', // Old format
-        payAmount: 1883.81
-      };
-      
-      const nextPayday = '2026-01-09';
-      
-      // Act
-      const result = calculatePaydays(settings, nextPayday);
-      
-      // Assert
-      expect(result.paydays).toHaveLength(2);
-      expect(result.paydays[0].amount).toBe(400);
+      expect(result.paydays[0].type).toBe('main');
       expect(result.totalPaydayAmount).toBe(1883.81);
     });
     
@@ -260,42 +207,18 @@ describe('Spendability Early Deposit Integration', () => {
 
 /**
  * Helper function to simulate payday calculation logic from Spendability.jsx
- * NOTE: This duplicates the logic from Spendability.jsx intentionally to test
- * the actual implementation behavior without importing React components.
  */
 function calculatePaydays(settingsData, nextPayday) {
   let paydays = [];
   let totalPaydayAmount = 0;
   
-  // Helper function to safely get early deposit settings from various possible locations
-  const getEarlyDepositSettings = (data) => {
-    // Check multiple possible field names and structures
-    const enabled = data.earlyDeposit?.enabled || data.enableEarlyDeposit === true;
-    const amount = parseFloat(
-      data.earlyDeposit?.amount || 
-      data.earlyDepositAmount || 
-      0
-    );
-    const daysBefore = parseInt(
-      data.earlyDeposit?.daysBefore || 
-      data.daysBeforePayday || 
-      2
-    );
-    const bankName = data.earlyDeposit?.bankName || data.earlyDepositBank || 'Early Deposit Bank';
-    const remainderBank = data.earlyDeposit?.remainderBank || data.remainderBank || 'Main Bank';
-    
-    return { enabled, amount, daysBefore, bankName, remainderBank };
-  };
-  
-  const earlyDepositSettings = getEarlyDepositSettings(settingsData);
-  
-  if (earlyDepositSettings.enabled && earlyDepositSettings.amount > 0) {
+  if (settingsData.earlyDeposit?.enabled && settingsData.earlyDeposit?.amount > 0) {
     // Early deposit is enabled - calculate both deposits
     const mainPaydayDate = new Date(nextPayday);
     const earlyDepositDate = new Date(mainPaydayDate);
-    earlyDepositDate.setDate(earlyDepositDate.getDate() - earlyDepositSettings.daysBefore);
+    earlyDepositDate.setDate(earlyDepositDate.getDate() - (settingsData.earlyDeposit.daysBefore || 2));
     
-    const earlyAmount = earlyDepositSettings.amount;
+    const earlyAmount = parseFloat(settingsData.earlyDeposit.amount) || 0;
     const totalPayAmount = parseFloat(settingsData.payAmount) || 0;
     const mainAmount = totalPayAmount - earlyAmount;
     
@@ -306,7 +229,7 @@ function calculatePaydays(settingsData, nextPayday) {
         { 
           date: nextPayday, 
           amount: totalPayAmount, 
-          bank: earlyDepositSettings.remainderBank, 
+          bank: settingsData.earlyDeposit.remainderBank || 'Main Bank', 
           type: 'main'
         }
       ];
@@ -317,18 +240,14 @@ function calculatePaydays(settingsData, nextPayday) {
         { 
           date: earlyDepositDate.toISOString().split('T')[0], 
           amount: earlyAmount, 
-          bank: earlyDepositSettings.bankName, 
-          type: 'early',
-          label: 'Early Deposit',
-          icon: '⚡'
+          bank: settingsData.earlyDeposit.bankName || 'Early Deposit Bank', 
+          type: 'early'
         },
         { 
           date: nextPayday, 
           amount: mainAmount, 
-          bank: earlyDepositSettings.remainderBank, 
-          type: 'main',
-          label: 'Main Payday',
-          icon: '💵'
+          bank: settingsData.earlyDeposit.remainderBank || 'Main Bank', 
+          type: 'main'
         }
       ];
       
@@ -342,9 +261,7 @@ function calculatePaydays(settingsData, nextPayday) {
         date: nextPayday, 
         amount: payAmount, 
         bank: 'Main Bank', 
-        type: 'single',
-        label: 'Next Payday',
-        icon: '💰'
+        type: 'main'
       }
     ];
     

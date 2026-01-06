@@ -147,20 +147,6 @@ const SpendabilityV2 = () => {
         console.log('✅ Spendability: Required fields ensured with defaults');
       }
       
-      // 🔍 DEBUG: Log ALL early deposit related settings
-      console.log('🔧 [Spendability] Settings loaded from Firebase:', {
-        enableEarlyDeposit: settingsData.enableEarlyDeposit,
-        earlyDepositEnabled: settingsData.earlyDeposit?.enabled,
-        earlyDepositAmount: settingsData.earlyDeposit?.amount || settingsData.earlyDepositAmount,
-        daysBeforePayday: settingsData.earlyDeposit?.daysBefore || settingsData.daysBeforePayday,
-        earlyDepositBank: settingsData.earlyDeposit?.bankName || settingsData.earlyDepositBank,
-        remainderBank: settingsData.earlyDeposit?.remainderBank || settingsData.remainderBank,
-        payAmount: settingsData.payAmount,
-        nextPaydayDate: settingsData.nextPaydayDate || settingsData.lastPayDate,
-        rawEarlyDepositObject: settingsData.earlyDeposit,
-        allEarlyDepositFields: Object.keys(settingsData).filter(k => k.toLowerCase().includes('early') || k.toLowerCase().includes('deposit'))
-      });
-      
       const payCycleData = payCycleDocSnap.exists() ? payCycleDocSnap.data() : null;
       // Auto-update payday if needed
 const wasUpdated = await autoUpdatePayday(settingsData);
@@ -429,52 +415,17 @@ console.log('🔍 PAYDAY CALCULATION DEBUG:', {
 }      
  
       // ✅ NEW: Calculate multiple paydays if early deposit is enabled
-      // 🔍 ENHANCED: Check multiple possible field names for backward compatibility
       let paydays = [];
       let totalPaydayAmount = 0;
       let lastPaydayDate = nextPayday;
       
-      // Helper function to safely get early deposit settings from various possible locations
-      const getEarlyDepositSettings = (data) => {
-        // Check multiple possible field names and structures
-        const enabled = data.earlyDeposit?.enabled || data.enableEarlyDeposit === true;
-        const amount = parseFloat(
-          data.earlyDeposit?.amount || 
-          data.earlyDepositAmount || 
-          0
-        );
-        const daysBefore = parseInt(
-          data.earlyDeposit?.daysBefore || 
-          data.daysBeforePayday || 
-          2
-        );
-        const bankName = data.earlyDeposit?.bankName || data.earlyDepositBank || 'Early Deposit Bank';
-        const remainderBank = data.earlyDeposit?.remainderBank || data.remainderBank || 'Main Bank';
-        
-        return { enabled, amount, daysBefore, bankName, remainderBank };
-      };
-      
-      const earlyDepositSettings = getEarlyDepositSettings(settingsData);
-      
-      // 🔍 DEBUG: Log early deposit check
-      console.log('🔍 [Spendability] Early deposit check:', {
-        enabled: earlyDepositSettings.enabled,
-        amount: earlyDepositSettings.amount,
-        daysBefore: earlyDepositSettings.daysBefore,
-        bankName: earlyDepositSettings.bankName,
-        remainderBank: earlyDepositSettings.remainderBank,
-        condition: earlyDepositSettings.enabled && earlyDepositSettings.amount > 0
-      });
-      
-      if (earlyDepositSettings.enabled && earlyDepositSettings.amount > 0) {
+      if (settingsData.earlyDeposit?.enabled && settingsData.earlyDeposit?.amount > 0) {
         // Early deposit is enabled - calculate both deposits
-        console.log('✅ [Spendability] Multiple payday mode (early deposit enabled)');
-        
         const mainPaydayDate = new Date(nextPayday);
         const earlyDepositDate = new Date(mainPaydayDate);
-        earlyDepositDate.setDate(earlyDepositDate.getDate() - earlyDepositSettings.daysBefore);
+        earlyDepositDate.setDate(earlyDepositDate.getDate() - (settingsData.earlyDeposit.daysBefore || 2));
         
-        const earlyAmount = earlyDepositSettings.amount;
+        const earlyAmount = parseFloat(settingsData.earlyDeposit.amount) || 0;
         // NOTE: Fallback chain for backward compatibility with different settings schema versions
         // Newer schema uses payAmount, older schema uses paySchedules.yours.amount
         const totalPayAmount = parseFloat(settingsData.payAmount || settingsData.paySchedules?.yours?.amount) || 0;
@@ -490,7 +441,7 @@ console.log('🔍 PAYDAY CALCULATION DEBUG:', {
             { 
               date: nextPayday, 
               amount: totalPayAmount, 
-              bank: earlyDepositSettings.remainderBank, 
+              bank: settingsData.earlyDeposit.remainderBank || 'Main Bank', 
               type: 'main',
               daysUntil: daysUntilPayday
             }
@@ -502,20 +453,16 @@ console.log('🔍 PAYDAY CALCULATION DEBUG:', {
             { 
               date: formatDateForInput(earlyDepositDate), 
               amount: earlyAmount, 
-              bank: earlyDepositSettings.bankName, 
+              bank: settingsData.earlyDeposit.bankName || 'Early Deposit Bank', 
               type: 'early',
-              daysUntil: getDaysUntilDateInPacific(formatDateForInput(earlyDepositDate)),
-              label: 'Early Deposit',
-              icon: '⚡'
+              daysUntil: getDaysUntilDateInPacific(formatDateForInput(earlyDepositDate))
             },
             { 
               date: nextPayday, 
               amount: mainAmount, 
-              bank: earlyDepositSettings.remainderBank, 
+              bank: settingsData.earlyDeposit.remainderBank || 'Main Bank', 
               type: 'main',
-              daysUntil: daysUntilPayday,
-              label: 'Main Payday',
-              icon: '💵'
+              daysUntil: daysUntilPayday
             }
           ];
           
@@ -524,7 +471,7 @@ console.log('🔍 PAYDAY CALCULATION DEBUG:', {
         
         lastPaydayDate = nextPayday; // Use main payday as the cutoff for bills
         
-        console.log('✅ [Spendability] Early deposit calculation complete:', {
+        console.log('✅ Early deposit enabled:', {
           earlyDate: paydays[0]?.date,
           earlyAmount: paydays[0]?.amount,
           mainDate: paydays[paydays.length - 1]?.date,
@@ -533,18 +480,14 @@ console.log('🔍 PAYDAY CALCULATION DEBUG:', {
         });
       } else {
         // Single payday (default)
-        console.log('ℹ️ [Spendability] Single payday mode (early deposit disabled or zero)');
-        
         const payAmount = parseFloat(settingsData.payAmount || settingsData.paySchedules?.yours?.amount) || 0;
         paydays = [
           { 
             date: nextPayday, 
             amount: payAmount, 
             bank: 'Main Bank', 
-            type: 'single',
-            daysUntil: daysUntilPayday,
-            label: 'Next Payday',
-            icon: '💰'
+            type: 'main',
+            daysUntil: daysUntilPayday
           }
         ];
         
@@ -1196,10 +1139,10 @@ console.log('🔍 PAYDAY CALCULATION DEBUG:', {
                   <div key={index} className={`payday-item payday-${payday.type}`}>
                     <div className="payday-header">
                       <span className="payday-icon">
-                        {payday.icon || (payday.type === 'early' ? '⚡' : '💵')}
+                        {payday.type === 'early' ? '⚡' : '💵'}
                       </span>
                       <span className="payday-label">
-                        {payday.label || (payday.type === 'early' ? 'Early Deposit' : 'Main Payday')}
+                        {payday.type === 'early' ? 'Early Deposit' : 'Main Payday'}
                       </span>
                     </div>
                     <div className="payday-item-date">{formatDate(payday.date)}</div>
@@ -1453,7 +1396,7 @@ console.log('🔍 PAYDAY CALCULATION DEBUG:', {
               <>
                 {financialData.paydays.map((payday, index) => (
                   <div key={index} className="calc-item positive">
-                    <span>+ {payday.label || (payday.type === 'early' ? 'Early Deposit' : 'Main Payday')} ({formatDate(payday.date)}):</span>
+                    <span>+ {payday.type === 'early' ? 'Early Deposit' : 'Main Payday'} ({formatDate(payday.date)}):</span>
                     <span>+{formatCurrency(payday.amount)}</span>
                   </div>
                 ))}
