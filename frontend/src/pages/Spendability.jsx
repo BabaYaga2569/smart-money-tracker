@@ -1134,59 +1134,35 @@ console.log('🔍 PAYDAY CALCULATION DEBUG:', {
             // Multiple paydays (early deposit enabled)
             <>
               <h3>💰 Upcoming Income</h3>
-              {financialData.paydays.map((payday, index) => (
-                <div key={index} className="payday-entry" style={{
-                  marginBottom: index < financialData.paydays.length - 1 ? '15px' : '0',
-                  paddingBottom: index < financialData.paydays.length - 1 ? '15px' : '0',
-                  borderBottom: index < financialData.paydays.length - 1 ? '1px solid #333' : 'none'
-                }}>
-                  <div style={{ display: 'flex', alignItems: 'center', marginBottom: '5px' }}>
-                    <span style={{ fontSize: '1.2em', marginRight: '8px' }}>
-                      {payday.type === 'early' ? '⚡' : '💵'}
-                    </span>
-                    <span style={{ fontWeight: 'bold', fontSize: '1.1em' }}>
-                      {payday.type === 'early' ? 'Early Deposit' : 'Main Payday'}
-                    </span>
+              <div className="paydays-list">
+                {financialData.paydays.map((payday, index) => (
+                  <div key={index} className={`payday-item payday-${payday.type}`}>
+                    <div className="payday-header">
+                      <span className="payday-icon">
+                        {payday.type === 'early' ? '⚡' : '💵'}
+                      </span>
+                      <span className="payday-label">
+                        {payday.type === 'early' ? 'Early Deposit' : 'Main Payday'}
+                      </span>
+                    </div>
+                    <div className="payday-date">{formatDate(payday.date)}</div>
+                    <div className="payday-countdown">
+                      ({payday.daysUntil > 0 ? `${payday.daysUntil} days` : 'Today!'})
+                    </div>
+                    <div className="payday-amount">{formatCurrency(payday.amount)}</div>
+                    <div className="payday-bank">→ {payday.bank}</div>
                   </div>
-                  <div className="payday-date">{formatDate(payday.date)}</div>
-                  <div className="payday-countdown">
-                    {payday.daysUntil > 0 ? `${payday.daysUntil} days` : 'Today!'}
-                  </div>
-                  <div style={{ fontSize: '1.4em', fontWeight: 'bold', color: '#00ff88', marginTop: '5px' }}>
-                    {formatCurrency(payday.amount)}
-                  </div>
-                  <div style={{ fontSize: '0.9em', color: '#888', marginTop: '2px' }}>
-                    {payday.bank}
-                  </div>
-                </div>
-              ))}
-              <div style={{
-                marginTop: '15px',
-                paddingTop: '15px',
-                borderTop: '2px solid #444',
-                fontSize: '1.1em',
-                fontWeight: 'bold'
-              }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                  <span>Total:</span>
-                  <span style={{ color: '#00ff88' }}>
-                    {formatCurrency(financialData.paydays.reduce((sum, p) => sum + p.amount, 0))}
-                  </span>
-                </div>
+                ))}
+              </div>
+              <div className="paydays-total">
+                <span>Total Expected:</span>
+                <span className="total-amount">
+                  {formatCurrency(financialData.paydays.reduce((sum, p) => sum + p.amount, 0))}
+                </span>
               </div>
               <button 
                 onClick={forceRefreshPaydayCalculation}
-                style={{
-                  marginTop: '10px',
-                  padding: '6px 12px',
-                  fontSize: '12px',
-                  backgroundColor: '#333',
-                  color: '#00ff88',
-                  border: '1px solid #555',
-                  borderRadius: '4px',
-                  cursor: 'pointer',
-                  width: '100%'
-                }}
+                className="refresh-button"
                 title="Refresh payday calculation"
               >
                 🔄 Refresh
@@ -1236,7 +1212,17 @@ console.log('🔍 PAYDAY CALCULATION DEBUG:', {
           <div className={`safe-amount ${financialData.safeToSpend < 0 ? 'negative' : 'positive'}`}>
             {formatCurrency(financialData.safeToSpend)}
           </div>
-          <small>Available until {formatDate(financialData.nextPayday)}</small>
+          <small>
+            {financialData.paydays && financialData.paydays.length > 1 ? (
+              <>
+                First deposit on {formatDate(financialData.paydays[0].date)}
+                <br />
+                Full amount by {formatDate(financialData.paydays[financialData.paydays.length - 1].date)}
+              </>
+            ) : (
+              <>Available until {formatDate(financialData.nextPayday)}</>
+            )}
+          </small>
         </div>
 
         {/* Tile 3: Current Balances */}
