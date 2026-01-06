@@ -393,6 +393,127 @@
   color: #ccc;
 }
 
+.payday-single-amount {
+  font-size: 1.2rem;
+  font-weight: bold;
+  color: #00ff88;
+  margin-top: 10px;
+}
+
+/* Multiple paydays list */
+.paydays-list {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  margin-top: 12px;
+}
+
+.payday-item {
+  background: rgba(255, 255, 255, 0.05);
+  border-radius: 8px;
+  padding: 12px;
+  border-left: 3px solid #00ff88;
+  transition: all 0.3s ease;
+}
+
+.payday-item:hover {
+  background: rgba(255, 255, 255, 0.08);
+  transform: translateX(2px);
+}
+
+.payday-item.payday-early {
+  border-left-color: #ffd43b; /* Yellow for early */
+}
+
+.payday-item.payday-main {
+  border-left-color: #51cf66; /* Green for main */
+}
+
+.payday-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 6px;
+}
+
+.payday-icon {
+  font-size: 1.2rem;
+}
+
+.payday-label {
+  font-weight: 600;
+  font-size: 0.9rem;
+  color: #fff;
+}
+
+.payday-item-date {
+  font-size: 1.1rem;
+  font-weight: 600;
+  color: #00ff88;
+  margin: 4px 0;
+}
+
+.payday-item-countdown {
+  font-size: 0.85rem;
+  color: #888;
+  margin-bottom: 4px;
+}
+
+.payday-amount {
+  font-size: 1.3rem;
+  font-weight: bold;
+  color: #00ff88;
+  margin: 6px 0;
+}
+
+.payday-bank {
+  font-size: 0.85rem;
+  color: #888;
+}
+
+.paydays-total {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 2px solid #444;
+  font-weight: 600;
+}
+
+.total-amount {
+  font-size: 1.2rem;
+  color: #00ff88;
+}
+
+.refresh-button {
+  margin-top: 10px;
+  padding: 6px 12px;
+  font-size: 12px;
+  background-color: #333;
+  color: #00ff88;
+  border: 1px solid #555;
+  border-radius: 4px;
+  cursor: pointer;
+  width: 100%;
+  transition: all 0.3s ease;
+}
+
+.refresh-button:hover {
+  background-color: #444;
+  border-color: #00ff88;
+  transform: translateY(-1px);
+}
+
+/* Calculation breakdown with multiple lines */
+.calc-item.positive {
+  color: #00ff88;
+}
+
+.calc-item.negative {
+  color: #ff6b6b;
+}
+
 /* Responsive Design */
 @media (max-width: 768px) {
   .tiles-grid {
