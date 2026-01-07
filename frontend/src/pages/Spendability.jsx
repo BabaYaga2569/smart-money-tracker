@@ -34,7 +34,7 @@ const SpendabilityV2 = () => {
     safeToSpend: 0,
     safeToSpendToday: 0,
     availableAfterPayday: 0,
-    depositsTodayAmount: 0,
+    // depositsTodayAmount removed - not needed anymore
     nextPayday: 'No date',
     daysUntilPayday: 0,
     weeklyEssentials: 0,
@@ -757,25 +757,13 @@ console.log('🔍 PAYDAY CALCULATION DEBUG:', {
       const weeksUntilPayday = Math.ceil(daysUntilPayday / 7);
       const essentialsNeeded = weeklyEssentials * weeksUntilPayday;
 
-      // ✅ NEW: Calculate deposits that have ALREADY happened TODAY
-      const todayForDeposits = getPacificTime();
-      todayForDeposits. setHours(0, 0, 0, 0);
-      
-      const depositsToday = paydays.filter(payday => {
-        const paydayDate = new Date(payday.date);
-        paydayDate.setHours(0, 0, 0, 0);
-        return paydayDate <= todayForDeposits; // Deposit is today or earlier
-      });
-      
-      const depositsTodayAmount = depositsToday.reduce((sum, p) => sum + p.amount, 0);
-      
-      // Calculate what's safe to spend RIGHT NOW (conservative - only current balance + today's deposits)
+      // ✅ CORRECT: Safe to spend NOW uses ONLY real bank balance from Plaid
+      // Future deposits are NOT included until they actually arrive in the bank
       const safeToSpendToday = 
-        totalAvailable +
-        depositsTodayAmount -      // Only include deposits that happened today or earlier
-        totalBillsDue -
-        essentialsNeeded -
-        safetyBuffer;
+        totalAvailable -           // Real balance that's ACTUALLY in the bank
+        totalBillsDue -            // Only unpaid bills
+        essentialsNeeded -         // Weekly essentials
+        safetyBuffer;              // Safety buffer
       
       // Calculate what will be available AFTER all deposits arrive (projection)
       const availableAfterPayday = 
@@ -790,7 +778,6 @@ console.log('🔍 PAYDAY CALCULATION DEBUG:', {
       
       console.log('💰 Safe to Spend Calculation:', {
         totalAvailable,
-        depositsTodayAmount,
         totalPaydayAmount,
         totalBillsDue,
         safetyBuffer,
@@ -913,7 +900,7 @@ console.log('🔍 PAYDAY CALCULATION DEBUG:', {
         safeToSpend,
         safeToSpendToday,  // NEW: What's safe to spend RIGHT NOW
         availableAfterPayday,  // NEW: What will be available after all deposits
-        depositsTodayAmount,  // NEW: Deposits that happened today
+        // depositsTodayAmount removed
         nextPayday,
         daysUntilPayday: finalDaysUntilPayday,
         weeklyEssentials: essentialsNeeded,
@@ -941,7 +928,7 @@ console.log('🔍 PAYDAY CALCULATION DEBUG:', {
     safeToSpend: 0,
     safeToSpendToday: 0,
     availableAfterPayday: 0,
-    depositsTodayAmount: 0,
+    // depositsTodayAmount removed
     nextPayday: 'Not set',
     daysUntilPayday: 0,
     weeklyEssentials: 0,
@@ -1288,10 +1275,7 @@ console.log('🔍 PAYDAY CALCULATION DEBUG:', {
               {financialData.safeToSpendToday < 0 && <span className="warning-badge">⚠️ SHORT</span>}
             </div>
             <div className="spend-note">
-              {financialData.depositsTodayAmount > 0 
-                ? `Includes today's deposit of ${formatCurrency(financialData.depositsTodayAmount)}`
-                : "Based on current balance only"
-              }
+              Based on current bank balance (updates automatically)
             </div>
           </div>
           
@@ -1515,13 +1499,9 @@ console.log('🔍 PAYDAY CALCULATION DEBUG:', {
                 <span>Current Balance:</span>
                 <span className="positive">{formatCurrency(financialData.totalAvailable)}</span>
               </div>
-              
-              {financialData.depositsTodayAmount > 0 && (
-                <div className="calc-item positive">
-                  <span>+ Today's Deposits:</span>
-                  <span>+{formatCurrency(financialData.depositsTodayAmount)}</span>
-                </div>
-              )}
+              <div className="calc-note">
+                <small>✅ Live balance from your bank accounts</small>
+              </div>
             </div>
             
             {/* Future Deposits Section */}
