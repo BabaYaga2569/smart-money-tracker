@@ -423,7 +423,9 @@ console.log('🔍 PAYDAY CALCULATION DEBUG:', {
         // Early deposit is enabled - calculate both deposits
         const mainPaydayDate = new Date(nextPayday);
         const earlyDepositDate = new Date(mainPaydayDate);
-        earlyDepositDate.setDate(earlyDepositDate.getDate() - (settingsData.earlyDeposit.daysBefore || 2));
+        // Support both daysBeforePayday (new) and daysBefore (legacy) for backward compatibility
+        const daysBeforePayday = settingsData.earlyDeposit.daysBeforePayday || settingsData.earlyDeposit.daysBefore || 2;
+        earlyDepositDate.setDate(earlyDepositDate.getDate() - daysBeforePayday);
         
         const earlyAmount = parseFloat(settingsData.earlyDeposit.amount) || 0;
         // NOTE: Fallback chain for backward compatibility with different settings schema versions
