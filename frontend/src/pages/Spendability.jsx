@@ -32,6 +32,9 @@ const SpendabilityV2 = () => {
     billsAfterPayday: [],
     totalBillsDue: 0,
     safeToSpend: 0,
+    safeToSpendToday: 0,
+    availableAfterPayday: 0,
+    depositsTodayAmount: 0,
     nextPayday: 'No date',
     daysUntilPayday: 0,
     weeklyEssentials: 0,
@@ -754,21 +757,47 @@ console.log('🔍 PAYDAY CALCULATION DEBUG:', {
       const weeksUntilPayday = Math.ceil(daysUntilPayday / 7);
       const essentialsNeeded = weeklyEssentials * weeksUntilPayday;
 
-      // ✅ NEW: Include all payday amounts in safe-to-spend calculation
-      // NOTE: This represents "safe to spend by next payday", not "safe to spend right now"
-      // The calculation intentionally includes future income to show what will be available
-      // after all upcoming paydays are received. This helps users plan spending across
-      // the entire pay period rather than just with current cash on hand.
-      const safeToSpend = totalAvailable + totalPaydayAmount - totalBillsDue - safetyBuffer - essentialsNeeded;
+      // ✅ NEW: Calculate deposits that have ALREADY happened TODAY
+      const today = getPacificTime();
+      today.setHours(0, 0, 0, 0);
+      
+      const depositsToday = paydays.filter(payday => {
+        const paydayDate = new Date(payday.date);
+        paydayDate.setHours(0, 0, 0, 0);
+        return paydayDate <= today; // Deposit is today or earlier
+      });
+      
+      const depositsTodayAmount = depositsToday.reduce((sum, p) => sum + p.amount, 0);
+      
+      // Calculate what's safe to spend RIGHT NOW (conservative - only current balance + today's deposits)
+      const safeToSpendToday = 
+        totalAvailable +
+        depositsTodayAmount -      // Only include deposits that happened today or earlier
+        totalBillsDue -
+        essentialsNeeded -
+        safetyBuffer;
+      
+      // Calculate what will be available AFTER all deposits arrive (projection)
+      const availableAfterPayday = 
+        totalAvailable +
+        totalPaydayAmount -        // All future deposits
+        totalBillsDue -
+        essentialsNeeded -
+        safetyBuffer;
+      
+      // Legacy field for backward compatibility (now points to "safe to spend today")
+      const safeToSpend = safeToSpendToday;
       
       console.log('💰 Safe to Spend Calculation:', {
         totalAvailable,
+        depositsTodayAmount,
         totalPaydayAmount,
         totalBillsDue,
         safetyBuffer,
         essentialsNeeded,
-        safeToSpend,
-        paydays: paydays.map(p => ({ date: p.date, amount: p.amount, type: p.type }))
+        safeToSpendToday,
+        availableAfterPayday,
+        paydays: paydays.map(p => ({ date: p.date, amount: p.amount, type: p.type, daysUntil: p.daysUntil }))
       });
 
       const finalDaysUntilPayday = Math.max(0, daysUntilPayday);
@@ -882,6 +911,9 @@ console.log('🔍 PAYDAY CALCULATION DEBUG:', {
         billsAfterPayday: unpaidBillsAfterPayday,    // Only unpaid bills after payday
         totalBillsDue,  // Total of unpaid bills only
         safeToSpend,
+        safeToSpendToday,  // NEW: What's safe to spend RIGHT NOW
+        availableAfterPayday,  // NEW: What will be available after all deposits
+        depositsTodayAmount,  // NEW: Deposits that happened today
         nextPayday,
         daysUntilPayday: finalDaysUntilPayday,
         weeklyEssentials: essentialsNeeded,
@@ -907,6 +939,9 @@ console.log('🔍 PAYDAY CALCULATION DEBUG:', {
     billsAfterPayday: [],
     totalBillsDue: 0,
     safeToSpend: 0,
+    safeToSpendToday: 0,
+    availableAfterPayday: 0,
+    depositsTodayAmount: 0,
     nextPayday: 'Not set',
     daysUntilPayday: 0,
     weeklyEssentials: 0,
@@ -951,7 +986,8 @@ console.log('🔍 PAYDAY CALCULATION DEBUG:', {
     setSpendAmount(amount);
     
     if (amount && !isNaN(amount)) {
-      setCanSpend(parseFloat(amount) <= financialData.safeToSpend);
+      // Check against "safe to spend today" (conservative)
+      setCanSpend(parseFloat(amount) <= financialData.safeToSpendToday);
     } else {
       setCanSpend(null);
     }
@@ -1242,21 +1278,50 @@ console.log('🔍 PAYDAY CALCULATION DEBUG:', {
 
         {/* Tile 2: Safe to Spend */}
         <div className="tile safe-spend-tile">
-          <h3>Safe to Spend</h3>
-          <div className={`safe-amount ${financialData.safeToSpend < 0 ? 'negative' : 'positive'}`}>
-            {formatCurrency(financialData.safeToSpend)}
+          <h3>💰 Spending Power</h3>
+          
+          {/* Primary: Safe to Spend TODAY */}
+          <div className="spend-now-section">
+            <div className="spend-label">Safe to Spend NOW:</div>
+            <div className={`safe-amount ${financialData.safeToSpendToday < 0 ? 'negative' : 'positive'}`}>
+              {formatCurrency(Math.abs(financialData.safeToSpendToday))}
+              {financialData.safeToSpendToday < 0 && <span className="warning-badge">⚠️ SHORT</span>}
+            </div>
+            <div className="spend-note">
+              {financialData.depositsTodayAmount > 0 
+                ? `Includes today's deposit of ${formatCurrency(financialData.depositsTodayAmount)}`
+                : "Based on current balance only"
+              }
+            </div>
           </div>
-          <small>
-            {financialData.paydays && financialData.paydays.length > 1 ? (
-              <>
-                First deposit on {formatDate(financialData.paydays[0].date)}
-                <br />
-                Full amount by {formatDate(financialData.paydays[financialData.paydays.length - 1].date)}
-              </>
-            ) : (
-              <>Available until {formatDate(financialData.nextPayday)}</>
-            )}
-          </small>
+          
+          {/* Secondary: Future Projection */}
+          {financialData.paydays && financialData.paydays.length > 0 && 
+           financialData.paydays.some(p => {
+             const pDate = new Date(p.date);
+             const today = new Date();
+             today.setHours(0, 0, 0, 0);
+             pDate.setHours(0, 0, 0, 0);
+             return pDate > today;
+           }) && (
+            <div className="spend-future-section">
+              <div className="spend-label-small">After All Deposits:</div>
+              <div className="spend-amount-small positive">
+                {formatCurrency(financialData.availableAfterPayday)}
+              </div>
+              <div className="spend-note-small">
+                Available on {formatDate(financialData.paydays[financialData.paydays.length - 1]?.date)}
+              </div>
+            </div>
+          )}
+          
+          {/* Warning if currently negative */}
+          {financialData.safeToSpendToday < 0 && (
+            <div className="warning-message">
+              ⚠️ You're currently {formatCurrency(Math.abs(financialData.safeToSpendToday))} short. 
+              Avoid spending until payday to prevent overdraft fees.
+            </div>
+          )}
         </div>
 
         {/* Tile 3: Current Balances */}
@@ -1429,44 +1494,98 @@ console.log('🔍 PAYDAY CALCULATION DEBUG:', {
 
         {/* Tile 6: Calculation Breakdown */}
         <div className="tile calculation-tile">
-          <h3>Calculation Breakdown</h3>
+          <h3>📊 Calculation Breakdown</h3>
           <div className="calculation-list">
-            <div className="calc-item">
-              <span>Current Balance:</span>
-              <span>{formatCurrency(financialData.totalAvailable)}</span>
+            
+            {/* Current Funds Section */}
+            <div className="calc-section">
+              <div className="calc-section-title">💵 Available Now:</div>
+              <div className="calc-item">
+                <span>Current Balance:</span>
+                <span className="positive">{formatCurrency(financialData.totalAvailable)}</span>
+              </div>
+              
+              {financialData.depositsTodayAmount > 0 && (
+                <div className="calc-item positive">
+                  <span>+ Today's Deposits:</span>
+                  <span>+{formatCurrency(financialData.depositsTodayAmount)}</span>
+                </div>
+              )}
             </div>
-            {financialData.paydays && financialData.paydays.length > 0 && financialData.paydays.some(p => p.amount > 0) && (
-              <>
-                {financialData.paydays.map((payday, index) => (
-                  <div key={index} className="calc-item positive">
-                    <span>+ {payday.type === 'early' ? 'Early Deposit' : 'Main Payday'} ({formatDate(payday.date)}):</span>
-                    <span>+{formatCurrency(payday.amount)}</span>
+            
+            {/* Future Deposits Section */}
+            {financialData.paydays && financialData.paydays.length > 0 && 
+             financialData.paydays.some(p => {
+               const pDate = new Date(p.date);
+               const today = new Date();
+               today.setHours(0, 0, 0, 0);
+               pDate.setHours(0, 0, 0, 0);
+               return pDate > today;
+             }) && (
+              <div className="calc-section future">
+                <div className="calc-section-title">📅 Coming Soon:</div>
+                {financialData.paydays.filter(p => {
+                  const paydayDate = new Date(p.date);
+                  const today = new Date();
+                  today.setHours(0, 0, 0, 0);
+                  paydayDate.setHours(0, 0, 0, 0);
+                  return paydayDate > today;
+                }).map((payday, idx) => (
+                  <div key={idx} className="calc-item future">
+                    <span>
+                      + {payday.type === 'early' ? 'Early Deposit' : 'Main Payday'} 
+                      ({formatDate(payday.date)}):
+                    </span>
+                    <span className="positive">+{formatCurrency(payday.amount)}</span>
                   </div>
                 ))}
-              </>
+              </div>
             )}
-            <div className="calc-item negative">
-              <span>- Upcoming Bills:</span>
-              <span>
-                -{formatCurrency(financialData.totalBillsDue)}
-                {financialData.paidBillsCount > 0 && (
-                  <span style={{ fontSize: '0.85em', color: '#10b981', marginLeft: '8px' }}>
-                    ({financialData.paidBillsCount} paid)
-                  </span>
-                )}
-              </span>
+            
+            {/* Obligations Section */}
+            <div className="calc-section">
+              <div className="calc-section-title">💸 Obligations:</div>
+              <div className="calc-item negative">
+                <span>- Upcoming Bills:</span>
+                <span>
+                  -{formatCurrency(financialData.totalBillsDue)}
+                  {financialData.paidBillsCount > 0 && (
+                    <span style={{ fontSize: '0.85em', color: '#10b981', marginLeft: '8px' }}>
+                      ({financialData.paidBillsCount} paid)
+                    </span>
+                  )}
+                </span>
+              </div>
+              <div className="calc-item negative">
+                <span>- Weekly Essentials:</span>
+                <span>-{formatCurrency(financialData.weeklyEssentials)}</span>
+              </div>
+              <div className="calc-item negative">
+                <span>- Safety Buffer:</span>
+                <span>-{formatCurrency(financialData.safetyBuffer)}</span>
+              </div>
             </div>
-            <div className="calc-item negative">
-              <span>- Weekly Essentials:</span>
-              <span>-{formatCurrency(financialData.weeklyEssentials)}</span>
-            </div>
-            <div className="calc-item negative">
-              <span>- Safety Buffer:</span>
-              <span>-{formatCurrency(financialData.safetyBuffer)}</span>
-            </div>
-            <div className="calc-total">
-              <span><strong>Safe to Spend:</strong></span>
-              <span><strong>{formatCurrency(financialData.safeToSpend)}</strong></span>
+            
+            {/* Results Section */}
+            <div className="calc-results">
+              <div className={`calc-total ${financialData.safeToSpendToday < 0 ? 'negative' : 'positive'}`}>
+                <span className="result-label">Safe to Spend NOW:</span>
+                <span className="result-amount">{formatCurrency(financialData.safeToSpendToday)}</span>
+              </div>
+              
+              {financialData.paydays && financialData.paydays.length > 0 && 
+               financialData.paydays.some(p => {
+                 const pDate = new Date(p.date);
+                 const today = new Date();
+                 today.setHours(0, 0, 0, 0);
+                 pDate.setHours(0, 0, 0, 0);
+                 return pDate > today;
+               }) && (
+                <div className="calc-total future positive">
+                  <span className="result-label-small">After Payday:</span>
+                  <span className="result-amount-small">{formatCurrency(financialData.availableAfterPayday)}</span>
+                </div>
+              )}
             </div>
           </div>
         </div>
