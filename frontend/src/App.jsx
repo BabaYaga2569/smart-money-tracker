@@ -64,10 +64,10 @@ const OnboardingErrorFallback = (
 // Onboarding Guard - Redirects to onboarding if not complete
 const OnboardingGuard = ({ children }) => {
   const { currentUser } = useAuth();
-  const [loading, setLoading] = React.useState(true);
-  const [needsOnboarding, setNeedsOnboarding] = React.useState(false);
+  const [loading, setLoading] = useState(true);
+  const [needsOnboarding, setNeedsOnboarding] = useState(false);
 
-  React.useEffect(() => {
+  useEffect(() => {
     // EMERGENCY BYPASS: Allow ?skip_onboarding=true to bypass guard
     const urlParams = new URLSearchParams(window.location.search);
     if (urlParams.get('skip_onboarding') === 'true') {

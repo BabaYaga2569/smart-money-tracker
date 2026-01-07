@@ -71,6 +71,18 @@ const Debug = () => {
     }
 
     try {
+      // Verify user is authenticated and can only modify their own settings
+      const currentUser = auth.currentUser;
+      if (!currentUser) {
+        setStatus('❌ Not authenticated. Please log in first.');
+        return;
+      }
+      
+      if (currentUser.uid !== userId) {
+        setStatus('❌ Unauthorized: You can only modify your own settings.');
+        return;
+      }
+
       const settingsRef = doc(db, 'users', userId, 'settings', 'personal');
       await updateDoc(settingsRef, {
         isOnboardingComplete: true
