@@ -419,15 +419,52 @@ console.log('🔍 PAYDAY CALCULATION DEBUG:', {
       let totalPaydayAmount = 0;
       let lastPaydayDate = nextPayday;
       
-      if (settingsData.earlyDeposit?.enabled && settingsData.earlyDeposit?.amount > 0) {
+      // Check BOTH nested and flat field structures for backward compatibility
+      const earlyDepositEnabled = 
+        settingsData.earlyDeposit?.enabled === true || 
+        settingsData.enableEarlyDeposit === true;
+
+      const earlyDepositAmount = parseFloat(
+        settingsData.earlyDeposit?.amount || 
+        settingsData.earlyDepositAmount || 
+        0
+      );
+
+      const earlyDepositBank = 
+        settingsData.earlyDeposit?.bankName || 
+        settingsData.earlyDepositBank || 
+        'Early Deposit Account';
+
+      const daysBeforePayday = parseInt(
+        settingsData.earlyDeposit?.daysBefore || 
+        settingsData.earlyDeposit?.daysBeforePayday ||
+        settingsData.daysBeforePayday || 
+        2
+      );
+
+      const remainderBank = 
+        settingsData.earlyDeposit?.remainderBank || 
+        settingsData.remainderBank || 
+        'Main Account';
+
+      // Log what we found for debugging
+      console.log('🔍 Early deposit field detection:', {
+        nestedEnabled: settingsData.earlyDeposit?.enabled,
+        flatEnabled: settingsData.enableEarlyDeposit,
+        finalEnabled: earlyDepositEnabled,
+        nestedAmount: settingsData.earlyDeposit?.amount,
+        flatAmount: settingsData.earlyDepositAmount,
+        finalAmount: earlyDepositAmount,
+        daysBeforePayday: daysBeforePayday
+      });
+      
+      if (earlyDepositEnabled && earlyDepositAmount > 0) {
         // Early deposit is enabled - calculate both deposits
         const mainPaydayDate = new Date(nextPayday);
         const earlyDepositDate = new Date(mainPaydayDate);
-        // Support both daysBeforePayday (new) and daysBefore (legacy) for backward compatibility
-        const daysBeforePayday = settingsData.earlyDeposit.daysBeforePayday || settingsData.earlyDeposit.daysBefore || 2;
         earlyDepositDate.setDate(earlyDepositDate.getDate() - daysBeforePayday);
         
-        const earlyAmount = parseFloat(settingsData.earlyDeposit.amount) || 0;
+        const earlyAmount = earlyDepositAmount;
         // NOTE: Fallback chain for backward compatibility with different settings schema versions
         // Newer schema uses payAmount, older schema uses paySchedules.yours.amount
         const totalPayAmount = parseFloat(settingsData.payAmount || settingsData.paySchedules?.yours?.amount) || 0;
@@ -435,7 +472,7 @@ console.log('🔍 PAYDAY CALCULATION DEBUG:', {
         
         // ✅ VALIDATION: Ensure early deposit doesn't exceed total pay
         if (earlyAmount > totalPayAmount) {
-          console.warn('⚠️ Early deposit amount exceeds total pay amount. Using total pay as early deposit.');
+          console.warn('⚠️ Early deposit amount exceeds total pay amount.');
           console.warn(`   Early: $${earlyAmount}, Total: $${totalPayAmount}`);
           
           // Fallback to single payday with warning
@@ -443,8 +480,8 @@ console.log('🔍 PAYDAY CALCULATION DEBUG:', {
             { 
               date: nextPayday, 
               amount: totalPayAmount, 
-              bank: settingsData.earlyDeposit.remainderBank || 'Main Bank', 
-              type: 'main',
+              bank: remainderBank, 
+              type: 'single',
               daysUntil: daysUntilPayday
             }
           ];
@@ -455,14 +492,14 @@ console.log('🔍 PAYDAY CALCULATION DEBUG:', {
             { 
               date: formatDateForInput(earlyDepositDate), 
               amount: earlyAmount, 
-              bank: settingsData.earlyDeposit.bankName || 'Early Deposit Bank', 
+              bank: earlyDepositBank, 
               type: 'early',
               daysUntil: getDaysUntilDateInPacific(formatDateForInput(earlyDepositDate))
             },
             { 
               date: nextPayday, 
               amount: mainAmount, 
-              bank: settingsData.earlyDeposit.remainderBank || 'Main Bank', 
+              bank: remainderBank, 
               type: 'main',
               daysUntil: daysUntilPayday
             }
@@ -473,32 +510,36 @@ console.log('🔍 PAYDAY CALCULATION DEBUG:', {
         
         lastPaydayDate = nextPayday; // Use main payday as the cutoff for bills
         
-        console.log('✅ Early deposit enabled:', {
+        console.log('✅ Early deposit enabled - split payday:', {
           earlyDate: paydays[0]?.date,
           earlyAmount: paydays[0]?.amount,
+          earlyBank: paydays[0]?.bank,
           mainDate: paydays[paydays.length - 1]?.date,
           mainAmount: paydays[paydays.length - 1]?.amount,
+          mainBank: paydays[paydays.length - 1]?.bank,
           total: totalPaydayAmount
         });
       } else {
         // Single payday (default)
-        const payAmount = parseFloat(settingsData.payAmount || settingsData.paySchedules?.yours?.amount) || 0;
+        const totalPayAmount = parseFloat(settingsData.payAmount || settingsData.paySchedules?.yours?.amount) || 0;
+        
         paydays = [
           { 
             date: nextPayday, 
-            amount: payAmount, 
-            bank: 'Main Bank', 
-            type: 'main',
+            amount: totalPayAmount, 
+            bank: remainderBank || 'Main Bank', 
+            type: 'single',
             daysUntil: daysUntilPayday
           }
         ];
         
-        totalPaydayAmount = payAmount;
+        totalPaydayAmount = totalPayAmount;
         lastPaydayDate = nextPayday;
         
-        console.log('✅ Single payday mode:', {
-          date: nextPayday,
-          amount: payAmount
+        console.log('ℹ️ Single payday mode:', {
+          reason: !earlyDepositEnabled ? 'Early deposit not enabled' : 'Early deposit amount is 0',
+          amount: totalPayAmount,
+          date: nextPayday
         });
       }
  
