@@ -758,13 +758,13 @@ console.log('🔍 PAYDAY CALCULATION DEBUG:', {
       const essentialsNeeded = weeklyEssentials * weeksUntilPayday;
 
       // ✅ NEW: Calculate deposits that have ALREADY happened TODAY
-      const today = getPacificTime();
-      today.setHours(0, 0, 0, 0);
+      const todayForDeposits = getPacificTime();
+      todayForDeposits. setHours(0, 0, 0, 0);
       
       const depositsToday = paydays.filter(payday => {
         const paydayDate = new Date(payday.date);
         paydayDate.setHours(0, 0, 0, 0);
-        return paydayDate <= today; // Deposit is today or earlier
+        return paydayDate <= todayForDeposits; // Deposit is today or earlier
       });
       
       const depositsTodayAmount = depositsToday.reduce((sum, p) => sum + p.amount, 0);
