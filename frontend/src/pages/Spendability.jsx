@@ -1299,7 +1299,7 @@ console.log('🔍 PAYDAY CALCULATION DEBUG:', {
           {financialData.paydays && financialData.paydays.length > 0 && 
            financialData.paydays.some(p => {
              const pDate = new Date(p.date);
-             const today = new Date();
+             const today = getPacificTime();
              today.setHours(0, 0, 0, 0);
              pDate.setHours(0, 0, 0, 0);
              return pDate > today;
@@ -1310,7 +1310,18 @@ console.log('🔍 PAYDAY CALCULATION DEBUG:', {
                 {formatCurrency(financialData.availableAfterPayday)}
               </div>
               <div className="spend-note-small">
-                Available on {formatDate(financialData.paydays[financialData.paydays.length - 1]?.date)}
+                {(() => {
+                  // Find the last future payday
+                  const today = getPacificTime();
+                  today.setHours(0, 0, 0, 0);
+                  const futurePaydays = financialData.paydays.filter(p => {
+                    const pDate = new Date(p.date);
+                    pDate.setHours(0, 0, 0, 0);
+                    return pDate > today;
+                  });
+                  const lastFuturePayday = futurePaydays[futurePaydays.length - 1];
+                  return lastFuturePayday ? `Available on ${formatDate(lastFuturePayday.date)}` : '';
+                })()}
               </div>
             </div>
           )}
@@ -1517,7 +1528,7 @@ console.log('🔍 PAYDAY CALCULATION DEBUG:', {
             {financialData.paydays && financialData.paydays.length > 0 && 
              financialData.paydays.some(p => {
                const pDate = new Date(p.date);
-               const today = new Date();
+               const today = getPacificTime();
                today.setHours(0, 0, 0, 0);
                pDate.setHours(0, 0, 0, 0);
                return pDate > today;
@@ -1526,7 +1537,7 @@ console.log('🔍 PAYDAY CALCULATION DEBUG:', {
                 <div className="calc-section-title">📅 Coming Soon:</div>
                 {financialData.paydays.filter(p => {
                   const paydayDate = new Date(p.date);
-                  const today = new Date();
+                  const today = getPacificTime();
                   today.setHours(0, 0, 0, 0);
                   paydayDate.setHours(0, 0, 0, 0);
                   return paydayDate > today;
@@ -1576,7 +1587,7 @@ console.log('🔍 PAYDAY CALCULATION DEBUG:', {
               {financialData.paydays && financialData.paydays.length > 0 && 
                financialData.paydays.some(p => {
                  const pDate = new Date(p.date);
-                 const today = new Date();
+                 const today = getPacificTime();
                  today.setHours(0, 0, 0, 0);
                  pDate.setHours(0, 0, 0, 0);
                  return pDate > today;
