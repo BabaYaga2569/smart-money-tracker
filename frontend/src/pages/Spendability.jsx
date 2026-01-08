@@ -301,13 +301,14 @@ if (wasUpdated) {
             subtype: a.subtype,
             type: a.type,
             account_id: a.account_id,
-            liveBalance: a.balance,
-            projectedBalance: calculateProjectedBalance(a.account_id, parseFloat(a.balance) || 0, transactions)
+            available: a.available,
+            balance: a.balance,
+            usedBalance: parseFloat(a.available || a.balance) || 0
           })),
           transactionsCount: transactions.length,
           pendingTransactionsCount: transactions.filter(t => t.pending).length,
-          totalLiveBalance: depositoryAccounts.reduce((sum, a) => sum + parseFloat(a.balance || 0), 0),
-          totalProjectedBalance: totalAvailable
+          totalBalance: depositoryAccounts.reduce((sum, a) => sum + parseFloat(a.balance || 0), 0),
+          totalAvailableBalance: totalAvailable
         });
       } 
      // Get pay cycle data
