@@ -3022,6 +3022,81 @@ app.post("/api/subscriptions/:id/cancel", async (req, res, next) => {
   }
 });
 
+// Auto-detect recurring subscriptions/bills from transaction history
+app.post("/api/subscriptions/detect", async (req, res, next) => {
+  const endpoint = "/api/subscriptions/detect";
+  logDiagnostic.request(endpoint, req.body);
+  
+  try {
+    const { userId } = req.body;
+    
+    if (!userId) {
+      throw createError.badRequest('userId is required', 'MISSING_USER_ID');
+    }
+    
+    // Validate userId
+    validators.validateUserId(userId);
+    
+    logger.info('DETECT_SUBSCRIPTIONS', 'Starting detection for user', { userId });
+    logDiagnostic.info('DETECT_SUBSCRIPTIONS', `Starting detection for user: ${userId}`);
+    
+    // Get transactions from Firebase
+    const transactionsRef = db.collection('users').doc(userId).collection('transactions');
+    const transactionsSnap = await transactionsRef.get();
+    const transactions = transactionsSnap.docs.map(doc => ({
+      id: doc.id,
+      ...doc.data()
+    }));
+    
+    logger.info('DETECT_SUBSCRIPTIONS', 'Found transactions', { count: transactions.length });
+    logDiagnostic.info('DETECT_SUBSCRIPTIONS', `Analyzing ${transactions.length} transactions`);
+    
+    // Get existing subscriptions to avoid duplicates
+    const subscriptionsRef = db.collection('users').doc(userId).collection('subscriptions');
+    const subscriptionsSnap = await subscriptionsRef.get();
+    const existingSubscriptions = subscriptionsSnap.docs.map(doc => ({
+      id: doc.id,
+      ...doc.data()
+    }));
+    
+    logger.info('DETECT_SUBSCRIPTIONS', 'Found existing subscriptions', { count: existingSubscriptions.length });
+    logDiagnostic.info('DETECT_SUBSCRIPTIONS', `Found ${existingSubscriptions.length} existing subscriptions`);
+    
+    // Import detection algorithm
+    const { detectSubscriptions } = await import('./utils/subscriptionDetector.js');
+    
+    // Run detection
+    const detected = detectSubscriptions(transactions, existingSubscriptions);
+    
+    logger.info('DETECT_SUBSCRIPTIONS', 'Detection complete', { detected: detected.length });
+    logDiagnostic.info('DETECT_SUBSCRIPTIONS', `Found ${detected.length} recurring patterns`);
+    logDiagnostic.response(endpoint, 200, { detected: detected.length, scannedTransactions: transactions.length });
+    
+    res.json({
+      detected,
+      count: detected.length,
+      scannedTransactions: transactions.length
+    });
+    
+  } catch (error) {
+    logger.error('DETECT_SUBSCRIPTIONS', 'Detection failed', error, {});
+    logDiagnostic.error('DETECT_SUBSCRIPTIONS', 'Detection failed', error);
+    
+    // Check if it's already an AppError
+    if (error.statusCode) {
+      return next(error);
+    }
+    
+    // Handle Firebase errors
+    if (isFirebaseError(error)) {
+      return next(createError.firebaseError(error.message || 'Firebase error during detection'));
+    }
+    
+    // Generic error
+    next(createError.firebaseError(error.message || 'Failed to detect subscriptions'));
+  }
+});
+
 app.get("/healthz", (req, res) => res.send("ok"));
 
 // ============================================================================
