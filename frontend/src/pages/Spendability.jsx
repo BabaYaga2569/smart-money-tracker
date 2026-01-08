@@ -5,7 +5,6 @@ import { PayCycleCalculator } from '../utils/PayCycleCalculator';
 import { RecurringBillManager } from '../utils/RecurringBillManager';
 import { formatDateForDisplay, formatDateForInput, getDaysUntilDateInPacific, getManualPacificDaysUntilPayday } from '../utils/DateUtils';
 import { getPacificTime } from '../utils/timezoneHelpers';
-import { calculateProjectedBalance, calculateTotalProjectedBalance } from '../utils/BalanceCalculator';
 import { autoMigrateBills } from '../utils/FirebaseMigration';
 import { runAutoDetection } from '../utils/AutoBillDetection';
 import { matchTransactionToBill } from '../utils/BillPaymentMatcher';
@@ -301,13 +300,14 @@ if (wasUpdated) {
             subtype: a.subtype,
             type: a.type,
             account_id: a.account_id,
-            liveBalance: a.balance,
-            projectedBalance: calculateProjectedBalance(a.account_id, parseFloat(a.balance) || 0, transactions)
+            available: a.available,
+            balance: a.balance,
+            usedBalance: parseFloat(a.available || a.balance) || 0
           })),
           transactionsCount: transactions.length,
           pendingTransactionsCount: transactions.filter(t => t.pending).length,
-          totalLiveBalance: depositoryAccounts.reduce((sum, a) => sum + parseFloat(a.balance || 0), 0),
-          totalProjectedBalance: totalAvailable
+          totalBalance: depositoryAccounts.reduce((sum, a) => sum + parseFloat(a.balance || 0), 0),
+          totalAvailableBalance: totalAvailable
         });
       } 
      // Get pay cycle data
@@ -823,15 +823,11 @@ console.log('🔍 PAYDAY CALCULATION DEBUG:', {
         return isChecking;
       });
 
+      // ✅ FIXED: For Plaid accounts, available balance already includes pending transactions
       const checkingTotal = checkingAccounts.reduce((sum, account) => {
-        const liveBalance = parseFloat(account.balance) || 0;
-        const projectedBalance = calculateProjectedBalance(
-          account.account_id, 
-          liveBalance, 
-          transactions
-        );
-        console.log(`[Spendability] ${account.name}: live=${liveBalance.toFixed(2)}, projected=${projectedBalance.toFixed(2)}`);
-        return sum + projectedBalance;
+        const balance = parseFloat(account.available || account.balance) || 0;
+        console.log(`[Spendability] ${account.name}: balance=${balance.toFixed(2)} (using available directly)`);
+        return sum + balance;
       }, 0);
 
       console.log(`[Spendability] Total Checking: ${checkingTotal.toFixed(2)}`);
@@ -842,13 +838,10 @@ console.log('🔍 PAYDAY CALCULATION DEBUG:', {
         a.name?.toLowerCase().includes('savings')
       );
 
+      // ✅ FIXED: Apply same logic to savings - available balance already includes pending
       const savingsTotal = savingsAccounts.reduce((sum, account) => {
-        const projectedBalance = calculateProjectedBalance(
-          account.account_id, 
-          parseFloat(account.balance) || 0, 
-          transactions
-        );
-        return sum + projectedBalance;
+        const balance = parseFloat(account.available || account.balance) || 0;
+        return sum + balance;
       }, 0);
 
       console.log('Spendability: Account breakdowns', {
@@ -877,15 +870,17 @@ console.log('🔍 PAYDAY CALCULATION DEBUG:', {
         checkingAccountsFound: checkingAccounts.map(a => ({
           name: a.name,
           subtype: a.subtype,
-          liveBalance: a.balance,
-          projectedBalance: calculateProjectedBalance(a.account_id, parseFloat(a.balance) || 0, transactions)
+          available: a.available,
+          balance: a.balance,
+          usedBalance: parseFloat(a.available || a.balance) || 0
         })),
         checkingTotal: checkingTotal.toFixed(2),
         savingsAccountsFound: savingsAccounts.map(a => ({
           name: a.name,
           subtype: a.subtype,
-          liveBalance: a.balance,
-          projectedBalance: calculateProjectedBalance(a.account_id, parseFloat(a.balance) || 0, transactions)
+          available: a.available,
+          balance: a.balance,
+          usedBalance: parseFloat(a.available || a.balance) || 0
         })),
         savingsTotal: savingsTotal
       });
