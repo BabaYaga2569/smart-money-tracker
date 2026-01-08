@@ -10,6 +10,7 @@ import logger from './utils/logger.js';
 import { atomicTransaction, createOperation } from './utils/atomicTransaction.js';
 import { validateAccount as validateAccountConsistency, validateTransaction as validateTransactionConsistency, validateBalanceConsistency, checkDuplicateTransaction } from './utils/consistencyValidators.js';
 import { runBillMatching } from './utils/BillMatchingService.js';
+import { detectSubscriptions } from './utils/subscriptionDetector.js';
 
 const app = express();
 app.use(cors({
@@ -3062,9 +3063,6 @@ app.post("/api/subscriptions/detect", async (req, res, next) => {
     logger.info('DETECT_SUBSCRIPTIONS', 'Found existing subscriptions', { count: existingSubscriptions.length });
     logDiagnostic.info('DETECT_SUBSCRIPTIONS', `Found ${existingSubscriptions.length} existing subscriptions`);
     
-    // Import detection algorithm
-    const { detectSubscriptions } = await import('./utils/subscriptionDetector.js');
-    
     // Run detection
     const detected = detectSubscriptions(transactions, existingSubscriptions);
     
@@ -3093,7 +3091,7 @@ app.post("/api/subscriptions/detect", async (req, res, next) => {
     }
     
     // Generic error
-    next(createError.firebaseError(error.message || 'Failed to detect subscriptions'));
+    next(createError.internal(error.message || 'Failed to detect subscriptions'));
   }
 });
 
