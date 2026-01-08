@@ -253,7 +253,7 @@ test('ensureRequiredFields fills missing required fields', () => {
     schemaVersion: 3,
     personalInfo: {
       yourName: 'John'
-      // spouseName missing - but it's optional now
+      // spouseName missing - it's now optional unless spouse pay > 0
     },
     paySchedules: {
       yours: {
@@ -499,6 +499,35 @@ test('Spouse name with whitespace only should fail when spouse pay entered', () 
     result.errors.some(e => e.includes('Spouse name is required')),
     'Should require non-empty spouse name'
   );
+});
+
+// Test 19: Invalid spouse amount (non-numeric string) should be treated as optional
+test('Invalid spouse amount should be treated as optional (no validation error)', () => {
+  const invalidAmountSettings = {
+    schemaVersion: 3,
+    personalInfo: {
+      yourName: 'John',
+      spouseName: ''  // No spouse name
+    },
+    paySchedules: {
+      yours: {
+        lastPaydate: '2025-12-04',
+        amount: 1000,
+        type: 'bi-weekly'
+      },
+      spouse: {
+        amount: 'not-a-number',  // Invalid amount
+        type: 'bi-monthly',
+        dates: [15, 30]
+      }
+    }
+  };
+  
+  const result = SettingsSchemaManager.validateSettings(invalidAmountSettings);
+  
+  // Should pass validation since NaN/invalid amounts are treated as 0 (no spouse income)
+  assert(result.valid === true, 'Should pass validation with invalid spouse amount');
+  assert(result.errors.length === 0, 'Should have no errors with invalid spouse amount');
 });
 
 console.log('\n✅ All SettingsSchemaManager tests passed!');

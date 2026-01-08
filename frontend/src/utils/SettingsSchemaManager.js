@@ -239,15 +239,16 @@ const validateSettings = (settings) => {
   }
   
   // ✅ CONDITIONAL VALIDATION: Only require spouse name if spouse pay is entered
-  const spousePayAmount = parseFloat(settings.paySchedules?.spouse?.amount || 0);
+  const spousePayAmount = Number(settings.paySchedules?.spouse?.amount || 0);
   
-  if (spousePayAmount > 0) {
+  // Check if spouse pay is a valid positive number
+  if (!isNaN(spousePayAmount) && spousePayAmount > 0) {
     // User has spouse income - require spouse name
     if (!settings.personalInfo?.spouseName || settings.personalInfo.spouseName.trim() === '') {
       errors.push('Spouse name is required when spouse pay amount is entered');
     }
   }
-  // If spousePayAmount === 0 or null, spouse fields are optional - no validation needed
+  // If spousePayAmount === 0, null, undefined, or NaN, spouse fields are optional - no validation needed
   
   // Additional structural validations
   if (settings.paySchedules?.spouse?.dates) {
