@@ -3091,7 +3091,7 @@ app.post("/api/subscriptions/detect", async (req, res, next) => {
     }
     
     // Generic error
-    next(createError.internal(error.message || 'Failed to detect subscriptions'));
+    next(createError.firebaseError(error.message || 'Failed to detect subscriptions'));
   }
 });
 
