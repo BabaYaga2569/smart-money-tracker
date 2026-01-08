@@ -247,13 +247,13 @@ test('mergeSafely allows legitimate updates to protected fields', () => {
   assert(merged.paySchedules.yours.amount === 2000.00, 'Should allow legitimate updates');
 });
 
-// Test 9: ensureRequiredFields fills missing fields
+// Test 9: ensureRequiredFields fills missing REQUIRED fields only
 test('ensureRequiredFields fills missing required fields', () => {
   const incompleteSettings = {
     schemaVersion: 3,
     personalInfo: {
       yourName: 'John'
-      // spouseName missing
+      // spouseName missing - but it's optional now
     },
     paySchedules: {
       yours: {
@@ -265,11 +265,15 @@ test('ensureRequiredFields fills missing required fields', () => {
   
   const ensured = SettingsSchemaManager.ensureRequiredFields(incompleteSettings);
   
-  assert(ensured.personalInfo.spouseName !== undefined, 'Should fill spouseName');
+  // Required fields should be filled
   assert(ensured.paySchedules.yours.amount !== undefined, 'Should fill yours.amount');
   assert(ensured.paySchedules.yours.lastPaydate !== undefined, 'Should fill yours.lastPaydate');
-  assert(ensured.paySchedules.spouse, 'Should add spouse schedule');
-  assert(ensured.paySchedules.spouse.amount !== undefined, 'Should fill spouse.amount');
+  
+  // Optional spouse fields may exist but don't need to be validated
+  assert(ensured.paySchedules.spouse, 'Should add spouse schedule structure');
+  
+  // Spouse name is optional - can be undefined or empty for single users
+  // No assertion needed for spouseName since it's optional
 });
 
 // Test 10: ensureRequiredFields handles null input
@@ -319,6 +323,181 @@ test('validateSettings warns about outdated schema', () => {
   assert(
     result.warnings.some(w => w.includes('outdated')),
     'Should warn about outdated schema'
+  );
+});
+
+// Test 13: Single user WITHOUT spouse - validation should PASS
+test('Single user without spouse can save settings (Test Case 1)', () => {
+  const singleUserSettings = {
+    schemaVersion: 3,
+    personalInfo: {
+      yourName: 'Courtney',
+      spouseName: ''  // Empty - no spouse
+    },
+    paySchedules: {
+      yours: {
+        lastPaydate: '2025-12-04',
+        amount: 1000,
+        type: 'bi-weekly'
+      },
+      spouse: {
+        amount: 0,  // No spouse income
+        type: 'bi-monthly',
+        dates: [15, 30]
+      }
+    }
+  };
+  
+  const result = SettingsSchemaManager.validateSettings(singleUserSettings);
+  
+  assert(result.valid === true, 'Single user without spouse should pass validation');
+  assert(result.errors.length === 0, 'Should have no errors for single user');
+});
+
+// Test 14: Married user WITH spouse - validation should PASS
+test('Married user with spouse can save settings (Test Case 2)', () => {
+  const marriedUserSettings = {
+    schemaVersion: 3,
+    personalInfo: {
+      yourName: 'Steve',
+      spouseName: 'Tanci'  // Has spouse name
+    },
+    paySchedules: {
+      yours: {
+        lastPaydate: '2025-12-26',
+        amount: 1583.55,
+        type: 'bi-weekly'
+      },
+      spouse: {
+        amount: 1851.04,  // Has spouse income
+        type: 'bi-monthly',
+        dates: [15, 30]
+      }
+    }
+  };
+  
+  const result = SettingsSchemaManager.validateSettings(marriedUserSettings);
+  
+  assert(result.valid === true, 'Married user with spouse should pass validation');
+  assert(result.errors.length === 0, 'Should have no errors for married user');
+});
+
+// Test 15: User enters spouse pay but forgets name - validation should FAIL
+test('User enters spouse pay without name should fail validation (Test Case 3)', () => {
+  const invalidSettings = {
+    schemaVersion: 3,
+    personalInfo: {
+      yourName: 'Courtney',
+      spouseName: ''  // Empty but spouse pay is entered!
+    },
+    paySchedules: {
+      yours: {
+        lastPaydate: '2025-12-04',
+        amount: 1000,
+        type: 'bi-weekly'
+      },
+      spouse: {
+        amount: 500,  // Spouse pay entered without name!
+        type: 'bi-monthly',
+        dates: [15, 30]
+      }
+    }
+  };
+  
+  const result = SettingsSchemaManager.validateSettings(invalidSettings);
+  
+  assert(result.valid === false, 'Should fail validation when spouse pay entered without name');
+  assert(result.errors.length > 0, 'Should have errors');
+  assert(
+    result.errors.some(e => e.includes('Spouse name is required')),
+    'Should specifically mention spouse name is required'
+  );
+});
+
+// Test 16: User removes spouse after having one - validation should PASS
+test('User removes spouse data should pass validation (Test Case 4)', () => {
+  const removedSpouseSettings = {
+    schemaVersion: 3,
+    personalInfo: {
+      yourName: 'Steve',
+      spouseName: ''  // Removed spouse
+    },
+    paySchedules: {
+      yours: {
+        lastPaydate: '2025-12-26',
+        amount: 1583.55,
+        type: 'bi-weekly'
+      },
+      spouse: {
+        amount: 0,  // Removed spouse pay
+        type: 'bi-monthly',
+        dates: [15, 30]
+      }
+    }
+  };
+  
+  const result = SettingsSchemaManager.validateSettings(removedSpouseSettings);
+  
+  assert(result.valid === true, 'Should pass validation after removing spouse');
+  assert(result.errors.length === 0, 'Should have no errors after removing spouse');
+});
+
+// Test 17: Spouse amount is null (not zero) - validation should PASS
+test('Spouse amount null should be treated as optional', () => {
+  const nullSpouseSettings = {
+    schemaVersion: 3,
+    personalInfo: {
+      yourName: 'John',
+      spouseName: ''  // No spouse name
+    },
+    paySchedules: {
+      yours: {
+        lastPaydate: '2025-12-04',
+        amount: 1000,
+        type: 'bi-weekly'
+      },
+      spouse: {
+        amount: null,  // null instead of 0
+        type: 'bi-monthly',
+        dates: [15, 30]
+      }
+    }
+  };
+  
+  const result = SettingsSchemaManager.validateSettings(nullSpouseSettings);
+  
+  assert(result.valid === true, 'Should pass validation when spouse amount is null');
+  assert(result.errors.length === 0, 'Should have no errors with null spouse amount');
+});
+
+// Test 18: Spouse name with whitespace only - should fail if spouse pay > 0
+test('Spouse name with whitespace only should fail when spouse pay entered', () => {
+  const whitespaceSettings = {
+    schemaVersion: 3,
+    personalInfo: {
+      yourName: 'John',
+      spouseName: '   '  // Only whitespace
+    },
+    paySchedules: {
+      yours: {
+        lastPaydate: '2025-12-04',
+        amount: 1000,
+        type: 'bi-weekly'
+      },
+      spouse: {
+        amount: 500,  // Has spouse pay
+        type: 'bi-monthly',
+        dates: [15, 30]
+      }
+    }
+  };
+  
+  const result = SettingsSchemaManager.validateSettings(whitespaceSettings);
+  
+  assert(result.valid === false, 'Should fail validation with whitespace-only spouse name');
+  assert(
+    result.errors.some(e => e.includes('Spouse name is required')),
+    'Should require non-empty spouse name'
   );
 });
 

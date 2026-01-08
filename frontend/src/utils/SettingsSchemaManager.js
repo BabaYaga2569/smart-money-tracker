@@ -14,15 +14,32 @@
 // Current schema version - increment with each breaking change
 const CURRENT_SCHEMA_VERSION = 3;
 
+/**
+ * Settings Schema v3
+ * 
+ * REQUIRED FIELDS:
+ * - personalInfo.yourName (your name)
+ * - paySchedules.yours.amount (your pay amount)
+ * - paySchedules.yours.lastPaydate (your last pay date)
+ * 
+ * OPTIONAL FIELDS:
+ * - personalInfo.spouseName (only required if spouse pay > 0)
+ * - paySchedules.spouse.amount (can be 0 or null for single users)
+ * - paySchedules.spouse.type
+ * - paySchedules.spouse.dates
+ * 
+ * CONDITIONAL VALIDATION:
+ * - If spouse.amount > 0, then spouseName is REQUIRED
+ * - If spouse.amount = 0 or null, then spouseName is OPTIONAL
+ */
 // Schema definition v3 - current production schema
 const SCHEMA_V3 = {
   version: 3,
   required: {
     'paySchedules.yours.lastPaydate': 'string',
     'paySchedules.yours.amount': 'number',
-    'paySchedules.spouse.amount': 'number',
-    'personalInfo.yourName': 'string',
-    'personalInfo.spouseName': 'string'
+    'personalInfo.yourName': 'string'
+    // Note: spouse fields are conditionally required - see validateSettings()
   },
   protected: [
     'paySchedules.yours.lastPaydate',
@@ -220,6 +237,17 @@ const validateSettings = (settings) => {
       errors.push(`Field ${path} has wrong type. Expected ${expectedType}, got ${actualType}`);
     }
   }
+  
+  // ✅ CONDITIONAL VALIDATION: Only require spouse name if spouse pay is entered
+  const spousePayAmount = parseFloat(settings.paySchedules?.spouse?.amount || 0);
+  
+  if (spousePayAmount > 0) {
+    // User has spouse income - require spouse name
+    if (!settings.personalInfo?.spouseName || settings.personalInfo.spouseName.trim() === '') {
+      errors.push('Spouse name is required when spouse pay amount is entered');
+    }
+  }
+  // If spousePayAmount === 0 or null, spouse fields are optional - no validation needed
   
   // Additional structural validations
   if (settings.paySchedules?.spouse?.dates) {
