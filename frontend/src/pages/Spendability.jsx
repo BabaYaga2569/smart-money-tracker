@@ -823,15 +823,14 @@ console.log('🔍 PAYDAY CALCULATION DEBUG:', {
         return isChecking;
       });
 
+      // ✅ FIXED: For Plaid accounts, use available balance directly
+      // Plaid's available balance already accounts for pending transactions
       const checkingTotal = checkingAccounts.reduce((sum, account) => {
-        const liveBalance = parseFloat(account.balance) || 0;
-        const projectedBalance = calculateProjectedBalance(
-          account.account_id, 
-          liveBalance, 
-          transactions
-        );
-        console.log(`[Spendability] ${account.name}: live=${liveBalance.toFixed(2)}, projected=${projectedBalance.toFixed(2)}`);
-        return sum + projectedBalance;
+        // For Plaid accounts, available balance is already calculated by the bank
+        // and includes pending transactions. Use it directly without recalculation.
+        const balance = parseFloat(account.available || account.balance) || 0;
+        console.log(`[Spendability] ${account.name}: balance=${balance.toFixed(2)} (using available directly)`);
+        return sum + balance;
       }, 0);
 
       console.log(`[Spendability] Total Checking: ${checkingTotal.toFixed(2)}`);
@@ -842,13 +841,11 @@ console.log('🔍 PAYDAY CALCULATION DEBUG:', {
         a.name?.toLowerCase().includes('savings')
       );
 
+      // ✅ FIXED: Same logic for savings accounts
       const savingsTotal = savingsAccounts.reduce((sum, account) => {
-        const projectedBalance = calculateProjectedBalance(
-          account.account_id, 
-          parseFloat(account.balance) || 0, 
-          transactions
-        );
-        return sum + projectedBalance;
+        // For Plaid accounts, use available balance directly
+        const balance = parseFloat(account.available || account.balance) || 0;
+        return sum + balance;
       }, 0);
 
       console.log('Spendability: Account breakdowns', {
@@ -877,15 +874,17 @@ console.log('🔍 PAYDAY CALCULATION DEBUG:', {
         checkingAccountsFound: checkingAccounts.map(a => ({
           name: a.name,
           subtype: a.subtype,
-          liveBalance: a.balance,
-          projectedBalance: calculateProjectedBalance(a.account_id, parseFloat(a.balance) || 0, transactions)
+          available: a.available,
+          balance: a.balance,
+          usedBalance: parseFloat(a.available || a.balance) || 0
         })),
         checkingTotal: checkingTotal.toFixed(2),
         savingsAccountsFound: savingsAccounts.map(a => ({
           name: a.name,
           subtype: a.subtype,
-          liveBalance: a.balance,
-          projectedBalance: calculateProjectedBalance(a.account_id, parseFloat(a.balance) || 0, transactions)
+          available: a.available,
+          balance: a.balance,
+          usedBalance: parseFloat(a.available || a.balance) || 0
         })),
         savingsTotal: savingsTotal
       });
