@@ -5,7 +5,6 @@ import { PayCycleCalculator } from '../utils/PayCycleCalculator';
 import { RecurringBillManager } from '../utils/RecurringBillManager';
 import { formatDateForDisplay, formatDateForInput, getDaysUntilDateInPacific, getManualPacificDaysUntilPayday } from '../utils/DateUtils';
 import { getPacificTime } from '../utils/timezoneHelpers';
-import { calculateProjectedBalance, calculateTotalProjectedBalance } from '../utils/BalanceCalculator';
 import { autoMigrateBills } from '../utils/FirebaseMigration';
 import { runAutoDetection } from '../utils/AutoBillDetection';
 import { matchTransactionToBill } from '../utils/BillPaymentMatcher';
