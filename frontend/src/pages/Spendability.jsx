@@ -824,11 +824,8 @@ console.log('🔍 PAYDAY CALCULATION DEBUG:', {
         return isChecking;
       });
 
-      // ✅ FIXED: For Plaid accounts, use available balance directly
-      // Plaid's available balance already accounts for pending transactions
+      // ✅ FIXED: For Plaid accounts, available balance already includes pending transactions
       const checkingTotal = checkingAccounts.reduce((sum, account) => {
-        // For Plaid accounts, available balance is already calculated by the bank
-        // and includes pending transactions. Use it directly without recalculation.
         const balance = parseFloat(account.available || account.balance) || 0;
         console.log(`[Spendability] ${account.name}: balance=${balance.toFixed(2)} (using available directly)`);
         return sum + balance;
@@ -842,9 +839,8 @@ console.log('🔍 PAYDAY CALCULATION DEBUG:', {
         a.name?.toLowerCase().includes('savings')
       );
 
-      // ✅ FIXED: Same logic for savings accounts
+      // ✅ FIXED: Apply same logic to savings - available balance already includes pending
       const savingsTotal = savingsAccounts.reduce((sum, account) => {
-        // For Plaid accounts, use available balance directly
         const balance = parseFloat(account.available || account.balance) || 0;
         return sum + balance;
       }, 0);
