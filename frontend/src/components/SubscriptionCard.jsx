@@ -64,6 +64,14 @@ const SubscriptionCard = ({ subscription, onEdit, onDelete, onCancel }) => {
         <span className="subscription-renewal">
           Renews {formatDate(subscription.nextRenewal)}
         </span>
+        {subscription.linkedToTransactions && (
+          <>
+            <span className="subscription-separator">•</span>
+            <span className="subscription-linked" title="Auto-updates from transactions">
+              🔗 Linked
+            </span>
+          </>
+        )}
         {subscription.autoRenew && (
           <>
             <span className="subscription-separator">•</span>
