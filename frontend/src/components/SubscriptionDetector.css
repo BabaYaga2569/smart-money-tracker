@@ -145,11 +145,73 @@
   gap: 20px;
 }
 
+.section-divider {
+  margin: 32px 0 20px;
+  padding: 16px;
+  background-color: #f0f7ff;
+  border-left: 4px solid #2196f3;
+  border-radius: 4px;
+}
+
+.section-divider h3 {
+  margin: 0 0 8px 0;
+  color: #1976d2;
+  font-size: 18px;
+  font-weight: 600;
+}
+
+.section-description {
+  margin: 0;
+  color: #666;
+  font-size: 14px;
+}
+
 .detected-card {
   border: 1px solid #e0e0e0;
   border-radius: 8px;
   padding: 20px;
   background-color: #fafafa;
+}
+
+.match-card {
+  border-left: 4px solid #ff9800;
+  background-color: #fff8e1;
+}
+
+.new-card {
+  border-left: 4px solid #4caf50;
+  background-color: #f1f8f4;
+}
+
+.match-info {
+  background-color: #fff;
+  padding: 16px;
+  border-radius: 6px;
+  margin-bottom: 16px;
+  border: 1px dashed #ff9800;
+}
+
+.match-info strong {
+  display: block;
+  color: #e65100;
+  font-size: 14px;
+  margin-bottom: 8px;
+}
+
+.existing-bill-info {
+  padding: 12px;
+  background-color: #fff3e0;
+  border-radius: 4px;
+  color: #e65100;
+  font-size: 14px;
+  margin-bottom: 12px;
+}
+
+.match-question {
+  margin: 0;
+  color: #666;
+  font-size: 14px;
+  font-weight: 600;
 }
 
 .detected-header {
@@ -274,6 +336,8 @@
 }
 
 .btn-add,
+.btn-link,
+.btn-add-separate,
 .btn-ignore {
   flex: 1;
   padding: 12px 24px;
@@ -283,6 +347,7 @@
   font-weight: 600;
   cursor: pointer;
   transition: all 0.2s;
+  white-space: nowrap;
 }
 
 .btn-add {
@@ -292,6 +357,24 @@
 
 .btn-add:hover {
   background-color: #45a049;
+}
+
+.btn-link {
+  background-color: #2196f3;
+  color: white;
+}
+
+.btn-link:hover {
+  background-color: #1976d2;
+}
+
+.btn-add-separate {
+  background-color: #ff9800;
+  color: white;
+}
+
+.btn-add-separate:hover {
+  background-color: #f57c00;
 }
 
 .btn-ignore {
@@ -384,6 +467,8 @@
   }
 
   .btn-add,
+  .btn-link,
+  .btn-add-separate,
   .btn-ignore {
     width: 100%;
   }

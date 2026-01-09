@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { collection, addDoc, getDocs, query, where } from 'firebase/firestore';
+import { collection, addDoc, getDocs, query, where, doc, updateDoc } from 'firebase/firestore';
 import { db } from '../firebase';
 import { useAuth } from '../contexts/AuthContext';
 import { removeDetection, getAllDetections, getDismissedIds } from '../utils/detectionStorage';
@@ -64,10 +64,11 @@ export const detectAndAutoAddRecurringBills = async (userId, db) => {
 const SubscriptionDetector = ({ onClose, onSubscriptionAdded }) => {
   const { currentUser } = useAuth();
   const [loading, setLoading] = useState(false);
-  const [detected, setDetected] = useState([]);
+  const [matches, setMatches] = useState([]);
+  const [newPatterns, setNewPatterns] = useState([]);
   const [scannedCount, setScannedCount] = useState(0);
   const [error, setError] = useState(null);
-  const [editingIndex, setEditingIndex] = useState(null);
+  const [editingKey, setEditingKey] = useState(null);
   const [editedData, setEditedData] = useState({});
 
   const detectSubscriptions = React.useCallback(async () => {
@@ -88,7 +89,8 @@ const SubscriptionDetector = ({ onClose, onSubscriptionAdded }) => {
       }
 
       const data = await response.json();
-      setDetected(data.detected || []);
+      setMatches(data.matches || []);
+      setNewPatterns(data.newPatterns || data.detected || []);
       setScannedCount(data.scannedTransactions || 0);
     } catch (err) {
       console.error('Detection error:', err);
@@ -103,10 +105,14 @@ const SubscriptionDetector = ({ onClose, onSubscriptionAdded }) => {
     detectSubscriptions();
   }, [detectSubscriptions]);
 
-  const handleEdit = (index) => {
-    setEditingIndex(index);
+  const handleEdit = (key) => {
+    setEditingKey(key);
+    // Extract item from either matches or newPatterns
+    const item = key.startsWith('match-') 
+      ? matches[parseInt(key.split('-')[1])]
+      : newPatterns[parseInt(key.split('-')[1])];
     setEditedData({
-      category: detected[index].category,
+      category: item.category,
       essential: false
     });
   };
@@ -119,10 +125,53 @@ const SubscriptionDetector = ({ onClose, onSubscriptionAdded }) => {
     setEditedData(prev => ({ ...prev, essential: value }));
   };
 
-  const handleAddSubscription = async (detectedSub, index) => {
+  // Link a detected pattern to an existing subscription
+  const handleLinkToExisting = async (detectedPattern, listKey) => {
     try {
-      const category = editingIndex === index ? editedData.category : detectedSub.category;
-      const essential = editingIndex === index ? editedData.essential : false;
+      if (!detectedPattern.matchedSubscription) return;
+      
+      const subscriptionRef = doc(db, 'users', currentUser.uid, 'subscriptions', detectedPattern.matchedSubscription.id);
+      
+      // Update existing subscription with linked transaction data
+      await updateDoc(subscriptionRef, {
+        linkedToTransactions: true,
+        linkedPattern: {
+          merchantName: detectedPattern.merchantName,
+          expectedAmount: detectedPattern.amount,
+          expectedInterval: detectedPattern.billingCycle === 'Monthly' ? 30 : 
+                           detectedPattern.billingCycle === 'Bi-Monthly' ? 60 :
+                           detectedPattern.billingCycle === 'Quarterly' ? 90 : 365,
+          transactionIds: detectedPattern.transactionIds || [],
+          lastDetected: new Date().toISOString(),
+          confidence: detectedPattern.confidence
+        },
+        autoDetect: {
+          autoMarkPaid: true,
+          autoUpdateAmount: true,
+          autoCalculateDueDate: true
+        },
+        linkedTransactionIds: detectedPattern.transactionIds || [],
+        updatedAt: new Date().toISOString()
+      });
+
+      // Remove from matches list
+      setMatches(prev => prev.filter((_, i) => listKey !== `match-${i}`));
+      
+      if (onSubscriptionAdded) {
+        onSubscriptionAdded();
+      }
+    } catch (err) {
+      console.error('Error linking to existing subscription:', err);
+      alert('Failed to link subscription. Please try again.');
+    }
+  };
+
+  // Add a detected pattern as a separate new subscription
+  const handleAddAsSeparate = async (detectedSub, listKey) => {
+    try {
+      const isMatch = listKey.startsWith('match-');
+      const category = editingKey === listKey ? editedData.category : detectedSub.category;
+      const essential = editingKey === listKey ? editedData.essential : false;
 
       // Determine type based on category
       const type = getTypeFromCategory(category);
@@ -133,12 +182,28 @@ const SubscriptionDetector = ({ onClose, onSubscriptionAdded }) => {
         billingCycle: detectedSub.billingCycle,
         category: category,
         essential: essential,
-        type: type, // Add type field
+        type: type,
         nextRenewal: detectedSub.nextRenewal,
         status: 'active',
         autoRenew: true,
         notes: `Auto-detected from ${detectedSub.occurrences} transactions (${detectedSub.confidence}% confidence)`,
         linkedTransactionIds: detectedSub.transactionIds || [],
+        linkedToTransactions: true,
+        linkedPattern: {
+          merchantName: detectedSub.merchantName,
+          expectedAmount: detectedSub.amount,
+          expectedInterval: detectedSub.billingCycle === 'Monthly' ? 30 : 
+                           detectedSub.billingCycle === 'Bi-Monthly' ? 60 :
+                           detectedSub.billingCycle === 'Quarterly' ? 90 : 365,
+          transactionIds: detectedSub.transactionIds || [],
+          lastDetected: new Date().toISOString(),
+          confidence: detectedSub.confidence
+        },
+        autoDetect: {
+          autoMarkPaid: true,
+          autoUpdateAmount: true,
+          autoCalculateDueDate: true
+        },
         createdAt: new Date().toISOString(),
         updatedAt: new Date().toISOString(),
       };
@@ -146,14 +211,13 @@ const SubscriptionDetector = ({ onClose, onSubscriptionAdded }) => {
       const subscriptionsRef = collection(db, 'users', currentUser.uid, 'subscriptions');
       await addDoc(subscriptionsRef, subscriptionData);
 
-      // Remove from detected list
-      setDetected(prev => prev.filter((_, i) => i !== index));
-      setEditingIndex(null);
-
-      // Remove from storage if it has an ID
-      if (detectedSub.detectionId) {
-        removeDetection(detectedSub.detectionId);
+      // Remove from appropriate list
+      if (isMatch) {
+        setMatches(prev => prev.filter((_, i) => listKey !== `match-${i}`));
+      } else {
+        setNewPatterns(prev => prev.filter((_, i) => listKey !== `new-${i}`));
       }
+      setEditingKey(null);
       
       if (onSubscriptionAdded) {
         onSubscriptionAdded();
@@ -164,8 +228,12 @@ const SubscriptionDetector = ({ onClose, onSubscriptionAdded }) => {
     }
   };
 
-  const handleIgnore = (index) => {
-    setDetected(prev => prev.filter((_, i) => i !== index));
+  const handleIgnore = (listKey) => {
+    if (listKey.startsWith('match-')) {
+      setMatches(prev => prev.filter((_, i) => listKey !== `match-${i}`));
+    } else {
+      setNewPatterns(prev => prev.filter((_, i) => listKey !== `new-${i}`));
+    }
   };
 
   const formatCurrency = (amount) => {
@@ -196,7 +264,15 @@ const SubscriptionDetector = ({ onClose, onSubscriptionAdded }) => {
       'Internet': '🌐',
       'Mortgage': '🏡',
       'Gaming': '🎮',
-      'Memberships': '🎫'
+      'Memberships': '🎫',
+      'Housing': '🏠',
+      'Auto & Transportation': '🚗',
+      'Credit Cards & Loans': '💳',
+      'Utilities & Home Services': '💡',
+      'Phone & Internet': '📱',
+      'Insurance & Healthcare': '🏥',
+      'Subscriptions & Entertainment': '🎬',
+      'Personal Care': '💅'
     };
     return emojiMap[category] || '📦';
   };
@@ -224,98 +300,241 @@ const SubscriptionDetector = ({ onClose, onSubscriptionAdded }) => {
             </div>
           )}
 
-          {!loading && !error && detected.length === 0 && (
+          {!loading && !error && matches.length === 0 && newPatterns.length === 0 && (
             <div className="detector-empty">
-              <p>🎉 No new recurring subscriptions detected!</p>
+              <p>🎉 No new recurring bills detected!</p>
               <p className="detector-empty-sub">
                 We analyzed {scannedCount} transactions but didn't find any new patterns.
               </p>
             </div>
           )}
 
-          {!loading && !error && detected.length > 0 && (
+          {!loading && !error && (matches.length > 0 || newPatterns.length > 0) && (
             <>
               <p className="detector-summary">
-                We analyzed <strong>{scannedCount} transactions</strong> and found <strong>{detected.length}</strong> possible subscription{detected.length > 1 ? 's' : ''}:
+                We analyzed <strong>{scannedCount} transactions</strong> and found <strong>{matches.length + newPatterns.length}</strong> recurring pattern{(matches.length + newPatterns.length) > 1 ? 's' : ''}:
               </p>
 
-              <div className="detected-list">
-                {detected.map((sub, index) => (
-                  <div key={index} className="detected-card">
-                    <div className="detected-header">
-                      <div className="detected-title">
-                        <span className="detected-emoji">{getCategoryEmoji(sub.category)}</span>
-                        <span className="detected-name">{sub.merchantName}</span>
-                        <span className="confidence-badge">{sub.confidence}% confident</span>
-                      </div>
-                      <div className="detected-meta">
-                        {formatCurrency(sub.amount)}/{sub.billingCycle.toLowerCase()} • {sub.occurrences} occurrences
-                      </div>
-                    </div>
-
-                    <div className="detected-charges">
-                      <strong>Recent charges:</strong>
-                      <ul>
-                        {sub.recentCharges.map((charge, i) => (
-                          <li key={i}>
-                            {formatDate(charge.date)} - {formatCurrency(charge.amount)}
-                          </li>
-                        ))}
-                      </ul>
-                      <p className="next-renewal">Next renewal: <strong>{formatDate(sub.nextRenewal)}</strong></p>
-                    </div>
-
-                    <div className="detected-form">
-                      <div className="form-row">
-                        <label>Category:</label>
-                        <select 
-                          value={editingIndex === index ? editedData.category : sub.category}
-                          onChange={(e) => {
-                            if (editingIndex !== index) handleEdit(index);
-                            handleCategoryChange(e.target.value);
-                          }}
-                        >
-                          <option value="Entertainment">Entertainment</option>
-                          <option value="Fitness">Fitness</option>
-                          <option value="Software">Software</option>
-                          <option value="Utilities">Utilities</option>
-                          <option value="Food">Food</option>
-                          <option value="Other">Other</option>
-                        </select>
-                      </div>
-
-                      <div className="form-row">
-                        <label>
-                          <input 
-                            type="checkbox"
-                            checked={editingIndex === index ? editedData.essential : false}
-                            onChange={(e) => {
-                              if (editingIndex !== index) handleEdit(index);
-                              handleEssentialChange(e.target.checked);
-                            }}
-                          />
-                          Mark as Essential
-                        </label>
-                      </div>
-                    </div>
-
-                    <div className="detected-actions">
-                      <button 
-                        className="btn-add"
-                        onClick={() => handleAddSubscription(sub, index)}
-                      >
-                        ✅ Add as Subscription
-                      </button>
-                      <button 
-                        className="btn-ignore"
-                        onClick={() => handleIgnore(index)}
-                      >
-                        ❌ Ignore
-                      </button>
-                    </div>
+              {/* Possible Matches Section */}
+              {matches.length > 0 && (
+                <>
+                  <div className="section-divider">
+                    <h3>🔗 Possible Matches ({matches.length})</h3>
+                    <p className="section-description">
+                      We found patterns that might match bills you're already tracking:
+                    </p>
                   </div>
-                ))}
-              </div>
+
+                  <div className="detected-list">
+                    {matches.map((sub, index) => {
+                      const listKey = `match-${index}`;
+                      return (
+                        <div key={listKey} className="detected-card match-card">
+                          <div className="detected-header">
+                            <div className="detected-title">
+                              <span className="detected-emoji">{getCategoryEmoji(sub.category)}</span>
+                              <span className="detected-name">{sub.merchantName}</span>
+                              <span className="confidence-badge">{sub.confidence}% confident</span>
+                            </div>
+                            <div className="detected-meta">
+                              {formatCurrency(sub.amount)}/{sub.billingCycle.toLowerCase()} • {sub.occurrences} occurrences
+                            </div>
+                          </div>
+
+                          {sub.matchedSubscription && (
+                            <div className="match-info">
+                              <strong>Matches existing bill:</strong>
+                              <div className="existing-bill-info">
+                                📋 "{sub.matchedSubscription.name}" ({formatCurrency(sub.matchedSubscription.amount)}/{sub.billingCycle.toLowerCase()})
+                              </div>
+                              <p className="match-question">Are these the same?</p>
+                            </div>
+                          )}
+
+                          <div className="detected-charges">
+                            <strong>Recent charges:</strong>
+                            <ul>
+                              {sub.recentCharges.map((charge, i) => (
+                                <li key={i}>
+                                  {formatDate(charge.date)} - {formatCurrency(charge.amount)}
+                                </li>
+                              ))}
+                            </ul>
+                          </div>
+
+                          <div className="detected-form">
+                            <div className="form-row">
+                              <label>Category:</label>
+                              <select 
+                                value={editingKey === listKey ? editedData.category : sub.category}
+                                onChange={(e) => {
+                                  if (editingKey !== listKey) handleEdit(listKey);
+                                  handleCategoryChange(e.target.value);
+                                }}
+                              >
+                                <optgroup label="Bills">
+                                  <option value="Housing">Housing</option>
+                                  <option value="Auto & Transportation">Auto & Transportation</option>
+                                  <option value="Credit Cards & Loans">Credit Cards & Loans</option>
+                                  <option value="Utilities & Home Services">Utilities & Home Services</option>
+                                  <option value="Phone & Internet">Phone & Internet</option>
+                                  <option value="Insurance & Healthcare">Insurance & Healthcare</option>
+                                  <option value="Personal Care">Personal Care</option>
+                                </optgroup>
+                                <optgroup label="Subscriptions">
+                                  <option value="Subscriptions & Entertainment">Subscriptions & Entertainment</option>
+                                  <option value="Software">Software</option>
+                                  <option value="Food">Food</option>
+                                </optgroup>
+                                <option value="Other">Other</option>
+                              </select>
+                            </div>
+
+                            <div className="form-row">
+                              <label>
+                                <input 
+                                  type="checkbox"
+                                  checked={editingKey === listKey ? editedData.essential : false}
+                                  onChange={(e) => {
+                                    if (editingKey !== listKey) handleEdit(listKey);
+                                    handleEssentialChange(e.target.checked);
+                                  }}
+                                />
+                                Mark as Essential
+                              </label>
+                            </div>
+                          </div>
+
+                          <div className="detected-actions">
+                            <button 
+                              className="btn-link"
+                              onClick={() => handleLinkToExisting(sub, listKey)}
+                              title="Link to existing bill"
+                            >
+                              ✅ Yes, Link Them
+                            </button>
+                            <button 
+                              className="btn-add-separate"
+                              onClick={() => handleAddAsSeparate(sub, listKey)}
+                              title="Add as separate bill"
+                            >
+                              ➕ No, Add Separate
+                            </button>
+                            <button 
+                              className="btn-ignore"
+                              onClick={() => handleIgnore(listKey)}
+                            >
+                              ❌ Ignore
+                            </button>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </>
+              )}
+
+              {/* New Patterns Section */}
+              {newPatterns.length > 0 && (
+                <>
+                  <div className="section-divider">
+                    <h3>🆕 New Patterns ({newPatterns.length})</h3>
+                    <p className="section-description">
+                      These patterns don't match any existing bills:
+                    </p>
+                  </div>
+
+                  <div className="detected-list">
+                    {newPatterns.map((sub, index) => {
+                      const listKey = `new-${index}`;
+                      return (
+                        <div key={listKey} className="detected-card new-card">
+                          <div className="detected-header">
+                            <div className="detected-title">
+                              <span className="detected-emoji">{getCategoryEmoji(sub.category)}</span>
+                              <span className="detected-name">{sub.merchantName}</span>
+                              <span className="confidence-badge">{sub.confidence}% confident</span>
+                            </div>
+                            <div className="detected-meta">
+                              {formatCurrency(sub.amount)}/{sub.billingCycle.toLowerCase()} • {sub.occurrences} occurrences
+                            </div>
+                          </div>
+
+                          <div className="detected-charges">
+                            <strong>Recent charges:</strong>
+                            <ul>
+                              {sub.recentCharges.map((charge, i) => (
+                                <li key={i}>
+                                  {formatDate(charge.date)} - {formatCurrency(charge.amount)}
+                                </li>
+                              ))}
+                            </ul>
+                            <p className="next-renewal">Next renewal: <strong>{formatDate(sub.nextRenewal)}</strong></p>
+                          </div>
+
+                          <div className="detected-form">
+                            <div className="form-row">
+                              <label>Category:</label>
+                              <select 
+                                value={editingKey === listKey ? editedData.category : sub.category}
+                                onChange={(e) => {
+                                  if (editingKey !== listKey) handleEdit(listKey);
+                                  handleCategoryChange(e.target.value);
+                                }}
+                              >
+                                <optgroup label="Bills">
+                                  <option value="Housing">Housing</option>
+                                  <option value="Auto & Transportation">Auto & Transportation</option>
+                                  <option value="Credit Cards & Loans">Credit Cards & Loans</option>
+                                  <option value="Utilities & Home Services">Utilities & Home Services</option>
+                                  <option value="Phone & Internet">Phone & Internet</option>
+                                  <option value="Insurance & Healthcare">Insurance & Healthcare</option>
+                                  <option value="Personal Care">Personal Care</option>
+                                </optgroup>
+                                <optgroup label="Subscriptions">
+                                  <option value="Subscriptions & Entertainment">Subscriptions & Entertainment</option>
+                                  <option value="Software">Software</option>
+                                  <option value="Food">Food</option>
+                                </optgroup>
+                                <option value="Other">Other</option>
+                              </select>
+                            </div>
+
+                            <div className="form-row">
+                              <label>
+                                <input 
+                                  type="checkbox"
+                                  checked={editingKey === listKey ? editedData.essential : false}
+                                  onChange={(e) => {
+                                    if (editingKey !== listKey) handleEdit(listKey);
+                                    handleEssentialChange(e.target.checked);
+                                  }}
+                                />
+                                Mark as Essential
+                              </label>
+                            </div>
+                          </div>
+
+                          <div className="detected-actions">
+                            <button 
+                              className="btn-add"
+                              onClick={() => handleAddAsSeparate(sub, listKey)}
+                            >
+                              ✅ Add as Recurring Bill
+                            </button>
+                            <button 
+                              className="btn-ignore"
+                              onClick={() => handleIgnore(listKey)}
+                            >
+                              ❌ Ignore
+                            </button>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </>
+              )}
             </>
           )}
         </div>
