@@ -91,11 +91,6 @@ const Subscriptions = () => {
     setShowDetector(false);
   };
 
-  const showNotification = (message, type = 'success') => {
-    setNotification({ message, type });
-    setTimeout(() => setNotification(null), 3000);
-  };
-
   const handleSubscriptionAdded = () => {
     showNotification('Recurring bill added successfully');
   };

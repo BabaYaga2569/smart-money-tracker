@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { getTypeFromCategory, SUBSCRIPTION_CATEGORIES, RECURRING_BILL_CATEGORIES } from '../utils/recurringDetection';
+import { getTypeFromCategory } from '../utils/recurringDetection';
 
 const BILLING_CYCLES = ['Monthly', 'Annual', 'Quarterly'];
 
