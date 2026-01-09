@@ -3064,14 +3064,30 @@ app.post("/api/subscriptions/detect", async (req, res, next) => {
     logDiagnostic.info('DETECT_SUBSCRIPTIONS', `Found ${existingSubscriptions.length} existing subscriptions`);
     
     // Run detection
-    const detected = detectSubscriptions(transactions, existingSubscriptions);
+    const detectionResult = detectSubscriptions(transactions, existingSubscriptions);
     
-    logger.info('DETECT_SUBSCRIPTIONS', 'Detection complete', { detected: detected.length });
-    logDiagnostic.info('DETECT_SUBSCRIPTIONS', `Found ${detected.length} recurring patterns`);
-    logDiagnostic.response(endpoint, 200, { detected: detected.length, scannedTransactions: transactions.length });
+    // Handle both old and new return formats for backward compatibility
+    const detected = detectionResult.all || detectionResult;
+    const matches = detectionResult.matches || [];
+    const newPatterns = detectionResult.newPatterns || detected;
+    
+    logger.info('DETECT_SUBSCRIPTIONS', 'Detection complete', { 
+      total: detected.length,
+      matches: matches.length,
+      newPatterns: newPatterns.length
+    });
+    logDiagnostic.info('DETECT_SUBSCRIPTIONS', `Found ${detected.length} recurring patterns (${matches.length} matches, ${newPatterns.length} new)`);
+    logDiagnostic.response(endpoint, 200, { 
+      total: detected.length, 
+      matches: matches.length,
+      newPatterns: newPatterns.length,
+      scannedTransactions: transactions.length 
+    });
     
     res.json({
-      detected,
+      detected,  // All patterns (for backward compatibility)
+      matches,   // Patterns matching existing subscriptions
+      newPatterns, // New patterns not yet tracked
       count: detected.length,
       scannedTransactions: transactions.length
     });
