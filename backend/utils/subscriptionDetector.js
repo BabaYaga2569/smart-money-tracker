@@ -1,16 +1,65 @@
 /**
- * Subscription Auto-Detection Algorithm
- * Analyzes transaction history to identify recurring subscription patterns
+ * Recurring Bills Auto-Detection Algorithm
+ * Analyzes transaction history to identify recurring bill and subscription patterns
  */
 
-// Category keywords for intelligent categorization
-const SUBSCRIPTION_CATEGORY_KEYWORDS = {
-  "Entertainment": ["netflix", "spotify", "hulu", "disney", "hbo", "youtube premium", "prime video", "apple tv", "paramount", "peacock", "max", "showtime"],
-  "Fitness": ["gym", "planet fitness", "24 hour fitness", "la fitness", "equinox", "yoga", "peloton", "fitness", "crunch", "anytime fitness"],
-  "Software": ["adobe", "microsoft", "github", "dropbox", "icloud", "google one", "notion", "slack", "zoom", "canva", "grammarly"],
-  "Utilities": ["electric", "electricity", "gas", "water", "internet", "phone", "mobile", "verizon", "at&t", "comcast", "xfinity", "t-mobile"],
-  "Food": ["meal kit", "hello fresh", "blue apron", "factor", "home chef", "freshly", "daily harvest"],
-  "Other": []
+// Comprehensive bill categories for intelligent categorization
+const BILL_CATEGORIES = {
+  "Housing": {
+    keywords: ["rent", "mortgage", "apartment", "property management", "hoa", "landlord", "lease", "housing"],
+    icon: "🏠"
+  },
+  "Auto & Transportation": {
+    keywords: ["chrysler capital", "chase auto", "ally auto", "car payment", "auto loan", "car insurance", "progressive", "geico", "state farm", "allstate", "insurance auto"],
+    icon: "🚗"
+  },
+  "Credit Cards & Loans": {
+    keywords: [
+      // Personal loans
+      "upgrade", "lending club", "sofi", "prosper", "avant", "upstart", "best egg", "marcus",
+      // BNPL
+      "affirm", "klarna", "afterpay", "sezzle", "quadpay", "zip", "splitit",
+      // Credit cards
+      "capital one", "chase", "citi", "amex", "discover", "wells fargo", "comenity", "bread financial", "synchrony"
+    ],
+    icon: "💳"
+  },
+  "Utilities & Home Services": {
+    keywords: ["electric", "nv energy", "duke energy", "pge", "water", "gas", "sewer", "trash", "waste management", "republic services", "utility"],
+    icon: "💡"
+  },
+  "Phone & Internet": {
+    keywords: ["verizon", "att", "at&t", "t-mobile", "sprint", "comcast", "xfinity", "spectrum", "cox", "frontier", "centurylink", "phone", "mobile", "internet"],
+    icon: "📱"
+  },
+  "Insurance & Healthcare": {
+    keywords: ["insurance", "health", "dental", "vision", "life insurance", "disability", "cigna", "aetna", "united healthcare"],
+    icon: "🏥"
+  },
+  "Subscriptions & Entertainment": {
+    keywords: ["netflix", "spotify", "hulu", "disney", "hbo", "youtube premium", "apple music", "amazon prime", "xbox", "playstation", "streaming"],
+    icon: "🎬"
+  },
+  "Fitness & Gym": {
+    keywords: ["gym", "fitness", "planet fitness", "24 hour fitness", "la fitness", "equinox", "yoga", "peloton", "crunch", "anytime fitness"],
+    icon: "💪"
+  },
+  "Personal Care": {
+    keywords: ["ulta", "sephora", "salon", "spa", "beauty", "massage", "nail", "hair"],
+    icon: "💅"
+  },
+  "Software & Technology": {
+    keywords: ["adobe", "microsoft", "github", "dropbox", "icloud", "google one", "notion", "slack", "zoom", "canva", "grammarly", "software"],
+    icon: "💻"
+  },
+  "Financial Services": {
+    keywords: ["bank fee", "account fee", "safe deposit", "advisor fee", "investment fee"],
+    icon: "💰"
+  },
+  "Other": {
+    keywords: [],
+    icon: "📦"
+  }
 };
 
 /**
@@ -40,12 +89,32 @@ function detectSubscriptions(transactions, existingSubscriptions = []) {
     // Sort by date (oldest first)
     txList.sort((a, b) => new Date(a.date) - new Date(b.date));
 
-    // Step 4: Check amount consistency (±$2 tolerance)
+    // Step 4: Check amount consistency with dynamic tolerance
     const amounts = txList.map(tx => Math.abs(tx.amount));
     const avgAmount = amounts.reduce((a, b) => a + b, 0) / amounts.length;
-    const amountConsistency = calculateAmountConsistency(amounts, avgAmount);
-
-    if (amountConsistency < 0.3) continue; // Too much variation
+    
+    // Dynamic amount tolerance: $5 or 10%, whichever is larger
+    const amountTolerance = Math.max(5, avgAmount * 0.10);
+    const amountConsistency = calculateAmountConsistency(amounts, avgAmount, amountTolerance);
+    
+    // Support variable amounts (like utilities)
+    let isVariableBill = false;
+    let amountRange = null;
+    if (amountConsistency < 0.3 && amounts.length >= 3) {
+      const variance = (Math.max(...amounts) - Math.min(...amounts)) / avgAmount;
+      if (variance < 0.25) {  // Within 25% variance
+        isVariableBill = true;
+        amountRange = {
+          min: Math.min(...amounts),
+          max: Math.max(...amounts),
+          avg: avgAmount
+        };
+      } else {
+        continue; // Too much variation
+      }
+    } else if (amountConsistency < 0.3) {
+      continue; // Too much variation
+    }
 
     // Step 5: Calculate time intervals between charges
     const intervals = calculateIntervals(txList);
@@ -55,16 +124,16 @@ function detectSubscriptions(transactions, existingSubscriptions = []) {
     const billingCycle = detectBillingCycle(intervals);
     if (!billingCycle) continue; // No recognizable pattern
 
-    // Step 7: Calculate confidence score
+    // Step 7: Calculate confidence score (lowered threshold)
     const confidence = calculateConfidenceScore({
       occurrences: txList.length,
-      amountConsistency,
+      amountConsistency: isVariableBill ? 0.7 : amountConsistency, // Lower score for variable bills
       intervalRegularity: calculateIntervalRegularity(intervals, billingCycle),
       timeSpan: getTimeSpan(txList)
     });
 
-    // Only show suggestions with 75%+ confidence
-    if (confidence < 75) continue;
+    // Only show suggestions with 70%+ confidence (lowered from 75%)
+    if (confidence < 70) continue;
 
     // Step 8: Estimate next renewal date
     const lastTransaction = txList[txList.length - 1];
@@ -88,7 +157,12 @@ function detectSubscriptions(transactions, existingSubscriptions = []) {
       })),
       nextRenewal,
       category,
-      transactionIds: txList.map(tx => tx.transaction_id || tx.id)
+      transactionIds: txList.map(tx => tx.transaction_id || tx.id),
+      isVariableBill,
+      amountRange,
+      displayAmount: isVariableBill 
+        ? `$${amountRange.min.toFixed(2)}-$${amountRange.max.toFixed(2)}` 
+        : undefined
     });
   }
 
@@ -116,14 +190,22 @@ function groupByMerchant(transactions) {
 }
 
 /**
- * Normalize merchant name for grouping
+ * Normalize merchant name for grouping and matching
  */
 function normalizeMerchantName(name) {
+  if (!name) return '';
+  
   return name
     .toLowerCase()
     .trim()
-    // Remove common suffixes that vary
-    .replace(/\s*(inc|llc|ltd|corp|co|.com)\s*$/i, '')
+    // Remove common suffixes
+    .replace(/\s+(inc|llc|corp|ltd|co|company)\b/gi, '')
+    // Remove payment processor info
+    .replace(/\s+\*\d+$/g, '')  // Remove * followed by numbers
+    .replace(/\s+\d{4}$/g, '')  // Remove last 4 digits
+    // Remove .com
+    .replace(/\.com\b/gi, '')
+    // Remove extra whitespace
     .replace(/\s+/g, ' ')
     .trim();
 }
@@ -131,8 +213,7 @@ function normalizeMerchantName(name) {
 /**
  * Calculate amount consistency (0-1, where 1 = exact amounts)
  */
-function calculateAmountConsistency(amounts, avgAmount) {
-  const tolerance = 2.0; // $2 tolerance
+function calculateAmountConsistency(amounts, avgAmount, tolerance = 2.0) {
   const consistentCount = amounts.filter(amt => 
     Math.abs(amt - avgAmount) <= tolerance
   ).length;
@@ -162,18 +243,28 @@ function calculateIntervals(transactions) {
 function detectBillingCycle(intervals) {
   const avgInterval = intervals.reduce((a, b) => a + b, 0) / intervals.length;
   
-  // Monthly: 28-32 days apart
-  if (avgInterval >= 28 && avgInterval <= 32) {
+  // Monthly: 25-35 days apart (more flexible)
+  if (avgInterval >= 25 && avgInterval <= 35) {
     return 'Monthly';
   }
   
-  // Quarterly: 89-93 days apart
-  if (avgInterval >= 89 && avgInterval <= 93) {
+  // Bi-monthly: 55-65 days apart
+  if (avgInterval >= 55 && avgInterval <= 65) {
+    return 'Bi-Monthly';
+  }
+  
+  // Quarterly: 85-95 days apart
+  if (avgInterval >= 85 && avgInterval <= 95) {
     return 'Quarterly';
   }
   
-  // Annual: 360-370 days apart
-  if (avgInterval >= 360 && avgInterval <= 370) {
+  // Semi-annual: 175-185 days apart
+  if (avgInterval >= 175 && avgInterval <= 185) {
+    return 'Semi-Annual';
+  }
+  
+  // Annual: 355-375 days apart
+  if (avgInterval >= 355 && avgInterval <= 375) {
     return 'Annual';
   }
   
@@ -186,12 +277,16 @@ function detectBillingCycle(intervals) {
 function calculateIntervalRegularity(intervals, billingCycle) {
   const expectedInterval = {
     'Monthly': 30,
+    'Bi-Monthly': 60,
     'Quarterly': 91,
+    'Semi-Annual': 182,
     'Annual': 365
   }[billingCycle];
   
-  const tolerance = billingCycle === 'Monthly' ? 2 : 
-                   billingCycle === 'Quarterly' ? 2 : 5;
+  const tolerance = billingCycle === 'Monthly' ? 5 : 
+                   billingCycle === 'Bi-Monthly' ? 5 :
+                   billingCycle === 'Quarterly' ? 5 : 
+                   billingCycle === 'Semi-Annual' ? 7 : 10;
   
   const regularCount = intervals.filter(interval => 
     Math.abs(interval - expectedInterval) <= tolerance
@@ -245,8 +340,14 @@ function estimateNextRenewal(lastChargeDate, billingCycle) {
     case 'Monthly':
       nextDate.setMonth(nextDate.getMonth() + 1);
       break;
+    case 'Bi-Monthly':
+      nextDate.setMonth(nextDate.getMonth() + 2);
+      break;
     case 'Quarterly':
       nextDate.setMonth(nextDate.getMonth() + 3);
+      break;
+    case 'Semi-Annual':
+      nextDate.setMonth(nextDate.getMonth() + 6);
       break;
     case 'Annual':
       nextDate.setFullYear(nextDate.getFullYear() + 1);
@@ -262,8 +363,8 @@ function estimateNextRenewal(lastChargeDate, billingCycle) {
 function suggestCategory(merchantName) {
   const lowerName = merchantName.toLowerCase();
   
-  for (const [category, keywords] of Object.entries(SUBSCRIPTION_CATEGORY_KEYWORDS)) {
-    for (const keyword of keywords) {
+  for (const [category, config] of Object.entries(BILL_CATEGORIES)) {
+    for (const keyword of config.keywords) {
       if (lowerName.includes(keyword.toLowerCase())) {
         return category;
       }
@@ -274,16 +375,76 @@ function suggestCategory(merchantName) {
 }
 
 /**
+ * Calculate similarity between two strings (Levenshtein distance-based)
+ * Returns a value between 0 and 1, where 1 is identical
+ */
+function calculateSimilarity(str1, str2) {
+  const longer = str1.length > str2.length ? str1 : str2;
+  const shorter = str1.length > str2.length ? str2 : str1;
+  
+  if (longer.length === 0) return 1.0;
+  
+  const editDistance = getEditDistance(longer, shorter);
+  return (longer.length - editDistance) / longer.length;
+}
+
+/**
+ * Calculate Levenshtein distance between two strings
+ */
+function getEditDistance(str1, str2) {
+  const matrix = [];
+  
+  for (let i = 0; i <= str2.length; i++) {
+    matrix[i] = [i];
+  }
+  
+  for (let j = 0; j <= str1.length; j++) {
+    matrix[0][j] = j;
+  }
+  
+  for (let i = 1; i <= str2.length; i++) {
+    for (let j = 1; j <= str1.length; j++) {
+      if (str2.charAt(i - 1) === str1.charAt(j - 1)) {
+        matrix[i][j] = matrix[i - 1][j - 1];
+      } else {
+        matrix[i][j] = Math.min(
+          matrix[i - 1][j - 1] + 1, // substitution
+          matrix[i][j - 1] + 1,     // insertion
+          matrix[i - 1][j] + 1      // deletion
+        );
+      }
+    }
+  }
+  
+  return matrix[str2.length][str1.length];
+}
+
+/**
+ * Check if two merchant names match using fuzzy logic
+ */
+function merchantNamesMatch(name1, name2) {
+  const normalized1 = normalizeMerchantName(name1);
+  const normalized2 = normalizeMerchantName(name2);
+  
+  // Exact match
+  if (normalized1 === normalized2) return true;
+  
+  // One contains the other
+  if (normalized1.includes(normalized2) || normalized2.includes(normalized1)) {
+    return true;
+  }
+  
+  // Fuzzy match (70% similarity threshold)
+  const similarity = calculateSimilarity(normalized1, normalized2);
+  return similarity > 0.7;
+}
+
+/**
  * Check if subscription is already tracked
  */
 function isAlreadyTracked(merchantName, existingSubscriptions) {
-  const normalizedMerchant = normalizeMerchantName(merchantName);
-  
   return existingSubscriptions.some(sub => {
-    const normalizedSubName = normalizeMerchantName(sub.name);
-    return normalizedSubName === normalizedMerchant || 
-           normalizedSubName.includes(normalizedMerchant) ||
-           normalizedMerchant.includes(normalizedSubName);
+    return merchantNamesMatch(merchantName, sub.name);
   });
 }
 
