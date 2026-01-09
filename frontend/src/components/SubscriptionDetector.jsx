@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { collection, addDoc, getDocs, query, where } from 'firebase/firestore';
+import { collection, addDoc, getDocs, query, where, updateDoc, doc } from 'firebase/firestore';
 import { db } from '../firebase';
 import { useAuth } from '../contexts/AuthContext';
 import { removeDetection, getAllDetections, getDismissedIds } from '../utils/detectionStorage';
@@ -65,16 +65,83 @@ const SubscriptionDetector = ({ onClose, onSubscriptionAdded }) => {
   const { currentUser } = useAuth();
   const [loading, setLoading] = useState(false);
   const [detected, setDetected] = useState([]);
+  const [matches, setMatches] = useState([]);
+  const [newPatterns, setNewPatterns] = useState([]);
+  const [existingBills, setExistingBills] = useState([]);
   const [scannedCount, setScannedCount] = useState(0);
   const [error, setError] = useState(null);
   const [editingIndex, setEditingIndex] = useState(null);
   const [editedData, setEditedData] = useState({});
+
+  // Calculate similarity between two strings (simple version)
+  const calculateSimilarity = (str1, str2) => {
+    const s1 = str1.toLowerCase();
+    const s2 = str2.toLowerCase();
+    
+    // Exact match
+    if (s1 === s2) return 1.0;
+    
+    // One contains the other
+    if (s1.includes(s2) || s2.includes(s1)) return 0.8;
+    
+    // Calculate simple Jaccard similarity
+    const set1 = new Set(s1.split(' '));
+    const set2 = new Set(s2.split(' '));
+    const intersection = new Set([...set1].filter(x => set2.has(x)));
+    const union = new Set([...set1, ...set2]);
+    
+    return intersection.size / union.size;
+  };
+
+  // Categorize detections into matches and new patterns
+  const categorizeDetections = (detectedList, existingList) => {
+    const matchesList = [];
+    const newList = [];
+    
+    for (const pattern of detectedList) {
+      const similar = existingList.filter(bill => {
+        // Name similarity (fuzzy match)
+        const nameSimilarity = calculateSimilarity(
+          pattern.merchantName,
+          bill.name
+        );
+        
+        // Amount match (within $5)
+        const amountMatch = Math.abs(pattern.amount - bill.cost) < 5;
+        
+        // Consider it a match if name is 70%+ similar OR amounts match exactly with 40%+ name similarity
+        return nameSimilarity > 0.7 || (amountMatch && nameSimilarity > 0.4);
+      });
+      
+      if (similar.length > 0) {
+        matchesList.push({
+          detected: pattern,
+          possibleMatches: similar,
+          confidence: Math.round(calculateSimilarity(pattern.merchantName, similar[0].name) * 100)
+        });
+      } else {
+        newList.push(pattern);
+      }
+    }
+    
+    return { matches: matchesList, newPatterns: newList };
+  };
 
   const detectSubscriptions = React.useCallback(async () => {
     setLoading(true);
     setError(null);
     
     try {
+      // Fetch existing bills
+      const subscriptionsRef = collection(db, 'users', currentUser.uid, 'subscriptions');
+      const existingSnap = await getDocs(subscriptionsRef);
+      const existing = existingSnap.docs.map(doc => ({
+        id: doc.id,
+        ...doc.data()
+      }));
+      setExistingBills(existing);
+      
+      // Detect patterns from transactions
       const response = await fetch(`${import.meta.env.VITE_API_URL || 'https://smart-money-tracker-09ks.onrender.com'}/api/subscriptions/detect`, {
         method: 'POST',
         headers: {
@@ -88,8 +155,14 @@ const SubscriptionDetector = ({ onClose, onSubscriptionAdded }) => {
       }
 
       const data = await response.json();
-      setDetected(data.detected || []);
+      const detectedList = data.detected || [];
+      setDetected(detectedList);
       setScannedCount(data.scannedTransactions || 0);
+      
+      // Categorize into matches and new patterns
+      const { matches: matchesList, newPatterns: newList } = categorizeDetections(detectedList, existing);
+      setMatches(matchesList);
+      setNewPatterns(newList);
     } catch (err) {
       console.error('Detection error:', err);
       setError('Failed to analyze transactions. Please try again.');
@@ -168,6 +241,94 @@ const SubscriptionDetector = ({ onClose, onSubscriptionAdded }) => {
     setDetected(prev => prev.filter((_, i) => i !== index));
   };
 
+  // Link detected pattern to existing bill
+  const handleLinkBill = async (match) => {
+    try {
+      const billId = match.possibleMatches[0].id;
+      const pattern = match.detected;
+      const billRef = doc(db, 'users', currentUser.uid, 'subscriptions', billId);
+      
+      await updateDoc(billRef, {
+        // Link to transaction pattern
+        linkedTransactionPattern: pattern.merchantName,
+        linkedTransactionIds: pattern.transactionIds || [],
+        
+        // Auto-detected metadata
+        autoDetected: true,
+        detectionConfidence: pattern.confidence,
+        
+        // Update from pattern if more accurate
+        cost: pattern.amount,
+        nextRenewal: pattern.nextRenewal,
+        
+        // Payment tracking
+        lastPaymentDate: pattern.recentCharges && pattern.recentCharges[0] ? pattern.recentCharges[0].date : null,
+        lastPaymentAmount: pattern.recentCharges && pattern.recentCharges[0] ? pattern.recentCharges[0].amount : null,
+        
+        // Metadata
+        linkedAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString()
+      });
+      
+      // Remove from matches list
+      setMatches(prev => prev.filter(m => m !== match));
+      
+      if (onSubscriptionAdded) {
+        onSubscriptionAdded();
+      }
+    } catch (err) {
+      console.error('Error linking bill:', err);
+      alert('Failed to link bill. Please try again.');
+    }
+  };
+
+  // Add detected pattern as separate bill
+  const handleAddSeparate = async (detectedPattern) => {
+    try {
+      const category = detectedPattern.category;
+      const type = getTypeFromCategory(category);
+
+      const subscriptionData = {
+        name: detectedPattern.merchantName,
+        cost: detectedPattern.amount,
+        billingCycle: detectedPattern.billingCycle,
+        category: category,
+        essential: RECURRING_BILL_CATEGORIES.includes(category),
+        type: type,
+        nextRenewal: detectedPattern.nextRenewal,
+        status: 'active',
+        autoRenew: true,
+        notes: `Auto-detected from ${detectedPattern.occurrences} transactions (${detectedPattern.confidence}% confidence)`,
+        linkedTransactionPattern: detectedPattern.merchantName,
+        linkedTransactionIds: detectedPattern.transactionIds || [],
+        autoDetected: true,
+        detectionConfidence: detectedPattern.confidence,
+        lastPaymentDate: detectedPattern.recentCharges && detectedPattern.recentCharges[0] ? detectedPattern.recentCharges[0].date : null,
+        lastPaymentAmount: detectedPattern.recentCharges && detectedPattern.recentCharges[0] ? detectedPattern.recentCharges[0].amount : null,
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+      };
+
+      const subscriptionsRef = collection(db, 'users', currentUser.uid, 'subscriptions');
+      await addDoc(subscriptionsRef, subscriptionData);
+
+      // Remove from matches list (if it's a match being added separately)
+      setMatches(prev => prev.filter(m => m.detected !== detectedPattern));
+      
+      if (onSubscriptionAdded) {
+        onSubscriptionAdded();
+      }
+    } catch (err) {
+      console.error('Error adding bill:', err);
+      alert('Failed to add bill. Please try again.');
+    }
+  };
+
+  // Ignore a match suggestion
+  const handleIgnoreMatch = (match) => {
+    setMatches(prev => prev.filter(m => m !== match));
+  };
+
   const formatCurrency = (amount) => {
     return new Intl.NumberFormat('en-US', {
       style: 'currency',
@@ -235,57 +396,99 @@ const SubscriptionDetector = ({ onClose, onSubscriptionAdded }) => {
             </div>
           )}
 
-          {!loading && !error && detected.length === 0 && (
+          {!loading && !error && matches.length === 0 && newPatterns.length === 0 && (
             <div className="detector-empty">
-              <p>🎉 No new recurring subscriptions detected!</p>
+              <p>🎉 All patterns matched!</p>
               <p className="detector-empty-sub">
-                We analyzed {scannedCount} transactions but didn't find any new patterns.
+                We analyzed {scannedCount} transactions and found {detected.length} patterns - all already linked to your bills!
               </p>
             </div>
           )}
 
-          {!loading && !error && detected.length > 0 && (
+          {!loading && !error && (matches.length > 0 || newPatterns.length > 0) && (
             <>
               <p className="detector-summary">
-                We analyzed <strong>{scannedCount} transactions</strong> and found <strong>{detected.length}</strong> possible subscription{detected.length > 1 ? 's' : ''}:
+                Analyzed <strong>{scannedCount} transactions</strong>, found <strong>{detected.length}</strong> pattern{detected.length !== 1 ? 's' : ''}
               </p>
 
-              <div className="detected-list">
-                {detected.map((sub, index) => (
-                  <div key={index} className="detected-card">
-                    <div className="detected-header">
-                      <div className="detected-title">
-                        <span className="detected-emoji">{getCategoryEmoji(sub.category)}</span>
-                        <span className="detected-name">{sub.merchantName}</span>
-                        <span className="confidence-badge">{sub.confidence}% confident</span>
+              {/* Section 1: Possible Matches */}
+              {matches.length > 0 && (
+                <section className="matches-section">
+                  <h3 className="section-title">🔗 Possible Matches ({matches.length})</h3>
+                  <p className="section-description">These patterns might match bills you're already tracking:</p>
+                  
+                  {matches.map((match, index) => (
+                    <div key={index} className="match-card">
+                      <div className="detected-info">
+                        <h4>🔍 Detected: {match.detected.merchantName}</h4>
+                        <p>{formatCurrency(match.detected.amount)}/{match.detected.billingCycle.toLowerCase()} • {match.detected.occurrences} occurrences</p>
+                        <p className="confidence">{match.confidence}% match confidence</p>
                       </div>
-                      <div className="detected-meta">
-                        {formatCurrency(sub.amount)}/{sub.billingCycle.toLowerCase()} • {sub.occurrences} occurrences
+                      
+                      <div className="existing-match">
+                        <h5>Matches existing bill:</h5>
+                        <p>📋 "{match.possibleMatches[0].name}" ({formatCurrency(match.possibleMatches[0].cost)}/{match.possibleMatches[0].billingCycle?.toLowerCase() || 'month'})</p>
+                      </div>
+                      
+                      <div className="match-actions">
+                        <button onClick={() => handleLinkBill(match)} className="btn-link">
+                          ✅ Yes, link them
+                        </button>
+                        <button onClick={() => handleAddSeparate(match.detected)} className="btn-add">
+                          ➕ No, add separate
+                        </button>
+                        <button onClick={() => handleIgnoreMatch(match)} className="btn-ignore">
+                          ❌ Ignore
+                        </button>
                       </div>
                     </div>
+                  ))}
+                </section>
+              )}
 
-                    <div className="detected-charges">
-                      <strong>Recent charges:</strong>
-                      <ul>
-                        {sub.recentCharges.map((charge, i) => (
-                          <li key={i}>
-                            {formatDate(charge.date)} - {formatCurrency(charge.amount)}
-                          </li>
-                        ))}
-                      </ul>
-                      <p className="next-renewal">Next renewal: <strong>{formatDate(sub.nextRenewal)}</strong></p>
-                    </div>
+              {/* Section 2: New Patterns */}
+              {newPatterns.length > 0 && (
+                <section className="new-patterns-section">
+                  <h3 className="section-title">🆕 New Patterns ({newPatterns.length})</h3>
+                  <p className="section-description">These don't match any existing bills:</p>
+                  
+                  {newPatterns.map((sub, index) => (
+                    <div key={index} className="detected-card">
+                      <div className="detected-header">
+                        <div className="detected-title">
+                          <span className="detected-emoji">{getCategoryEmoji(sub.category)}</span>
+                          <span className="detected-name">{sub.merchantName}</span>
+                          <span className="confidence-badge">{sub.confidence}% confident</span>
+                        </div>
+                        <div className="detected-meta">
+                          {sub.isVariableBill && sub.displayAmount 
+                            ? `${sub.displayAmount}/${sub.billingCycle.toLowerCase()} (varies)` 
+                            : `${formatCurrency(sub.amount)}/${sub.billingCycle.toLowerCase()}`} • {sub.occurrences} occurrences
+                        </div>
+                      </div>
 
-                    <div className="detected-form">
-                      <div className="form-row">
-                        <label>Category:</label>
-                        <select 
-                          value={editingIndex === index ? editedData.category : sub.category}
-                          onChange={(e) => {
-                            if (editingIndex !== index) handleEdit(index);
-                            handleCategoryChange(e.target.value);
-                          }}
-                        >
+                      <div className="detected-charges">
+                        <strong>Recent charges:</strong>
+                        <ul>
+                          {sub.recentCharges.map((charge, i) => (
+                            <li key={i}>
+                              {formatDate(charge.date)} - {formatCurrency(charge.amount)}
+                            </li>
+                          ))}
+                        </ul>
+                        <p className="next-renewal">Next renewal: <strong>{formatDate(sub.nextRenewal)}</strong></p>
+                      </div>
+
+                      <div className="detected-form">
+                        <div className="form-row">
+                          <label>Category:</label>
+                          <select 
+                            value={editingIndex === index ? editedData.category : sub.category}
+                            onChange={(e) => {
+                              if (editingIndex !== index) handleEdit(index);
+                              handleCategoryChange(e.target.value);
+                            }}
+                          >
                           <optgroup label="Recurring Bills">
                             <option value="Housing">🏠 Housing</option>
                             <option value="Auto & Transportation">🚗 Auto & Transportation</option>
@@ -332,17 +535,18 @@ const SubscriptionDetector = ({ onClose, onSubscriptionAdded }) => {
                       </button>
                       <button 
                         className="btn-ignore"
-                        onClick={() => handleIgnore(index)}
+                        onClick={() => setNewPatterns(prev => prev.filter((_, i) => i !== index))}
                       >
                         ❌ Ignore
                       </button>
                     </div>
                   </div>
                 ))}
-              </div>
-            </>
-          )}
-        </div>
+              </section>
+            )}
+          </>
+        )}
+      </div>
 
         <div className="detector-footer">
           <button className="btn-close" onClick={onClose}>Close</button>

@@ -388,3 +388,114 @@
     width: 100%;
   }
 }
+
+/* Matches and New Patterns Sections */
+.matches-section,
+.new-patterns-section {
+  margin-bottom: 24px;
+}
+
+.section-title {
+  font-size: 20px;
+  color: #333;
+  margin: 16px 0 8px 0;
+  font-weight: 600;
+}
+
+.section-description {
+  color: #666;
+  margin-bottom: 16px;
+  font-size: 14px;
+}
+
+.match-card {
+  background: #f8f9fa;
+  border: 1px solid #dee2e6;
+  border-radius: 8px;
+  padding: 16px;
+  margin-bottom: 16px;
+}
+
+.detected-info h4 {
+  margin: 0 0 8px 0;
+  font-size: 16px;
+  color: #333;
+}
+
+.detected-info p {
+  margin: 4px 0;
+  font-size: 14px;
+  color: #666;
+}
+
+.detected-info .confidence {
+  color: #28a745;
+  font-weight: 600;
+}
+
+.existing-match {
+  background: white;
+  border: 1px solid #dee2e6;
+  border-radius: 6px;
+  padding: 12px;
+  margin: 12px 0;
+}
+
+.existing-match h5 {
+  margin: 0 0 8px 0;
+  font-size: 13px;
+  color: #666;
+  font-weight: 500;
+}
+
+.existing-match p {
+  margin: 0;
+  font-size: 14px;
+  color: #333;
+}
+
+.match-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.btn-link,
+.btn-add,
+.btn-ignore {
+  flex: 1;
+  padding: 10px 16px;
+  border: none;
+  border-radius: 6px;
+  font-size: 14px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.btn-link {
+  background: #28a745;
+  color: white;
+}
+
+.btn-link:hover {
+  background: #218838;
+}
+
+.btn-add {
+  background: #007bff;
+  color: white;
+}
+
+.btn-add:hover {
+  background: #0056b3;
+}
+
+.btn-ignore {
+  background: #6c757d;
+  color: white;
+}
+
+.btn-ignore:hover {
+  background: #5a6268;
+}
