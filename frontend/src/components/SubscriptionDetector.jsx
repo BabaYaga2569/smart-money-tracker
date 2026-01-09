@@ -355,20 +355,8 @@ const SubscriptionDetector = ({ onClose, onSubscriptionAdded }) => {
       'Fitness & Gym': '💪',
       'Personal Care': '💅',
       'Financial Services': '💰',
-      'Entertainment': '🎬',
-      'Fitness': '🏋️',
-      'Software': '💻',
-      'Utilities': '⚡',
       'Food': '🍔',
-      'Other': '📦',
-      'Streaming': '📺',
-      'Rent': '🏠',
-      'Insurance': '🛡️',
-      'Phone': '📱',
-      'Internet': '🌐',
-      'Mortgage': '🏡',
-      'Gaming': '🎮',
-      'Memberships': '🎫'
+      'Other': '📦'
     };
     return emojiMap[category] || '📦';
   };
@@ -461,9 +449,12 @@ const SubscriptionDetector = ({ onClose, onSubscriptionAdded }) => {
                           <span className="confidence-badge">{sub.confidence}% confident</span>
                         </div>
                         <div className="detected-meta">
-                          {sub.isVariableBill && sub.displayAmount 
-                            ? `${sub.displayAmount}/${sub.billingCycle.toLowerCase()} (varies)` 
-                            : `${formatCurrency(sub.amount)}/${sub.billingCycle.toLowerCase()}`} • {sub.occurrences} occurrences
+                          {(() => {
+                            const billingCycleLower = sub.billingCycle.toLowerCase();
+                            return sub.isVariableBill && sub.displayAmount 
+                              ? `${sub.displayAmount}/${billingCycleLower} (varies)` 
+                              : `${formatCurrency(sub.amount)}/${billingCycleLower}`;
+                          })()} • {sub.occurrences} occurrences
                         </div>
                       </div>
 

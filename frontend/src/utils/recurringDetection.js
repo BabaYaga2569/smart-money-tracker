@@ -42,12 +42,6 @@ export const getTypeFromCategory = (category) => {
   if (RECURRING_BILL_CATEGORIES.includes(category)) return 'recurring_bill';
   return 'subscription'; // Default to subscription
 };
-
-/**
- * Categorize merchant name based on keywords
- * @param {string} merchant - The merchant name
- * @returns {string} - The detected category
- */
 export const categorizeMerchant = (merchant) => {
   const name = merchant.toLowerCase();
   
