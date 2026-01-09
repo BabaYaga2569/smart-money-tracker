@@ -1861,6 +1861,75 @@ app.post("/api/plaid/sync_transactions", async (req, res, next) => {
           // Don't fail the transaction sync if bill clearing fails
         }
       });
+      
+      // ✅ NEW: Auto-mark recurring bills as paid when matching transactions appear
+      setImmediate(async () => {
+        try {
+          console.log('[AUTO_PAYMENT_DETECTION] Checking for bill payments in new transactions...');
+          
+          // Get all recurring bills with linked transaction patterns
+          const subscriptionsRef = db.collection('users').doc(userId).collection('subscriptions');
+          const linkedBillsSnap = await subscriptionsRef
+            .where('linkedTransactionPattern', '!=', null)
+            .get();
+          
+          const linkedBills = linkedBillsSnap.docs.map(doc => ({
+            id: doc.id,
+            ...doc.data()
+          }));
+          
+          if (linkedBills.length === 0) {
+            console.log('[AUTO_PAYMENT_DETECTION] No linked bills found, skipping');
+            return;
+          }
+          
+          console.log(`[AUTO_PAYMENT_DETECTION] Found ${linkedBills.length} linked bills to check`);
+          
+          // Get newly added transactions from this sync
+          const newTransactions = plaidTransactions.filter(tx => 
+            allAdded.some(added => added.transaction_id === tx.transaction_id)
+          );
+          
+          let markedCount = 0;
+          
+          // Check each new transaction against linked bills
+          for (const tx of newTransactions) {
+            const matchingBill = linkedBills.find(bill => {
+              const pattern = bill.linkedTransactionPattern?.toLowerCase() || '';
+              const merchantName = (tx.merchant_name || '').toLowerCase();
+              const name = (tx.name || '').toLowerCase();
+              
+              // Match if transaction merchant or name contains the pattern
+              return merchantName.includes(pattern) || name.includes(pattern);
+            });
+            
+            if (matchingBill && !matchingBill.isPaid) {
+              // Auto-mark as paid!
+              await subscriptionsRef.doc(matchingBill.id).update({
+                isPaid: true,
+                paidDate: tx.date,
+                paidAmount: Math.abs(tx.amount),
+                paidVia: 'auto-detected',
+                linkedTransactionId: tx.transaction_id,
+                lastPaymentDate: tx.date,
+                lastPaymentAmount: Math.abs(tx.amount),
+                updatedAt: admin.firestore.FieldValue.serverTimestamp()
+              });
+              
+              markedCount++;
+              console.log(`[AUTO_PAYMENT_DETECTION] ✅ Auto-marked "${matchingBill.name}" as PAID from transaction ${tx.transaction_id}`);
+              
+              // TODO: Generate next bill instance if recurring
+              // This would require additional logic to create the next month's bill
+            }
+          }
+          
+          console.log(`[AUTO_PAYMENT_DETECTION] Marked ${markedCount} bills as paid`);
+        } catch (detectionError) {
+          console.error('[AUTO_PAYMENT_DETECTION] Error running auto-payment detection:', detectionError);
+          // Don't fail the transaction sync if payment detection fails
+        }
+      });
     }
     
     logDiagnostic.response(endpoint, 200, { 
