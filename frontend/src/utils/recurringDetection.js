@@ -5,6 +5,9 @@
 
 // Category constants for auto-type assignment
 export const SUBSCRIPTION_CATEGORIES = [
+  'Subscriptions & Entertainment',
+  'Software & Technology',
+  'Fitness & Gym',
   'Streaming',
   'Software',
   'Memberships',
@@ -13,6 +16,14 @@ export const SUBSCRIPTION_CATEGORIES = [
 ];
 
 export const RECURRING_BILL_CATEGORIES = [
+  'Housing',
+  'Auto & Transportation',
+  'Credit Cards & Loans',
+  'Utilities & Home Services',
+  'Phone & Internet',
+  'Insurance & Healthcare',
+  'Personal Care',
+  'Financial Services',
   'Utilities',
   'Rent',
   'Insurance',
@@ -40,51 +51,86 @@ export const getTypeFromCategory = (category) => {
 export const categorizeMerchant = (merchant) => {
   const name = merchant.toLowerCase();
   
-  // Utilities
-  if (name.includes('electric') || name.includes('power') || name.includes('energy')) {
-    return 'Utilities';
-  }
-  if (name.includes('water') || name.includes('sewer')) {
-    return 'Utilities';
-  }
-  if (name.includes('gas') || name.includes('fuel')) {
-    return 'Utilities';
+  // Housing
+  if (name.includes('rent') || name.includes('apartment') || name.includes('property') ||
+      name.includes('mortgage') || name.includes('housing') || name.includes('hoa') || 
+      name.includes('landlord') || name.includes('lease')) {
+    return 'Housing';
   }
   
-  // Rent/Housing
-  if (name.includes('rent') || name.includes('apartment') || name.includes('property')) {
-    return 'Rent';
-  }
-  if (name.includes('mortgage') || name.includes('housing')) {
-    return 'Mortgage';
-  }
-  
-  // Insurance
-  if (name.includes('insurance') || name.includes('geico') || name.includes('progressive') || 
-      name.includes('state farm') || name.includes('allstate')) {
-    return 'Insurance';
+  // Auto & Transportation
+  if (name.includes('chrysler capital') || name.includes('chase auto') || name.includes('ally auto') ||
+      name.includes('car payment') || name.includes('auto loan') || name.includes('car insurance') ||
+      name.includes('progressive') || name.includes('geico') || name.includes('state farm') ||
+      name.includes('allstate')) {
+    return 'Auto & Transportation';
   }
   
-  // Phone/Internet
+  // Credit Cards & Loans
+  if (name.includes('upgrade') || name.includes('lending club') || name.includes('sofi') ||
+      name.includes('prosper') || name.includes('avant') || name.includes('upstart') ||
+      name.includes('affirm') || name.includes('klarna') || name.includes('afterpay') ||
+      name.includes('capital one') || name.includes('chase') || name.includes('citi') ||
+      name.includes('amex') || name.includes('discover') || name.includes('wells fargo')) {
+    return 'Credit Cards & Loans';
+  }
+  
+  // Utilities & Home Services
+  if (name.includes('electric') || name.includes('power') || name.includes('energy') ||
+      name.includes('nv energy') || name.includes('duke energy') || name.includes('pge') ||
+      name.includes('water') || name.includes('sewer') || name.includes('gas') ||
+      name.includes('trash') || name.includes('waste management') || name.includes('utility')) {
+    return 'Utilities & Home Services';
+  }
+  
+  // Phone & Internet
   if (name.includes('phone') || name.includes('verizon') || name.includes('at&t') || 
-      name.includes('t-mobile') || name.includes('sprint')) {
-    return 'Phone';
-  }
-  if (name.includes('internet') || name.includes('comcast') || name.includes('spectrum') || 
-      name.includes('cox') || name.includes('xfinity')) {
-    return 'Internet';
+      name.includes('t-mobile') || name.includes('sprint') || name.includes('mobile') ||
+      name.includes('internet') || name.includes('comcast') || name.includes('spectrum') || 
+      name.includes('cox') || name.includes('xfinity') || name.includes('centurylink')) {
+    return 'Phone & Internet';
   }
   
-  // Streaming services
+  // Insurance & Healthcare
+  if (name.includes('insurance') || name.includes('cigna') || name.includes('aetna') ||
+      name.includes('united healthcare') || name.includes('health') || name.includes('dental') ||
+      name.includes('vision') || name.includes('life insurance') || name.includes('disability')) {
+    return 'Insurance & Healthcare';
+  }
+  
+  // Subscriptions & Entertainment / Streaming
   if (name.includes('netflix') || name.includes('spotify') || name.includes('hulu') || 
-      name.includes('disney') || name.includes('hbo') || name.includes('amazon prime')) {
-    return 'Streaming';
+      name.includes('disney') || name.includes('hbo') || name.includes('youtube premium') ||
+      name.includes('apple music') || name.includes('amazon prime') || name.includes('xbox') ||
+      name.includes('playstation')) {
+    return 'Subscriptions & Entertainment';
   }
   
-  // Software
+  // Software & Technology
   if (name.includes('adobe') || name.includes('microsoft') || name.includes('github') || 
-      name.includes('dropbox') || name.includes('google')) {
-    return 'Software';
+      name.includes('dropbox') || name.includes('google') || name.includes('icloud') ||
+      name.includes('notion') || name.includes('slack') || name.includes('zoom')) {
+    return 'Software & Technology';
+  }
+  
+  // Fitness & Gym
+  if (name.includes('gym') || name.includes('fitness') || name.includes('planet fitness') ||
+      name.includes('24 hour fitness') || name.includes('la fitness') || name.includes('equinox') ||
+      name.includes('yoga') || name.includes('peloton')) {
+    return 'Fitness & Gym';
+  }
+  
+  // Personal Care
+  if (name.includes('ulta') || name.includes('sephora') || name.includes('salon') ||
+      name.includes('spa') || name.includes('beauty') || name.includes('massage') ||
+      name.includes('nail') || name.includes('hair')) {
+    return 'Personal Care';
+  }
+  
+  // Financial Services
+  if (name.includes('bank fee') || name.includes('account fee') || name.includes('safe deposit') ||
+      name.includes('advisor fee') || name.includes('investment fee')) {
+    return 'Financial Services';
   }
   
   return 'Other';
