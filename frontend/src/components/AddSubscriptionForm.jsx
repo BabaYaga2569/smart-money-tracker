@@ -118,7 +118,7 @@ const AddSubscriptionForm = ({ subscription, accounts, onSave, onCancel }) => {
     <div className="modal-overlay">
       <div className="modal subscription-form-modal">
         <div className="modal-header">
-          <h3>{subscription ? 'Edit Subscription' : 'Add New Subscription'}</h3>
+          <h3>{subscription ? 'Edit Recurring Bill' : 'Add New Recurring Bill'}</h3>
           <button className="close-btn" onClick={onCancel}>&times;</button>
         </div>
         
@@ -145,22 +145,26 @@ const AddSubscriptionForm = ({ subscription, accounts, onSave, onCancel }) => {
                 value={formData.category}
                 onChange={handleChange}
               >
-                <optgroup label="Subscriptions">
-                  {SUBSCRIPTION_CATEGORIES.map(cat => (
-                    <option key={cat} value={cat}>{cat}</option>
-                  ))}
-                </optgroup>
                 <optgroup label="Recurring Bills">
-                  {RECURRING_BILL_CATEGORIES.map(cat => (
-                    <option key={cat} value={cat}>{cat}</option>
-                  ))}
+                  <option value="Housing">🏠 Housing</option>
+                  <option value="Auto & Transportation">🚗 Auto & Transportation</option>
+                  <option value="Credit Cards & Loans">💳 Credit Cards & Loans</option>
+                  <option value="Utilities & Home Services">💡 Utilities & Home Services</option>
+                  <option value="Phone & Internet">📱 Phone & Internet</option>
+                  <option value="Insurance & Healthcare">🏥 Insurance & Healthcare</option>
+                  <option value="Personal Care">💅 Personal Care</option>
+                  <option value="Financial Services">💰 Financial Services</option>
+                </optgroup>
+                <optgroup label="Subscriptions">
+                  <option value="Subscriptions & Entertainment">🎬 Subscriptions & Entertainment</option>
+                  <option value="Software & Technology">💻 Software & Technology</option>
+                  <option value="Fitness & Gym">💪 Fitness & Gym</option>
                 </optgroup>
                 <optgroup label="Other">
-                  <option value="Fitness">Fitness</option>
-                  <option value="Food">Food</option>
-                  <option value="Shopping">Shopping</option>
-                  <option value="Storage">Storage</option>
-                  <option value="Other">Other</option>
+                  <option value="Food">🍔 Food</option>
+                  <option value="Shopping">🛍️ Shopping</option>
+                  <option value="Storage">☁️ Storage</option>
+                  <option value="Other">📦 Other</option>
                 </optgroup>
               </select>
               <small style={{ display: 'block', marginTop: '4px', color: '#888', fontSize: '12px' }}>
@@ -271,7 +275,7 @@ const AddSubscriptionForm = ({ subscription, accounts, onSave, onCancel }) => {
                 Cancel
               </button>
               <button type="submit" className="btn-primary">
-                {subscription ? 'Update' : 'Add'} Subscription
+                {subscription ? 'Update' : 'Add'} Recurring Bill
               </button>
             </div>
           </form>

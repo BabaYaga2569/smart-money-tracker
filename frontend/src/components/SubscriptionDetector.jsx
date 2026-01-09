@@ -183,6 +183,17 @@ const SubscriptionDetector = ({ onClose, onSubscriptionAdded }) => {
 
   const getCategoryEmoji = (category) => {
     const emojiMap = {
+      'Housing': '🏠',
+      'Auto & Transportation': '🚗',
+      'Credit Cards & Loans': '💳',
+      'Utilities & Home Services': '💡',
+      'Phone & Internet': '📱',
+      'Insurance & Healthcare': '🏥',
+      'Subscriptions & Entertainment': '🎬',
+      'Software & Technology': '💻',
+      'Fitness & Gym': '💪',
+      'Personal Care': '💅',
+      'Financial Services': '💰',
       'Entertainment': '🎬',
       'Fitness': '🏋️',
       'Software': '💻',
@@ -275,12 +286,25 @@ const SubscriptionDetector = ({ onClose, onSubscriptionAdded }) => {
                             handleCategoryChange(e.target.value);
                           }}
                         >
-                          <option value="Entertainment">Entertainment</option>
-                          <option value="Fitness">Fitness</option>
-                          <option value="Software">Software</option>
-                          <option value="Utilities">Utilities</option>
-                          <option value="Food">Food</option>
-                          <option value="Other">Other</option>
+                          <optgroup label="Recurring Bills">
+                            <option value="Housing">🏠 Housing</option>
+                            <option value="Auto & Transportation">🚗 Auto & Transportation</option>
+                            <option value="Credit Cards & Loans">💳 Credit Cards & Loans</option>
+                            <option value="Utilities & Home Services">💡 Utilities & Home Services</option>
+                            <option value="Phone & Internet">📱 Phone & Internet</option>
+                            <option value="Insurance & Healthcare">🏥 Insurance & Healthcare</option>
+                            <option value="Personal Care">💅 Personal Care</option>
+                            <option value="Financial Services">💰 Financial Services</option>
+                          </optgroup>
+                          <optgroup label="Subscriptions">
+                            <option value="Subscriptions & Entertainment">🎬 Subscriptions & Entertainment</option>
+                            <option value="Software & Technology">💻 Software & Technology</option>
+                            <option value="Fitness & Gym">💪 Fitness & Gym</option>
+                          </optgroup>
+                          <optgroup label="Other">
+                            <option value="Food">🍔 Food</option>
+                            <option value="Other">📦 Other</option>
+                          </optgroup>
                         </select>
                       </div>
 
@@ -304,7 +328,7 @@ const SubscriptionDetector = ({ onClose, onSubscriptionAdded }) => {
                         className="btn-add"
                         onClick={() => handleAddSubscription(sub, index)}
                       >
-                        ✅ Add as Subscription
+                        ✅ Add as Recurring Bill
                       </button>
                       <button 
                         className="btn-ignore"

@@ -31,6 +31,17 @@ const SubscriptionCard = ({ subscription, onEdit, onDelete, onCancel }) => {
 
   const getCategoryIcon = (category) => {
     const icons = {
+      'Housing': '🏠',
+      'Auto & Transportation': '🚗',
+      'Credit Cards & Loans': '💳',
+      'Utilities & Home Services': '💡',
+      'Phone & Internet': '📱',
+      'Insurance & Healthcare': '🏥',
+      'Subscriptions & Entertainment': '🎬',
+      'Software & Technology': '💻',
+      'Fitness & Gym': '💪',
+      'Personal Care': '💅',
+      'Financial Services': '💰',
       'Entertainment': '🎬',
       'Utilities': '🏠',
       'Software': '💻',

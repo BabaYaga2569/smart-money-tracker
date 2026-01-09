@@ -91,8 +91,13 @@ const Subscriptions = () => {
     setShowDetector(false);
   };
 
+  const showNotification = (message, type = 'success') => {
+    setNotification({ message, type });
+    setTimeout(() => setNotification(null), 3000);
+  };
+
   const handleSubscriptionAdded = () => {
-    showNotification('Subscription added successfully');
+    showNotification('Recurring bill added successfully');
   };
 
   const handleReviewSuggestions = () => {
@@ -110,19 +115,19 @@ const Subscriptions = () => {
         // Update existing subscription
         const subscriptionRef = doc(db, 'users', currentUser.uid, 'subscriptions', editingSubscription.id);
         await updateDoc(subscriptionRef, subscriptionData);
-        showNotification('Subscription updated successfully');
+        showNotification('Recurring bill updated successfully');
       } else {
         // Add new subscription
         const subscriptionsRef = collection(db, 'users', currentUser.uid, 'subscriptions');
         await addDoc(subscriptionsRef, subscriptionData);
-        showNotification('Subscription added successfully');
+        showNotification('Recurring bill added successfully');
       }
       
       setShowForm(false);
       setEditingSubscription(null);
     } catch (error) {
-      console.error('Error saving subscription:', error);
-      showNotification('Error saving subscription', 'error');
+      console.error('Error saving recurring bill:', error);
+      showNotification('Error saving recurring bill', 'error');
     }
   };
 
@@ -134,10 +139,10 @@ const Subscriptions = () => {
     try {
       const subscriptionRef = doc(db, 'users', currentUser.uid, 'subscriptions', subscription.id);
       await deleteDoc(subscriptionRef);
-      showNotification('Subscription deleted successfully');
+      showNotification('Recurring bill deleted successfully');
     } catch (error) {
-      console.error('Error deleting subscription:', error);
-      showNotification('Error deleting subscription', 'error');
+      console.error('Error deleting recurring bill:', error);
+      showNotification('Error deleting recurring bill', 'error');
     }
   };
 
@@ -152,10 +157,10 @@ const Subscriptions = () => {
         status: 'cancelled',
         cancelledDate: new Date().toISOString()
       });
-      showNotification('Subscription cancelled successfully');
+      showNotification('Recurring bill cancelled successfully');
     } catch (error) {
-      console.error('Error cancelling subscription:', error);
-      showNotification('Error cancelling subscription', 'error');
+      console.error('Error cancelling recurring bill:', error);
+      showNotification('Error cancelling recurring bill', 'error');
     }
   };
 
@@ -238,7 +243,7 @@ const Subscriptions = () => {
   if (loading) {
     return (
       <div className="subscriptions-page">
-        <div className="loading">Loading subscriptions...</div>
+        <div className="loading">Loading recurring bills...</div>
       </div>
     );
   }
@@ -249,13 +254,13 @@ const Subscriptions = () => {
     <div className="subscriptions-page">
       {/* Header */}
       <div className="page-header">
-        <h1>💳 Subscriptions</h1>
+        <h1>📋 Recurring Bills</h1>
         <div className="header-actions">
           <button className="btn-auto-detect" onClick={handleAutoDetect}>
             🤖 Auto-Detect
           </button>
           <button className="btn-primary add-subscription-btn" onClick={handleAddSubscription}>
-            + Add Subscription
+            + Add Recurring Bill
           </button>
         </div>
       </div>
@@ -364,10 +369,10 @@ const Subscriptions = () => {
           ))
         ) : (
           <div className="no-subscriptions">
-            <h3>No subscriptions found</h3>
-            <p>Add your first subscription to start tracking your recurring expenses!</p>
+            <h3>No recurring bills found</h3>
+            <p>Add your first recurring bill to start tracking your recurring expenses!</p>
             <button className="btn-primary" onClick={handleAddSubscription}>
-              + Add Subscription
+              + Add Recurring Bill
             </button>
           </div>
         )}
