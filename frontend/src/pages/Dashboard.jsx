@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { doc, getDoc, collection, query, where, orderBy, limit, getDocs, updateDoc, deleteDoc, serverTimestamp } from 'firebase/firestore';
+import { doc, getDoc, collection, query, where, orderBy, limit, getDocs, updateDoc, deleteDoc } from 'firebase/firestore';
 import { db } from '../firebase';
 import { calculateTotalProjectedBalance } from '../utils/BalanceCalculator';
 import PlaidConnectionManager from '../utils/PlaidConnectionManager';
@@ -74,18 +74,11 @@ const Dashboard = () => {
     }
   };
 
-  const showNotification = (message, type = 'success') => {
-    setNotification({ message, type });
-    setTimeout(() => setNotification({ message: '', type: '' }), 5000);
-  };
-
+  // Auto-update payday if needed (same as Spendability.jsx)
   const autoUpdatePayday = async (settingsData) => {
     const today = getPacificTime();
     today.setHours(0, 0, 0, 0);
-    
-    // Check multiple possible locations for lastPayDate for backward compatibility
-    // yoursSchedule?.lastPaydate is legacy format from older schema versions
-    const lastPayDateStr = settingsData?.lastPayDate || settingsData?.paySchedules?.yours?.lastPaydate || settingsData?.yoursSchedule?.lastPaydate;
+    const lastPayDateStr = settingsData?.lastPayDate || settingsData?.paySchedules?.yours?.lastPaydate;
     
     if (!lastPayDateStr) return false;
     
@@ -99,51 +92,24 @@ const Dashboard = () => {
       
       const newLastPayDateStr = formatDateForInput(newLastPayDate);
       
-      console.log('✅ AUTO-ADVANCING PAYDAY (Dashboard):', {
-        oldDate: lastPayDateStr,
-        newDate: newLastPayDateStr,
-        daysSince: daysSinceLastPay,
-        periodsSkipped: payPeriods
+      console.log(`✅ AUTO-ADVANCING PAYDAY: ${lastPayDateStr} → ${newLastPayDateStr} (${payPeriods} periods)`);
+      
+      const settingsDocRef = doc(db, 'users', currentUser.uid, 'settings', 'personal');
+      await updateDoc(settingsDocRef, {
+        lastPayDate: newLastPayDateStr,
+        'paySchedules.yours.lastPaydate': newLastPayDateStr
       });
       
       try {
-        const settingsDocRef = doc(db, 'users', currentUser.uid, 'settings', 'personal');
-        
-        // Update BOTH root level AND nested structure
-        await updateDoc(settingsDocRef, {
-          lastPayDate: newLastPayDateStr,
-          'paySchedules.yours.lastPaydate': newLastPayDateStr,
-          updatedAt: serverTimestamp()
-        });
-        
-        console.log('✅ Updated lastPayDate in both root and nested fields');
-        
-        // Clear stale payCycle cache
-        try {
-          const payCycleDocRef = doc(db, 'users', currentUser.uid, 'financial', 'payCycle');
-          await deleteDoc(payCycleDocRef);
-          console.log('✅ Cleared stale payCycle cache');
-        } catch (error) {
-          console.log('Note: payCycle cache may not exist yet:', error.message);
-        }
-        
-        // Show notification to user
-        showNotification(
-          `📅 Payday dates updated! Your last pay date was advanced from ${lastPayDateStr} to ${newLastPayDateStr}.`,
-          'success'
-        );
-        
-        return true;
+        const payCycleDocRef = doc(db, 'users', currentUser.uid, 'financial', 'payCycle');
+        await deleteDoc(payCycleDocRef);
       } catch (error) {
-        console.error('❌ Error updating payday dates:', error);
-        showNotification(
-          '❌ Failed to update payday dates. Please try again or update manually in Settings.',
-          'error'
-        );
-        return false;
+        // Ignore if doesn't exist
       }
+      
+      return true;
     }
-   
+    
     return false;
   };
 
@@ -168,7 +134,7 @@ const Dashboard = () => {
         setFirebaseConnected(true);
         let data = settingsDocSnap.data();
         
-        // Auto-update payday if needed (same logic as Spendability)
+        // Call autoUpdatePayday before loading dashboard data
         const wasUpdated = await autoUpdatePayday(data);
         if (wasUpdated) {
           const settingsDocRef = doc(db, 'users', currentUser.uid, 'settings', 'personal');
