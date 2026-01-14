@@ -1,9 +1,11 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { doc, getDoc, collection, query, where, orderBy, limit, getDocs } from 'firebase/firestore';
+import { doc, getDoc, collection, query, where, orderBy, limit, getDocs, updateDoc, deleteDoc, serverTimestamp } from 'firebase/firestore';
 import { db } from '../firebase';
 import { calculateTotalProjectedBalance } from '../utils/BalanceCalculator';
 import PlaidConnectionManager from '../utils/PlaidConnectionManager';
+import { formatDateForInput } from '../utils/DateUtils';
+import { getPacificTime } from '../utils/timezoneHelpers';
 import './Dashboard.css';
 import { useAuth } from '../contexts/AuthContext';
 import DashboardTileCreditCard from "../components/DashboardTileCreditCard";
@@ -16,6 +18,7 @@ const Dashboard = () => {
   const navigate = useNavigate();
   const [loading, setLoading] = useState(true);
   const [firebaseConnected, setFirebaseConnected] = useState(false);
+  const [notification, setNotification] = useState({ message: '', type: '' });
   const [plaidStatus, setPlaidStatus] = useState({
     isConnected: false,
     hasError: false,
@@ -71,6 +74,69 @@ const Dashboard = () => {
     }
   };
 
+  const showNotification = (message, type = 'success') => {
+    setNotification({ message, type });
+    setTimeout(() => setNotification({ message: '', type: '' }), 5000);
+  };
+
+  const autoUpdatePayday = async (settingsData) => {
+    const today = getPacificTime();
+    today.setHours(0, 0, 0, 0);
+    
+    // Check multiple possible locations for lastPayDate for backward compatibility
+    const lastPayDateStr = settingsData?.lastPayDate || settingsData?.paySchedules?.yours?.lastPaydate || settingsData?.yoursSchedule?.lastPaydate;
+    
+    if (!lastPayDateStr) return false;
+    
+    const lastPayDate = new Date(lastPayDateStr);
+    const daysSinceLastPay = Math.floor((today - lastPayDate) / (1000 * 60 * 60 * 24));
+    
+    if (daysSinceLastPay >= 14) {
+      const payPeriods = Math.floor(daysSinceLastPay / 14);
+      const newLastPayDate = new Date(lastPayDate);
+      newLastPayDate.setDate(lastPayDate.getDate() + (payPeriods * 14));
+      
+      const newLastPayDateStr = formatDateForInput(newLastPayDate);
+      
+      console.log('✅ AUTO-ADVANCING PAYDAY (Dashboard):', {
+        oldDate: lastPayDateStr,
+        newDate: newLastPayDateStr,
+        daysSince: daysSinceLastPay,
+        periodsSkipped: payPeriods
+      });
+      
+      const settingsDocRef = doc(db, 'users', currentUser.uid, 'settings', 'personal');
+      
+      // Update BOTH root level AND nested structure
+      await updateDoc(settingsDocRef, {
+        lastPayDate: newLastPayDateStr,
+        'paySchedules.yours.lastPaydate': newLastPayDateStr,
+        updatedAt: serverTimestamp()
+      });
+      
+      console.log('✅ Updated lastPayDate in both root and nested fields');
+      
+      // Clear stale payCycle cache
+      try {
+        const payCycleDocRef = doc(db, 'users', currentUser.uid, 'financial', 'payCycle');
+        await deleteDoc(payCycleDocRef);
+        console.log('✅ Cleared stale payCycle cache');
+      } catch (error) {
+        console.log('Note: payCycle cache may not exist yet');
+      }
+      
+      // Show notification to user
+      showNotification(
+        `📅 Payday dates updated! Your last pay date was advanced from ${lastPayDateStr} to ${newLastPayDateStr}.`,
+        'success'
+      );
+      
+      return true;
+    }
+   
+    return false;
+  };
+
   const loadDashboardData = async () => {
     try {
       setLoading(true);
@@ -90,7 +156,15 @@ const Dashboard = () => {
       
       if (settingsDocSnap.exists()) {
         setFirebaseConnected(true);
-        const data = settingsDocSnap.data();
+        let data = settingsDocSnap.data();
+        
+        // Auto-update payday if needed (same logic as Spendability)
+        const wasUpdated = await autoUpdatePayday(data);
+        if (wasUpdated) {
+          const settingsDocRef = doc(db, 'users', currentUser.uid, 'settings', 'personal');
+          const refreshedDoc = await getDoc(settingsDocRef);
+          data = refreshedDoc.data();
+        }
         
         // Calculate your real data here
         // Prioritize Plaid accounts if they exist (fully automated flow)
@@ -515,6 +589,25 @@ setDashboardData({
           </div>
         ))}
       </div>
+      
+      {/* Notification */}
+      {notification.message && (
+        <div className={`notification ${notification.type}`} style={{
+          position: 'fixed',
+          top: '20px',
+          right: '20px',
+          padding: '15px 20px',
+          borderRadius: '8px',
+          backgroundColor: notification.type === 'success' ? '#10b981' : '#ef4444',
+          color: '#fff',
+          fontWeight: '500',
+          boxShadow: '0 4px 6px rgba(0, 0, 0, 0.1)',
+          zIndex: 1000,
+          animation: 'slideIn 0.3s ease-out'
+        }}>
+          {notification.message}
+        </div>
+      )}
     </div>
   );
 };

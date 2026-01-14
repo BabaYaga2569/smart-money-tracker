@@ -52,7 +52,9 @@ const SpendabilityV2 = () => {
   const autoUpdatePayday = async (settingsData) => {
   const today = getPacificTime();
   today.setHours(0, 0, 0, 0);
-  const lastPayDateStr = settingsData?.lastPayDate || settingsData?.yoursSchedule?.lastPaydate;
+  
+  // Check multiple possible locations for lastPayDate for backward compatibility
+  const lastPayDateStr = settingsData?.lastPayDate || settingsData?.paySchedules?.yours?.lastPaydate || settingsData?.yoursSchedule?.lastPaydate;
   
   if (!lastPayDateStr) return false;
   
@@ -64,21 +66,40 @@ const SpendabilityV2 = () => {
     const newLastPayDate = new Date(lastPayDate);
     newLastPayDate.setDate(lastPayDate.getDate() + (payPeriods * 14));
     
-    const settingsDocRef = doc(db, 'users', currentUser.uid, 'settings', 'personal');
-    await updateDoc(settingsDocRef, {
-      lastPayDate: formatDateForInput(newLastPayDate)
+    const newLastPayDateStr = formatDateForInput(newLastPayDate);
+    
+    console.log('✅ AUTO-ADVANCING PAYDAY:', {
+      oldDate: lastPayDateStr,
+      newDate: newLastPayDateStr,
+      daysSince: daysSinceLastPay,
+      periodsSkipped: payPeriods
     });
     
-    console.log(`✅ Auto-updated last pay date from ${formatDateForInput(lastPayDate)} to ${formatDateForInput(newLastPayDate)}`);
+    const settingsDocRef = doc(db, 'users', currentUser.uid, 'settings', 'personal');
     
-    // ✅ Clear the payCycle cache so it recalculates with the new lastPayDate
+    // Update BOTH root level AND nested structure
+    await updateDoc(settingsDocRef, {
+      lastPayDate: newLastPayDateStr,
+      'paySchedules.yours.lastPaydate': newLastPayDateStr,
+      updatedAt: serverTimestamp()
+    });
+    
+    console.log('✅ Updated lastPayDate in both root and nested fields');
+    
+    // Clear stale payCycle cache
     try {
       const payCycleDocRef = doc(db, 'users', currentUser.uid, 'financial', 'payCycle');
       await deleteDoc(payCycleDocRef);
-      console.log('✅ Cleared stale payCycle cache after updating lastPayDate');
+      console.log('✅ Cleared stale payCycle cache');
     } catch (error) {
-      console.log('Note: payCycle cache may not exist yet:', error.message);
+      console.log('Note: payCycle cache may not exist yet');
     }
+    
+    // Show notification to user
+    showNotification(
+      `📅 Payday dates updated! Your last pay date was advanced from ${lastPayDateStr} to ${newLastPayDateStr}.`,
+      'success'
+    );
     
     return true;
   }
