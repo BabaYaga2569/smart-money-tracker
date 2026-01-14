@@ -1309,11 +1309,11 @@ const Recurring = () => {
 
       // Sort by dueDate to get the oldest bill
       // Use a fixed far-future date as fallback for missing dates to ensure consistent sorting
-      const FAR_FUTURE = new Date('2099-12-31').getTime();
+      const FAR_FUTURE = new Date('2099-12-31');
       unpaidBills.sort((a, b) => {
         const dateA = new Date(a.dueDate || a.nextDueDate || FAR_FUTURE);
         const dateB = new Date(b.dueDate || b.nextDueDate || FAR_FUTURE);
-        return dateA - dateB;
+        return dateA.getTime() - dateB.getTime();
       });
 
       const billToPay = unpaidBills[0];
@@ -1359,8 +1359,13 @@ const Recurring = () => {
       // Reload recurring items to refresh the UI
       await loadRecurringItems();
 
+      // Format the next occurrence date for display
+      const nextOccurrenceFormatted = typeof updatedBill.nextDueDate === 'string' 
+        ? updatedBill.nextDueDate 
+        : formatDateForInput(updatedBill.nextDueDate);
+
       showNotification(
-        `Payment recorded for ${item.name}! Next occurrence: ${updatedBill.nextDueDate}`,
+        `Payment recorded for ${item.name}! Next occurrence: ${nextOccurrenceFormatted}`,
         'success'
       );
     } catch (error) {
