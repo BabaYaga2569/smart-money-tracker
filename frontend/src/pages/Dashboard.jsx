@@ -84,6 +84,7 @@ const Dashboard = () => {
     today.setHours(0, 0, 0, 0);
     
     // Check multiple possible locations for lastPayDate for backward compatibility
+    // yoursSchedule?.lastPaydate is legacy format from older schema versions
     const lastPayDateStr = settingsData?.lastPayDate || settingsData?.paySchedules?.yours?.lastPaydate || settingsData?.yoursSchedule?.lastPaydate;
     
     if (!lastPayDateStr) return false;
@@ -122,7 +123,7 @@ const Dashboard = () => {
         await deleteDoc(payCycleDocRef);
         console.log('✅ Cleared stale payCycle cache');
       } catch (error) {
-        console.log('Note: payCycle cache may not exist yet');
+        console.log('Note: payCycle cache may not exist yet:', error.message);
       }
       
       // Show notification to user
