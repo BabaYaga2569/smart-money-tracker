@@ -76,33 +76,42 @@ const SpendabilityV2 = () => {
       periodsSkipped: payPeriods
     });
     
-    const settingsDocRef = doc(db, 'users', currentUser.uid, 'settings', 'personal');
-    
-    // Update BOTH root level AND nested structure
-    await updateDoc(settingsDocRef, {
-      lastPayDate: newLastPayDateStr,
-      'paySchedules.yours.lastPaydate': newLastPayDateStr,
-      updatedAt: serverTimestamp()
-    });
-    
-    console.log('✅ Updated lastPayDate in both root and nested fields');
-    
-    // Clear stale payCycle cache
     try {
-      const payCycleDocRef = doc(db, 'users', currentUser.uid, 'financial', 'payCycle');
-      await deleteDoc(payCycleDocRef);
-      console.log('✅ Cleared stale payCycle cache');
+      const settingsDocRef = doc(db, 'users', currentUser.uid, 'settings', 'personal');
+      
+      // Update BOTH root level AND nested structure
+      await updateDoc(settingsDocRef, {
+        lastPayDate: newLastPayDateStr,
+        'paySchedules.yours.lastPaydate': newLastPayDateStr,
+        updatedAt: serverTimestamp()
+      });
+      
+      console.log('✅ Updated lastPayDate in both root and nested fields');
+      
+      // Clear stale payCycle cache
+      try {
+        const payCycleDocRef = doc(db, 'users', currentUser.uid, 'financial', 'payCycle');
+        await deleteDoc(payCycleDocRef);
+        console.log('✅ Cleared stale payCycle cache');
+      } catch (error) {
+        console.log('Note: payCycle cache may not exist yet:', error.message);
+      }
+      
+      // Show notification to user
+      showNotification(
+        `📅 Payday dates updated! Your last pay date was advanced from ${lastPayDateStr} to ${newLastPayDateStr}.`,
+        'success'
+      );
+      
+      return true;
     } catch (error) {
-      console.log('Note: payCycle cache may not exist yet:', error.message);
+      console.error('❌ Error updating payday dates:', error);
+      showNotification(
+        '❌ Failed to update payday dates. Please try again or update manually in Settings.',
+        'error'
+      );
+      return false;
     }
-    
-    // Show notification to user
-    showNotification(
-      `📅 Payday dates updated! Your last pay date was advanced from ${lastPayDateStr} to ${newLastPayDateStr}.`,
-      'success'
-    );
-    
-    return true;
   }
  
   return false;
