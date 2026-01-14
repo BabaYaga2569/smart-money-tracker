@@ -1306,7 +1306,7 @@ const Recurring = () => {
           console.log(`No bill instance found for ${item.name}, creating one...`);
         }
 
-        const billId = `bill_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+        const billId = `bill_${Date.now()}_${Math.random().toString(36).substring(2, 11)}`;
         const nextDueDate = getDateOnly(item.nextOccurrence);
 
         // Create bill instance from recurring pattern
