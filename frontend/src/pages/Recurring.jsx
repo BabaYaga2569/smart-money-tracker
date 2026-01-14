@@ -59,6 +59,9 @@ const buildUpdateData = (currentData, recurringItems, additionalFields = {}) => 
 // ✅ OPTIMIZATION: Cache TTL for Plaid API responses
 const PLAID_CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutes
 
+// Fallback date for sorting bills with missing dates (far in the future to sort last)
+const MISSING_DATE_FALLBACK = new Date('2099-12-31');
+
 const Recurring = () => {
   const { currentUser } = useAuth();
   const [loading, setLoading] = useState(true);
@@ -1276,6 +1279,107 @@ const Recurring = () => {
     }
   };
 
+  const handleMarkRecurringBillAsPaid = async (item) => {
+    try {
+      setSaving(true);
+
+      if (import.meta.env.DEV) {
+        console.log(`💰 Marking bill as paid for recurring item: ${item.name}`);
+      }
+
+      // Query for unpaid bills linked to this recurring pattern
+      const billsCollection = collection(db, 'users', currentUser.uid, 'financialEvents');
+      const billQuery = query(
+        billsCollection,
+        where('type', '==', 'bill'),
+        where('recurringPatternId', '==', item.id),
+        where('isPaid', '==', false)
+      );
+
+      const billsSnapshot = await getDocs(billQuery);
+
+      if (billsSnapshot.empty) {
+        showNotification('No unpaid bills found for this recurring item', 'warning');
+        return;
+      }
+
+      // If multiple unpaid bills exist, mark the oldest one first
+      const unpaidBills = billsSnapshot.docs.map(doc => ({
+        id: doc.id,
+        ref: doc.ref,
+        ...doc.data()
+      }));
+
+      // Sort by dueDate to get the oldest bill
+      // Use a fixed far-future date as fallback for missing dates to ensure consistent sorting
+      unpaidBills.sort((a, b) => {
+        const dateA = new Date(a.dueDate || a.nextDueDate || MISSING_DATE_FALLBACK);
+        const dateB = new Date(b.dueDate || b.nextDueDate || MISSING_DATE_FALLBACK);
+        return dateA.getTime() - dateB.getTime();
+      });
+
+      const billToPay = unpaidBills[0];
+      if (import.meta.env.DEV) {
+        console.log(`💰 Marking oldest unpaid bill: ${billToPay.name} due ${billToPay.dueDate}`);
+      }
+
+      // Use RecurringBillManager to mark bill as paid with proper date advancement
+      const updatedBill = RecurringBillManager.markBillAsPaid(billToPay);
+
+      // Update the bill document in financialEvents
+      await updateDoc(billToPay.ref, {
+        isPaid: true,
+        status: 'paid',
+        paidDate: updatedBill.lastPaidDate,
+        paidAmount: updatedBill.lastPayment.amount,
+        lastPaidDate: updatedBill.lastPaidDate,
+        lastPayment: updatedBill.lastPayment,
+        paymentHistory: updatedBill.paymentHistory,
+        markedBy: 'user',
+        markedAt: serverTimestamp(),
+        markedVia: 'recurring-page-pay-button',
+        canBeUnmarked: true,
+        updatedAt: serverTimestamp()
+      });
+
+      if (import.meta.env.DEV) {
+        console.log(`✅ Bill marked as paid in financialEvents: ${billToPay.name}`);
+      }
+
+      // Update the recurring pattern's nextOccurrence to the next billing cycle
+      const recurringPatternRef = doc(db, 'users', currentUser.uid, 'recurringPatterns', item.id);
+      await updateDoc(recurringPatternRef, {
+        nextOccurrence: updatedBill.nextDueDate,
+        lastPaidDate: updatedBill.lastPaidDate,
+        updatedAt: serverTimestamp()
+      });
+
+      if (import.meta.env.DEV) {
+        console.log(`✅ Advanced recurring pattern nextOccurrence to: ${updatedBill.nextDueDate}`);
+      }
+
+      // Reload recurring items to refresh the UI
+      await loadRecurringItems();
+
+      // Format the next occurrence date for display (always format for consistency)
+      const nextOccurrenceFormatted = formatDateForInput(
+        typeof updatedBill.nextDueDate === 'string' 
+          ? new Date(updatedBill.nextDueDate) 
+          : updatedBill.nextDueDate
+      );
+
+      showNotification(
+        `Payment recorded for ${item.name}! Next occurrence: ${nextOccurrenceFormatted}`,
+        'success'
+      );
+    } catch (error) {
+      console.error('❌ Error marking recurring bill as paid:', error);
+      showNotification('Error marking bill as paid: ' + error.message, 'error');
+    } finally {
+      setSaving(false);
+    }
+  };
+
   const handleCSVImport = async (importedItems, conflicts, updatedCustomMapping) => {
     try {
       setSaving(true);
@@ -1794,6 +1898,16 @@ const Recurring = () => {
                 </div>
 
                 <div className="item-actions">
+                  {item.type === 'expense' && item.status === 'active' && (
+                    <button
+                      className="action-btn pay"
+                      onClick={() => handleMarkRecurringBillAsPaid(item)}
+                      disabled={saving}
+                      title="Mark as Paid"
+                    >
+                      💰 Pay
+                    </button>
+                  )}
                   <button
                     className="action-btn edit"
                     onClick={() => handleEditItem(item)}
