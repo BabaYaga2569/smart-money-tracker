@@ -1287,7 +1287,7 @@ const Recurring = () => {
         console.log(`💰 Marking bill as paid for recurring item: ${item.name}`);
       }
 
-      // Query for unpaid bills linked to this recurring pattern
+      // Step 1: Query for unpaid bills linked to this recurring pattern
       const billsCollection = collection(db, 'users', currentUser.uid, 'financialEvents');
       const billQuery = query(
         billsCollection,
@@ -1297,37 +1297,81 @@ const Recurring = () => {
       );
 
       const billsSnapshot = await getDocs(billQuery);
+      let billToPay;
+      let billRef;
 
+      // Step 2: If no bill exists, create one from the recurring pattern
       if (billsSnapshot.empty) {
-        showNotification('No unpaid bills found for this recurring item', 'warning');
-        return;
+        if (import.meta.env.DEV) {
+          console.log(`No bill instance found for ${item.name}, creating one...`);
+        }
+
+        const billId = `bill_${Date.now()}_${Math.random().toString(36).substring(2, 11)}`;
+        const nextDueDate = getDateOnly(item.nextOccurrence);
+
+        // Create bill instance from recurring pattern
+        const newBill = {
+          id: billId,
+          name: item.name,
+          amount: parseFloat(item.amount),
+          dueDate: nextDueDate,
+          nextDueDate: nextDueDate,
+          originalDueDate: nextDueDate,
+          isPaid: false,
+          status: 'pending',
+          category: item.category || 'Other',
+          recurrence: item.frequency.toLowerCase(),
+          type: 'bill',
+          isSubscription: false,
+          paymentHistory: [],
+          linkedTransactionIds: [],
+          description: item.description || '',
+          accountId: item.linkedAccount || null,
+          autoPayEnabled: item.autoPay || false,
+          recurringPatternId: item.id,
+          createdAt: serverTimestamp(),
+          updatedAt: serverTimestamp(),
+          createdFrom: 'recurring-page-pay-button',
+        };
+
+        // Save to Firebase
+        billRef = doc(db, 'users', currentUser.uid, 'financialEvents', billId);
+        await setDoc(billRef, newBill);
+
+        billToPay = { ...newBill, ref: billRef };
+
+        if (import.meta.env.DEV) {
+          console.log(`✅ Created bill instance: ${item.name} due ${nextDueDate}`);
+        }
+      } else {
+        // If multiple unpaid bills exist, mark the oldest one first
+        const unpaidBills = billsSnapshot.docs.map(doc => ({
+          id: doc.id,
+          ref: doc.ref,
+          ...doc.data()
+        }));
+
+        // Sort by dueDate to get the oldest bill
+        // Use a fixed far-future date as fallback for missing dates to ensure consistent sorting
+        unpaidBills.sort((a, b) => {
+          const dateA = new Date(a.dueDate || a.nextDueDate || MISSING_DATE_FALLBACK);
+          const dateB = new Date(b.dueDate || b.nextDueDate || MISSING_DATE_FALLBACK);
+          return dateA.getTime() - dateB.getTime();
+        });
+
+        billToPay = unpaidBills[0];
+        billRef = billToPay.ref;
+
+        if (import.meta.env.DEV) {
+          console.log(`💰 Marking oldest unpaid bill: ${billToPay.name} due ${billToPay.dueDate}`);
+        }
       }
 
-      // If multiple unpaid bills exist, mark the oldest one first
-      const unpaidBills = billsSnapshot.docs.map(doc => ({
-        id: doc.id,
-        ref: doc.ref,
-        ...doc.data()
-      }));
-
-      // Sort by dueDate to get the oldest bill
-      // Use a fixed far-future date as fallback for missing dates to ensure consistent sorting
-      unpaidBills.sort((a, b) => {
-        const dateA = new Date(a.dueDate || a.nextDueDate || MISSING_DATE_FALLBACK);
-        const dateB = new Date(b.dueDate || b.nextDueDate || MISSING_DATE_FALLBACK);
-        return dateA.getTime() - dateB.getTime();
-      });
-
-      const billToPay = unpaidBills[0];
-      if (import.meta.env.DEV) {
-        console.log(`💰 Marking oldest unpaid bill: ${billToPay.name} due ${billToPay.dueDate}`);
-      }
-
-      // Use RecurringBillManager to mark bill as paid with proper date advancement
+      // Step 3: Use RecurringBillManager to mark bill as paid with proper date advancement
       const updatedBill = RecurringBillManager.markBillAsPaid(billToPay);
 
-      // Update the bill document in financialEvents
-      await updateDoc(billToPay.ref, {
+      // Step 4: Update the bill document in financialEvents
+      await updateDoc(billRef, {
         isPaid: true,
         status: 'paid',
         paidDate: updatedBill.lastPaidDate,
@@ -1335,6 +1379,8 @@ const Recurring = () => {
         lastPaidDate: updatedBill.lastPaidDate,
         lastPayment: updatedBill.lastPayment,
         paymentHistory: updatedBill.paymentHistory,
+        nextDueDate: updatedBill.nextDueDate,
+        dueDate: updatedBill.nextDueDate,
         markedBy: 'user',
         markedAt: serverTimestamp(),
         markedVia: 'recurring-page-pay-button',
@@ -1346,10 +1392,10 @@ const Recurring = () => {
         console.log(`✅ Bill marked as paid in financialEvents: ${billToPay.name}`);
       }
 
-      // Update the recurring pattern's nextOccurrence to the next billing cycle
+      // Step 5: Update the recurring pattern's nextOccurrence to the next billing cycle
       const recurringPatternRef = doc(db, 'users', currentUser.uid, 'recurringPatterns', item.id);
       await updateDoc(recurringPatternRef, {
-        nextOccurrence: updatedBill.nextDueDate,
+        nextOccurrence: getDateOnly(updatedBill.nextDueDate),
         lastPaidDate: updatedBill.lastPaidDate,
         updatedAt: serverTimestamp()
       });
@@ -1358,7 +1404,7 @@ const Recurring = () => {
         console.log(`✅ Advanced recurring pattern nextOccurrence to: ${updatedBill.nextDueDate}`);
       }
 
-      // Reload recurring items to refresh the UI
+      // Step 6: Reload recurring items to refresh the UI
       await loadRecurringItems();
 
       // Format the next occurrence date for display (always format for consistency)
@@ -1369,7 +1415,7 @@ const Recurring = () => {
       );
 
       showNotification(
-        `Payment recorded for ${item.name}! Next occurrence: ${nextOccurrenceFormatted}`,
+        `✅ Marked "${item.name}" as paid!`,
         'success'
       );
     } catch (error) {
