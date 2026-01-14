@@ -1,9 +1,11 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { doc, getDoc, collection, query, where, orderBy, limit, getDocs } from 'firebase/firestore';
+import { doc, getDoc, collection, query, where, orderBy, limit, getDocs, updateDoc, deleteDoc } from 'firebase/firestore';
 import { db } from '../firebase';
 import { calculateTotalProjectedBalance } from '../utils/BalanceCalculator';
 import PlaidConnectionManager from '../utils/PlaidConnectionManager';
+import { formatDateForInput } from '../utils/DateUtils';
+import { getPacificTime } from '../utils/timezoneHelpers';
 import './Dashboard.css';
 import { useAuth } from '../contexts/AuthContext';
 import DashboardTileCreditCard from "../components/DashboardTileCreditCard";
@@ -71,6 +73,45 @@ const Dashboard = () => {
     }
   };
 
+  // Auto-update payday if needed (same as Spendability.jsx)
+  const autoUpdatePayday = async (settingsData) => {
+    const today = getPacificTime();
+    today.setHours(0, 0, 0, 0);
+    const lastPayDateStr = settingsData?.lastPayDate || settingsData?.paySchedules?.yours?.lastPaydate;
+    
+    if (!lastPayDateStr) return false;
+    
+    const lastPayDate = new Date(lastPayDateStr);
+    const daysSinceLastPay = Math.floor((today - lastPayDate) / (1000 * 60 * 60 * 24));
+    
+    if (daysSinceLastPay >= 14) {
+      const payPeriods = Math.floor(daysSinceLastPay / 14);
+      const newLastPayDate = new Date(lastPayDate);
+      newLastPayDate.setDate(lastPayDate.getDate() + (payPeriods * 14));
+      
+      const newLastPayDateStr = formatDateForInput(newLastPayDate);
+      
+      console.log(`✅ AUTO-ADVANCING PAYDAY: ${lastPayDateStr} → ${newLastPayDateStr} (${payPeriods} periods)`);
+      
+      const settingsDocRef = doc(db, 'users', currentUser.uid, 'settings', 'personal');
+      await updateDoc(settingsDocRef, {
+        lastPayDate: newLastPayDateStr,
+        'paySchedules.yours.lastPaydate': newLastPayDateStr
+      });
+      
+      try {
+        const payCycleDocRef = doc(db, 'users', currentUser.uid, 'financial', 'payCycle');
+        await deleteDoc(payCycleDocRef);
+      } catch (error) {
+        // Ignore if doesn't exist
+      }
+      
+      return true;
+    }
+    
+    return false;
+  };
+
   const loadDashboardData = async () => {
     try {
       setLoading(true);
@@ -90,7 +131,15 @@ const Dashboard = () => {
       
       if (settingsDocSnap.exists()) {
         setFirebaseConnected(true);
-        const data = settingsDocSnap.data();
+        let data = settingsDocSnap.data();
+        
+        // Call autoUpdatePayday before loading dashboard data
+        const wasUpdated = await autoUpdatePayday(data);
+        if (wasUpdated) {
+          const settingsDocRef = doc(db, 'users', currentUser.uid, 'settings', 'personal');
+          const refreshedDoc = await getDoc(settingsDocRef);
+          data = refreshedDoc.data();
+        }
         
         // Calculate your real data here
         // Prioritize Plaid accounts if they exist (fully automated flow)

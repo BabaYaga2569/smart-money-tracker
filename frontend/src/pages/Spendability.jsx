@@ -52,7 +52,7 @@ const SpendabilityV2 = () => {
   const autoUpdatePayday = async (settingsData) => {
   const today = getPacificTime();
   today.setHours(0, 0, 0, 0);
-  const lastPayDateStr = settingsData?.lastPayDate || settingsData?.yoursSchedule?.lastPaydate;
+  const lastPayDateStr = settingsData?.lastPayDate || settingsData?.paySchedules?.yours?.lastPaydate;
   
   if (!lastPayDateStr) return false;
   
@@ -64,14 +64,19 @@ const SpendabilityV2 = () => {
     const newLastPayDate = new Date(lastPayDate);
     newLastPayDate.setDate(lastPayDate.getDate() + (payPeriods * 14));
     
+    const newLastPayDateStr = formatDateForInput(newLastPayDate);
+    
+    console.log(`✅ AUTO-ADVANCING PAYDAY: ${lastPayDateStr} → ${newLastPayDateStr} (${payPeriods} periods, ${daysSinceLastPay} days)`);
+    
     const settingsDocRef = doc(db, 'users', currentUser.uid, 'settings', 'personal');
+    
+    // ✅ FIX: Update BOTH root level AND nested structure
     await updateDoc(settingsDocRef, {
-      lastPayDate: formatDateForInput(newLastPayDate)
+      lastPayDate: newLastPayDateStr,
+      'paySchedules.yours.lastPaydate': newLastPayDateStr
     });
     
-    console.log(`✅ Auto-updated last pay date from ${formatDateForInput(lastPayDate)} to ${formatDateForInput(newLastPayDate)}`);
-    
-    // ✅ Clear the payCycle cache so it recalculates with the new lastPayDate
+    // ✅ Clear the payCycle cache so it recalculates with the new date
     try {
       const payCycleDocRef = doc(db, 'users', currentUser.uid, 'financial', 'payCycle');
       await deleteDoc(payCycleDocRef);
