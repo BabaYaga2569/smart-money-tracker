@@ -1280,7 +1280,9 @@ const Recurring = () => {
     try {
       setSaving(true);
 
-      console.log(`💰 Marking bill as paid for recurring item: ${item.name}`);
+      if (import.meta.env.DEV) {
+        console.log(`💰 Marking bill as paid for recurring item: ${item.name}`);
+      }
 
       // Query for unpaid bills linked to this recurring pattern
       const billsCollection = collection(db, 'users', currentUser.uid, 'financialEvents');
@@ -1307,13 +1309,15 @@ const Recurring = () => {
 
       // Sort by dueDate to get the oldest bill
       unpaidBills.sort((a, b) => {
-        const dateA = new Date(a.dueDate || a.nextDueDate);
-        const dateB = new Date(b.dueDate || b.nextDueDate);
+        const dateA = new Date(a.dueDate || a.nextDueDate || Date.now());
+        const dateB = new Date(b.dueDate || b.nextDueDate || Date.now());
         return dateA - dateB;
       });
 
       const billToPay = unpaidBills[0];
-      console.log(`💰 Marking oldest unpaid bill: ${billToPay.name} due ${billToPay.dueDate}`);
+      if (import.meta.env.DEV) {
+        console.log(`💰 Marking oldest unpaid bill: ${billToPay.name} due ${billToPay.dueDate}`);
+      }
 
       // Use RecurringBillManager to mark bill as paid with proper date advancement
       const updatedBill = RecurringBillManager.markBillAsPaid(billToPay);
@@ -1323,7 +1327,7 @@ const Recurring = () => {
         isPaid: true,
         status: 'paid',
         paidDate: updatedBill.lastPaidDate,
-        paidAmount: Math.abs(parseFloat(billToPay.amount)),
+        paidAmount: Math.abs(parseFloat(billToPay.amount) || 0),
         lastPaidDate: updatedBill.lastPaidDate,
         lastPayment: updatedBill.lastPayment,
         paymentHistory: updatedBill.paymentHistory,
@@ -1334,7 +1338,9 @@ const Recurring = () => {
         updatedAt: serverTimestamp()
       });
 
-      console.log(`✅ Bill marked as paid in financialEvents: ${billToPay.name}`);
+      if (import.meta.env.DEV) {
+        console.log(`✅ Bill marked as paid in financialEvents: ${billToPay.name}`);
+      }
 
       // Update the recurring pattern's nextOccurrence to the next billing cycle
       const recurringPatternRef = doc(db, 'users', currentUser.uid, 'recurringPatterns', item.id);
@@ -1344,7 +1350,9 @@ const Recurring = () => {
         updatedAt: serverTimestamp()
       });
 
-      console.log(`✅ Advanced recurring pattern nextOccurrence to: ${updatedBill.nextDueDate}`);
+      if (import.meta.env.DEV) {
+        console.log(`✅ Advanced recurring pattern nextOccurrence to: ${updatedBill.nextDueDate}`);
+      }
 
       // Reload recurring items to refresh the UI
       await loadRecurringItems();
