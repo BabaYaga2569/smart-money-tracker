@@ -59,6 +59,9 @@ const buildUpdateData = (currentData, recurringItems, additionalFields = {}) => 
 // ✅ OPTIMIZATION: Cache TTL for Plaid API responses
 const PLAID_CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutes
 
+// Fallback date for sorting bills with missing dates (far in the future to sort last)
+const MISSING_DATE_FALLBACK = new Date('2099-12-31');
+
 const Recurring = () => {
   const { currentUser } = useAuth();
   const [loading, setLoading] = useState(true);
@@ -1309,10 +1312,9 @@ const Recurring = () => {
 
       // Sort by dueDate to get the oldest bill
       // Use a fixed far-future date as fallback for missing dates to ensure consistent sorting
-      const FAR_FUTURE = new Date('2099-12-31');
       unpaidBills.sort((a, b) => {
-        const dateA = new Date(a.dueDate || a.nextDueDate || FAR_FUTURE);
-        const dateB = new Date(b.dueDate || b.nextDueDate || FAR_FUTURE);
+        const dateA = new Date(a.dueDate || a.nextDueDate || MISSING_DATE_FALLBACK);
+        const dateB = new Date(b.dueDate || b.nextDueDate || MISSING_DATE_FALLBACK);
         return dateA.getTime() - dateB.getTime();
       });
 
@@ -1359,10 +1361,12 @@ const Recurring = () => {
       // Reload recurring items to refresh the UI
       await loadRecurringItems();
 
-      // Format the next occurrence date for display
-      const nextOccurrenceFormatted = typeof updatedBill.nextDueDate === 'string' 
-        ? updatedBill.nextDueDate 
-        : formatDateForInput(updatedBill.nextDueDate);
+      // Format the next occurrence date for display (always format for consistency)
+      const nextOccurrenceFormatted = formatDateForInput(
+        typeof updatedBill.nextDueDate === 'string' 
+          ? new Date(updatedBill.nextDueDate) 
+          : updatedBill.nextDueDate
+      );
 
       showNotification(
         `Payment recorded for ${item.name}! Next occurrence: ${nextOccurrenceFormatted}`,
