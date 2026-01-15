@@ -181,13 +181,16 @@ const SpendabilityV2 = () => {
         console.log('✅ Spendability: Required fields ensured with defaults');
       }
       
-      const payCycleData = payCycleDocSnap.exists() ? payCycleDocSnap.data() : null;
+      let payCycleData = payCycleDocSnap.exists() ? payCycleDocSnap.data() : null;
       // Auto-update payday if needed
-const wasUpdated = await autoUpdatePayday(settingsData);
-if (wasUpdated) {
-  const refreshedDoc = await getDoc(settingsDocRef);
-  settingsData = refreshedDoc.data();
-}
+      const wasUpdated = await autoUpdatePayday(settingsData);
+      if (wasUpdated) {
+        const refreshedDoc = await getDoc(settingsDocRef);
+        settingsData = refreshedDoc.data();
+        // ✅ FIX: Clear cached payCycle data to force recalculation with updated lastPayDate
+        payCycleData = null;
+        console.log('✅ Cleared payCycle cache after auto-update to force recalculation');
+      }
 
   // ✅ FIX: Load FRESH balances from backend API like Accounts page does
   let allPlaidAccounts = [];
