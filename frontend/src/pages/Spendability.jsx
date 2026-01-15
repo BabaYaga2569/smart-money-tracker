@@ -165,7 +165,9 @@ const SpendabilityV2 = () => {
         // The autoUpdatePayday() function already cleared the cache in Firebase,
         // but we need to clear the in-memory variable so the code recalculates below
         payCycleData = null;
-        console.log('✅ Cleared in-memory payCycleData after auto-update - will recalculate with new lastPayDate');
+        if (import.meta.env.DEV) {
+          console.log('✅ Cleared in-memory payCycleData after auto-update - will recalculate with new lastPayDate');
+        }
       }
 
   // ✅ FIX: Load FRESH balances from backend API like Accounts page does
