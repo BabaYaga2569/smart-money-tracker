@@ -18,6 +18,7 @@ const Dashboard = () => {
   const navigate = useNavigate();
   const [loading, setLoading] = useState(true);
   const [firebaseConnected, setFirebaseConnected] = useState(false);
+  const [notification, setNotification] = useState({ message: '', type: '' });
   const [plaidStatus, setPlaidStatus] = useState({
     isConnected: false,
     hasError: false,
@@ -564,6 +565,13 @@ setDashboardData({
           </div>
         ))}
       </div>
+      
+      {/* Notification */}
+      {notification.message && (
+        <div className={`notification ${notification.type}`}>
+          {notification.message}
+        </div>
+      )}
     </div>
   );
 };
