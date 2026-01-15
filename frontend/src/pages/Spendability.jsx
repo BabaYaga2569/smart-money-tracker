@@ -154,12 +154,18 @@ const SpendabilityV2 = () => {
         console.log('✅ Spendability: Required fields ensured with defaults');
       }
       
-      const payCycleData = payCycleDocSnap.exists() ? payCycleDocSnap.data() : null;
+      let payCycleData = payCycleDocSnap.exists() ? payCycleDocSnap.data() : null;
       // Auto-update payday if needed
 const wasUpdated = await autoUpdatePayday(settingsData);
 if (wasUpdated) {
   const refreshedDoc = await getDoc(settingsDocRef);
   settingsData = refreshedDoc.data();
+  
+  // ✅ CRITICAL: Clear in-memory payCycleData to force recalculation with updated lastPayDate
+  // The autoUpdatePayday() function already cleared the cache in Firebase,
+  // but we need to clear the in-memory variable so the code recalculates below
+  payCycleData = null;
+  console.log('✅ Cleared in-memory payCycleData after auto-update - will recalculate with new lastPayDate');
 }
 
   // ✅ FIX: Load FRESH balances from backend API like Accounts page does
