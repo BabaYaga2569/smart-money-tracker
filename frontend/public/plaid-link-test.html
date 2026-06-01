@@ -27,6 +27,8 @@
       border-radius: 8px;
       white-space: pre-wrap;
       margin-top: 20px;
+      max-height: 650px;
+      overflow: auto;
     }
     .warning {
       color: #ffcc00;
@@ -36,12 +38,12 @@
 </head>
 <body>
   <h1>Plaid Link Test</h1>
-  <p>This page connects a real bank through Plaid production and tests the Netlify token exchange.</p>
+  <p>This page connects a real bank through Plaid production, exchanges the token, and tests transaction sync.</p>
 
-  <button id="connectBtn">Connect Bank</button>
+  <button id="connectBtn">Connect Bank + Sync Transactions</button>
 
   <p class="warning">
-    Do not share screenshots showing access_token values.
+    Do not share screenshots showing access_token values. This page hides the token, but still review screenshots carefully.
   </p>
 
   <pre id="output">Waiting...</pre>
@@ -83,8 +85,36 @@
       return await res.json();
     }
 
+    async function syncTransactions(accessToken) {
+      const res = await fetch("/.netlify/functions/plaid-sync-transactions", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          access_token: accessToken,
+        }),
+      });
+
+      return await res.json();
+    }
+
+    function safeTransactionPreview(transactions) {
+      return (transactions || []).slice(0, 20).map((tx) => ({
+        transaction_id: tx.transaction_id,
+        date: tx.date,
+        name: tx.name,
+        merchant_name: tx.merchant_name,
+        amount: tx.amount,
+        pending: tx.pending,
+        category: tx.category,
+        personal_finance_category: tx.personal_finance_category,
+      }));
+    }
+
     connectBtn.addEventListener("click", async () => {
       try {
+        connectBtn.disabled = true;
         log("Creating Plaid Link token...");
 
         const linkToken = await createLinkToken();
@@ -98,18 +128,37 @@
 
             const exchangeResult = await exchangePublicToken(public_token);
 
+            if (!exchangeResult.ok || !exchangeResult.access_token) {
+              log({
+                ok: false,
+                step: "exchangePublicToken",
+                exchangeResult,
+              });
+              connectBtn.disabled = false;
+              return;
+            }
+
+            log("Token exchange success. Pulling transactions...");
+
+            const syncResult = await syncTransactions(exchangeResult.access_token);
+
             const safeResult = {
-              ok: exchangeResult.ok,
-              plaidEnv: exchangeResult.plaidEnv,
+              ok: syncResult.ok,
+              plaidEnv: syncResult.plaidEnv,
               item_id: exchangeResult.item_id,
               has_access_token: Boolean(exchangeResult.access_token),
-              request_id: exchangeResult.request_id,
               institution: metadata.institution,
               accounts: metadata.accounts,
-              warning: "Access token was returned but intentionally hidden from this display."
+              sync_counts: syncResult.counts,
+              cursor_received: Boolean(syncResult.cursor),
+              transaction_preview_count: Math.min((syncResult.transactions || []).length, 20),
+              transaction_preview: safeTransactionPreview(syncResult.transactions),
+              error: syncResult.error || null,
+              warning: "Access token is intentionally hidden. Preview is capped at 20 transactions."
             };
 
             log(safeResult);
+            connectBtn.disabled = false;
           },
           onExit: function(err, metadata) {
             log({
@@ -117,6 +166,7 @@
               error: err,
               metadata: metadata,
             });
+            connectBtn.disabled = false;
           },
           onEvent: function(eventName, metadata) {
             console.log("Plaid event:", eventName, metadata);
@@ -129,6 +179,7 @@
           ok: false,
           error: err.message,
         });
+        connectBtn.disabled = false;
       }
     });
   </script>
