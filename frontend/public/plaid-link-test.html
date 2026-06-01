@@ -20,6 +20,16 @@
       font-weight: bold;
       border-radius: 8px;
       cursor: pointer;
+      margin-right: 10px;
+      margin-bottom: 10px;
+    }
+    button:disabled {
+      opacity: 0.5;
+      cursor: not-allowed;
+    }
+    #copyTokenBtn {
+      background: #ffcc00;
+      display: none;
     }
     pre {
       background: #222;
@@ -41,9 +51,10 @@
   <p>This page connects a real bank through Plaid production, exchanges the token, and tests transaction sync.</p>
 
   <button id="connectBtn">Connect Bank + Sync Transactions</button>
+  <button id="copyTokenBtn">Copy Access Token</button>
 
   <p class="warning">
-    Do not share screenshots showing access_token values. This page hides the token, but still review screenshots carefully.
+    Do not share screenshots showing access_token values. This page hides the token, but the copy button can copy it to your clipboard for Netlify secret storage.
   </p>
 
   <pre id="output">Waiting...</pre>
@@ -51,6 +62,8 @@
   <script>
     const output = document.getElementById("output");
     const connectBtn = document.getElementById("connectBtn");
+    const copyTokenBtn = document.getElementById("copyTokenBtn");
+    let latestAccessToken = null;
 
     function log(data) {
       output.textContent =
@@ -112,8 +125,25 @@
       }));
     }
 
+    copyTokenBtn.addEventListener("click", async () => {
+      if (!latestAccessToken) {
+        log({ ok: false, error: "No access token available yet. Connect a bank first." });
+        return;
+      }
+
+      try {
+        await navigator.clipboard.writeText(latestAccessToken);
+        const currentText = output.textContent;
+        output.textContent = currentText + "\n\nAccess token copied to clipboard. Paste it only into Netlify secret variable PLAID_BOFA_ACCESS_TOKEN.";
+      } catch (err) {
+        output.textContent = output.textContent + "\n\nClipboard copy failed: " + err.message;
+      }
+    });
+
     connectBtn.addEventListener("click", async () => {
       try {
+        latestAccessToken = null;
+        copyTokenBtn.style.display = "none";
         connectBtn.disabled = true;
         log("Creating Plaid Link token...");
 
@@ -138,6 +168,9 @@
               return;
             }
 
+            latestAccessToken = exchangeResult.access_token;
+            copyTokenBtn.style.display = "inline-block";
+
             log("Token exchange success. Pulling transactions...");
 
             const syncResult = await syncTransactions(exchangeResult.access_token);
@@ -147,6 +180,7 @@
               plaidEnv: syncResult.plaidEnv,
               item_id: exchangeResult.item_id,
               has_access_token: Boolean(exchangeResult.access_token),
+              copy_button_available: Boolean(latestAccessToken),
               institution: metadata.institution,
               accounts: metadata.accounts,
               sync_counts: syncResult.counts,
@@ -154,7 +188,7 @@
               transaction_preview_count: Math.min((syncResult.transactions || []).length, 20),
               transaction_preview: safeTransactionPreview(syncResult.transactions),
               error: syncResult.error || null,
-              warning: "Access token is intentionally hidden. Preview is capped at 20 transactions."
+              warning: "Access token is hidden. Use the Copy Access Token button only for Netlify secret storage. Preview is capped at 20 transactions."
             };
 
             log(safeResult);
