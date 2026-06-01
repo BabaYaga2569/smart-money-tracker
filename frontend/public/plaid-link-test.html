@@ -1,0 +1,136 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8" />
+  <title>Plaid Link Test</title>
+  <script src="https://cdn.plaid.com/link/v2/stable/link-initialize.js"></script>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      background: #111;
+      color: #fff;
+      padding: 30px;
+    }
+    button {
+      background: #00ff88;
+      color: #000;
+      border: none;
+      padding: 14px 22px;
+      font-size: 16px;
+      font-weight: bold;
+      border-radius: 8px;
+      cursor: pointer;
+    }
+    pre {
+      background: #222;
+      padding: 15px;
+      border-radius: 8px;
+      white-space: pre-wrap;
+      margin-top: 20px;
+    }
+    .warning {
+      color: #ffcc00;
+      margin-top: 15px;
+    }
+  </style>
+</head>
+<body>
+  <h1>Plaid Link Test</h1>
+  <p>This page connects a real bank through Plaid production and tests the Netlify token exchange.</p>
+
+  <button id="connectBtn">Connect Bank</button>
+
+  <p class="warning">
+    Do not share screenshots showing access_token values.
+  </p>
+
+  <pre id="output">Waiting...</pre>
+
+  <script>
+    const output = document.getElementById("output");
+    const connectBtn = document.getElementById("connectBtn");
+
+    function log(data) {
+      output.textContent =
+        typeof data === "string" ? data : JSON.stringify(data, null, 2);
+    }
+
+    async function createLinkToken() {
+      const res = await fetch("/.netlify/functions/plaid-create-link-token", {
+        method: "POST",
+      });
+
+      const data = await res.json();
+
+      if (!data.ok || !data.link_token) {
+        throw new Error("Failed to create link token: " + JSON.stringify(data));
+      }
+
+      return data.link_token;
+    }
+
+    async function exchangePublicToken(publicToken) {
+      const res = await fetch("/.netlify/functions/plaid-exchange-token", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          public_token: publicToken,
+        }),
+      });
+
+      return await res.json();
+    }
+
+    connectBtn.addEventListener("click", async () => {
+      try {
+        log("Creating Plaid Link token...");
+
+        const linkToken = await createLinkToken();
+
+        log("Opening Plaid Link...");
+
+        const handler = Plaid.create({
+          token: linkToken,
+          onSuccess: async function(public_token, metadata) {
+            log("Plaid Link success. Exchanging public token...");
+
+            const exchangeResult = await exchangePublicToken(public_token);
+
+            const safeResult = {
+              ok: exchangeResult.ok,
+              plaidEnv: exchangeResult.plaidEnv,
+              item_id: exchangeResult.item_id,
+              has_access_token: Boolean(exchangeResult.access_token),
+              request_id: exchangeResult.request_id,
+              institution: metadata.institution,
+              accounts: metadata.accounts,
+              warning: "Access token was returned but intentionally hidden from this display."
+            };
+
+            log(safeResult);
+          },
+          onExit: function(err, metadata) {
+            log({
+              exited: true,
+              error: err,
+              metadata: metadata,
+            });
+          },
+          onEvent: function(eventName, metadata) {
+            console.log("Plaid event:", eventName, metadata);
+          },
+        });
+
+        handler.open();
+      } catch (err) {
+        log({
+          ok: false,
+          error: err.message,
+        });
+      }
+    });
+  </script>
+</body>
+</html>
