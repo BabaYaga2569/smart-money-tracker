@@ -17,6 +17,7 @@ import { RecurringBillManager } from '../utils/RecurringBillManager';
 import { formatDateForInput } from '../utils/DateUtils';
 import { TRANSACTION_CATEGORIES, getCategoryIcon } from '../constants/categories';
 import CSVImportModal from '../components/CSVImportModal';
+import RecurringDetectionReview from '../components/RecurringDetectionReview';
 import { BillSortingManager } from '../utils/BillSortingManager';
 import { BillDeduplicationManager } from '../utils/BillDeduplicationManager';
 import { format, addMonths } from 'date-fns';
@@ -75,6 +76,7 @@ const Recurring = () => {
   const [showHistoryModal, setShowHistoryModal] = useState(false);
   const [selectedItem, setSelectedItem] = useState(null);
   const [showCSVImport, setShowCSVImport] = useState(false);
+  const [showDetection, setShowDetection] = useState(false);
 
   // Filters and search
   const [filterType, setFilterType] = useState('all');
@@ -1861,6 +1863,13 @@ const Recurring = () => {
           )}
           <button
             className="import-button"
+            onClick={() => setShowDetection(true)}
+            disabled={saving}
+          >
+            🔍 Detect from my banks
+          </button>
+          <button
+            className="import-button"
             onClick={() => setShowCSVImport(true)}
             disabled={saving}
           >
@@ -2290,6 +2299,18 @@ const Recurring = () => {
           customMapping={customMapping}
           onImport={handleCSVImport}
           onCancel={() => setShowCSVImport(false)}
+        />
+      )}
+
+      {/* Auto-Detection Review Modal */}
+      {showDetection && (
+        <RecurringDetectionReview
+          userId={currentUser.uid}
+          apiUrl={import.meta.env.VITE_API_URL}
+          onApprove={async (approvedTemplates) => {
+            await handleCSVImport(approvedTemplates, [], null);
+          }}
+          onClose={() => setShowDetection(false)}
         />
       )}
 
