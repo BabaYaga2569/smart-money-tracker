@@ -11,6 +11,7 @@ import { atomicTransaction, createOperation } from './utils/atomicTransaction.js
 import { validateAccount as validateAccountConsistency, validateTransaction as validateTransactionConsistency, validateBalanceConsistency, checkDuplicateTransaction } from './utils/consistencyValidators.js';
 import { runBillMatching } from './utils/BillMatchingService.js';
 import { detectSubscriptions } from './utils/subscriptionDetector.js';
+import { detectRecurringStreams, matchStreamsToTemplates } from './utils/recurringStreamDetector.js';
 
 const app = express();
 app.use(cors({
@@ -3112,6 +3113,154 @@ app.post("/api/subscriptions/detect", async (req, res, next) => {
 });
 
 app.get("/healthz", (req, res) => res.send("ok"));
+
+/**
+ * POST /api/recurring/detect
+ * Body: { userId: string, lookbackDays?: number, minOccurrences?: number }
+ *
+ * Scans the user's synced transaction history for recurring streams and
+ * compares them against existing recurring templates.
+ *
+ * Costs nothing extra: uses transactions already stored by /transactions/sync.
+ *
+ * Response:
+ * {
+ *   success: true,
+ *   newStreams:    [ ... streams with no matching template — candidates to add ],
+ *   matched:       [ ... streams matched to templates, with amountDrift info ],
+ *   incomeStreams: [ ... detected paydays / recurring deposits ],
+ *   stats: { transactionsScanned, skipped }
+ * }
+ */
+app.post("/api/recurring/detect", async (req, res) => {
+  const endpoint = "/api/recurring/detect";
+  try {
+    const { userId, lookbackDays = 400, minOccurrences = 3 } = req.body || {};
+    if (!userId) {
+      return res.status(400).json({ success: false, error: "userId is required" });
+    }
+    logDiagnostic.request(endpoint, { userId, lookbackDays, minOccurrences });
+
+    // --- Load transactions (last `lookbackDays`) -----------------------------
+    const cutoff = new Date();
+    cutoff.setDate(cutoff.getDate() - lookbackDays);
+    const cutoffStr = cutoff.toISOString().slice(0, 10);
+
+    const txSnapshot = await db
+      .collection("users").doc(userId)
+      .collection("transactions")
+      .where("date", ">=", cutoffStr)
+      .get();
+
+    const transactions = txSnapshot.docs.map(d => ({ id: d.id, ...d.data() }));
+
+    // --- Load existing recurring templates for dedup/drift -------------------
+    // Templates may live in two places today (settings array + collection);
+    // read both until the data model is unified.
+    const templates = [];
+
+    const settingsDoc = await db
+      .collection("users").doc(userId)
+      .collection("settings").doc("personal")
+      .get();
+    if (settingsDoc.exists) {
+      const items = settingsDoc.data().recurringItems || [];
+      for (const item of items) templates.push(item);
+    }
+
+    const recurringSnap = await db
+      .collection("users").doc(userId)
+      .collection("recurringPatterns")
+      .get()
+      .catch(() => null);
+    if (recurringSnap) {
+      recurringSnap.docs.forEach(d => templates.push({ id: d.id, ...d.data() }));
+    }
+
+    // --- Detect + match -------------------------------------------------------
+    const { expenseStreams, incomeStreams, skipped } = detectRecurringStreams(
+      transactions,
+      { lookbackDays, minOccurrences }
+    );
+    const { newStreams, matched } = matchStreamsToTemplates(expenseStreams, templates);
+
+    logDiagnostic.response(endpoint, 200, {
+      scanned: transactions.length,
+      newStreams: newStreams.length,
+      matched: matched.length,
+      income: incomeStreams.length,
+    });
+
+    return res.json({
+      success: true,
+      newStreams,
+      matched,
+      incomeStreams,
+      stats: { transactionsScanned: transactions.length, skipped },
+    });
+  } catch (error) {
+    logDiagnostic.error("RECURRING_DETECT", "Detection failed", error);
+    return res.status(500).json({ success: false, error: "Failed to detect recurring streams" });
+  }
+});
+
+/**
+ * OPTIONAL — Plaid Recurring Transactions add-on endpoint.
+ * Only works after you request access to the add-on in the Plaid dashboard
+ * (it is subscription-billed per Item). Until then it returns a clear error
+ * instead of crashing, so it is safe to ship now and enable later.
+ */
+app.post("/api/plaid/recurring_streams", async (req, res) => {
+  const endpoint = "/api/plaid/recurring_streams";
+  try {
+    const { userId } = req.body || {};
+    if (!userId) {
+      return res.status(400).json({ success: false, error: "userId is required" });
+    }
+
+    // Reuse however server.js currently loads the user's Plaid items/tokens.
+    // This assumes plaid_items subcollection like the sync flow uses.
+    const itemsSnap = await db
+      .collection("users").doc(userId)
+      .collection("plaid_items")
+      .get();
+
+    if (itemsSnap.empty) {
+      return res.status(404).json({ success: false, error: "No Plaid items found for user" });
+    }
+
+    const allStreams = { inflow: [], outflow: [] };
+    for (const doc of itemsSnap.docs) {
+      const { accessToken, access_token } = doc.data();
+      const token = accessToken || access_token;
+      if (!token) continue;
+      try {
+        const resp = await plaidClient.transactionsRecurringGet({ access_token: token });
+        allStreams.inflow.push(...(resp.data.inflow_streams || []));
+        allStreams.outflow.push(...(resp.data.outflow_streams || []));
+      } catch (err) {
+        // ADDITIONAL_CONSENT_REQUIRED / PRODUCT_NOT_ENABLED => add-on not active
+        const code = err?.response?.data?.error_code;
+        if (code === "PRODUCT_NOT_READY" || code === "PRODUCTS_NOT_SUPPORTED" || code === "ADDITIONAL_CONSENT_REQUIRED") {
+          return res.status(402).json({
+            success: false,
+            error: "Plaid Recurring Transactions add-on is not enabled on this account.",
+            hint: "Request access in the Plaid dashboard, or use /api/recurring/detect (free) instead.",
+            plaidError: code,
+          });
+        }
+        throw err;
+      }
+    }
+
+    return res.json({ success: true, streams: allStreams });
+  } catch (error) {
+    logDiagnostic.error("PLAID_RECURRING", "Plaid recurring fetch failed", error);
+    return res.status(500).json({ success: false, error: "Failed to fetch Plaid recurring streams" });
+  }
+});
+
+
 
 // ============================================================================
 // ERROR HANDLER (Must be last!)
