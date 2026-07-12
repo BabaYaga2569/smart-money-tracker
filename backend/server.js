@@ -3142,14 +3142,12 @@ app.post("/api/recurring/detect", async (req, res) => {
     logDiagnostic.request(endpoint, { userId, lookbackDays, minOccurrences });
 
     // --- Load transactions (last `lookbackDays`) -----------------------------
-    const cutoff = new Date();
-    cutoff.setDate(cutoff.getDate() - lookbackDays);
-    const cutoffStr = cutoff.toISOString().slice(0, 10);
-
+    // NOTE: no .where("date", ...) here on purpose — the date field has mixed
+    // types across documents (strings vs Timestamps), and Firestore comparisons
+    // are type-strict, silently dropping half the data. Fetch all, filter in JS.
     const txSnapshot = await db
       .collection("users").doc(userId)
       .collection("transactions")
-      .where("date", ">=", cutoffStr)
       .get();
 
     const transactions = txSnapshot.docs.map(d => ({ id: d.id, ...d.data() }));

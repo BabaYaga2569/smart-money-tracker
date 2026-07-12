@@ -86,6 +86,20 @@ function classifyFrequency(gaps, dates) {
  *   minOccurrences (default 3), maxAmountVariancePct (default 0.25),
  *   lookbackDays (default 400)
  */
+function parseAnyDate(raw) {
+  if (!raw) return new Date(NaN);
+  if (raw instanceof Date) return raw;
+  if (typeof raw.toDate === 'function') return raw.toDate();              // Firestore Timestamp
+  if (typeof raw === 'object' && (raw._seconds ?? raw.seconds) != null) { // serialized Timestamp
+    return new Date((raw._seconds ?? raw.seconds) * 1000);
+  }
+  if (typeof raw === 'number') return new Date(raw > 1e12 ? raw : raw * 1000);
+  const s = String(raw);
+  // Plain YYYY-MM-DD: anchor at noon to dodge timezone day-shift
+  if (/^\d{4}-\d{2}-\d{2}$/.test(s)) return new Date(s + 'T12:00:00');
+  return new Date(s);
+}
+
 export function detectRecurringStreams(transactions, opts = {}) {
   const {
     minOccurrences = 3,
@@ -104,7 +118,7 @@ export function detectRecurringStreams(transactions, opts = {}) {
     if (tx.pending) { skipped.pending++; continue; }
     const rawName = tx.merchant_name || tx.name || tx.description;
     if (!rawName) { skipped.noName++; continue; }
-    const date = tx.date instanceof Date ? tx.date : new Date(String(tx.date) + 'T12:00:00');
+    const date = parseAnyDate(tx.date);
     if (isNaN(date) || date < cutoff) { skipped.tooOld++; continue; }
     usable.push({ ...tx, _date: date, _name: rawName, _key: normalizeMerchant(rawName) });
   }
