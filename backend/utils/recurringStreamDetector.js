@@ -20,14 +20,18 @@ const NOISE_PATTERNS = [
   /\s{2,}/g,
 ];
 
-export function normalizeMerchant(raw) {
+const ORDINALS = { '1st': 'first', '2nd': 'second', '3rd': 'third', '4th': 'fourth' };
+
+export function normalizeMerchant(raw, { maxTokens = 3 } = {}) {
   if (!raw) return '';
   let s = String(raw).toLowerCase().trim();
   for (const p of NOISE_PATTERNS) s = s.replace(p, ' ');
+  s = s.replace(/\b(\d+)(st|nd|rd|th)\b/g, (_, n) => ({ '1':'first','2':'second','3':'third','4':'fourth' }[n] || n)); // 1st -> first
   s = s.replace(/[-'\u2019.]/g, '');           // t-mobile -> tmobile, apple.com -> applecom
   s = s.replace(/[^a-z\s]/g, ' ').replace(/\s+/g, ' ').trim();
-  // Keep first 3 tokens — descriptors front-load the merchant identity
-  return s.split(' ').slice(0, 3).join(' ');
+  let tokens = s.split(' ').filter(Boolean).map(t => ORDINALS[t] || t);
+  if (maxTokens > 0) tokens = tokens.slice(0, maxTokens);
+  return tokens.join(' ');
 }
 
 // ---------------------------------------------------------------------------
@@ -155,6 +159,7 @@ export function detectRecurringStreams(transactions, opts = {}) {
 
   const expenseStreams = [];
   const incomeStreams = [];
+  const endedStreams = [];
 
   for (const [mk, txs] of merged) {
     const [merchantKey, dir] = mk.split('::');
@@ -205,6 +210,13 @@ export function detectRecurringStreams(transactions, opts = {}) {
       else if (freq === 'semimonthly') nextDate.setDate(nextDate.getDate() + 15);
       else nextDate.setDate(nextDate.getDate() + Math.round(gapMed));
 
+      // Activity check: if we haven't seen this stream in ~1.75x its normal
+      // cadence (plus a week of slack), it has ENDED — paid-off loan,
+      // cancelled subscription — and must not be suggested as a new bill.
+      const daysSinceLastSeen = Math.round((Date.now() - last._date) / 86400000);
+      const activityThreshold = gapMed * 1.75 + 7;
+      const isActive = daysSinceLastSeen <= activityThreshold;
+
       const stream = {
         displayName: last._name,
         merchantKey,
@@ -218,20 +230,28 @@ export function detectRecurringStreams(transactions, opts = {}) {
         nextPredictedDate: nextDate.toISOString().slice(0, 10),
         dayOfMonth: freq === 'monthly' ? last._date.getDate() : null,
         confidence,
+        isActive,
+        daysSinceLastSeen,
         accountId: last.account_id || null,
         institutionName: last.institution_name || last.institutionName || null,
         category: last.category || null,
         sampleTransactionIds: ctxs.slice(-3).map(t => t.transaction_id || t.id).filter(Boolean),
       };
 
-      (dir === 'out' ? expenseStreams : incomeStreams).push(stream);
+      if (!isActive) {
+        stream.direction = dir === 'out' ? 'expense' : 'income';
+        endedStreams.push(stream);
+      } else {
+        (dir === 'out' ? expenseStreams : incomeStreams).push(stream);
+      }
     }
   }
 
   expenseStreams.sort((a, b) => b.confidence - a.confidence || b.averageAmount - a.averageAmount);
   incomeStreams.sort((a, b) => b.confidence - a.confidence);
 
-  return { expenseStreams, incomeStreams, skipped };
+  endedStreams.sort((a, b) => a.daysSinceLastSeen - b.daysSinceLastSeen);
+  return { expenseStreams, incomeStreams, endedStreams, skipped };
 }
 
 // ---------------------------------------------------------------------------
@@ -257,18 +277,23 @@ export function matchStreamsToTemplates(streams, templates) {
   const matched = [];
 
   for (const stream of streams) {
-    const sKey = normalizeMerchant(stream.displayName);
+    const sKey = normalizeMerchant(stream.displayName, { maxTokens: 0 }); // full name for matching
     let best = null;
     let bestScore = 0;
 
     for (const tpl of templates) {
-      const tKey = normalizeMerchant(tpl.name || tpl.description || '');
+      const tKey = normalizeMerchant(tpl.name || tpl.description || '', { maxTokens: 0 });
       const nameScore = tokenOverlap(sKey, tKey);
       const tplAmt = Math.abs(Number(tpl.amount ?? tpl.cost) || 0);
       const amtScore = tplAmt > 0
         ? Math.max(0, 1 - Math.abs(stream.averageAmount - tplAmt) / Math.max(tplAmt, 1))
         : 0;
-      const score = nameScore * 0.7 + amtScore * 0.3;
+      // Exact-amount override: identical amount (within 0.5%) plus ANY name
+      // overlap is a near-certain match ("America First Cu Loan" ===
+      // "Side X Side America 1st Credit Union", both $295.36).
+      const amountExact = tplAmt > 0 && Math.abs(stream.averageAmount - tplAmt) / tplAmt <= 0.005;
+      let score = nameScore * 0.6 + amtScore * 0.4;
+      if (amountExact && nameScore >= 0.15) score = Math.max(score, 0.9);
       if (score > bestScore) { bestScore = score; best = tpl; }
     }
 

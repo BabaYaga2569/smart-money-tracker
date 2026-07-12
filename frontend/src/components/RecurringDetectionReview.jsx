@@ -81,9 +81,11 @@ export default function RecurringDetectionReview({ userId, apiUrl, onApprove, on
     try {
       const approved = result.newStreams
         .filter(s => selected[streamKey(s)])
-        .map(s => {
+        .map((s, i) => {
           const e = edits[streamKey(s)] || {};
           return {
+            id: `detected_${Date.now()}_${i}_${Math.random().toString(36).slice(2, 9)}`,
+            type: 'expense',
             name: e.name ?? s.displayName,
             amount: Number(e.amount ?? s.averageAmount),
             frequency: s.frequency === 'semimonthly' ? 'monthly' : s.frequency,
@@ -95,6 +97,8 @@ export default function RecurringDetectionReview({ userId, apiUrl, onApprove, on
             dataSource: 'auto_detected',
             detectionConfidence: s.confidence,
             detectedAt: new Date().toISOString(),
+            createdAt: new Date().toISOString(),
+            updatedAt: new Date().toISOString(),
             status: 'active',
           };
         });
@@ -213,6 +217,20 @@ export default function RecurringDetectionReview({ userId, apiUrl, onApprove, on
                   </div>
                 ))}
                 <p className="rdr-hint">Income isn't added as bills — use it to verify your Pay Cycle settings.</p>
+              </section>
+            )}
+
+            {/* ---- Ended streams: informational only ---- */}
+            {result.endedStreams?.length > 0 && (
+              <section>
+                <h3>Ended — no longer charging ({result.endedStreams.length})</h3>
+                {result.endedStreams.map(s => (
+                  <div key={streamKey(s) + s.lastSeen} className="rdr-ended">
+                    ⏹️ <strong>{s.displayName}</strong> — was ${s.averageAmount.toFixed(2)} {FREQ_LABEL[s.frequency] || s.frequency},
+                    last seen {s.lastSeen} ({s.daysSinceLastSeen} days ago)
+                  </div>
+                ))}
+                <p className="rdr-hint">Likely paid-off loans or cancelled subscriptions. Not suggested as bills.</p>
               </section>
             )}
           </div>

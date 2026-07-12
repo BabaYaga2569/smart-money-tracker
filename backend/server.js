@@ -3178,7 +3178,7 @@ app.post("/api/recurring/detect", async (req, res) => {
     }
 
     // --- Detect + match -------------------------------------------------------
-    const { expenseStreams, incomeStreams, skipped } = detectRecurringStreams(
+    const { expenseStreams, incomeStreams, endedStreams, skipped } = detectRecurringStreams(
       transactions,
       { lookbackDays, minOccurrences }
     );
@@ -3196,6 +3196,7 @@ app.post("/api/recurring/detect", async (req, res) => {
       newStreams,
       matched,
       incomeStreams,
+      endedStreams,
       stats: { transactionsScanned: transactions.length, skipped },
     });
   } catch (error) {

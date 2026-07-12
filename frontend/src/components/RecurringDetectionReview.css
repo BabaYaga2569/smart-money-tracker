@@ -163,3 +163,13 @@
   border-radius: 8px;
   cursor: pointer;
 }
+
+.rdr-ended {
+  padding: 8px 10px;
+  border-left: 3px solid #555;
+  background: #151515;
+  border-radius: 4px;
+  margin-bottom: 6px;
+  font-size: 0.85rem;
+  color: #999;
+}
