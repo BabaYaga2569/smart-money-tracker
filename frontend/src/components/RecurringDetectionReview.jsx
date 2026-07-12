@@ -81,9 +81,11 @@ export default function RecurringDetectionReview({ userId, apiUrl, onApprove, on
     try {
       const approved = result.newStreams
         .filter(s => selected[streamKey(s)])
-        .map(s => {
+        .map((s, i) => {
           const e = edits[streamKey(s)] || {};
           return {
+            id: `detected_${Date.now()}_${i}_${Math.random().toString(36).slice(2, 9)}`,
+            type: 'expense',
             name: e.name ?? s.displayName,
             amount: Number(e.amount ?? s.averageAmount),
             frequency: s.frequency === 'semimonthly' ? 'monthly' : s.frequency,
@@ -95,6 +97,8 @@ export default function RecurringDetectionReview({ userId, apiUrl, onApprove, on
             dataSource: 'auto_detected',
             detectionConfidence: s.confidence,
             detectedAt: new Date().toISOString(),
+            createdAt: new Date().toISOString(),
+            updatedAt: new Date().toISOString(),
             status: 'active',
           };
         });
