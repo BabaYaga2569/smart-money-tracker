@@ -496,7 +496,11 @@ console.log('🔍 PAYDAY CALCULATION DEBUG:', {
         daysBeforePayday: daysBeforePayday
       });
       
-      if (earlyDepositEnabled && earlyDepositAmount > 0) {
+      // Whose payday is next? Early-deposit split only applies to YOUR paycheck.
+      const paydaySource = result?.source || 'yours';
+      const isSpousePayday = String(paydaySource).toLowerCase().includes('spouse');
+
+      if (earlyDepositEnabled && earlyDepositAmount > 0 && !isSpousePayday) {
         // Early deposit is enabled - calculate both deposits
         const mainPaydayDate = new Date(nextPayday);
         const earlyDepositDate = new Date(mainPaydayDate);
@@ -558,14 +562,16 @@ console.log('🔍 PAYDAY CALCULATION DEBUG:', {
           total: totalPaydayAmount
         });
       } else {
-        // Single payday (default)
-        const totalPayAmount = parseFloat(settingsData.payAmount || settingsData.paySchedules?.yours?.amount) || 0;
+        // Single payday (default). Use the amount for WHOSE payday this is:
+        // the calculator returns spouse's amount on spouse's payday.
+        const totalPayAmount = parseFloat(result?.amount) ||
+          parseFloat(settingsData.payAmount || settingsData.paySchedules?.yours?.amount) || 0;
         
         paydays = [
           { 
             date: nextPayday, 
             amount: totalPayAmount, 
-            bank: remainderBank || 'Main Bank', 
+            bank: isSpousePayday ? 'Spouse Deposit' : (remainderBank || 'Main Bank'), 
             type: 'single',
             daysUntil: daysUntilPayday
           }
