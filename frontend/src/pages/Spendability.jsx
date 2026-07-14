@@ -182,6 +182,7 @@ const SpendabilityV2 = () => {
       }
       
       let payCycleData = payCycleDocSnap.exists() ? payCycleDocSnap.data() : null;
+	  let paydayCalcResult = null;
       // Auto-update payday if needed
       const wasUpdated = await autoUpdatePayday(settingsData);
       if (wasUpdated) {
@@ -399,6 +400,7 @@ console.log('Spendability: Using schedules', {
 });
 
 const result = PayCycleCalculator.calculateNextPayday(yoursSchedule, spouseSchedule);
+paydayCalcResult = result;
 
 console.log('Spendability: Payday calculation result', result);
 nextPayday = result.date;
@@ -497,7 +499,8 @@ console.log('🔍 PAYDAY CALCULATION DEBUG:', {
       });
       
       // Whose payday is next? Early-deposit split only applies to YOUR paycheck.
-      const paydaySource = result?.source || 'yours';
+      const paydayInfo = paydayCalcResult || payCycleData || {};
+      const paydaySource = paydayInfo.source || 'yours';
       const isSpousePayday = String(paydaySource).toLowerCase().includes('spouse');
 
       if (earlyDepositEnabled && earlyDepositAmount > 0 && !isSpousePayday) {
@@ -564,7 +567,7 @@ console.log('🔍 PAYDAY CALCULATION DEBUG:', {
       } else {
         // Single payday (default). Use the amount for WHOSE payday this is:
         // the calculator returns spouse's amount on spouse's payday.
-        const totalPayAmount = parseFloat(result?.amount) ||
+        const totalPayAmount = parseFloat(paydayInfo.amount) ||
           parseFloat(settingsData.payAmount || settingsData.paySchedules?.yours?.amount) || 0;
         
         paydays = [
