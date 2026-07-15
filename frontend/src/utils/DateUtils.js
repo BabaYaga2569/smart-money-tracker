@@ -173,16 +173,17 @@ export const getPacificTime = () => {
  */
 export const getDaysUntilDateInPacific = (targetDateStr) => {
   if (!targetDateStr) return 0;
-  
-  const today = getPacificTime();
-  today.setHours(0, 0, 0, 0);
-  
-  const targetDate = new Date(targetDateStr + 'T00:00:00');
-  
-  const diffMs = targetDate - today;
-  const diffDays = Math.ceil(diffMs / (1000 * 60 * 60 * 24));
-  
-  return Math.max(0, diffDays);
+
+  // Today's calendar date in Pacific time, DST-correct (en-CA gives YYYY-MM-DD)
+  const todayStr = new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'America/Los_Angeles'
+  }).format(new Date());
+
+  // Compare pure calendar days anchored at UTC noon — immune to TZ/DST edges
+  const target = new Date(targetDateStr + 'T12:00:00Z');
+  const today = new Date(todayStr + 'T12:00:00Z');
+
+  return Math.max(0, Math.round((target - today) / 86400000));
 };
 
 /**
