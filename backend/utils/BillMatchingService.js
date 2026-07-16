@@ -255,6 +255,13 @@ function matchTransactionToBill(transaction, bill) {
   const amountMatch = isAmountMatch(txAmount, billAmount);
   const dateMatch = isDateMatch(txDate, billDueDate);
   
+  // DATE PROXIMITY IS MANDATORY.
+  // Without this, a transaction from months ago with the right name+amount
+  // matches this month's bill (2-of-3), pays it, advances the pattern, and
+  // repeats across history — observed in production on 2026-07-15/16, where
+  // bills were advanced 3-6 periods into the future by old transactions.
+  if (!dateMatch) return null;
+
   // Count matches
   let matchCount = 0;
   if (nameMatch) matchCount++;
@@ -264,7 +271,7 @@ function matchTransactionToBill(transaction, bill) {
   // Calculate confidence
   const confidence = matchCount / 3;
   
-  // Require at least 2 of 3 criteria (67% threshold)
+  // Require date + at least one of name/amount
   if (matchCount < MINIMUM_MATCH_COUNT) return null;
   
   return {
@@ -282,7 +289,7 @@ function matchTransactionToBill(transaction, bill) {
 /**
  * Match multiple transactions to multiple bills
  */
-function matchTransactionsToBills(transactions, bills) {
+export function matchTransactionsToBills(transactions, bills) {
   if (!transactions || !bills) return [];
   
   const matches = [];
@@ -307,6 +314,9 @@ function matchTransactionsToBills(transactions, bills) {
     for (const transaction of transactions) {
       const txId = transaction.id || transaction.transaction_id;
       if (matchedTransactionIds.has(txId)) continue;
+      // Never match on pending transactions — they can change or vanish.
+      // The bill stays unpaid until the payment actually posts.
+      if (transaction.pending) continue;
       
       const match = matchTransactionToBill(transaction, bill);
       
