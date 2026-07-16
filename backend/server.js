@@ -3142,12 +3142,14 @@ app.post("/api/recurring/detect", async (req, res) => {
     logDiagnostic.request(endpoint, { userId, lookbackDays, minOccurrences });
 
     // --- Load transactions (last `lookbackDays`) -----------------------------
-    // NOTE: no .where("date", ...) here on purpose — the date field has mixed
-    // types across documents (strings vs Timestamps), and Firestore comparisons
-    // are type-strict, silently dropping half the data. Fetch all, filter in JS.
+    const cutoff = new Date();
+    cutoff.setDate(cutoff.getDate() - lookbackDays);
+    const cutoffStr = cutoff.toISOString().slice(0, 10);
+
     const txSnapshot = await db
       .collection("users").doc(userId)
       .collection("transactions")
+      .where("date", ">=", cutoffStr)
       .get();
 
     const transactions = txSnapshot.docs.map(d => ({ id: d.id, ...d.data() }));
@@ -3176,7 +3178,7 @@ app.post("/api/recurring/detect", async (req, res) => {
     }
 
     // --- Detect + match -------------------------------------------------------
-    const { expenseStreams, incomeStreams, endedStreams, skipped } = detectRecurringStreams(
+    const { expenseStreams, incomeStreams, skipped } = detectRecurringStreams(
       transactions,
       { lookbackDays, minOccurrences }
     );
@@ -3194,7 +3196,6 @@ app.post("/api/recurring/detect", async (req, res) => {
       newStreams,
       matched,
       incomeStreams,
-      endedStreams,
       stats: { transactionsScanned: transactions.length, skipped },
     });
   } catch (error) {
