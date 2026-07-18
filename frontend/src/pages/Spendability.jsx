@@ -3,6 +3,7 @@ import { doc, getDoc, updateDoc, collection, addDoc, getDocs, serverTimestamp, a
 import { db } from '../firebase';
 import { PayCycleCalculator } from '../utils/PayCycleCalculator';
 import { RecurringBillManager } from '../utils/RecurringBillManager';
+import { projectCashFlow, nextOwnPaydays, spousePaydaysBetween, addDays } from '../utils/CashFlowProjection';
 import { formatDateForDisplay, formatDateForInput, getDaysUntilDateInPacific, getManualPacificDaysUntilPayday } from '../utils/DateUtils';
 import { getPacificTime } from '../utils/timezoneHelpers';
 import { autoMigrateBills } from '../utils/FirebaseMigration';
@@ -32,6 +33,7 @@ const SpendabilityV2 = () => {
     totalBillsDue: 0,
     safeToSpend: 0,
     safeToSpendToday: 0,
+    projection: null,
     availableAfterPayday: 0,
     // depositsTodayAmount removed - not needed anymore
     nextPayday: 'No date',
@@ -801,13 +803,55 @@ console.log('🔍 PAYDAY CALCULATION DEBUG:', {
       const weeksUntilPayday = Math.ceil(daysUntilPayday / 7);
       const essentialsNeeded = weeklyEssentials * weeksUntilPayday;
 
-      // ✅ CORRECT: Safe to spend NOW uses ONLY real bank balance from Plaid
-      // Future deposits are NOT included until they actually arrive in the bank
-      const safeToSpendToday = 
-        totalAvailable -           // Real balance that's ACTUALLY in the bank
-        totalBillsDue -            // Only unpaid bills
-        essentialsNeeded -         // Weekly essentials
-        safetyBuffer;              // Safety buffer
+      // ═══════════ PAY-CYCLE PROJECTION ENGINE ═══════════
+      // Day-by-day running balance from today through the day BEFORE the
+      // user's own next money arrives (early deposit if enabled, else main
+      // payday). Spouse paydays inside the window are mid-cycle income; all
+      // unpaid bills in the window (including overdue) are outflows on their
+      // dates; essentials drip daily. Safe-to-spend = the LOWEST projected
+      // dip minus the safety buffer — the spreadsheet algorithm.
+      const todayStrProj = new Intl.DateTimeFormat('en-CA', {
+        timeZone: 'America/Los_Angeles'
+      }).format(new Date());
+
+      const ownLastPay = settingsData.lastPayDate || settingsData.paySchedules?.yours?.lastPaydate;
+      const { mainDate: ownMainNext, earlyDate: ownEarlyNext } = nextOwnPaydays(
+        ownLastPay, todayStrProj,
+        { earlyDepositEnabled, daysBeforePayday }
+      );
+      const ownBoundary = ownEarlyNext || ownMainNext;   // first own money arrival
+      const cycleEndStr = ownBoundary ? addDays(ownBoundary, -1) : nextPayday;
+
+      const spouseAmt = parseFloat(
+        settingsData.paySchedules?.spouse?.amount || settingsData.spouseAmount
+      ) || 0;
+      const cycleIncomes = spousePaydaysBetween(todayStrProj, cycleEndStr, spouseAmt);
+
+      const allUnpaidCycleBills = [
+        ...(unpaidBillsBeforePayday || []),
+        ...(unpaidBillsAfterPayday || []),
+      ];
+
+      const projection = projectCashFlow({
+        startingBalance: totalAvailable,
+        todayStr: todayStrProj,
+        cycleEndStr,
+        incomes: cycleIncomes,
+        bills: allUnpaidCycleBills,
+        weeklyEssentials,
+        safetyBuffer,
+      });
+
+      console.log('📈 PAY-CYCLE PROJECTION:', {
+        cycle: `${todayStrProj} → ${cycleEndStr} (${projection.daysInCycle} days)`,
+        ownNextMoney: ownBoundary,
+        cycleIncome: projection.totalIncome,
+        cycleBills: projection.totalBills,
+        lowestPoint: `$${projection.minBalance} on ${projection.minDate}`,
+        safeToSpend: projection.safeToSpend,
+      });
+
+      const safeToSpendToday = projection.safeToSpend;
       
       // Calculate what will be available AFTER all deposits arrive (projection)
       const availableAfterPayday = 
@@ -938,6 +982,14 @@ console.log('🔍 PAYDAY CALCULATION DEBUG:', {
         totalBillsDue,  // Total of unpaid bills only
         safeToSpend,
         safeToSpendToday,  // NEW: What's safe to spend RIGHT NOW
+        projection: {
+          cycleEnd: cycleEndStr,
+          minDate: projection.minDate,
+          minBalance: projection.minBalance,
+          totalCycleBills: projection.totalBills,
+          cycleIncome: projection.totalIncome,
+          daysInCycle: projection.daysInCycle,
+        },
         availableAfterPayday,  // NEW: What will be available after all deposits
         // depositsTodayAmount removed
         nextPayday,
@@ -966,6 +1018,7 @@ console.log('🔍 PAYDAY CALCULATION DEBUG:', {
     totalBillsDue: 0,
     safeToSpend: 0,
     safeToSpendToday: 0,
+    projection: null,
     availableAfterPayday: 0,
     // depositsTodayAmount removed
     nextPayday: 'Not set',
@@ -1314,7 +1367,9 @@ console.log('🔍 PAYDAY CALCULATION DEBUG:', {
               {financialData.safeToSpendToday < 0 && <span className="warning-badge">⚠️ SHORT</span>}
             </div>
             <div className="spend-note">
-              Based on current bank balance (updates automatically)
+              {financialData.projection
+                ? `Covers every bill through ${financialData.projection.cycleEnd} (${financialData.projection.daysInCycle} days) · tightest day: ${financialData.projection.minDate}`
+                : 'Based on current bank balance (updates automatically)'}
             </div>
           </div>
           
