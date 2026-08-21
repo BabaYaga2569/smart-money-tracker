@@ -70,14 +70,6 @@ const SpendabilityV2 = () => {
     
     console.log(`✅ AUTO-ADVANCING PAYDAY: ${lastPayDateStr} → ${newLastPayDateStr} (${payPeriods} periods, ${daysSinceLastPay} days)`);
     
-    const settingsDocRef = doc(db, 'users', currentUser.uid, 'settings', 'personal');
-    
-    // ✅ FIX: Update BOTH root level AND nested structure
-    await updateDoc(settingsDocRef, {
-      lastPayDate: newLastPayDateStr,
-      'paySchedules.yours.lastPaydate': newLastPayDateStr
-    });
-    
     // ✅ Clear the payCycle cache so it recalculates with the new date
     try {
       const settingsDocRef = doc(db, 'users', currentUser.uid, 'settings', 'personal');
