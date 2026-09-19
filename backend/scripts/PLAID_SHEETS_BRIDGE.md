@@ -14,16 +14,19 @@ cd plaid-sheet-test/backend
 npm ci
 ```
 
-Set these values *in that PowerShell window only*. For secrets, use `Read-Host -AsSecureString` and convert them into session environment variables, without showing what you type:
+Set these values *in that PowerShell window only*. Do not paste JSON into a PowerShell prompt: it can break across lines and print the private key in terminal history. Read the **new, private** JSON file directly from disk instead. Keep it out of the cloned repository.
 
 ```powershell
+$jsonPath = Read-Host 'Full path to the NEW downloaded Firebase JSON file'
+$env:FIREBASE_SERVICE_ACCOUNT = Get-Content -LiteralPath $jsonPath -Raw
+if (($env:FIREBASE_SERVICE_ACCOUNT | ConvertFrom-Json).client_email -ne 'firebase-adminsdk-fbsvc@smartmoneycockpit-18359.iam.gserviceaccount.com') { throw 'Service account does not match test sheet share' }
+
 function Set-SessionSecret($name) {
-  $secure = Read-Host "Paste $name" -AsSecureString
+  $secure = Read-Host "Paste $name from Render" -AsSecureString
   $ptr = [Runtime.InteropServices.Marshal]::SecureStringToBSTR($secure)
   try { [Environment]::SetEnvironmentVariable($name, [Runtime.InteropServices.Marshal]::PtrToStringBSTR($ptr), 'Process') }
   finally { [Runtime.InteropServices.Marshal]::ZeroFreeBSTR($ptr) }
 }
-Set-SessionSecret 'FIREBASE_SERVICE_ACCOUNT'
 Set-SessionSecret 'PLAID_CLIENT_ID'
 Set-SessionSecret 'PLAID_SECRET'
 $env:PLAID_ENV = 'production'
@@ -33,7 +36,7 @@ $env:SHEETS_START_DATE = '2026-09-01'
 node scripts/export-plaid-to-sheets.mjs
 ```
 
-Use the actual `PLAID_ENV` shown in Render if it differs from production; it must match the environment of the existing Items. Paste the service account as its **whole JSON value** from Render. Do not include extra quote marks. `SHEETS_USER_ID` must be the UID of the SmartMoney account with your four checking accounts; it is not your email address. If the service account email in the JSON differs from the one already shared on the test sheet, stop and share the test sheet with the actual email before running.
+Use the actual `PLAID_ENV` shown in Render if it differs from production; it must match the environment of the existing Items. The `SHEETS_USER_ID` must be the UID of the SmartMoney account with your four checking accounts; it is not your email address. The file path itself is only entered in PowerShell, never in chat. Do not share screenshots showing credentials or full terminal history. If the service account check fails, stop before running the importer.
 
 The default command is a read-only **preview**. It prints institutions, checking account counts, and the number of new transactions since September 1, without listing individual bank transactions. Check for Bank of America, USAA, SoFi, and Capital One before proceeding. The four enabled `Account_Map` rows translate these names into BofA, USAA, SoFi, and Cap1. Some institutions may use different names; an unmapped institution will be skipped and reported.
 
