@@ -69,7 +69,7 @@ async function main() {
     let cursor = null; let more = true; let pages = 0; let count = 0;
     // A separate full scan avoids changing SmartMoney's own Plaid cursor.
     do {
-      const data = (await plaid.transactionsSync({ access_token: item.accessToken, cursor, count: 500 })).data;
+      const data = (await plaid.transactionsSync({ access_token: item.accessToken, cursor })).data;
       for (const tx of [...data.added, ...data.modified]) {
         if (!byId.has(tx.account_id) || tx.date < cutoff || known.has(tx.transaction_id)) continue;
         staged.push(rowFor(tx, byId.get(tx.account_id), item.institutionName || 'Unknown bank', bank));
