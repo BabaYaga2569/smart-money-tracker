@@ -1,18 +1,50 @@
 # Plaid to Monthly Bills staging bridge
 
-This bridge runs on the SmartMoney backend with its existing Plaid and Firebase credentials. It reads the saved Items for exactly one Firebase user, obtains checking account transactions using its own Plaid sync cursor (it never updates SmartMoney's cursor), and stages only new transactions on `Plaid_Transactions`.
+This draft runs separately from SmartMoney. It reads the saved Plaid Items for one Firebase user, scans checking-account transactions without changing SmartMoney's cursor, and stages new rows in the **test** spreadsheet's `Plaid_Transactions` tab. It does not edit monthly tabs. Nothing runs automatically when this draft branch is pushed.
 
-It uses the active rows of the test spreadsheet's `Account_Map` to translate institution names to the sheet's bank labels. The current map recognizes Bank of America → BofA, USAA → USAA, SoFi → SoFi, and Capital One → Cap1. No credit card accounts are imported.
+## Windows test run (no Render Shell or deployment needed)
 
-## Setup for the test copy
+Prerequisites: Node.js 20 or newer and Git on your PC; the existing Render environment values `FIREBASE_SERVICE_ACCOUNT`, `PLAID_CLIENT_ID`, `PLAID_SECRET`, `PLAID_ENV`; and your SmartMoney Firebase Authentication user UID. Keep the credentials private. Never put them in Git, the Google Sheet, screenshots, or chat. The Firebase service account email inside `FIREBASE_SERVICE_ACCOUNT` must match the email granted Editor access to the test sheet. You may read and copy these values yourself from Render's Environment screen; changing the running service is unnecessary.
 
-1. Use the existing backend environment variables `FIREBASE_SERVICE_ACCOUNT`, `PLAID_CLIENT_ID`, `PLAID_SECRET`, and `PLAID_ENV`. For real bank Items, `PLAID_ENV` must match the environment where they were created. Never commit values or paste them into a conversation.
-2. Share the **test** Google spreadsheet with the `client_email` from the existing Firebase service account, as an editor. Grant this service account the Google Sheets API scope/permission in its Google Cloud project if needed.
-3. Set `SHEETS_SPREADSHEET_ID=1qaaf0t9il726oQpL2oXMbZqlF7zJpHomsClk8vklE_g` and `SHEETS_USER_ID` to the Firebase Authentication UID of the SmartMoney account that owns the four checking accounts. Confirm the owner before setting it.
-4. Set `SHEETS_START_DATE=2026-09-01` to limit the staged history. It defaults to 35 days ago if omitted.
+Open PowerShell on your own PC. Clone the **draft branch** into a new folder:
 
-From `backend/`, run `node scripts/export-plaid-to-sheets.mjs` to preview institution counts; this performs reads and writes nothing. After verifying the list and the test sheet's account map, run `node scripts/export-plaid-to-sheets.mjs --apply` to add the new rows. They remain in `REVIEW`; no monthly tab is touched.
+```powershell
+git clone --branch codex/plaid-sheets-review-bridge https://github.com/BabaYaga2569/smart-money-tracker.git plaid-sheet-test
+cd plaid-sheet-test/backend
+npm ci
+```
 
-The script checks existing transaction IDs before appending, so repeated runs skip those IDs. Pending and posted transactions can have different Plaid IDs; the posted row names the earlier pending ID in Notes for review. Review and remove the pending duplicate during reconciliation. It does not yet process Plaid removals or automatically reconcile a posted transaction with a pending row. Do not schedule this bridge until this behavior and the four account mappings are validated.
+Set these values *in that PowerShell window only*. For secrets, use `Read-Host -AsSecureString` and convert them into session environment variables, without showing what you type:
 
-This draft does not modify the existing backend endpoints. The existing userId trust and token-returning Netlify function need separate security work before exposing an automated endpoint. This is a local backend command requiring the existing server-side credentials, not a public endpoint.
+```powershell
+function Set-SessionSecret($name) {
+  $secure = Read-Host "Paste $name" -AsSecureString
+  $ptr = [Runtime.InteropServices.Marshal]::SecureStringToBSTR($secure)
+  try { [Environment]::SetEnvironmentVariable($name, [Runtime.InteropServices.Marshal]::PtrToStringBSTR($ptr), 'Process') }
+  finally { [Runtime.InteropServices.Marshal]::ZeroFreeBSTR($ptr) }
+}
+Set-SessionSecret 'FIREBASE_SERVICE_ACCOUNT'
+Set-SessionSecret 'PLAID_CLIENT_ID'
+Set-SessionSecret 'PLAID_SECRET'
+$env:PLAID_ENV = 'production'
+$env:SHEETS_USER_ID = 'YOUR_FIREBASE_AUTH_UID'
+$env:SHEETS_SPREADSHEET_ID = '1qaaf0t9il726oQpL2oXMbZqlF7zJpHomsClk8vklE_g'
+$env:SHEETS_START_DATE = '2026-09-01'
+node scripts/export-plaid-to-sheets.mjs
+```
+
+Use the actual `PLAID_ENV` shown in Render if it differs from production; it must match the environment of the existing Items. Paste the service account as its **whole JSON value** from Render. Do not include extra quote marks. `SHEETS_USER_ID` must be the UID of the SmartMoney account with your four checking accounts; it is not your email address. If the service account email in the JSON differs from the one already shared on the test sheet, stop and share the test sheet with the actual email before running.
+
+The default command is a read-only **preview**. It prints institutions, checking account counts, and the number of new transactions since September 1, without listing individual bank transactions. Check for Bank of America, USAA, SoFi, and Capital One before proceeding. The four enabled `Account_Map` rows translate these names into BofA, USAA, SoFi, and Cap1. Some institutions may use different names; an unmapped institution will be skipped and reported.
+
+After the preview is verified, in the same PowerShell window run:
+
+```powershell
+node scripts/export-plaid-to-sheets.mjs --apply
+```
+
+The apply command appends new rows to **test** `Plaid_Transactions` as `REVIEW`; it does not insert them into a monthly tab or alter SmartMoney. Check the staging tab and review the rows before using the sheet's existing approval workflow. Closing PowerShell discards these session variables. No schedule is installed.
+
+The script deduplicates existing transaction IDs. Pending and posted versions can have different IDs; the posted version names the pending ID in Notes. Reconcile such pairs by hand. It does not yet handle Plaid removals or automatically replace pending rows, so do not schedule recurring runs until those cases are addressed. Do not use the live spreadsheet ID for this test.
+
+The draft does not modify existing SmartMoney endpoints. Its current authentication and Plaid token handling need a separate security review before building any public automation endpoint.
