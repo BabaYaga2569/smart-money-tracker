@@ -37,12 +37,35 @@ async function sheetsRequest(token, range, method = 'GET', payload) {
   if (!response.ok) throw new Error(`Sheets ${method} failed (${response.status}): ${(await response.text()).slice(0, 250)}`);
   return response.json();
 }
+function sheetDateSerial(isoDate) {
+  if (!/^\\d{4}-\\d{2}-\\d{2}$/.test(isoDate)) throw new Error('Unexpected Plaid transaction date');
+  const [year, month, day] = isoDate.split('-').map(Number);
+  const utc = Date.UTC(year, month - 1, day);
+  if (new Date(utc).toISOString().slice(0, 10) !== isoDate) throw new Error('Invalid Plaid transaction date');
+  return (utc - Date.UTC(1899, 11, 30)) / 86400000;
+}
+async function formatStagingDateColumn(token) {
+  const id = encodeURIComponent(process.env.SHEETS_SPREADSHEET_ID);
+  const root = `https://sheets.googleapis.com/v4/spreadsheets/${id}`;
+  const headers = { Authorization: `Bearer ${token}` };
+  const metadata = await fetch(`${root}?fields=sheets(properties(sheetId,title,gridProperties(rowCount)))`, { headers });
+  if (!metadata.ok) throw new Error(`Sheets metadata failed (${metadata.status})`);
+  const tab = (await metadata.json()).sheets?.find(sheet => sheet.properties.title === sheetName)?.properties;
+  if (!tab) throw new Error('Plaid_Transactions tab not found');
+  const body = { requests: [{ repeatCell: {
+    range: { sheetId: tab.sheetId, startRowIndex: 1, endRowIndex: tab.gridProperties.rowCount, startColumnIndex: 1, endColumnIndex: 2 },
+    cell: { userEnteredFormat: { numberFormat: { type: 'DATE', pattern: 'mm/dd/yyyy' } } },
+    fields: 'userEnteredFormat.numberFormat'
+  } }] };
+  const result = await fetch(`${root}:batchUpdate`, { method: 'POST', headers: { ...headers, 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+  if (!result.ok) throw new Error(`Sheets date formatting failed (${result.status}): ${(await result.text()).slice(0, 250)}`);
+}
 function rowFor(transaction, account, institution, bank) {
   const date = transaction.authorized_date || transaction.date;
   const description = String(transaction.merchant_name || transaction.name || '').replace(/[\r\n]+/g, ' ').slice(0, 250);
   const note = `${transaction.pending ? 'PENDING; ' : ''}${transaction.pending_transaction_id ? 'Posted from pending transaction ' + transaction.pending_transaction_id + '; ' : ''}Plaid account ${account.name || 'Checking'} (${account.account_id}); ${institution}; imported for review`;
   // Existing Code.gs uses G for Pending, H for status. Preserve the existing header layout.
-  return [transaction.transaction_id, date, description, -Number(transaction.amount), bank, 'Uncategorized', transaction.pending, 'REVIEW', '', '', note];
+  return [transaction.transaction_id, sheetDateSerial(date), description, -Number(transaction.amount), bank, 'Uncategorized', transaction.pending, 'REVIEW', '', '', note];
 }
 async function main() {
   const token = await sheetsToken();
@@ -82,6 +105,7 @@ async function main() {
   }
   console.log(JSON.stringify({ mode: apply ? 'apply' : 'preview', since: cutoff, counts, totalNew: staged.length }, null, 2));
   if (apply && staged.length) {
+    await formatStagingDateColumn(token);
     for (let i = 0; i < staged.length; i += 200) await sheetsRequest(token, `${sheetName}!A:K`, 'POST', { values: staged.slice(i, i + 200) });
     console.log(`Staged ${staged.length} transactions for review.`);
   }
