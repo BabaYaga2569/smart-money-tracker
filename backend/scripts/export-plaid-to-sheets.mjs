@@ -40,7 +40,7 @@ async function sheetsRequest(token, range, method = 'GET', payload) {
 function rowFor(transaction, account, institution, bank) {
   const date = transaction.authorized_date || transaction.date;
   const description = String(transaction.merchant_name || transaction.name || '').replace(/[\r\n]+/g, ' ').slice(0, 250);
-  const note = `${transaction.pending ? 'PENDING; ' : ''}${transaction.pending_transaction_id ? 'Posted from pending transaction ' + transaction.pending_transaction_id + '; ' : ''}Plaid account ${account.name || 'Checking'}; ${institution}; imported for review`;
+  const note = `${transaction.pending ? 'PENDING; ' : ''}${transaction.pending_transaction_id ? 'Posted from pending transaction ' + transaction.pending_transaction_id + '; ' : ''}Plaid account ${account.name || 'Checking'} (${account.account_id}); ${institution}; imported for review`;
   // Existing Code.gs uses G for Pending, H for status. Preserve the existing header layout.
   return [transaction.transaction_id, date, description, -Number(transaction.amount), bank, 'Uncategorized', transaction.pending, 'REVIEW', '', '', note];
 }
