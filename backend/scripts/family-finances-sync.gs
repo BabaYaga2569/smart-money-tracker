@@ -106,6 +106,80 @@ function familyFinancesIsMixedMerchant_(merchant) {
   });
 }
 
+function familyFinancesMerchantCoreTokens_(value) {
+  const ignored = new Set([
+    'a', 'an', 'and', 'at', 'by', 'for', 'from', 'in', 'of', 'on', 'the', 'to',
+    'service', 'services', 'subscription', 'payment', 'payments', 'paymt',
+    'online', 'purchase', 'purchases', 'pos', 'debit', 'credit', 'card',
+    'checking', 'banking', 'inc', 'llc', 'company', 'co'
+  ]);
+
+  return familyFinancesNorm_(value)
+    .split(' ')
+    .filter(function(token) {
+      return token && token.length >= 2 && !ignored.has(token);
+    });
+}
+
+function familyFinancesMerchantLooksSame_(left, right) {
+  const a = familyFinancesNorm_(left);
+  const b = familyFinancesNorm_(right);
+
+  if (!a || !b) return false;
+  if (a === b) return true;
+
+  if ((a.length >= 8 && b.includes(a)) || (b.length >= 8 && a.includes(b))) {
+    return true;
+  }
+
+  const aTokens = familyFinancesMerchantCoreTokens_(a);
+  const bTokens = familyFinancesMerchantCoreTokens_(b);
+
+  if (!aTokens.length || !bTokens.length) return false;
+
+  const bSet = new Set(bTokens);
+  const shared = aTokens.filter(function(token) {
+    return bSet.has(token);
+  });
+
+  if (shared.length < 2) return false;
+
+  const shorter = Math.min(aTokens.length, bTokens.length);
+  return shorter > 0 && (shared.length / shorter) >= 0.67;
+}
+
+function familyFinancesFindAlreadyEnteredCandidate_(monthSheet, merchant, amount, bank) {
+  if (!monthSheet || monthSheet.getLastRow() < 2) {
+    return { status: 'NONE', candidates: [] };
+  }
+
+  const rows = monthSheet.getRange(2, 1, monthSheet.getLastRow() - 1, 6).getValues();
+  const candidates = [];
+  const wantedBank = familyFinancesNorm_(bank);
+
+  rows.forEach(function(row, index) {
+    const rowMerchant = row[1];
+    const rowActual = row[3];
+    const rowBank = row[4];
+
+    if (!rowMerchant || rowActual === '' || rowActual === null) return;
+    if (familyFinancesNorm_(rowBank) !== wantedBank) return;
+    if (!Number.isFinite(Number(rowActual))) return;
+    if (Math.abs(Number(rowActual) - Number(amount)) > 0.005) return;
+    if (!familyFinancesMerchantLooksSame_(merchant, rowMerchant)) return;
+
+    candidates.push({
+      rowNumber: index + 2,
+      values: row
+    });
+  });
+
+  if (candidates.length === 0) return { status: 'NONE', candidates: candidates };
+  if (candidates.length > 1) return { status: 'MULTIPLE', candidates: candidates };
+
+  return { status: 'ONE', candidates: candidates };
+}
+
 function familyFinancesAppendMarker_(existingNotes, message) {
   const notes = String(existingNotes || '').trim();
   const marker = FAMILY_FINANCES_SYNC_MARKER + ' ' + message;
@@ -372,6 +446,42 @@ function runFamilyFinancesSheetSync() {
           }
         }
 
+        // Fallback for manually-entered rows whose bank posting date/description differs
+        // from the wording used in the monthly sheet. This is intentionally conservative:
+        // same monthly tab + exact bank + exact actual amount + strong merchant similarity.
+        // Mixed merchants stay in review.
+        let alreadyEnteredResult = { status: 'NONE', candidates: [] };
+
+        if (!isMixed && monthSheet) {
+          alreadyEnteredResult = familyFinancesFindAlreadyEnteredCandidate_(
+            monthSheet,
+            originalMerchant,
+            amount,
+            bank
+          );
+        }
+
+        if (!isMixed && alreadyEnteredResult.status === 'ONE') {
+          const candidate = alreadyEnteredResult.candidates[0];
+
+          txSheet.getRange(sheetRow, 8, 1, 3).setValues([[
+            'MATCH_FOUND',
+            monthlyTab,
+            candidate.rowNumber
+          ]]);
+
+          txSheet.getRange(sheetRow, 11).setValue(
+            familyFinancesAppendMarker_(
+              originalNotes,
+              'already entered in ' + monthlyTab + ' row ' + candidate.rowNumber +
+              ' by exact bank + exact actual amount + merchant similarity; no monthly amount changed.'
+            )
+          );
+
+          alreadyEntered++;
+          continue;
+        }
+
         let reason = 'New bank transaction - review category/match';
 
         if (isMixed) {
@@ -380,6 +490,8 @@ function runFamilyFinancesSheetSync() {
           reason = 'Monthly tab not found - review required';
         } else if (candidateResult.status === 'MULTIPLE') {
           reason = 'Multiple possible monthly matches - review required';
+        } else if (alreadyEnteredResult.status === 'MULTIPLE') {
+          reason = 'Multiple already-entered monthly matches - review required';
         } else if (candidateResult.status === 'ONE' && !autoUpdateMatched) {
           reason = 'Verified match found, but Auto Update Matched Rows is disabled';
         } else if (candidateResult.status === 'ONE') {
