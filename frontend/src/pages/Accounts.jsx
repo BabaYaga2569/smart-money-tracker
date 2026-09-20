@@ -579,14 +579,13 @@ const Accounts = () => {
   };
 
   const loadAccountsAndTransactions = async () => {
-    // ✅ OPTIMIZATION: Load accounts and health check in parallel
+    // Load accounts first so any ITEM_LOGIN_REQUIRED response can be persisted as
+    // NEEDS_REAUTH before the health check renders connection-status cards.
     if (currentUser) {
-      await Promise.all([
-        loadAccounts(),
-        checkConnectionHealth().catch(err => {
-          console.error('Health check failed:', err);
-        })
-      ]);
+      await loadAccounts();
+      await checkConnectionHealth().catch(err => {
+        console.error('Health check failed:', err);
+      });
     } else {
       await loadAccounts();
     }
@@ -1197,43 +1196,47 @@ const formattedPlaidAccounts = allNewAccounts.filter(account => {
     setReconnectingItemId(itemId);
   };
 
-  const handleReconnectSuccess = async (publicToken, metadata) => {
+  const handleReconnectSuccess = async (_publicToken, metadata) => {
     try {
+      const itemId = reconnectingItemId;
+      if (!itemId) {
+        throw new Error('Missing Plaid item ID for reconnect');
+      }
+
       console.log('✅ [Accounts] Reconnection successful for:', metadata.institution?.name);
       showNotification('Reconnection successful! Refreshing balances...', 'success');
-      
+
       const apiUrl = import.meta.env.VITE_API_URL || 'https://smart-money-tracker-09ks.onrender.com';
-      
-      // Exchange the public token (Plaid requires this even for update mode)
-      const response = await fetch(`${apiUrl}/api/plaid/exchange_token`, {
+
+      // Plaid update mode repairs the existing Item and keeps its access token.
+      // Verify that the existing token works again, then mark the Item active.
+      const response = await fetch(`${apiUrl}/api/plaid/complete_update`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({ 
-          public_token: publicToken,
-          userId: currentUser.uid 
+        body: JSON.stringify({
+          userId: currentUser.uid,
+          itemId
         }),
       });
 
       const data = await response.json();
 
-      if (data?.success) {
-        // Refresh balances after reconnection
-        await loadAccounts();
-        
-        // Refresh health check to remove the warning badge
-        await checkConnectionHealth();
-        
-        showNotification('Bank connection updated successfully!', 'success');
-      } else {
-        showNotification('Reconnection completed but balance update failed', 'error');
+      if (!response.ok || !data?.success) {
+        throw new Error(data?.error || 'Failed to verify repaired bank connection');
       }
-      
+
       setReconnectingItemId(null);
+
+      // Refresh balances and then health state so the reconnect-only card disappears.
+      await loadAccounts();
+      await checkConnectionHealth();
+
+      showNotification('Bank connection updated successfully!', 'success');
     } catch (error) {
       console.error('❌ [Accounts] Error completing reconnection:', error);
-      showNotification('Reconnection failed. Please try again.', 'error');
+      showNotification(`Reconnection failed: ${error.message}`, 'error');
       setReconnectingItemId(null);
     }
   };
@@ -1582,6 +1585,67 @@ const formattedPlaidAccounts = allNewAccounts.filter(account => {
       </div>
 
       <div className="accounts-grid">
+        {/* Plaid Items that need reauthentication but cannot return account balances.
+            These must stay visible so the user can repair the EXISTING connection
+            instead of accidentally adding the bank again. */}
+        {(healthStatus?.items || [])
+          .filter(item =>
+            item.needsReauth &&
+            !plaidAccounts.some(account => account.item_id === item.itemId)
+          )
+          .map(item => (
+            <div
+              key={`reauth-${item.itemId}`}
+              className="account-card plaid-account"
+              style={{
+                borderColor: '#dc2626',
+                background: 'rgba(220, 38, 38, 0.08)'
+              }}
+            >
+              <div className="account-header">
+                <div className="account-title">
+                  <span className="account-icon">🏦</span>
+                  <h3>{item.institutionName || 'Bank Connection'}</h3>
+                  <span style={{
+                    background: 'linear-gradient(135deg, #dc2626 0%, #991b1b 100%)',
+                    color: '#fff',
+                    fontSize: '11px',
+                    padding: '3px 8px',
+                    borderRadius: '4px',
+                    marginLeft: '8px',
+                    fontWeight: '600',
+                    display: 'inline-block'
+                  }}>
+                    ⚠️ Reconnection Required
+                  </span>
+                </div>
+                <span className="account-type">Connection needs attention</span>
+              </div>
+
+              <div className="account-balances">
+                <div className="balance-row">
+                  <span className="balance-label">
+                    Plaid can no longer refresh this bank until you sign in again.
+                  </span>
+                </div>
+              </div>
+
+              <div className="account-actions">
+                <button
+                  className="action-btn reconnect-btn stale"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    handleReconnectAccount(item.itemId);
+                  }}
+                  disabled={saving}
+                  title="Repair this existing Plaid connection"
+                >
+                  🔄 Reconnect
+                </button>
+              </div>
+            </div>
+          ))}
+
         {/* Plaid-linked accounts */}
         {plaidAccounts.map((account) => {
           // For Plaid accounts, available_balance is already the "projected" balance
