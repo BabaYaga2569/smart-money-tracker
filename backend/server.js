@@ -940,6 +940,82 @@ app.post("/api/plaid/create_link_token", async (req, res, next) => {
   }
 });
 
+// Complete an existing Plaid Item update-mode reconnect.
+// Plaid update mode keeps the same access token, so there is no token exchange here.
+app.post("/api/plaid/complete_update", async (req, res, next) => {
+  const endpoint = "/api/plaid/complete_update";
+  logDiagnostic.request(endpoint, req.body);
+
+  try {
+    const { userId, itemId } = req.body;
+
+    if (!userId) {
+      throw createError.badRequest('userId is required', 'MISSING_USER_ID');
+    }
+    if (!itemId) {
+      throw createError.badRequest('itemId is required', 'MISSING_ITEM_ID');
+    }
+
+    validators.validateUserId(userId);
+
+    const itemRef = db
+      .collection('users')
+      .doc(userId)
+      .collection('plaid_items')
+      .doc(itemId);
+
+    const itemDoc = await itemRef.get();
+    if (!itemDoc.exists) {
+      throw createError.notFound('Bank connection not found');
+    }
+
+    const item = itemDoc.data();
+    if (!item.accessToken) {
+      throw createError.badRequest('Access token not found for this connection', 'MISSING_TOKEN');
+    }
+
+    // Verify the repaired Item can make a normal Plaid request before marking it healthy.
+    await plaidClient.accountsGet({ access_token: item.accessToken });
+
+    await itemRef.set({
+      status: 'active',
+      error: null,
+      updatedAt: admin.firestore.FieldValue.serverTimestamp()
+    }, { merge: true });
+
+    logDiagnostic.info(
+      'PLAID_COMPLETE_UPDATE',
+      `Reactivated Plaid item ${itemId} for ${item.institutionName || 'bank'}`
+    );
+
+    res.json({
+      success: true,
+      itemId,
+      institutionName: item.institutionName || 'Bank'
+    });
+  } catch (error) {
+    if (error.statusCode) {
+      return next(error);
+    }
+
+    const plaidError = error?.response?.data;
+    if (plaidError?.error_code === 'ITEM_LOGIN_REQUIRED') {
+      return next(createError.unauthorized(
+        'Bank connection still requires login. Please complete the reconnect flow.'
+      ));
+    }
+
+    if (plaidError) {
+      return next(createError.plaidError(
+        plaidError.error_message || 'Unable to verify the repaired bank connection',
+        shouldRetryPlaidError(plaidError.error_type)
+      ));
+    }
+
+    next(createError.plaidError(error.message || 'Unable to complete bank reconnection'));
+  }
+});
+
 // Exchange public token for access token
 app.post("/api/plaid/exchange_token", async (req, res, next) => {
   const endpoint = "/api/plaid/exchange_token";
@@ -1279,7 +1355,39 @@ app.get("/api/accounts", async (req, res, next) => {
         allAccounts.push(...accountsWithInstitution);
       } catch (itemError) {
         console.error(`Error getting accounts for item ${item.itemId}:`, itemError);
-        // Continue with other items even if one fails
+
+        const plaidError = itemError?.response?.data;
+        if (plaidError?.error_code === 'ITEM_LOGIN_REQUIRED' && item.itemId) {
+          try {
+            await db
+              .collection('users')
+              .doc(userId)
+              .collection('plaid_items')
+              .doc(item.itemId)
+              .set({
+                status: 'NEEDS_REAUTH',
+                error: {
+                  error_code: plaidError.error_code,
+                  error_type: plaidError.error_type || 'ITEM_ERROR',
+                  error_message: plaidError.error_message || 'Bank login required'
+                },
+                updatedAt: admin.firestore.FieldValue.serverTimestamp()
+              }, { merge: true });
+
+            logDiagnostic.info(
+              'GET_ACCOUNTS',
+              `Marked ${item.institutionName || item.itemId} as NEEDS_REAUTH after ITEM_LOGIN_REQUIRED`
+            );
+          } catch (statusError) {
+            logger.error('PLAID_ACCOUNTS', 'Failed to mark item as NEEDS_REAUTH', statusError, {
+              userId,
+              itemId: item.itemId
+            });
+          }
+        }
+
+        // Continue with other items even if one fails.
+        // The frontend health check will render a reconnect card for this item.
       }
     }
 
