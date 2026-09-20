@@ -111,6 +111,32 @@ async function formatStagingDateColumn(token) {
   if (!result.ok) throw new Error(`Sheets date formatting failed (${result.status}): ${(await result.text()).slice(0, 250)}`);
 }
 
+function plaidError_(error, context) {
+  const data = error?.response?.data;
+  if (data && typeof data === 'object') {
+    const code = data.error_code || data.error_type || 'PLAID_ERROR';
+    const message = data.error_message || data.display_message || error.message || 'Unknown Plaid error';
+    return new Error(`${context}: ${code}: ${message}`);
+  }
+  return new Error(`${context}: ${error?.message || String(error)}`);
+}
+
+async function plaidAccounts_(accessToken, institutionName) {
+  try {
+    return (await plaid.accountsGet({ access_token: accessToken })).data.accounts;
+  } catch (error) {
+    throw plaidError_(error, `Plaid accountsGet failed for ${institutionName || 'Unknown bank'}`);
+  }
+}
+
+async function plaidSync_(accessToken, cursor, institutionName) {
+  try {
+    return (await plaid.transactionsSync({ access_token: accessToken, cursor })).data;
+  } catch (error) {
+    throw plaidError_(error, `Plaid transactionsSync failed for ${institutionName || 'Unknown bank'}`);
+  }
+}
+
 function rowFor(transaction, account, institution, bank) {
   const date = transaction.authorized_date || transaction.date;
   const description = String(transaction.merchant_name || transaction.name || '')
@@ -179,7 +205,7 @@ async function main() {
       continue;
     }
 
-    const accounts = (await plaid.accountsGet({ access_token: item.accessToken })).data.accounts;
+    const accounts = await plaidAccounts_(item.accessToken, item.institutionName);
     const selected = accounts.filter(a => a.type === 'depository' && a.subtype === 'checking');
     const byId = new Map(selected.map(a => [a.account_id, a]));
     if (!selected.length) continue;
@@ -191,7 +217,7 @@ async function main() {
     let replacementCount = 0;
 
     do {
-      const data = (await plaid.transactionsSync({ access_token: item.accessToken, cursor })).data;
+      const data = await plaidSync_(item.accessToken, cursor, item.institutionName);
 
       for (const tx of [...data.added, ...data.modified]) {
         if (!byId.has(tx.account_id) || tx.date < cutoff) continue;
