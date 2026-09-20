@@ -463,6 +463,11 @@ function runFamilyFinancesSheetSync() {
 
         if (!isMixed && alreadyEnteredResult.status === 'ONE') {
           const candidate = alreadyEnteredResult.candidates[0];
+          const matchedCategory = String(candidate.values[5] || '').trim();
+
+          if (matchedCategory) {
+            txSheet.getRange(sheetRow, 6).setValue(matchedCategory);
+          }
 
           txSheet.getRange(sheetRow, 8, 1, 3).setValues([[
             'MATCH_FOUND',
