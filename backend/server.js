@@ -14,8 +14,30 @@ import { detectSubscriptions } from './utils/subscriptionDetector.js';
 import { detectRecurringStreams, matchStreamsToTemplates } from './utils/recurringStreamDetector.js';
 
 const app = express();
+
+const allowedOrigins = new Set([
+  'https://smart-money-tracker.netlify.app',
+  'https://smart-money-tracker-v2.netlify.app',
+  'https://smart-money-tracker-wine.vercel.app',
+  'http://localhost:3000'
+]);
+
+const isAllowedOrigin = (origin) => {
+  if (!origin) return true;
+  if (allowedOrigins.has(origin)) return true;
+
+  // Allow only this app's Netlify PR deploy previews, e.g.
+  // https://deploy-preview-372--smart-money-tracker-v2.netlify.app
+  return /^https:\/\/deploy-preview-\d+--smart-money-tracker-v2\.netlify\.app$/.test(origin);
+};
+
 app.use(cors({
-  origin: ['https://smart-money-tracker.netlify.app', 'https://smart-money-tracker-v2.netlify.app', 'https://smart-money-tracker-wine.vercel.app', 'http://localhost:3000'],
+  origin: (origin, callback) => {
+    if (isAllowedOrigin(origin)) {
+      return callback(null, true);
+    }
+    return callback(new Error('Not allowed by CORS'));
+  },
   credentials: true
 }));
 app.use(express.json());
