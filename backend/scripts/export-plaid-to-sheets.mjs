@@ -116,7 +116,9 @@ function plaidError_(error, context) {
   if (data && typeof data === 'object') {
     const code = data.error_code || data.error_type || 'PLAID_ERROR';
     const message = data.error_message || data.display_message || error.message || 'Unknown Plaid error';
-    return new Error(`${context}: ${code}: ${message}`);
+    const wrapped = new Error(`${context}: ${code}: ${message}`);
+    wrapped.plaidCode = code;
+    return wrapped;
   }
   return new Error(`${context}: ${error?.message || String(error)}`);
 }
@@ -205,7 +207,19 @@ async function main() {
       continue;
     }
 
-    const accounts = await plaidAccounts_(item.accessToken, item.institutionName);
+    let accounts;
+    try {
+      accounts = await plaidAccounts_(item.accessToken, item.institutionName);
+    } catch (error) {
+      if (error?.plaidCode === 'ITEM_LOGIN_REQUIRED') {
+        counts.push({
+          institution: item.institutionName || 'Unknown bank',
+          skipped: 'ITEM_LOGIN_REQUIRED - reconnect this Plaid item in SmartMoney'
+        });
+        continue;
+      }
+      throw error;
+    }
     const selected = accounts.filter(a => a.type === 'depository' && a.subtype === 'checking');
     const byId = new Map(selected.map(a => [a.account_id, a]));
     if (!selected.length) continue;
@@ -217,7 +231,21 @@ async function main() {
     let replacementCount = 0;
 
     do {
-      const data = await plaidSync_(item.accessToken, cursor, item.institutionName);
+      let data;
+      try {
+        data = await plaidSync_(item.accessToken, cursor, item.institutionName);
+      } catch (error) {
+        if (error?.plaidCode === 'ITEM_LOGIN_REQUIRED') {
+          counts.push({
+            institution: item.institutionName || 'Unknown bank',
+            skipped: 'ITEM_LOGIN_REQUIRED - reconnect this Plaid item in SmartMoney'
+          });
+          more = false;
+          cursor = null;
+          break;
+        }
+        throw error;
+      }
 
       for (const tx of [...data.added, ...data.modified]) {
         if (!byId.has(tx.account_id) || tx.date < cutoff) continue;
