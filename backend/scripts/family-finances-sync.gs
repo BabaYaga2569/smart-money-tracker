@@ -517,6 +517,269 @@ function familyFinancesQueueReview_(
 }
 
 
+
+function familyFinancesNormalizeMonthlyTabValue_(value, fallbackDate) {
+  if (value instanceof Date && !isNaN(value.getTime())) {
+    return familyFinancesMonthTabName_(value);
+  }
+
+  const text = String(value || '').replace(/^'/, '').trim();
+
+  if (/^\d{2}-[A-Za-z]+\s+\d{4}$/.test(text)) {
+    return text;
+  }
+
+  if (text) {
+    const parsed = new Date(text);
+    if (!isNaN(parsed.getTime())) {
+      return familyFinancesMonthTabName_(parsed);
+    }
+  }
+
+  if (fallbackDate instanceof Date && !isNaN(fallbackDate.getTime())) {
+    return familyFinancesMonthTabName_(fallbackDate);
+  }
+
+  return text;
+}
+
+function familyFinancesRepairMonthlyTabValues_(txSheet, reviewSheet) {
+  const txById = new Map();
+
+  if (txSheet && txSheet.getLastRow() >= 2) {
+    const txRows = txSheet
+      .getRange(2, 1, txSheet.getLastRow() - 1, 11)
+      .getValues();
+
+    txRows.forEach(function(row, index) {
+      const id = String(row[0] || '').trim();
+      if (!id) return;
+
+      const dateValue = row[1];
+      const normalizedTab = familyFinancesNormalizeMonthlyTabValue_(row[8], dateValue);
+
+      if (normalizedTab && String(row[8] || '').replace(/^'/, '').trim() !== normalizedTab) {
+        txSheet.getRange(index + 2, 9).setValue("'" + normalizedTab);
+      }
+
+      txById.set(id, {
+        rowNumber: index + 2,
+        dateValue: dateValue,
+        status: String(row[7] || '').trim().toUpperCase(),
+        category: String(row[5] || '').trim(),
+        notes: String(row[10] || ''),
+        monthlyTab: normalizedTab
+      });
+    });
+  }
+
+  let repaired = 0;
+  let recoveredApprovals = 0;
+
+  if (reviewSheet && reviewSheet.getLastRow() >= 2) {
+    const reviewRows = reviewSheet
+      .getRange(2, 1, reviewSheet.getLastRow() - 1, 10)
+      .getValues();
+
+    reviewRows.forEach(function(row, index) {
+      const reviewRow = index + 2;
+      const id = String(row[0] || '').trim();
+      const tx = txById.get(id);
+      const fallbackDate = tx && tx.dateValue instanceof Date ? tx.dateValue : row[1];
+      const normalizedTab = familyFinancesNormalizeMonthlyTabValue_(row[8], fallbackDate);
+      const currentTabText = row[8] instanceof Date
+        ? familyFinancesMonthTabName_(row[8])
+        : String(row[8] || '').replace(/^'/, '').trim();
+
+      if (normalizedTab && currentTabText !== normalizedTab) {
+        reviewSheet.getRange(reviewRow, 9).setValue("'" + normalizedTab);
+        repaired++;
+      } else if (normalizedTab && row[8] instanceof Date) {
+        // Force the cell back to text even if the displayed text already looks right.
+        reviewSheet.getRange(reviewRow, 9).setValue("'" + normalizedTab);
+        repaired++;
+      }
+
+      const action = String(row[7] || '').trim().toUpperCase();
+
+      if (
+        tx &&
+        action === 'APPROVED' &&
+        tx.status === 'REVIEW' &&
+        /monthly tab not found/i.test(tx.notes)
+      ) {
+        reviewSheet.getRange(reviewRow, 8).setValue('APPROVE');
+        if (normalizedTab) {
+          reviewSheet.getRange(reviewRow, 9).setValue("'" + normalizedTab);
+          txSheet.getRange(tx.rowNumber, 9).setValue("'" + normalizedTab);
+        }
+        txSheet.getRange(tx.rowNumber, 11).setValue(
+          'Recovered approved review after monthly-tab text normalization; ready for automatic retry.'
+        );
+        recoveredApprovals++;
+      }
+    });
+  }
+
+  return {
+    repaired: repaired,
+    recoveredApprovals: recoveredApprovals
+  };
+}
+
+function familyFinancesCountPendingIgnores_(reviewSheet) {
+  if (!reviewSheet || reviewSheet.getLastRow() < 2) return 0;
+
+  const actions = reviewSheet
+    .getRange(2, 8, reviewSheet.getLastRow() - 1, 1)
+    .getValues();
+
+  return actions.reduce(function(count, row) {
+    return count + (
+      String(row[0] || '').trim().toUpperCase() === 'IGNORE' ? 1 : 0
+    );
+  }, 0);
+}
+
+function familyFinancesProcessIgnoredReviews_(reviewSheet) {
+  const ignoreCount = familyFinancesCountPendingIgnores_(reviewSheet);
+
+  if (!ignoreCount) return 0;
+
+  if (typeof processIgnoredReviewRows !== 'function') {
+    throw new Error(
+      'Ignored-review automation is missing Code.gs function: processIgnoredReviewRows'
+    );
+  }
+
+  processIgnoredReviewRows();
+  return ignoreCount;
+}
+
+function familyFinancesArchiveResolvedReviews_(ss, txSheet, reviewSheet) {
+  if (
+    !txSheet ||
+    !reviewSheet ||
+    reviewSheet.getLastRow() < 2
+  ) {
+    return 0;
+  }
+
+  let archiveSheet = ss.getSheetByName('Plaid_Review_Archive');
+
+  if (!archiveSheet) {
+    archiveSheet = ss.insertSheet('Plaid_Review_Archive');
+    const headers = reviewSheet
+      .getRange(1, 1, 1, reviewSheet.getLastColumn())
+      .getValues();
+    archiveSheet.getRange(1, 1, 1, headers[0].length).setValues(headers);
+    archiveSheet.setFrozenRows(1);
+    archiveSheet.hideSheet();
+  }
+
+  const txRows = txSheet
+    .getRange(2, 1, Math.max(1, txSheet.getLastRow() - 1), 8)
+    .getValues();
+
+  const txStatusById = new Map();
+
+  txRows.forEach(function(row) {
+    const id = String(row[0] || '').trim();
+    if (!id) return;
+    txStatusById.set(id, String(row[7] || '').trim().toUpperCase());
+  });
+
+  const lastRow = reviewSheet.getLastRow();
+  const lastCol = reviewSheet.getLastColumn();
+  const reviewRows = reviewSheet.getRange(2, 1, lastRow - 1, lastCol).getValues();
+  const archiveRows = [];
+  const deleteRows = [];
+
+  reviewRows.forEach(function(row, index) {
+    const id = String(row[0] || '').trim();
+    const action = String(row[7] || '').trim().toUpperCase();
+    const txStatus = txStatusById.get(id) || '';
+
+    const reviewResolved = action === 'APPROVED' || action === 'IGNORED';
+    const txResolved =
+      txStatus === 'MATCH_FOUND' ||
+      txStatus === 'INSERTED' ||
+      txStatus === 'IGNORED';
+
+    if (!reviewResolved || !txResolved) return;
+
+    archiveRows.push(row);
+    deleteRows.push(index + 2);
+  });
+
+  if (!archiveRows.length) return 0;
+
+  archiveSheet
+    .getRange(archiveSheet.getLastRow() + 1, 1, archiveRows.length, lastCol)
+    .setValues(archiveRows);
+
+  deleteRows.reverse().forEach(function(rowNumber) {
+    reviewSheet.deleteRow(rowNumber);
+  });
+
+  return archiveRows.length;
+}
+
+function familyFinancesEnsureReviewEditTrigger_(ss) {
+  try {
+    const handler = 'familyFinancesOnEdit';
+    const exists = ScriptApp.getProjectTriggers().some(function(trigger) {
+      return trigger.getHandlerFunction() === handler;
+    });
+
+    if (exists) return 'existing';
+
+    ScriptApp.newTrigger(handler)
+      .forSpreadsheet(ss)
+      .onEdit()
+      .create();
+
+    return 'created';
+  } catch (err) {
+    // The existing 15-minute trigger must keep working even if trigger creation
+    // is temporarily blocked. A later run can try again.
+    return 'error: ' + String(err && err.message ? err.message : err);
+  }
+}
+
+function familyFinancesOnEdit(e) {
+  try {
+    if (!e || !e.range) return;
+
+    const ss = e.source;
+    if (!ss || ss.getId() !== FAMILY_FINANCES_TEST_SHEET_ID) return;
+
+    const sheet = e.range.getSheet();
+    if (!sheet || sheet.getName() !== 'Plaid_Review') return;
+
+    // Action column H only.
+    if (e.range.getColumn() !== 8 || e.range.getNumColumns() !== 1) return;
+
+    const action = String(e.value || '').trim().toUpperCase();
+    if (action !== 'APPROVE' && action !== 'IGNORE') return;
+
+    runFamilyFinancesSheetSync();
+  } catch (err) {
+    const ss = familyFinancesSpreadsheet_();
+    const logSheet = ss.getSheetByName('Sync_Log');
+
+    if (logSheet) {
+      logSheet.appendRow([
+        new Date(),
+        'Family Finances Review Edit',
+        '',
+        'Error',
+        String(err && err.message ? err.message : err)
+      ]);
+    }
+  }
+}
+
 function familyFinancesCountPendingApprovals_(reviewSheet) {
   if (!reviewSheet || reviewSheet.getLastRow() < 2) return 0;
 
@@ -600,6 +863,11 @@ function runFamilyFinancesSheetSync() {
   let skipped = 0;
   let closedReview = 0;
   let approvalsProcessed = 0;
+  let ignoresProcessed = 0;
+  let repairedMonthTabs = 0;
+  let recoveredApprovals = 0;
+  let archivedReview = 0;
+  let reviewEditTrigger = 'not checked';
 
   try {
     const autoUpdateMatched = familyFinancesSetting_('Auto Update Matched Rows', true);
@@ -896,6 +1164,17 @@ function runFamilyFinancesSheetSync() {
       }
     }
 
+    // Normalize monthly-tab cells before approval processing. Google Sheets can
+    // interpret names such as "09-September 2026" as dates; the pipeline needs
+    // the literal sheet name.
+    const repairRun = familyFinancesRepairMonthlyTabValues_(txSheet, reviewSheet);
+    repairedMonthTabs = repairRun.repaired;
+    recoveredApprovals = repairRun.recoveredApprovals;
+
+    // If Steve has chosen a category and set Action=IGNORE, finish that decision
+    // automatically too.
+    ignoresProcessed = familyFinancesProcessIgnoredReviews_(reviewSheet);
+
     // If Steve has chosen a category and set Action=APPROVE, finish the rest
     // of the safe pipeline automatically instead of requiring menu clicks.
     const approvalRun = familyFinancesProcessApprovedReviews_(reviewSheet);
@@ -905,6 +1184,14 @@ function runFamilyFinancesSheetSync() {
     // cleans up older review entries that were created before the matcher
     // learned how to resolve them automatically.
     closedReview = familyFinancesCloseResolvedReviews_(txSheet, reviewSheet);
+
+    // Keep Plaid_Review as an active work queue instead of a history dump.
+    archivedReview = familyFinancesArchiveResolvedReviews_(ss, txSheet, reviewSheet);
+
+    // One-time self-install: the existing 15-minute trigger will create the
+    // review onEdit trigger after this code is pasted. After that, choosing
+    // APPROVE or IGNORE runs the workflow immediately from the sheet.
+    reviewEditTrigger = familyFinancesEnsureReviewEditTrigger_(ss);
 
     const seconds = Math.round((Date.now() - started.getTime()) / 1000);
     const details =
@@ -916,7 +1203,12 @@ function runFamilyFinancesSheetSync() {
       'Pending: ' + pending + '. ' +
       'Duplicate review skipped: ' + skipped + '. ' +
       'Approved reviews processed: ' + approvalsProcessed + '. ' +
+      'Ignored reviews processed: ' + ignoresProcessed + '. ' +
+      'Repaired month tabs: ' + repairedMonthTabs + '. ' +
+      'Recovered approvals: ' + recoveredApprovals + '. ' +
       'Closed stale review: ' + closedReview + '. ' +
+      'Archived resolved review: ' + archivedReview + '. ' +
+      'Review edit trigger: ' + reviewEditTrigger + '. ' +
       'Historical backlog was not reprocessed.';
 
     logSheet.appendRow([
@@ -937,7 +1229,12 @@ function runFamilyFinancesSheetSync() {
       pending: pending,
       skipped: skipped,
       approvalsProcessed: approvalsProcessed,
-      closedReview: closedReview
+      ignoresProcessed: ignoresProcessed,
+      repairedMonthTabs: repairedMonthTabs,
+      recoveredApprovals: recoveredApprovals,
+      closedReview: closedReview,
+      archivedReview: archivedReview,
+      reviewEditTrigger: reviewEditTrigger
     };
   } catch (err) {
     logSheet.appendRow([
@@ -960,24 +1257,32 @@ function installFamilyFinancesSheetSyncTriggers() {
     throw new Error('Trigger install is locked to the TEST spreadsheet.');
   }
 
-  const handler = 'runFamilyFinancesSheetSync';
+  const handlers = new Set([
+    'runFamilyFinancesSheetSync',
+    'familyFinancesOnEdit'
+  ]);
 
   ScriptApp.getProjectTriggers()
     .filter(function(trigger) {
-      return trigger.getHandlerFunction() === handler;
+      return handlers.has(trigger.getHandlerFunction());
     })
     .forEach(function(trigger) {
       ScriptApp.deleteTrigger(trigger);
     });
 
-  ScriptApp.newTrigger(handler)
+  ScriptApp.newTrigger('runFamilyFinancesSheetSync')
     .timeBased()
     .everyMinutes(15)
     .create();
 
-  ScriptApp.newTrigger(handler)
+  ScriptApp.newTrigger('runFamilyFinancesSheetSync')
     .forSpreadsheet(ss)
     .onOpen()
+    .create();
+
+  ScriptApp.newTrigger('familyFinancesOnEdit')
+    .forSpreadsheet(ss)
+    .onEdit()
     .create();
 
   const logSheet = ss.getSheetByName('Sync_Log');
@@ -988,12 +1293,12 @@ function installFamilyFinancesSheetSyncTriggers() {
       'Install Family Finances Sync Triggers',
       '',
       'Complete',
-      'Installed 15-minute time trigger and spreadsheet-open catch-up trigger for the TEST workbook.'
+      'Installed 15-minute, spreadsheet-open, and Plaid_Review edit triggers for the TEST workbook.'
     ]);
   }
 
   ss.toast(
-    'Installed TEST sync triggers: every 15 minutes + when the workbook opens.',
+    'Installed TEST sync triggers: every 15 minutes + workbook open + review APPROVE/IGNORE.',
     'Family Finances Sync',
     10
   );
