@@ -8,6 +8,7 @@ for (const key of required) if (!process.env[key]) throw new Error(`Missing ${ke
 const serviceAccount = JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT);
 const apply = process.argv.includes('--apply');
 const sheetName = 'Plaid_Transactions';
+const balanceSheetName = 'Plaid_Balances';
 const cutoff = process.env.SHEETS_START_DATE || new Date(Date.now() - 35 * 86400000).toISOString().slice(0, 10);
 if (!/^\d{4}-\d{2}-\d{2}$/.test(cutoff)) throw new Error('SHEETS_START_DATE must be YYYY-MM-DD');
 if (!['sandbox', 'development', 'production'].includes(process.env.PLAID_ENV)) throw new Error('Invalid PLAID_ENV');
@@ -68,6 +69,21 @@ async function sheetsPut(token, range, values) {
     body: JSON.stringify({ range, majorDimension: 'ROWS', values })
   });
   if (!response.ok) throw new Error(`Sheets PUT failed (${response.status}): ${(await response.text()).slice(0, 250)}`);
+  return response.json();
+}
+
+async function sheetsClear(token, range) {
+  const id = encodeURIComponent(process.env.SHEETS_SPREADSHEET_ID);
+  const url = `https://sheets.googleapis.com/v4/spreadsheets/${id}/values/${encodeURIComponent(range)}:clear`;
+  const response = await fetch(url, {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${token}`,
+      'Content-Type': 'application/json'
+    },
+    body: '{}'
+  });
+  if (!response.ok) throw new Error(`Sheets CLEAR failed (${response.status}): ${(await response.text()).slice(0, 250)}`);
   return response.json();
 }
 
@@ -196,6 +212,8 @@ async function main() {
   const staged = [];
   const replacements = [];
   const counts = [];
+  const balanceRows = [];
+  const balancePulledAt = new Date().toISOString();
 
   for (const doc of itemDocs.docs) {
     const item = doc.data();
@@ -211,16 +229,53 @@ async function main() {
     try {
       accounts = await plaidAccounts_(item.accessToken, item.institutionName);
     } catch (error) {
-      if (error?.plaidCode === 'ITEM_LOGIN_REQUIRED') {
-        counts.push({
-          institution: item.institutionName || 'Unknown bank',
-          skipped: 'ITEM_LOGIN_REQUIRED - reconnect this Plaid item in SmartMoney'
-        });
-        continue;
-      }
-      throw error;
+      const code = error?.plaidCode || 'PLAID_ERROR';
+      counts.push({
+        institution: item.institutionName || 'Unknown bank',
+        skipped: `${code} - balance/transaction sync skipped for this institution`
+      });
+      balanceRows.push([
+        bank,
+        item.institutionName || 'Unknown bank',
+        '',
+        '',
+        '',
+        '',
+        balancePulledAt,
+        'ERROR',
+        String(error?.message || code).slice(0, 250)
+      ]);
+      continue;
     }
     const selected = accounts.filter(a => a.type === 'depository' && a.subtype === 'checking');
+
+    if (!selected.length) {
+      balanceRows.push([
+        bank,
+        item.institutionName || 'Unknown bank',
+        '',
+        '',
+        '',
+        '',
+        balancePulledAt,
+        'NO CHECKING',
+        'No checking account returned by Plaid accountsGet.'
+      ]);
+    } else {
+      selected.forEach(account => {
+        balanceRows.push([
+          bank,
+          item.institutionName || 'Unknown bank',
+          account.name || 'Checking',
+          account.mask || '',
+          Number.isFinite(Number(account.balances?.current)) ? Number(account.balances.current) : '',
+          Number.isFinite(Number(account.balances?.available)) ? Number(account.balances.available) : '',
+          balancePulledAt,
+          'OK',
+          'Plaid accountsGet snapshot'
+        ]);
+      });
+    }
     const byId = new Map(selected.map(a => [a.account_id, a]));
     if (!selected.length) continue;
 
@@ -257,8 +312,7 @@ async function main() {
           const existing = knownById.get(pendingId);
           const replacementRow = rowFor(
             tx,
-            byId.get(tx.account_id),
-            item.institutionName || 'Unknown bank',
+            byId.get(tx.account_id),            item.institutionName || 'Unknown bank',
             bank
           );
           replacements.push({ sheetRow: existing.sheetRow, values: replacementRow, pendingId, postedId: tx.transaction_id });
@@ -296,6 +350,7 @@ async function main() {
     mode: apply ? 'apply' : 'preview',
     since: cutoff,
     counts,
+    balanceRows: balanceRows.length,
     totalNew: staged.length,
     totalPostedReplacements: replacements.length
   }, null, 2));
@@ -303,6 +358,20 @@ async function main() {
   if (!apply) return;
 
   await formatStagingDateColumn(token);
+
+  await sheetsClear(token, `${balanceSheetName}!A2:I200`);
+  await sheetsPut(token, `${balanceSheetName}!A1:I${Math.max(2, balanceRows.length + 1)}`, [[
+    'Bank',
+    'Institution',
+    'Account',
+    'Mask',
+    'Current',
+    'Available',
+    'Pulled At',
+    'Status',
+    'Note'
+  ], ...balanceRows]);
+  console.log(`Updated ${balanceSheetName} with ${balanceRows.length} Plaid balance row(s).`);
 
   for (const replacement of replacements) {
     const range = `${sheetName}!A${replacement.sheetRow}:K${replacement.sheetRow}`;
