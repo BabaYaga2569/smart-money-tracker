@@ -198,6 +198,76 @@ function familyFinancesExistingReviewIds_(reviewSheet) {
   return ids;
 }
 
+
+function familyFinancesCloseResolvedReviews_(txSheet, reviewSheet) {
+  if (
+    !txSheet ||
+    !reviewSheet ||
+    txSheet.getLastRow() < 2 ||
+    reviewSheet.getLastRow() < 2
+  ) {
+    return 0;
+  }
+
+  const txRows = txSheet
+    .getRange(2, 1, txSheet.getLastRow() - 1, 11)
+    .getValues();
+
+  const resolvedById = new Map();
+
+  txRows.forEach(function(row) {
+    const transactionId = String(row[0] || '').trim();
+    const status = String(row[7] || '').trim().toUpperCase();
+
+    if (!transactionId) return;
+    if (status !== 'MATCH_FOUND' && status !== 'INSERTED') return;
+
+    resolvedById.set(transactionId, {
+      status: status,
+      monthlyTab: String(row[8] || '').trim(),
+      matchedRow: row[9]
+    });
+  });
+
+  if (!resolvedById.size) return 0;
+
+  const reviewRows = reviewSheet
+    .getRange(2, 1, reviewSheet.getLastRow() - 1, 10)
+    .getValues();
+
+  let closed = 0;
+
+  reviewRows.forEach(function(row, index) {
+    const transactionId = String(row[0] || '').trim();
+    const action = String(row[7] || '').trim().toUpperCase();
+    const resolved = resolvedById.get(transactionId);
+
+    // Never overwrite a decision the user already made.
+    if (!resolved || action) return;
+
+    const reviewRow = index + 2;
+    const matchedLocation = resolved.matchedRow
+      ? resolved.monthlyTab + ' row ' + resolved.matchedRow
+      : resolved.monthlyTab;
+
+    reviewSheet.getRange(reviewRow, 7, 1, 4).setValues([[
+      resolved.status === 'MATCH_FOUND'
+        ? 'Resolved automatically - matched existing monthly row'
+        : 'Resolved automatically - transaction already inserted',
+      'IGNORED',
+      resolved.monthlyTab,
+      'Auto-closed by Family Finances sync: ' +
+        resolved.status +
+        (matchedLocation ? ' at ' + matchedLocation : '') +
+        '. No review action is needed.'
+    ]]);
+
+    closed++;
+  });
+
+  return closed;
+}
+
 function familyFinancesMerchantSuggestion_(ss, merchant, currentCategory) {
   let cleanMerchant = String(merchant || '').trim();
   let category = String(currentCategory || '').trim();
@@ -473,6 +543,7 @@ function runFamilyFinancesSheetSync() {
   let queued = 0;
   let pending = 0;
   let skipped = 0;
+  let closedReview = 0;
 
   try {
     const autoUpdateMatched = familyFinancesSetting_('Auto Update Matched Rows', true);
@@ -769,6 +840,11 @@ function runFamilyFinancesSheetSync() {
       }
     }
 
+    // Reconcile stale Plaid_Review rows after matching/insertion. This also
+    // cleans up older review entries that were created before the matcher
+    // learned how to resolve them automatically.
+    closedReview = familyFinancesCloseResolvedReviews_(txSheet, reviewSheet);
+
     const seconds = Math.round((Date.now() - started.getTime()) / 1000);
     const details =
       'Incremental sync complete in ' + seconds + 's. ' +
@@ -778,6 +854,7 @@ function runFamilyFinancesSheetSync() {
       'Queued review: ' + queued + '. ' +
       'Pending: ' + pending + '. ' +
       'Duplicate review skipped: ' + skipped + '. ' +
+      'Closed stale review: ' + closedReview + '. ' +
       'Historical backlog was not reprocessed.';
 
     logSheet.appendRow([
@@ -796,7 +873,8 @@ function runFamilyFinancesSheetSync() {
       alreadyEntered: alreadyEntered,
       queued: queued,
       pending: pending,
-      skipped: skipped
+      skipped: skipped,
+      closedReview: closedReview
     };
   } catch (err) {
     logSheet.appendRow([
