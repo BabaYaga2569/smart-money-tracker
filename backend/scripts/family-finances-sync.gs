@@ -180,6 +180,48 @@ function familyFinancesFindAlreadyEnteredCandidate_(monthSheet, merchant, amount
   return { status: 'ONE', candidates: candidates };
 }
 
+function familyFinancesFindExactBankAmountDateCandidate_(monthSheet, txDate, amount, bank) {
+  if (!monthSheet || monthSheet.getLastRow() < 2) {
+    return { status: 'NONE', candidates: [] };
+  }
+
+  const rows = monthSheet.getRange(2, 1, monthSheet.getLastRow() - 1, 6).getValues();
+  const candidates = [];
+  const wantedBank = familyFinancesNorm_(bank);
+
+  rows.forEach(function(row, index) {
+    const rowDate = row[0];
+    const rowActual = row[3];
+    const rowBank = row[4];
+
+    if (!(rowDate instanceof Date) || isNaN(rowDate.getTime())) return;
+    if (rowActual === '' || rowActual === null || !Number.isFinite(Number(rowActual))) return;
+    if (familyFinancesNorm_(rowBank) !== wantedBank) return;
+    if (!familyFinancesAmountsEqual_(rowActual, amount)) return;
+
+    const dayDifference = Math.abs(
+      (rowDate.getTime() - txDate.getTime()) / (1000 * 60 * 60 * 24)
+    );
+
+    // Banks commonly post one or more days after the user entered the purchase.
+    // Exact bank + exact cleared amount + a tight date window is strong enough
+    // to recognize an already-entered row even when the merchant/memo wording
+    // is completely different. If more than one row qualifies, never guess.
+    if (dayDifference > 4) return;
+
+    candidates.push({
+      rowNumber: index + 2,
+      values: row,
+      dayDifference: dayDifference
+    });
+  });
+
+  if (candidates.length === 0) return { status: 'NONE', candidates: candidates };
+  if (candidates.length > 1) return { status: 'MULTIPLE', candidates: candidates };
+
+  return { status: 'ONE', candidates: candidates };
+}
+
 function familyFinancesAppendMarker_(existingNotes, message) {
   const notes = String(existingNotes || '').trim();
   const marker = FAMILY_FINANCES_SYNC_MARKER + ' ' + message;
@@ -933,9 +975,52 @@ function runFamilyFinancesSheetSync() {
           currentCategory
         );
 
-        // Keep known mixed merchants out of automatic clearing.
-        const isMixed = reviewMixedMerchants && familyFinancesIsMixedMerchant_(originalMerchant);
+        // First, protect rows Steve already entered manually. This check is
+        // intentionally merchant-agnostic: bank memos and Steve's descriptions
+        // can be very different. Exact bank + exact cleared amount + a tight
+        // posting-date window is enough when there is only one candidate.
         const monthSheet = ss.getSheetByName(monthlyTab);
+        let exactEnteredResult = { status: 'NONE', candidates: [] };
+
+        if (monthSheet) {
+          exactEnteredResult = familyFinancesFindExactBankAmountDateCandidate_(
+            monthSheet,
+            dateValue,
+            amount,
+            bank
+          );
+        }
+
+        if (exactEnteredResult.status === 'ONE') {
+          const candidate = exactEnteredResult.candidates[0];
+          const matchedCategory = String(candidate.values[5] || '').trim();
+
+          if (matchedCategory) {
+            txSheet.getRange(sheetRow, 6).setValue(matchedCategory);
+          }
+
+          txSheet.getRange(sheetRow, 8, 1, 3).setValues([[
+            'MATCH_FOUND',
+            monthlyTab,
+            candidate.rowNumber
+          ]]);
+
+          txSheet.getRange(sheetRow, 11).setValue(
+            familyFinancesAppendMarker_(
+              originalNotes,
+              'already entered in ' + monthlyTab + ' row ' + candidate.rowNumber +
+              ' by exact bank + exact cleared amount within 4 days; merchant wording was not required; no monthly amount changed.'
+            )
+          );
+
+          alreadyEntered++;
+          continue;
+        }
+
+        // Keep known mixed merchants out of automatic clearing only after the
+        // exact already-entered check above. This prevents Walmart/Target/Sam's
+        // from duplicating rows Steve already entered himself.
+        const isMixed = reviewMixedMerchants && familyFinancesIsMixedMerchant_(originalMerchant);
 
         let plannedResult = { status: 'NONE', candidates: [] };
         let candidateResult = { status: 'NONE', candidates: [] };
@@ -1126,6 +1211,8 @@ function runFamilyFinancesSheetSync() {
           reason = 'Multiple planned monthly matches - review required';
         } else if (candidateResult.status === 'MULTIPLE') {
           reason = 'Multiple possible monthly matches - review required';
+        } else if (exactEnteredResult.status === 'MULTIPLE') {
+          reason = 'Multiple exact bank/amount/date monthly matches - review required';
         } else if (alreadyEnteredResult.status === 'MULTIPLE') {
           reason = 'Multiple already-entered monthly matches - review required';
         } else if (candidateResult.status === 'ONE' && !autoUpdateMatched) {
