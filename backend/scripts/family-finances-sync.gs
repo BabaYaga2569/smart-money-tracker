@@ -255,7 +255,7 @@ function familyFinancesCloseResolvedReviews_(txSheet, reviewSheet) {
         ? 'Resolved automatically - matched existing monthly row'
         : 'Resolved automatically - transaction already inserted',
       'IGNORED',
-      resolved.monthlyTab,
+      "'" + resolved.monthlyTab,
       'Auto-closed by Family Finances sync: ' +
         resolved.status +
         (matchedLocation ? ' at ' + matchedLocation : '') +
