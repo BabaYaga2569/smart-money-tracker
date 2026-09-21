@@ -516,6 +516,61 @@ function familyFinancesQueueReview_(
   return true;
 }
 
+
+function familyFinancesCountPendingApprovals_(reviewSheet) {
+  if (!reviewSheet || reviewSheet.getLastRow() < 2) return 0;
+
+  const actions = reviewSheet
+    .getRange(2, 8, reviewSheet.getLastRow() - 1, 1)
+    .getValues();
+
+  return actions.reduce(function(count, row) {
+    const action = String(row[0] || '').trim().toUpperCase();
+    return count + (action === 'APPROVE' ? 1 : 0);
+  }, 0);
+}
+
+function familyFinancesProcessApprovedReviews_(reviewSheet) {
+  const approvalCount = familyFinancesCountPendingApprovals_(reviewSheet);
+
+  if (!approvalCount) {
+    return {
+      approvalsFound: 0,
+      pipelineRan: false
+    };
+  }
+
+  const requiredFunctions = [
+    ['approveReviewedTransactions', typeof approveReviewedTransactions],
+    ['dryRunMatchExistingMonthlyRows', typeof dryRunMatchExistingMonthlyRows],
+    ['dryRunFindDateOrderRowsForReadyToInsert', typeof dryRunFindDateOrderRowsForReadyToInsert],
+    ['insertReadyToInsertTransactionsByDateOrder', typeof insertReadyToInsertTransactionsByDateOrder]
+  ];
+
+  const missing = requiredFunctions
+    .filter(function(item) { return item[1] !== 'function'; })
+    .map(function(item) { return item[0]; });
+
+  if (missing.length) {
+    throw new Error(
+      'Approved-review automation is missing required Code.gs function(s): ' +
+      missing.join(', ')
+    );
+  }
+
+  // One user decision should finish the safe pipeline:
+  // APPROVE -> READY -> existing-row check -> date-order plan -> INSERTED.
+  approveReviewedTransactions();
+  dryRunMatchExistingMonthlyRows();
+  dryRunFindDateOrderRowsForReadyToInsert();
+  insertReadyToInsertTransactionsByDateOrder();
+
+  return {
+    approvalsFound: approvalCount,
+    pipelineRan: true
+  };
+}
+
 function runFamilyFinancesSheetSync() {
   const ss = familyFinancesSpreadsheet_();
 
@@ -544,6 +599,7 @@ function runFamilyFinancesSheetSync() {
   let pending = 0;
   let skipped = 0;
   let closedReview = 0;
+  let approvalsProcessed = 0;
 
   try {
     const autoUpdateMatched = familyFinancesSetting_('Auto Update Matched Rows', true);
@@ -840,6 +896,11 @@ function runFamilyFinancesSheetSync() {
       }
     }
 
+    // If Steve has chosen a category and set Action=APPROVE, finish the rest
+    // of the safe pipeline automatically instead of requiring menu clicks.
+    const approvalRun = familyFinancesProcessApprovedReviews_(reviewSheet);
+    approvalsProcessed = approvalRun.approvalsFound;
+
     // Reconcile stale Plaid_Review rows after matching/insertion. This also
     // cleans up older review entries that were created before the matcher
     // learned how to resolve them automatically.
@@ -854,6 +915,7 @@ function runFamilyFinancesSheetSync() {
       'Queued review: ' + queued + '. ' +
       'Pending: ' + pending + '. ' +
       'Duplicate review skipped: ' + skipped + '. ' +
+      'Approved reviews processed: ' + approvalsProcessed + '. ' +
       'Closed stale review: ' + closedReview + '. ' +
       'Historical backlog was not reprocessed.';
 
@@ -874,6 +936,7 @@ function runFamilyFinancesSheetSync() {
       queued: queued,
       pending: pending,
       skipped: skipped,
+      approvalsProcessed: approvalsProcessed,
       closedReview: closedReview
     };
   } catch (err) {
