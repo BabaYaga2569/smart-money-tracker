@@ -229,6 +229,164 @@ function familyFinancesMerchantSuggestion_(ss, merchant, currentCategory) {
   return { merchant: cleanMerchant, category: category };
 }
 
+
+function familyFinancesAmountsEqual_(left, right) {
+  const a = Number(left);
+  const b = Number(right);
+
+  return Number.isFinite(a) &&
+    Number.isFinite(b) &&
+    Math.abs(a - b) <= 0.005;
+}
+
+function familyFinancesMerchantSharesCoreIdentity_(left, right) {
+  if (familyFinancesMerchantLooksSame_(left, right)) return true;
+
+  const aTokens = familyFinancesMerchantCoreTokens_(left);
+  const bTokens = familyFinancesMerchantCoreTokens_(right);
+
+  if (!aTokens.length || !bTokens.length) return false;
+
+  const bSet = new Set(bTokens);
+  const shared = aTokens.filter(function(token) {
+    return bSet.has(token);
+  });
+
+  if (shared.length >= 2) return true;
+  if (shared.length !== 1) return false;
+
+  const token = shared[0];
+
+  // Allow a single strong vendor token only when one side is essentially
+  // the vendor name by itself. Example: "Apple" -> "Family Apple Music".
+  return token.length >= 4 && (aTokens.length === 1 || bTokens.length === 1);
+}
+
+function familyFinancesFindAffirmPlanByPayment_(ss, amount) {
+  const affirmSheet = ss.getSheetByName('Affirms');
+
+  if (!affirmSheet || affirmSheet.getLastRow() < 11) {
+    return { status: 'NONE', plans: [] };
+  }
+
+  // Affirms table:
+  // A Plan ID, B Merchant, G Regular Payment.
+  const rows = affirmSheet
+    .getRange(11, 1, affirmSheet.getLastRow() - 10, 12)
+    .getValues();
+
+  const wanted = Math.abs(Number(amount));
+  const plans = [];
+
+  rows.forEach(function(row) {
+    const planId = String(row[0] || '').trim();
+    const merchant = String(row[1] || '').trim();
+    const regularPayment = Math.abs(Number(row[6]));
+
+    if (!planId || planId.toUpperCase() === 'TOTALS') return;
+    if (!Number.isFinite(regularPayment)) return;
+    if (Math.abs(regularPayment - wanted) > 0.005) return;
+
+    plans.push({
+      planId: planId,
+      merchant: merchant,
+      regularPayment: regularPayment
+    });
+  });
+
+  if (plans.length === 0) return { status: 'NONE', plans: plans };
+  if (plans.length > 1) return { status: 'MULTIPLE', plans: plans };
+
+  return { status: 'ONE', plans: plans };
+}
+
+function familyFinancesFindPlannedCandidate_(ss, monthSheet, txDate, merchant, amount, bank) {
+  if (!monthSheet || monthSheet.getLastRow() < 2) {
+    return { status: 'NONE', candidates: [] };
+  }
+
+  const merchantText = familyFinancesNorm_(merchant);
+  const bankText = familyFinancesNorm_(bank);
+  const isAffirm = merchantText.includes('affirm');
+
+  let affirmPlanResult = { status: 'NONE', plans: [] };
+
+  if (isAffirm) {
+    affirmPlanResult = familyFinancesFindAffirmPlanByPayment_(ss, amount);
+
+    // If the Affirm tracker itself is ambiguous, do not guess.
+    if (affirmPlanResult.status === 'MULTIPLE') {
+      return {
+        status: 'MULTIPLE',
+        candidates: [],
+        reason: 'Affirms tracker has multiple plans with this payment amount.'
+      };
+    }
+
+    // Require the amount to exist in the Affirms tracker before using the
+    // Affirm-specific planned-row shortcut.
+    if (affirmPlanResult.status !== 'ONE') {
+      return { status: 'NONE', candidates: [] };
+    }
+  }
+
+  const rows = monthSheet.getRange(2, 1, monthSheet.getLastRow() - 1, 6).getValues();
+  const candidates = [];
+
+  rows.forEach(function(row, index) {
+    const rowDateRaw = row[0];
+    const rowMerchant = row[1];
+    const rowForecast = row[2];
+    const rowActual = row[3];
+    const rowBank = row[4];
+
+    if (!rowMerchant) return;
+    if (!familyFinancesAmountsEqual_(rowForecast, amount)) return;
+
+    // Planned rows may not have a bank assigned yet. A nonblank conflicting
+    // bank is a reason to reject the candidate.
+    const rowBankText = familyFinancesNorm_(rowBank);
+    if (rowBankText && bankText && rowBankText !== bankText) return;
+
+    // If an actual amount is already present, it must be the same amount.
+    if (
+      rowActual !== '' &&
+      rowActual !== null &&
+      !familyFinancesAmountsEqual_(rowActual, amount)
+    ) {
+      return;
+    }
+
+    if (!(rowDateRaw instanceof Date) || isNaN(rowDateRaw.getTime())) return;
+
+    const dayDifference = Math.abs(
+      (rowDateRaw.getTime() - txDate.getTime()) / (1000 * 60 * 60 * 24)
+    );
+
+    if (dayDifference > 7) return;
+
+    const rowMerchantText = familyFinancesNorm_(rowMerchant);
+
+    if (isAffirm) {
+      if (!rowMerchantText.includes('affirm')) return;
+    } else if (!familyFinancesMerchantSharesCoreIdentity_(merchant, rowMerchant)) {
+      return;
+    }
+
+    candidates.push({
+      rowNumber: index + 2,
+      values: row,
+      source: isAffirm ? 'Affirms tracker + monthly planned row' : 'monthly planned row',
+      affirmPlan: isAffirm ? affirmPlanResult.plans[0] : null
+    });
+  });
+
+  if (candidates.length === 0) return { status: 'NONE', candidates: candidates };
+  if (candidates.length > 1) return { status: 'MULTIPLE', candidates: candidates };
+
+  return { status: 'ONE', candidates: candidates };
+}
+
 function familyFinancesFindVerifiedCandidate_(monthSheet, txDate, merchant, amount, bank) {
   if (!monthSheet || monthSheet.getLastRow() < 2) {
     return { status: 'NONE', candidates: [] };
@@ -384,7 +542,83 @@ function runFamilyFinancesSheetSync() {
         const isMixed = reviewMixedMerchants && familyFinancesIsMixedMerchant_(originalMerchant);
         const monthSheet = ss.getSheetByName(monthlyTab);
 
+        let plannedResult = { status: 'NONE', candidates: [] };
         let candidateResult = { status: 'NONE', candidates: [] };
+
+        if (!isMixed && monthSheet) {
+          plannedResult = familyFinancesFindPlannedCandidate_(
+            ss,
+            monthSheet,
+            dateValue,
+            originalMerchant,
+            amount,
+            bank
+          );
+        }
+
+        if (
+          autoUpdateMatched &&
+          !isMixed &&
+          plannedResult.status === 'ONE'
+        ) {
+          const candidate = plannedResult.candidates[0];
+          const actual = candidate.values[3];
+          const matchedCategory = String(candidate.values[5] || '').trim();
+
+          if (matchedCategory) {
+            txSheet.getRange(sheetRow, 6).setValue(matchedCategory);
+          }
+
+          if (actual === '' || actual === null) {
+            // Column D only. Column C forecast is never changed.
+            monthSheet.getRange(candidate.rowNumber, 4).setValue(amount);
+
+            txSheet.getRange(sheetRow, 8, 1, 3).setValues([[
+              'MATCH_FOUND',
+              monthlyTab,
+              candidate.rowNumber
+            ]]);
+
+            let sourceText = candidate.source;
+            if (candidate.affirmPlan) {
+              sourceText +=
+                ' (' + candidate.affirmPlan.planId +
+                ' / ' + candidate.affirmPlan.merchant + ')';
+            }
+
+            txSheet.getRange(sheetRow, 11).setValue(
+              familyFinancesAppendMarker_(
+                originalNotes,
+                'planned row cleared in ' + monthlyTab +
+                ' row ' + candidate.rowNumber +
+                ' using ' + sourceText +
+                '; forecast preserved.'
+              )
+            );
+
+            cleared++;
+            continue;
+          }
+
+          if (familyFinancesAmountsEqual_(actual, amount)) {
+            txSheet.getRange(sheetRow, 8, 1, 3).setValues([[
+              'MATCH_FOUND',
+              monthlyTab,
+              candidate.rowNumber
+            ]]);
+
+            txSheet.getRange(sheetRow, 11).setValue(
+              familyFinancesAppendMarker_(
+                originalNotes,
+                'planned monthly row already has the exact cleared amount in ' +
+                monthlyTab + ' row ' + candidate.rowNumber + '.'
+              )
+            );
+
+            alreadyEntered++;
+            continue;
+          }
+        }
 
         if (!isMixed && monthSheet) {
           candidateResult = familyFinancesFindVerifiedCandidate_(
@@ -493,6 +727,8 @@ function runFamilyFinancesSheetSync() {
           reason = 'Mixed merchant - review required before monthly update';
         } else if (!monthSheet) {
           reason = 'Monthly tab not found - review required';
+        } else if (plannedResult.status === 'MULTIPLE') {
+          reason = 'Multiple planned monthly matches - review required';
         } else if (candidateResult.status === 'MULTIPLE') {
           reason = 'Multiple possible monthly matches - review required';
         } else if (alreadyEnteredResult.status === 'MULTIPLE') {
