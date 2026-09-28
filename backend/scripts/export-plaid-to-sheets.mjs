@@ -8,6 +8,7 @@ for (const key of required) if (!process.env[key]) throw new Error(`Missing ${ke
 const serviceAccount = JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT);
 const apply = process.argv.includes('--apply');
 const liveBalances = process.argv.includes('--live-balances');
+const refreshTransactions = process.argv.includes('--refresh-transactions');
 const sheetName = 'Plaid_Transactions';
 const balanceSheetName = 'Plaid_Balances';
 const cutoff = process.env.SHEETS_START_DATE || new Date(Date.now() - 35 * 86400000).toISOString().slice(0, 10);
@@ -152,6 +153,15 @@ async function plaidAccounts_(accessToken, institutionName) {
   }
 }
 
+async function plaidRefreshTransactions_(accessToken, institutionName) {
+  try {
+    const response = await plaid.transactionsRefresh({ access_token: accessToken });
+    return response.data?.request_id || '';
+  } catch (error) {
+    throw plaidError_(error, `Plaid transactionsRefresh failed for ${institutionName || 'Unknown bank'}`);
+  }
+}
+
 async function plaidSync_(accessToken, cursor, institutionName) {
   try {
     return (await plaid.transactionsSync({ access_token: accessToken, cursor })).data;
@@ -228,6 +238,18 @@ async function main() {
     if (!bank) {
       counts.push({ institution: item.institutionName || 'Unknown bank', skipped: 'Not in active Account_Map' });
       continue;
+    }
+
+    let transactionRefresh = 'not-requested';
+    let transactionRefreshRequestId = '';
+    if (refreshTransactions) {
+      try {
+        transactionRefreshRequestId = await plaidRefreshTransactions_(item.accessToken, item.institutionName);
+        transactionRefresh = 'ok';
+      } catch (error) {
+        transactionRefresh = error?.plaidCode || 'PLAID_ERROR';
+        console.warn(`Transaction refresh failed for ${item.institutionName || 'Unknown bank'}: ${error.message}`);
+      }
     }
 
     let accounts;
@@ -346,6 +368,8 @@ async function main() {
     counts.push({
       institution: item.institutionName || 'Unknown bank',
       checkingAccounts: selected.length,
+      transactionRefresh,
+      transactionRefreshRequestId,
       newTransactions: newCount,
       postedReplacements: replacementCount
     });
@@ -354,6 +378,7 @@ async function main() {
   console.log(JSON.stringify({
     mode: apply ? 'apply' : 'preview',
     balanceMode: liveBalances ? 'live-balance' : 'cached-accounts',
+    transactionRefreshMode: refreshTransactions ? 'on-demand' : 'cached',
     since: cutoff,
     counts,
     balanceRows: balanceRows.length,
