@@ -7,6 +7,7 @@ const required = ['FIREBASE_SERVICE_ACCOUNT', 'PLAID_CLIENT_ID', 'PLAID_SECRET',
 for (const key of required) if (!process.env[key]) throw new Error(`Missing ${key}`);
 const serviceAccount = JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT);
 const apply = process.argv.includes('--apply');
+const liveBalances = process.argv.includes('--live-balances');
 const sheetName = 'Plaid_Transactions';
 const balanceSheetName = 'Plaid_Balances';
 const cutoff = process.env.SHEETS_START_DATE || new Date(Date.now() - 35 * 86400000).toISOString().slice(0, 10);
@@ -141,9 +142,13 @@ function plaidError_(error, context) {
 
 async function plaidAccounts_(accessToken, institutionName) {
   try {
-    return (await plaid.accountsGet({ access_token: accessToken })).data.accounts;
+    const response = liveBalances
+      ? await plaid.accountsBalanceGet({ access_token: accessToken })
+      : await plaid.accountsGet({ access_token: accessToken });
+    return response.data.accounts;
   } catch (error) {
-    throw plaidError_(error, `Plaid accountsGet failed for ${institutionName || 'Unknown bank'}`);
+    const operation = liveBalances ? 'accountsBalanceGet' : 'accountsGet';
+    throw plaidError_(error, `Plaid ${operation} failed for ${institutionName || 'Unknown bank'}`);
   }
 }
 
@@ -259,7 +264,7 @@ async function main() {
         '',
         balancePulledAt,
         'NO CHECKING',
-        'No checking account returned by Plaid accountsGet.'
+        liveBalances ? 'No checking account returned by Plaid accountsBalanceGet.' : 'No checking account returned by Plaid accountsGet.'
       ]);
     } else {
       selected.forEach(account => {
@@ -272,7 +277,7 @@ async function main() {
           Number.isFinite(Number(account.balances?.available)) ? Number(account.balances.available) : '',
           balancePulledAt,
           'OK',
-          'Plaid accountsGet snapshot'
+          liveBalances ? 'Plaid accountsBalanceGet live snapshot' : 'Plaid accountsGet snapshot'
         ]);
       });
     }
@@ -348,6 +353,7 @@ async function main() {
 
   console.log(JSON.stringify({
     mode: apply ? 'apply' : 'preview',
+    balanceMode: liveBalances ? 'live-balance' : 'cached-accounts',
     since: cutoff,
     counts,
     balanceRows: balanceRows.length,
