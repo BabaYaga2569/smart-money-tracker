@@ -164,10 +164,45 @@ async function plaidRefreshTransactions_(accessToken, institutionName) {
 
 async function plaidSync_(accessToken, cursor, institutionName) {
   try {
-    return (await plaid.transactionsSync({ access_token: accessToken, cursor })).data;
+    return (await plaid.transactionsSync({
+      access_token: accessToken,
+      cursor,
+      count: 500
+    })).data;
   } catch (error) {
     throw plaidError_(error, `Plaid transactionsSync failed for ${institutionName || 'Unknown bank'}`);
   }
+}
+
+async function plaidSyncAllPages_(accessToken, startCursor, institutionName) {
+  for (let attempt = 1; attempt <= 4; attempt++) {
+    let cursor = startCursor;
+    let more = true;
+    let pages = 0;
+    const updates = [];
+
+    try {
+      do {
+        const data = await plaidSync_(accessToken, cursor, institutionName);
+        updates.push(...data.added, ...data.modified);
+        cursor = data.next_cursor;
+        more = data.has_more;
+        if (++pages > 100) throw new Error('Plaid pagination limit reached');
+      } while (more);
+
+      return { updates, nextCursor: cursor, pages, attempts: attempt };
+    } catch (error) {
+      if (error?.plaidCode === 'TRANSACTIONS_SYNC_MUTATION_DURING_PAGINATION' && attempt < 4) {
+        console.warn(
+          `Plaid transaction data changed during pagination for ${institutionName || 'Unknown bank'}; restarting from the original cursor (attempt ${attempt + 1}/4).`
+        );
+        continue;
+      }
+      throw error;
+    }
+  }
+
+  throw new Error(`Plaid sync retries exhausted for ${institutionName || 'Unknown bank'}`);
 }
 
 function rowFor(transaction, account, institution, bank) {
@@ -306,70 +341,62 @@ async function main() {
     const byId = new Map(selected.map(a => [a.account_id, a]));
     if (!selected.length) continue;
 
-    let cursor = null;
-    let more = true;
-    let pages = 0;
     let newCount = 0;
     let replacementCount = 0;
+    let syncResult;
 
-    do {
-      let data;
-      try {
-        data = await plaidSync_(item.accessToken, cursor, item.institutionName);
-      } catch (error) {
-        if (error?.plaidCode === 'ITEM_LOGIN_REQUIRED') {
-          counts.push({
-            institution: item.institutionName || 'Unknown bank',
-            skipped: 'ITEM_LOGIN_REQUIRED - reconnect this Plaid item in SmartMoney'
-          });
-          more = false;
-          cursor = null;
-          break;
-        }
-        throw error;
+    try {
+      syncResult = await plaidSyncAllPages_(item.accessToken, null, item.institutionName);
+    } catch (error) {
+      if (error?.plaidCode === 'ITEM_LOGIN_REQUIRED') {
+        counts.push({
+          institution: item.institutionName || 'Unknown bank',
+          skipped: 'ITEM_LOGIN_REQUIRED - reconnect this Plaid item in SmartMoney'
+        });
+        continue;
       }
+      throw error;
+    }
 
-      for (const tx of [...data.added, ...data.modified]) {
-        if (!byId.has(tx.account_id) || tx.date < cutoff) continue;
+    for (const tx of syncResult.updates) {
+      if (!byId.has(tx.account_id) || tx.date < cutoff) continue;
 
-        if (knownById.has(tx.transaction_id)) continue;
+      if (knownById.has(tx.transaction_id)) continue;
 
-        const pendingId = String(tx.pending_transaction_id || '').trim();
-        if (!tx.pending && pendingId && knownById.has(pendingId)) {
-          const existing = knownById.get(pendingId);
-          const replacementRow = rowFor(
-            tx,
-            byId.get(tx.account_id),            item.institutionName || 'Unknown bank',
-            bank
-          );
-          replacements.push({ sheetRow: existing.sheetRow, values: replacementRow, pendingId, postedId: tx.transaction_id });
-          knownById.delete(pendingId);
-          knownById.set(tx.transaction_id, { sheetRow: existing.sheetRow, row: replacementRow });
-          replacementCount++;
-          continue;
-        }
-
-        const newRow = rowFor(
+      const pendingId = String(tx.pending_transaction_id || '').trim();
+      if (!tx.pending && pendingId && knownById.has(pendingId)) {
+        const existing = knownById.get(pendingId);
+        const replacementRow = rowFor(
           tx,
           byId.get(tx.account_id),
           item.institutionName || 'Unknown bank',
           bank
         );
-        staged.push(newRow);
-        knownById.set(tx.transaction_id, { sheetRow: null, row: newRow });
-        newCount++;
+        replacements.push({ sheetRow: existing.sheetRow, values: replacementRow, pendingId, postedId: tx.transaction_id });
+        knownById.delete(pendingId);
+        knownById.set(tx.transaction_id, { sheetRow: existing.sheetRow, row: replacementRow });
+        replacementCount++;
+        continue;
       }
 
-      cursor = data.next_cursor;
-      more = data.has_more;
-      if (++pages > 100) throw new Error('Plaid pagination limit reached; no rows written');
-    } while (more);
+      const newRow = rowFor(
+        tx,
+        byId.get(tx.account_id),
+        item.institutionName || 'Unknown bank',
+        bank
+      );
+      staged.push(newRow);
+      knownById.set(tx.transaction_id, { sheetRow: null, row: newRow });
+      newCount++;
+    }
 
     counts.push({
       institution: item.institutionName || 'Unknown bank',
       checkingAccounts: selected.length,
       transactionRefresh,
       transactionRefreshRequestId,
+      syncPages: syncResult.pages,
+      syncAttempts: syncResult.attempts,
       newTransactions: newCount,
       postedReplacements: replacementCount
     });
