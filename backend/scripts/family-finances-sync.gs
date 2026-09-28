@@ -598,9 +598,10 @@ function familyFinancesQueueReview_(
     category || 'Needs Review',
     reason,
     '',
-    "'" + monthlyTab,
+    monthlyTab,
     originalNotes || ''
   ]);
+  familyFinancesSetPlainText_(reviewSheet.getRange(reviewSheet.getLastRow(), 9), monthlyTab);
 
   existingReviewIds.add(String(transactionId));
   return true;
@@ -629,15 +630,21 @@ function familyFinancesQueueAutoApprove_(
     category,
     'Auto-approved: posted ordinary transaction with confident category and no monthly match',
     'APPROVE',
-    "'" + monthlyTab,
+    monthlyTab,
     originalNotes || ''
   ]);
+  familyFinancesSetPlainText_(reviewSheet.getRange(reviewSheet.getLastRow(), 9), monthlyTab);
 
   existingReviewIds.add(String(transactionId));
   return true;
 }
 
 
+
+function familyFinancesSetPlainText_(range, value) {
+  range.setNumberFormat('@');
+  range.setValue(String(value || ''));
+}
 
 function familyFinancesNormalizeMonthlyTabValue_(value, fallbackDate) {
   if (value instanceof Date && !isNaN(value.getTime())) {
@@ -680,7 +687,7 @@ function familyFinancesRepairMonthlyTabValues_(txSheet, reviewSheet) {
       const normalizedTab = familyFinancesNormalizeMonthlyTabValue_(row[8], dateValue);
 
       if (normalizedTab && String(row[8] || '').replace(/^'/, '').trim() !== normalizedTab) {
-        txSheet.getRange(index + 2, 9).setValue("'" + normalizedTab);
+        familyFinancesSetPlainText_(txSheet.getRange(index + 2, 9), normalizedTab);
       }
 
       txById.set(id, {
@@ -713,11 +720,11 @@ function familyFinancesRepairMonthlyTabValues_(txSheet, reviewSheet) {
         : String(row[8] || '').replace(/^'/, '').trim();
 
       if (normalizedTab && currentTabText !== normalizedTab) {
-        reviewSheet.getRange(reviewRow, 9).setValue("'" + normalizedTab);
+        familyFinancesSetPlainText_(reviewSheet.getRange(reviewRow, 9), normalizedTab);
         repaired++;
       } else if (normalizedTab && row[8] instanceof Date) {
         // Force the cell back to text even if the displayed text already looks right.
-        reviewSheet.getRange(reviewRow, 9).setValue("'" + normalizedTab);
+        familyFinancesSetPlainText_(reviewSheet.getRange(reviewRow, 9), normalizedTab);
         repaired++;
       }
 
@@ -731,8 +738,8 @@ function familyFinancesRepairMonthlyTabValues_(txSheet, reviewSheet) {
       ) {
         reviewSheet.getRange(reviewRow, 8).setValue('APPROVE');
         if (normalizedTab) {
-          reviewSheet.getRange(reviewRow, 9).setValue("'" + normalizedTab);
-          txSheet.getRange(tx.rowNumber, 9).setValue("'" + normalizedTab);
+          familyFinancesSetPlainText_(reviewSheet.getRange(reviewRow, 9), normalizedTab);
+          familyFinancesSetPlainText_(txSheet.getRange(tx.rowNumber, 9), normalizedTab);
         }
         txSheet.getRange(tx.rowNumber, 11).setValue(
           'Recovered approved review after monthly-tab text normalization; ready for automatic retry.'
@@ -1039,7 +1046,7 @@ function runFamilyFinancesSheetSync() {
         }
 
         const monthlyTab = familyFinancesMonthTabName_(dateValue);
-        txSheet.getRange(sheetRow, 9).setValue(monthlyTab);
+        familyFinancesSetPlainText_(txSheet.getRange(sheetRow, 9), monthlyTab);
 
         if (familyFinancesIsPending_(pendingValue)) {
           txSheet.getRange(sheetRow, 11).setValue(
