@@ -11,8 +11,8 @@
  * For each fresh item:
  * - pending bank items are marked and left alone until Plaid posts/replaces them
  * - verified non-mixed matches can update ONLY monthly Column D
- * - everything else is queued once in Plaid_Review
- * - no new monthly rows are inserted
+ * - safe, confidently categorized posted purchases can auto-insert
+ * - ambiguous merchants/categories are queued once in Plaid_Review
  *
  * This prevents the 15-minute job from re-processing the historical backlog.
  */
@@ -98,12 +98,60 @@ function familyFinancesIsMixedMerchant_(merchant) {
     'amazon',
     'costco',
     'sam s club',
-    'sams club'
+    'sams club',
+    'zelle',
+    'apple pay'
   ];
 
   return mixed.some(function(term) {
     return name.includes(term);
   });
+}
+
+function familyFinancesIsAutoInsertCategory_(category) {
+  const normalized = String(category || '').trim().toLowerCase();
+
+  // Only ordinary posted purchases/services are eligible for unattended insert.
+  // Transfers, income, credit-card payments, rent/car payments, refunds and
+  // anything uncategorized stay in review because they can change accounting
+  // semantics or duplicate a planned obligation.
+  const allowed = new Set([
+    'utilities',
+    'groceries',
+    'gas for cars',
+    'subscriptions',
+    'dining',
+    'shopping',
+    'health/medical',
+    'home/garden',
+    'bills/other',
+    'fees',
+    'entertainment'
+  ]);
+
+  return allowed.has(normalized);
+}
+
+function familyFinancesShouldAutoInsert_(
+  merchant,
+  category,
+  amount,
+  monthSheet,
+  matchResults
+) {
+  if (!monthSheet) return false;
+  if (!Number.isFinite(Number(amount)) || Number(amount) >= 0) return false;
+  if (familyFinancesIsMixedMerchant_(merchant)) return false;
+  if (!familyFinancesIsAutoInsertCategory_(category)) return false;
+
+  const results = matchResults || [];
+  if (results.some(function(result) {
+    return result && result.status && result.status !== 'NONE';
+  })) {
+    return false;
+  }
+
+  return true;
 }
 
 function familyFinancesMerchantCoreTokens_(value) {
@@ -558,6 +606,37 @@ function familyFinancesQueueReview_(
   return true;
 }
 
+function familyFinancesQueueAutoApprove_(
+  reviewSheet,
+  existingReviewIds,
+  transactionId,
+  dateValue,
+  merchant,
+  amount,
+  bank,
+  category,
+  monthlyTab,
+  originalNotes
+) {
+  if (existingReviewIds.has(String(transactionId))) return false;
+
+  reviewSheet.appendRow([
+    transactionId,
+    dateValue,
+    merchant,
+    amount,
+    bank,
+    category,
+    'Auto-approved: posted ordinary transaction with confident category and no monthly match',
+    'APPROVE',
+    "'" + monthlyTab,
+    originalNotes || ''
+  ]);
+
+  existingReviewIds.add(String(transactionId));
+  return true;
+}
+
 
 
 function familyFinancesNormalizeMonthlyTabValue_(value, fallbackDate) {
@@ -913,6 +992,7 @@ function runFamilyFinancesSheetSync() {
 
   try {
     const autoUpdateMatched = familyFinancesSetting_('Auto Update Matched Rows', true);
+    const autoInsertConfident = familyFinancesSetting_('Auto Insert Confident New Transactions', true);
     const reviewMixedMerchants = familyFinancesSetting_('Review Mixed Merchants', true);
 
     const lastRow = txSheet.getLastRow();
@@ -1198,6 +1278,58 @@ function runFamilyFinancesSheetSync() {
           );
 
           alreadyEntered++;
+          continue;
+        }
+
+        // A genuinely new, posted, ordinary expense can now complete the same
+        // approval/insertion pipeline automatically. We still refuse to guess
+        // when there is any possible monthly match, an ambiguous merchant, a
+        // positive amount, or a category with transfer/debt/income semantics.
+        if (
+          autoInsertConfident &&
+          familyFinancesShouldAutoInsert_(
+            suggestion.merchant || originalMerchant,
+            suggestion.category,
+            amount,
+            monthSheet,
+            [
+              exactEnteredResult,
+              plannedResult,
+              candidateResult,
+              alreadyEnteredResult
+            ]
+          )
+        ) {
+          if (suggestion.merchant && suggestion.merchant !== originalMerchant) {
+            txSheet.getRange(sheetRow, 3).setValue(suggestion.merchant);
+          }
+          txSheet.getRange(sheetRow, 6).setValue(suggestion.category);
+
+          const autoApproved = familyFinancesQueueAutoApprove_(
+            reviewSheet,
+            existingReviewIds,
+            transactionId,
+            dateValue,
+            suggestion.merchant || originalMerchant,
+            amount,
+            bank,
+            suggestion.category,
+            monthlyTab,
+            originalNotes
+          );
+
+          if (autoApproved) {
+            queued++;
+            txSheet.getRange(sheetRow, 11).setValue(
+              familyFinancesAppendMarker_(
+                originalNotes,
+                'auto-approved for date-order insertion; posted ordinary transaction, confident category, bank preserved as ' + bank + '.'
+              )
+            );
+          } else {
+            skipped++;
+          }
+
           continue;
         }
 
