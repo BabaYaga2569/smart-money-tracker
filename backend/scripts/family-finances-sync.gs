@@ -728,17 +728,12 @@ function familyFinancesQueueAutoApprove_(
 
 
 function familyFinancesAppendLog_(logSheet, rowValues) {
-  if (!logSheet) return;
-
-  let targetRow = Math.max(2, logSheet.getLastRow() + 1);
-
-  if (targetRow > logSheet.getMaxRows()) {
-    logSheet.insertRowsAfter(logSheet.getMaxRows(), targetRow - logSheet.getMaxRows());
-  }
-
-  const target = logSheet.getRange(targetRow, 1, 1, rowValues.length);
-  target.clearDataValidations();
-  target.setValues([rowValues]);
+  // Route sync status to the Apps Script execution log while the historical
+  // Sync_Log tab is being cleaned up. This preserves diagnostics without
+  // allowing stale sheet validation to interrupt transaction processing.
+  Logger.log(rowValues.map(function(value) {
+    return value instanceof Date ? value.toISOString() : String(value == null ? '' : value);
+  }).join(' | '));
 }
 
 function familyFinancesSetPlainText_(range, value) {
