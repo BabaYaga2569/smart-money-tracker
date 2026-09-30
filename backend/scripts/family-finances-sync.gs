@@ -936,7 +936,7 @@ function familyFinancesOnEdit(e) {
     const action = String(e.value || '').trim().toUpperCase();
     if (action !== 'APPROVE' && action !== 'IGNORE') return;
 
-    runFamilyFinancesSheetSync();
+    runFamilyFinancesSheetSync(true);
   } catch (err) {
     const ss = familyFinancesSpreadsheet_();
     const logSheet = ss.getSheetByName('Sync_Log');
@@ -1007,7 +1007,8 @@ function familyFinancesProcessApprovedReviews_(reviewSheet) {
   };
 }
 
-function runFamilyFinancesSheetSync() {
+function runFamilyFinancesSheetSync(processReviewQueue) {
+  processReviewQueue = processReviewQueue === true;
   const ss = familyFinancesSpreadsheet_();
 
   if (ss.getId() !== FAMILY_FINANCES_TEST_SHEET_ID) {
@@ -1478,6 +1479,7 @@ function runFamilyFinancesSheetSync() {
 
     // If Steve has chosen a category and set Action=IGNORE, finish that decision
     // automatically too.
+    if (processReviewQueue) {
     ignoresProcessed = familyFinancesProcessIgnoredReviews_(reviewSheet);
 
     // If Steve has chosen a category and set Action=APPROVE, finish the rest
@@ -1497,6 +1499,13 @@ function runFamilyFinancesSheetSync() {
     // review onEdit trigger after this code is pasted. After that, choosing
     // APPROVE or IGNORE runs the workflow immediately from the sheet.
     reviewEditTrigger = familyFinancesEnsureReviewEditTrigger_(ss);
+    } else {
+      ignoresProcessed = 0;
+      approvalsProcessed = 0;
+      closedReview = 0;
+      archivedReview = 0;
+      reviewEditTrigger = 'skipped';
+    }
 
     const seconds = Math.round((Date.now() - started.getTime()) / 1000);
     const details =
