@@ -588,9 +588,27 @@ function familyFinancesFindVerifiedCandidate_(monthSheet, txDate, merchant, amou
 }
 
 
+function familyFinancesFindPendingForecastRow_(monthSheet, transactionId) {
+  if (!monthSheet || !transactionId || monthSheet.getLastRow() < 2) return null;
+
+  const marker = 'PLAID_PENDING:' + String(transactionId);
+  const notes = monthSheet
+    .getRange(2, 9, monthSheet.getLastRow() - 1, 1)
+    .getValues();
+
+  for (let i = 0; i < notes.length; i++) {
+    if (String(notes[i][0] || '').includes(marker)) {
+      return i + 2;
+    }
+  }
+
+  return null;
+}
+
 function familyFinancesInsertPendingForecast_(
   ss,
   monthSheet,
+  transactionId,
   dateValue,
   merchant,
   amount,
@@ -598,6 +616,11 @@ function familyFinancesInsertPendingForecast_(
   category
 ) {
   if (!monthSheet) return { inserted: false, reason: 'monthly tab not found' };
+
+  const existingRow = familyFinancesFindPendingForecastRow_(monthSheet, transactionId);
+  if (existingRow) {
+    return { inserted: false, existing: true, rowNumber: existingRow };
+  }
 
   const paySheet = ss.getSheetByName('Pay Calendar');
   if (!paySheet) return { inserted: false, reason: 'Pay Calendar not found' };
@@ -638,8 +661,6 @@ function familyFinancesInsertPendingForecast_(
 
   monthSheet.insertRowsBefore(insertRow, 1);
 
-  // Pending activity belongs in Forecast (C) only.
-  // Actual/Cleared (D) stays blank until the posted replacement arrives.
   monthSheet.getRange(insertRow, 1, 1, 6).setValues([[
     dateValue,
     merchant,
@@ -648,6 +669,10 @@ function familyFinancesInsertPendingForecast_(
     bank,
     category || 'Needs Review'
   ]]);
+
+  // Persist the Plaid transaction id on the monthly row so repeated syncs are
+  // idempotent even if a run fails later. Column I is the monthly Notes field.
+  monthSheet.getRange(insertRow, 9).setValue('PLAID_PENDING:' + String(transactionId));
 
   const formatSourceRow = insertRow + 1;
   if (formatSourceRow <= monthSheet.getMaxRows()) {
@@ -1114,6 +1139,7 @@ function runFamilyFinancesSheetSync(processReviewQueue) {
           const pendingForecast = familyFinancesInsertPendingForecast_(
             ss,
             monthSheet,
+            transactionId,
             dateValue,
             suggestion.merchant || originalMerchant,
             amount,
@@ -1128,12 +1154,15 @@ function runFamilyFinancesSheetSync(processReviewQueue) {
             txSheet.getRange(sheetRow, 6).setValue(suggestion.category);
           }
 
-          if (pendingForecast.inserted) {
+          if (pendingForecast.inserted || pendingForecast.existing) {
             txSheet.getRange(sheetRow, 10).setValue(pendingForecast.rowNumber);
             txSheet.getRange(sheetRow, 11).setValue(
               familyFinancesAppendMarker_(
                 originalNotes,
-                'pending bank item added to monthly Forecast column C at ' +
+                (pendingForecast.existing
+                  ? 'pending bank item already represented'
+                  : 'pending bank item added') +
+                ' in monthly Forecast column C at ' +
                 monthlyTab + ' row ' + pendingForecast.rowNumber +
                 '; Actual column D left blank until posting.'
               )
