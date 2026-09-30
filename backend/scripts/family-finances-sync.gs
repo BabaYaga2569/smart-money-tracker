@@ -728,6 +728,10 @@ function familyFinancesQueueAutoApprove_(
 
 
 function familyFinancesSetPlainText_(range, value) {
+  // Monthly-tab cells must be free text. Some older sheet validation rules
+  // accidentally reached these cells and can reject values like
+  // "09-September 2026" as if they were categories.
+  range.clearDataValidations();
   range.setNumberFormat('@');
   range.setValue(String(value || ''));
 }
