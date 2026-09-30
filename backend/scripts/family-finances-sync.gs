@@ -1469,12 +1469,12 @@ function runFamilyFinancesSheetSync() {
       }
     }
 
-    // Normalize monthly-tab cells before approval processing. Google Sheets can
-    // interpret names such as "09-September 2026" as dates; the pipeline needs
-    // the literal sheet name.
-    const repairRun = familyFinancesRepairMonthlyTabValues_(txSheet, reviewSheet);
-    repairedMonthTabs = repairRun.repaired;
-    recoveredApprovals = repairRun.recoveredApprovals;
+    // Monthly-tab repair is intentionally disabled during routine sync.
+    // New writes are already forced to plain text, and touching legacy rows here
+    // can trip stale validation rules from older workbook versions.
+    const repairRun = { repaired: 0, recoveredApprovals: 0 };
+    repairedMonthTabs = 0;
+    recoveredApprovals = 0;
 
     // If Steve has chosen a category and set Action=IGNORE, finish that decision
     // automatically too.
