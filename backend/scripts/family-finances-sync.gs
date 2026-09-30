@@ -81,12 +81,25 @@ function familyFinancesIsPending_(value) {
 function familyFinancesIsFreshImport_(row) {
   const id = String(row[0] || '').trim();
   const status = String(row[7] || '').trim().toUpperCase();
+  const pending = familyFinancesIsPending_(row[6]);
   const notes = String(row[10] || '');
+  const lowerNotes = notes.toLowerCase();
 
-  return Boolean(id) &&
-    status === 'REVIEW' &&
-    notes.toLowerCase().includes('imported for review') &&
-    !notes.toLowerCase().includes(FAMILY_FINANCES_SYNC_MARKER.toLowerCase());
+  if (!id || status !== 'REVIEW' || !lowerNotes.includes('imported for review')) {
+    return false;
+  }
+
+  // Normal new import: Family Finances has not touched it yet.
+  if (!lowerNotes.includes(FAMILY_FINANCES_SYNC_MARKER.toLowerCase())) {
+    return true;
+  }
+
+  // One-time recovery for pending rows processed by the older logic.
+  // Those rows were marked "wait for posting" but never placed into Column C.
+  // Reprocess them once so pending activity immediately affects the forecast.
+  return pending &&
+    lowerNotes.includes('pending bank item; wait for posting') &&
+    !lowerNotes.includes('added to monthly forecast column c');
 }
 
 function familyFinancesIsMixedMerchant_(merchant) {
