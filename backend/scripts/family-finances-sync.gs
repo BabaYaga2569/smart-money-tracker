@@ -574,6 +574,79 @@ function familyFinancesFindVerifiedCandidate_(monthSheet, txDate, merchant, amou
   return { status: 'ONE', candidates: candidates };
 }
 
+
+function familyFinancesInsertPendingForecast_(
+  ss,
+  monthSheet,
+  dateValue,
+  merchant,
+  amount,
+  bank,
+  category
+) {
+  if (!monthSheet) return { inserted: false, reason: 'monthly tab not found' };
+
+  const paySheet = ss.getSheetByName('Pay Calendar');
+  if (!paySheet) return { inserted: false, reason: 'Pay Calendar not found' };
+
+  if (
+    typeof buildMarkerPlanFromPayCalendar_ !== 'function' ||
+    typeof findDateOrderedInsertRowInSection_ !== 'function' ||
+    typeof normalizeDateOnly_ !== 'function'
+  ) {
+    return { inserted: false, reason: 'date-order helper function missing' };
+  }
+
+  const markerPlan = buildMarkerPlanFromPayCalendar_(ss, monthSheet, paySheet);
+  if (!markerPlan || !markerPlan.length) {
+    return { inserted: false, reason: 'no pay-cycle marker plan found' };
+  }
+
+  const txDate = normalizeDateOnly_(new Date(dateValue));
+  const sectionIndex = markerPlan.findIndex(function(item) {
+    return txDate <= item.cutoffDate;
+  });
+
+  if (sectionIndex === -1) {
+    return { inserted: false, reason: 'no pay-cycle cutoff section found' };
+  }
+
+  const targetSection = markerPlan[sectionIndex];
+  const previousMarkerRow = sectionIndex === 0
+    ? 2
+    : markerPlan[sectionIndex - 1].markerRow + 1;
+
+  const insertRow = findDateOrderedInsertRowInSection_(
+    monthSheet,
+    txDate,
+    previousMarkerRow,
+    targetSection.markerRow
+  );
+
+  monthSheet.insertRowsBefore(insertRow, 1);
+
+  // Pending activity belongs in Forecast (C) only.
+  // Actual/Cleared (D) stays blank until the posted replacement arrives.
+  monthSheet.getRange(insertRow, 1, 1, 6).setValues([[
+    dateValue,
+    merchant,
+    amount,
+    '',
+    bank,
+    category || 'Needs Review'
+  ]]);
+
+  const formatSourceRow = insertRow + 1;
+  if (formatSourceRow <= monthSheet.getMaxRows()) {
+    const sourceRange = monthSheet.getRange(formatSourceRow, 1, 1, 6);
+    const targetRange = monthSheet.getRange(insertRow, 1, 1, 6);
+    sourceRange.copyTo(targetRange, SpreadsheetApp.CopyPasteType.PASTE_FORMAT, false);
+    sourceRange.copyTo(targetRange, SpreadsheetApp.CopyPasteType.PASTE_DATA_VALIDATION, false);
+  }
+
+  return { inserted: true, rowNumber: insertRow };
+}
+
 function familyFinancesQueueReview_(
   reviewSheet,
   existingReviewIds,
@@ -1048,25 +1121,59 @@ function runFamilyFinancesSheetSync() {
         const monthlyTab = familyFinancesMonthTabName_(dateValue);
         familyFinancesSetPlainText_(txSheet.getRange(sheetRow, 9), monthlyTab);
 
-        if (familyFinancesIsPending_(pendingValue)) {
-          txSheet.getRange(sheetRow, 11).setValue(
-            familyFinancesAppendMarker_(originalNotes, 'pending bank item; wait for posting.')
-          );
-          pending++;
-          continue;
-        }
-
+        const monthSheet = ss.getSheetByName(monthlyTab);
         const suggestion = familyFinancesMerchantSuggestion_(
           ss,
           originalMerchant,
           currentCategory
         );
 
+        if (familyFinancesIsPending_(pendingValue)) {
+          const pendingForecast = familyFinancesInsertPendingForecast_(
+            ss,
+            monthSheet,
+            dateValue,
+            suggestion.merchant || originalMerchant,
+            amount,
+            bank,
+            suggestion.category || 'Needs Review'
+          );
+
+          if (suggestion.merchant && suggestion.merchant !== originalMerchant) {
+            txSheet.getRange(sheetRow, 3).setValue(suggestion.merchant);
+          }
+          if (suggestion.category) {
+            txSheet.getRange(sheetRow, 6).setValue(suggestion.category);
+          }
+
+          if (pendingForecast.inserted) {
+            txSheet.getRange(sheetRow, 10).setValue(pendingForecast.rowNumber);
+            txSheet.getRange(sheetRow, 11).setValue(
+              familyFinancesAppendMarker_(
+                originalNotes,
+                'pending bank item added to monthly Forecast column C at ' +
+                monthlyTab + ' row ' + pendingForecast.rowNumber +
+                '; Actual column D left blank until posting.'
+              )
+            );
+          } else {
+            txSheet.getRange(sheetRow, 11).setValue(
+              familyFinancesAppendMarker_(
+                originalNotes,
+                'pending bank item could not be added to forecast: ' +
+                pendingForecast.reason + '; wait for posting.'
+              )
+            );
+          }
+
+          pending++;
+          continue;
+        }
+
         // First, protect rows Steve already entered manually. This check is
         // intentionally merchant-agnostic: bank memos and Steve's descriptions
         // can be very different. Exact bank + exact cleared amount + a tight
         // posting-date window is enough when there is only one candidate.
-        const monthSheet = ss.getSheetByName(monthlyTab);
         let exactEnteredResult = { status: 'NONE', candidates: [] };
 
         if (monthSheet) {
