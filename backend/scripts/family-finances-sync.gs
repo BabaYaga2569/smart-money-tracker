@@ -762,86 +762,41 @@ function familyFinancesNormalizeMonthlyTabValue_(value, fallbackDate) {
 }
 
 function familyFinancesRepairMonthlyTabValues_(txSheet, reviewSheet) {
-  const txById = new Map();
-
-  if (txSheet && txSheet.getLastRow() >= 2) {
-    const txRows = txSheet
-      .getRange(2, 1, txSheet.getLastRow() - 1, 11)
-      .getValues();
-
-    txRows.forEach(function(row, index) {
-      const id = String(row[0] || '').trim();
-      if (!id) return;
-
-      const dateValue = row[1];
-      const normalizedTab = familyFinancesNormalizeMonthlyTabValue_(row[8], dateValue);
-
-      if (normalizedTab && String(row[8] || '').replace(/^'/, '').trim() !== normalizedTab) {
-        familyFinancesSetPlainText_(txSheet.getRange(index + 2, 9), normalizedTab);
-      }
-
-      txById.set(id, {
-        rowNumber: index + 2,
-        dateValue: dateValue,
-        status: String(row[7] || '').trim().toUpperCase(),
-        category: String(row[5] || '').trim(),
-        notes: String(row[10] || ''),
-        monthlyTab: normalizedTab
-      });
-    });
-  }
-
+  // New writes force Monthly Tab cells to plain text before setting the value.
+  // Older rows may still contain a real Date value from the previous bug.
+  // Repair ONLY those actual Date-valued cells. Do not touch category/action
+  // fields during routine sync; that avoids stale validation rules blocking
+  // unrelated transaction processing.
   let repaired = 0;
-  let recoveredApprovals = 0;
 
-  if (reviewSheet && reviewSheet.getLastRow() >= 2) {
-    const reviewRows = reviewSheet
-      .getRange(2, 1, reviewSheet.getLastRow() - 1, 10)
-      .getValues();
+  function repairSheet_(sheet, dateCol, tabCol) {
+    if (!sheet || sheet.getLastRow() < 2) return;
 
-    reviewRows.forEach(function(row, index) {
-      const reviewRow = index + 2;
-      const id = String(row[0] || '').trim();
-      const tx = txById.get(id);
-      const fallbackDate = tx && tx.dateValue instanceof Date ? tx.dateValue : row[1];
-      const normalizedTab = familyFinancesNormalizeMonthlyTabValue_(row[8], fallbackDate);
-      const currentTabText = row[8] instanceof Date
-        ? familyFinancesMonthTabName_(row[8])
-        : String(row[8] || '').replace(/^'/, '').trim();
+    const values = sheet.getRange(2, 1, sheet.getLastRow() - 1, Math.max(dateCol, tabCol)).getValues();
 
-      if (normalizedTab && currentTabText !== normalizedTab) {
-        familyFinancesSetPlainText_(reviewSheet.getRange(reviewRow, 9), normalizedTab);
-        repaired++;
-      } else if (normalizedTab && row[8] instanceof Date) {
-        // Force the cell back to text even if the displayed text already looks right.
-        familyFinancesSetPlainText_(reviewSheet.getRange(reviewRow, 9), normalizedTab);
-        repaired++;
-      }
+    values.forEach(function(row, index) {
+      const fallbackDate = row[dateCol - 1];
+      const rawTab = row[tabCol - 1];
 
-      const action = String(row[7] || '').trim().toUpperCase();
+      if (!(rawTab instanceof Date) || isNaN(rawTab.getTime())) return;
 
-      if (
-        tx &&
-        action === 'APPROVED' &&
-        tx.status === 'REVIEW' &&
-        /monthly tab not found/i.test(tx.notes)
-      ) {
-        reviewSheet.getRange(reviewRow, 8).setValue('APPROVE');
-        if (normalizedTab) {
-          familyFinancesSetPlainText_(reviewSheet.getRange(reviewRow, 9), normalizedTab);
-          familyFinancesSetPlainText_(txSheet.getRange(tx.rowNumber, 9), normalizedTab);
-        }
-        txSheet.getRange(tx.rowNumber, 11).setValue(
-          'Recovered approved review after monthly-tab text normalization; ready for automatic retry.'
-        );
-        recoveredApprovals++;
-      }
+      const normalizedTab = familyFinancesNormalizeMonthlyTabValue_(rawTab, fallbackDate);
+      if (!normalizedTab) return;
+
+      const cell = sheet.getRange(index + 2, tabCol);
+      cell.clearDataValidations();
+      cell.setNumberFormat('@');
+      cell.setValue(normalizedTab);
+      repaired++;
     });
   }
+
+  repairSheet_(txSheet, 2, 9);
+  repairSheet_(reviewSheet, 2, 9);
 
   return {
     repaired: repaired,
-    recoveredApprovals: recoveredApprovals
+    recoveredApprovals: 0
   };
 }
 
