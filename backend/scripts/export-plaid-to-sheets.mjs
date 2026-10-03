@@ -3,6 +3,13 @@ import admin from 'firebase-admin';
 import { Configuration, PlaidApi, PlaidEnvironments } from 'plaid';
 import { createSign } from 'node:crypto';
 
+// Safety gate: the legacy Plaid→Sheets importer consumes Plaid sync directly.
+// Keep it disabled while the Firestore→Sheets bridge is the source of truth.
+if (process.env.LEGACY_PLAID_IMPORTER_ENABLED !== 'true') {
+  console.log('Legacy Plaid→Sheets importer is disabled. Use the Firestore→Sheets bridge.');
+  process.exit(0);
+}
+
 const required = ['FIREBASE_SERVICE_ACCOUNT', 'PLAID_CLIENT_ID', 'PLAID_SECRET', 'PLAID_ENV', 'SHEETS_USER_ID', 'SHEETS_SPREADSHEET_ID'];
 for (const key of required) if (!process.env[key]) throw new Error(`Missing ${key}`);
 const serviceAccount = JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT);
