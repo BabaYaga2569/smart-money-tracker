@@ -27,7 +27,12 @@ if (!admin.apps.length) {
 }
 
 const db = admin.firestore();
-const apply = process.argv.includes('--apply');
+const applyRequested = process.argv.includes('--apply');
+const previewLock = String(process.env.FIRESTORE_BRIDGE_PREVIEW || '').trim().toLowerCase() === 'true';
+const apply = applyRequested && !previewLock;
+if (applyRequested && previewLock) {
+  console.log('FIRESTORE_BRIDGE_PREVIEW=true: forcing preview mode; no Sheets writes will occur.');
+}
 
 try {
   const result = await bridgeFirebaseTransactionsToSheets({
