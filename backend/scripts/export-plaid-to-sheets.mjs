@@ -3,13 +3,6 @@ import admin from 'firebase-admin';
 import { Configuration, PlaidApi, PlaidEnvironments } from 'plaid';
 import { createSign } from 'node:crypto';
 
-if (String(process.env.FIRESTORE_BRIDGE_PREVIEW || '').trim().toLowerCase() === 'true') {
-  console.log('Backfilling Plaid account metadata safely before Firestore→Sheets preview.');
-  await import('./backfill-plaid-account-metadata.mjs');
-  console.log('Running Firestore→Sheets bridge in forced preview mode.');
-  await import('./export-firestore-to-sheets.mjs');
-  process.exit(process.exitCode || 0);
-}
 // Safety gate: the legacy Plaid→Sheets importer consumes Plaid sync directly.
 // Keep it disabled while the Firestore→Sheets bridge is the source of truth.
 if (process.env.LEGACY_PLAID_IMPORTER_ENABLED !== 'true') {
