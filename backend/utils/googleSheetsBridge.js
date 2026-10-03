@@ -273,8 +273,17 @@ export async function bridgeFirebaseTransactionsToSheets({
 
   const knownById = new Map();
   rows.slice(1).forEach((row, index) => {
+    const entry = { sheetRow: index + 2, row };
     const id = String(row[0] || '').trim();
-    if (id) knownById.set(id, { sheetRow: index + 2, row });
+    if (id) knownById.set(id, entry);
+
+    // When a posted transaction replaced a pending transaction, the staging
+    // note preserves the old pending transaction ID. Treat that pending ID as
+    // already represented too, so a stale pending Firestore document cannot
+    // be re-added later as a duplicate REVIEW row.
+    const note = String(row[10] || '');
+    const pendingAlias = note.match(/Posted from pending transaction\s+([^;\s]+)/i)?.[1] || '';
+    if (pendingAlias) knownById.set(pendingAlias, entry);
   });
 
   const staged = [];
