@@ -271,13 +271,6 @@ export async function bridgeFirebaseTransactionsToSheets({
       .map(account => String(account.account_id))
   );
 
-  if (!checkingIds.size) {
-    throw new Error(
-      'No checking accounts found in Firebase settings/personal.plaidAccounts. ' +
-      'Bridge stopped rather than exporting non-checking activity.'
-    );
-  }
-
   const knownById = new Map();
   rows.slice(1).forEach((row, index) => {
     const id = String(row[0] || '').trim();
@@ -302,6 +295,38 @@ export async function bridgeFirebaseTransactionsToSheets({
       return ad.localeCompare(bd) ||
         String(a.transaction_id || a.id).localeCompare(String(b.transaction_id || b.id));
     });
+
+  // Future-proofing: webhook/API sync now persists Plaid account type/subtype on
+  // transaction docs. Use that Firestore metadata as a fallback when settings
+  // metadata is temporarily missing or stale. No Plaid call is made here.
+  for (const tx of transactions) {
+    const accountId = String(tx.account_id || '').trim();
+    if (!accountId) continue;
+
+    if (!accountById.has(accountId)) {
+      accountById.set(accountId, {
+        account_id: accountId,
+        name: tx.account_name || 'Checking',
+        type: tx.account_type || null,
+        subtype: tx.account_subtype || null,
+        institution_name: tx.institution_name || tx.institutionName || ''
+      });
+    }
+
+    if (
+      String(tx.account_type || '').toLowerCase() === 'depository' &&
+      String(tx.account_subtype || '').toLowerCase() === 'checking'
+    ) {
+      checkingIds.add(accountId);
+    }
+  }
+
+  if (!checkingIds.size) {
+    throw new Error(
+      'No checking accounts found in Firestore account metadata. ' +
+      'Bridge stopped rather than exporting non-checking activity.'
+    );
+  }
 
   for (const tx of transactions) {
     if (String(tx.source || '').toLowerCase() === 'manual') {
