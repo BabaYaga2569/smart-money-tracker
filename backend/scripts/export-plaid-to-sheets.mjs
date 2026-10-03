@@ -4,6 +4,8 @@ import { Configuration, PlaidApi, PlaidEnvironments } from 'plaid';
 import { createSign } from 'node:crypto';
 
 if (String(process.env.FIRESTORE_BRIDGE_PREVIEW || '').trim().toLowerCase() === 'true') {
+  console.log('Running read-only Firestore finance audit.');
+  await import('./audit-firestore-finances-readonly.mjs');
   console.log('Running Firestore→Sheets candidate preview; no Sheets writes will occur.');
   await import('./export-firestore-to-sheets.mjs');
   process.exit(process.exitCode || 0);
