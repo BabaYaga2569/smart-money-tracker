@@ -409,7 +409,27 @@ export async function bridgeFirebaseTransactionsToSheets({
     skippedCounts: skipped
   };
 
-  if (!apply) return result;
+  if (!apply) {
+    result.previewRows = staged.map(row => ({
+      transactionId: row[0],
+      dateSerial: row[1],
+      merchant: row[2],
+      amount: row[3],
+      bank: row[4],
+      category: row[5],
+      pending: row[6],
+      matchStatus: row[7]
+    }));
+    result.previewPostedReplacements = replacements.map(replacement => ({
+      sheetRow: replacement.sheetRow,
+      pendingId: replacement.pendingId,
+      postedId: replacement.postedId,
+      merchant: replacement.values[2],
+      amount: replacement.values[3],
+      bank: replacement.values[4]
+    }));
+    return result;
+  }
 
   await formatDateColumn_(token, spreadsheetId, sheetName);
 
