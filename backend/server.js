@@ -1664,7 +1664,10 @@ app.post("/api/plaid/sync_transactions", async (req, res, next) => {
             institution_name: item.institutionName,
             institution_id: item.institutionId,
             item_id: item.itemId,
-            mask: accountsMap[tx.account_id]?.mask || null
+            mask: accountsMap[tx.account_id]?.mask || null,
+            account_type: accountsMap[tx.account_id]?.type || null,
+            account_subtype: accountsMap[tx.account_id]?.subtype || null,
+            account_name: accountsMap[tx.account_id]?.name || null
           }));
           
           const modifiedWithInstitution = response.data.modified.map(tx => ({
@@ -1672,7 +1675,10 @@ app.post("/api/plaid/sync_transactions", async (req, res, next) => {
             institution_name: item.institutionName,
             institution_id: item.institutionId,
             item_id: item.itemId,
-            mask: accountsMap[tx.account_id]?.mask || null
+            mask: accountsMap[tx.account_id]?.mask || null,
+            account_type: accountsMap[tx.account_id]?.type || null,
+            account_subtype: accountsMap[tx.account_id]?.subtype || null,
+            account_name: accountsMap[tx.account_id]?.name || null
           }));
           
           itemAdded.push(...addedWithInstitution);
@@ -1684,6 +1690,27 @@ app.post("/api/plaid/sync_transactions", async (req, res, next) => {
           
           logger.info('PLAID_SYNC', 'Item : added, modified, removed, hasMore:', {});
           logDiagnostic.info('SYNC_TRANSACTIONS', `Item ${item.itemId}: ${response.data.added.length} added, ${response.data.modified.length} modified, ${response.data.removed.length} removed, hasMore: ${hasMore}`);
+        }
+
+        // Refresh durable account metadata in Firestore without making any
+        // additional Plaid call. transactionsSync already returned these accounts.
+        const syncedAccounts = Object.values(accountsMap);
+        if (syncedAccounts.length > 0) {
+          try {
+            await deduplicateAndSaveAccounts(
+              userId,
+              syncedAccounts,
+              item.institutionName,
+              item.itemId
+            );
+          } catch (accountMetadataError) {
+            logger.error(
+              'PLAID_ACCOUNTS',
+              'Failed to persist account metadata during transaction sync',
+              accountMetadataError,
+              { userId, itemId: item.itemId }
+            );
+          }
         }
 
         // Defer cursor persistence until AFTER transaction writes commit.
@@ -1825,6 +1852,9 @@ app.post("/api/plaid/sync_transactions", async (req, res, next) => {
           source: 'plaid',
           mask: plaidTx.mask || null,
           institution_name: plaidTx.institution_name || null,
+          account_type: plaidTx.account_type || null,
+          account_subtype: plaidTx.account_subtype || null,
+          account_name: plaidTx.account_name || null,
           timestamp: admin.firestore.FieldValue.serverTimestamp(),
           lastSyncedAt: admin.firestore.FieldValue.serverTimestamp()
         };
@@ -2346,6 +2376,27 @@ async function syncPlaidItemForWebhook_(itemDoc, userId, webhookCode) {
       throw error;
     }
 
+    // Persist account classification returned by transactionsSync so the
+    // Firestore→Sheets bridge can identify checking accounts without calling Plaid.
+    const webhookAccounts = Object.values(accountsMap);
+    if (webhookAccounts.length > 0) {
+      try {
+        await deduplicateAndSaveAccounts(
+          userId,
+          webhookAccounts,
+          institutionName,
+          itemData.itemId || itemDoc.id
+        );
+      } catch (accountMetadataError) {
+        logger.error(
+          'PLAID_ACCOUNTS',
+          'Failed to persist account metadata during webhook sync',
+          accountMetadataError,
+          { userId, itemId: itemDoc.id }
+        );
+      }
+    }
+
     const userDocRef = db.collection('users').doc(userId);
     const userDoc = await userDocRef.get();
     if (!userDoc.exists) {
@@ -2375,6 +2426,9 @@ async function syncPlaidItemForWebhook_(itemDoc, userId, webhookCode) {
           institutionName,
           institution_name: institutionName,
           mask: account.mask || null,
+          account_type: account.type || null,
+          account_subtype: account.subtype || null,
+          account_name: account.name || null,
           synced_at: admin.firestore.FieldValue.serverTimestamp(),
           lastSyncedAt: admin.firestore.FieldValue.serverTimestamp(),
           webhook_code: webhookCode
