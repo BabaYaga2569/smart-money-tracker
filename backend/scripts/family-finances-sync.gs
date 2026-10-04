@@ -20,7 +20,7 @@
 const FAMILY_FINANCES_TEST_SHEET_ID = '1qaaf0t9il726oQpL2oXMbZqlF7zJpHomsClk8vklE_g';
 const FAMILY_FINANCES_SYNC_MARKER = 'Family Finances sync:';
 const FAMILY_FINANCES_SYNC_BUTTON_SHEET = 'Safe to Spend';
-const FAMILY_FINANCES_SYNC_BUTTON_CELL = 'C14';
+const FAMILY_FINANCES_SYNC_BUTTON_CELL = 'C34';
 
 function familyFinancesSpreadsheet_() {
   const active = SpreadsheetApp.getActiveSpreadsheet();
