@@ -14,9 +14,17 @@ if (String(process.env.SHEETS_BRIDGE_ENABLED || '').trim().toLowerCase() === 'tr
 }
 
 // Safety gate: the legacy Plaid→Sheets importer consumes Plaid sync directly.
-// Keep it disabled while the Firestore→Sheets bridge is the source of truth.
+// Keep it disabled while Firestore is the source of truth. When the TEST
+// Firestore bridge is explicitly enabled, this scheduled job delegates to the
+// Firestore→Sheets staging exporter instead of calling Plaid transactions APIs.
 if (process.env.LEGACY_PLAID_IMPORTER_ENABLED !== 'true') {
-  console.log('Legacy Plaid→Sheets importer is disabled. Use the Firestore→Sheets bridge.');
+  if (String(process.env.SHEETS_BRIDGE_ENABLED || '').trim().toLowerCase() === 'true') {
+    console.log('Legacy Plaid importer disabled; delegating scheduled TEST run to Firestore→Sheets staging bridge.');
+    await import('./export-firestore-to-sheets.mjs');
+    process.exit(process.exitCode || 0);
+  }
+
+  console.log('Legacy Plaid→Sheets importer is disabled. Firestore→Sheets bridge is not enabled.');
   process.exit(0);
 }
 
