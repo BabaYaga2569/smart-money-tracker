@@ -305,6 +305,35 @@ export async function bridgeFirebaseTransactionsToSheets({
         String(a.transaction_id || a.id).localeCompare(String(b.transaction_id || b.id));
     });
 
+  // The staging sheet itself is a trusted ledger of accounts that were already
+  // accepted as checking by earlier successful bridge runs. If current Firestore
+  // settings metadata is missing/stale, recover those known checking account IDs
+  // from the staged transaction IDs before deciding the bridge must stop.
+  const stagedTransactionIds = new Set(
+    rows.slice(1)
+      .map(row => String(row[0] || '').trim())
+      .filter(Boolean)
+  );
+
+  for (const tx of transactions) {
+    const txId = String(tx.transaction_id || tx.id || '').trim();
+    const accountId = String(tx.account_id || '').trim();
+
+    if (!txId || !accountId || !stagedTransactionIds.has(txId)) continue;
+
+    checkingIds.add(accountId);
+
+    if (!accountById.has(accountId)) {
+      accountById.set(accountId, {
+        account_id: accountId,
+        name: tx.account_name || 'Checking',
+        type: tx.account_type || 'depository',
+        subtype: tx.account_subtype || 'checking',
+        institution_name: tx.institution_name || tx.institutionName || ''
+      });
+    }
+  }
+
   // Future-proofing: webhook/API sync now persists Plaid account type/subtype on
   // transaction docs. Use that Firestore metadata as a fallback when settings
   // metadata is temporarily missing or stale. No Plaid call is made here.
