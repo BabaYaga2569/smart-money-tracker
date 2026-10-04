@@ -21,6 +21,8 @@ const FAMILY_FINANCES_TEST_SHEET_ID = '1qaaf0t9il726oQpL2oXMbZqlF7zJpHomsClk8vkl
 const FAMILY_FINANCES_SYNC_MARKER = 'Family Finances sync:';
 const FAMILY_FINANCES_SYNC_BUTTON_SHEET = 'Safe to Spend';
 const FAMILY_FINANCES_SYNC_BUTTON_CELL = 'C34';
+const FAMILY_FINANCES_REFRESH_BUTTON_CELL = 'C35';
+const FAMILY_FINANCES_REFRESH_ENDPOINT = 'https://smart-money-tracker-09ks.onrender.com/api/plaid/sheets_force_refresh';
 
 function familyFinancesSpreadsheet_() {
   const active = SpreadsheetApp.getActiveSpreadsheet();
@@ -979,6 +981,18 @@ function familyFinancesOnEdit(e) {
       return;
     }
 
+    // Dashboard behind-the-scenes Plaid bank refresh checkbox.
+    if (
+      sheet.getName() === FAMILY_FINANCES_SYNC_BUTTON_SHEET &&
+      e.range.getA1Notation() === FAMILY_FINANCES_REFRESH_BUTTON_CELL &&
+      String(e.value || '').trim().toUpperCase() === 'TRUE'
+    ) {
+      e.range.setValue(false);
+      ss.toast('Requesting a fresh Plaid bank check…', 'Refresh Banks', 6);
+      familyFinancesRequestPlaidRefresh_();
+      return;
+    }
+
     if (sheet.getName() !== 'Plaid_Review') return;
 
     // Action column H only.
@@ -1003,6 +1017,61 @@ function familyFinancesOnEdit(e) {
     }
   }
 }
+
+function familyFinancesRequestPlaidRefresh_() {
+  const ss = familyFinancesSpreadsheet_();
+
+  if (ss.getId() !== FAMILY_FINANCES_TEST_SHEET_ID) {
+    throw new Error('Plaid bank refresh is locked to the TEST spreadsheet.');
+  }
+
+  const response = UrlFetchApp.fetch(FAMILY_FINANCES_REFRESH_ENDPOINT, {
+    method: 'post',
+    contentType: 'application/json',
+    headers: {
+      Authorization: 'Bearer ' + ScriptApp.getOAuthToken()
+    },
+    payload: JSON.stringify({
+      spreadsheetId: FAMILY_FINANCES_TEST_SHEET_ID
+    }),
+    muteHttpExceptions: true
+  });
+
+  const status = response.getResponseCode();
+  const body = response.getContentText();
+  let data = {};
+
+  try {
+    data = body ? JSON.parse(body) : {};
+  } catch (parseErr) {
+    data = {};
+  }
+
+  if (status >= 200 && status < 300 && data.success !== false) {
+    const refreshed = Number(data.refreshed_count || 0);
+    const total = Number(data.total_count || 0);
+    const detail = total
+      ? 'Plaid refresh requested for ' + refreshed + ' of ' + total +
+        ' bank connection(s). New activity normally arrives within a few minutes.'
+      : 'Plaid refresh requested. New activity normally arrives within a few minutes.';
+
+    ss.toast(detail, 'Refresh Banks', 10);
+    return data;
+  }
+
+  if (status === 429 && data.cooldown) {
+    const seconds = Number(data.retryAfterSeconds || 0);
+    const detail = seconds
+      ? 'A bank refresh was already requested. Try again in about ' + seconds + ' seconds.'
+      : 'A bank refresh was already requested recently.';
+    ss.toast(detail, 'Refresh Banks', 8);
+    return data;
+  }
+
+  const message = String(data.error || data.message || body || ('HTTP ' + status));
+  throw new Error('Plaid bank refresh failed: ' + message);
+}
+
 
 function familyFinancesCountPendingApprovals_(reviewSheet) {
   if (!reviewSheet || reviewSheet.getLastRow() < 2) return 0;
