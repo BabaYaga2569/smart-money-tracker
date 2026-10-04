@@ -19,6 +19,8 @@
 
 const FAMILY_FINANCES_TEST_SHEET_ID = '1qaaf0t9il726oQpL2oXMbZqlF7zJpHomsClk8vklE_g';
 const FAMILY_FINANCES_SYNC_MARKER = 'Family Finances sync:';
+const FAMILY_FINANCES_SYNC_BUTTON_SHEET = 'Safe to Spend';
+const FAMILY_FINANCES_SYNC_BUTTON_CELL = 'C14';
 
 function familyFinancesSpreadsheet_() {
   const active = SpreadsheetApp.getActiveSpreadsheet();
@@ -962,7 +964,22 @@ function familyFinancesOnEdit(e) {
     if (!ss || ss.getId() !== FAMILY_FINANCES_TEST_SHEET_ID) return;
 
     const sheet = e.range.getSheet();
-    if (!sheet || sheet.getName() !== 'Plaid_Review') return;
+    if (!sheet) return;
+
+    // Dashboard one-click sync checkbox.
+    if (
+      sheet.getName() === FAMILY_FINANCES_SYNC_BUTTON_SHEET &&
+      e.range.getA1Notation() === FAMILY_FINANCES_SYNC_BUTTON_CELL &&
+      String(e.value || '').trim().toUpperCase() === 'TRUE'
+    ) {
+      // Reset immediately so it behaves like a push button.
+      e.range.setValue(false);
+      ss.toast('Sync started…', 'Family Finances', 5);
+      runFamilyFinancesSheetSync(true);
+      return;
+    }
+
+    if (sheet.getName() !== 'Plaid_Review') return;
 
     // Action column H only.
     if (e.range.getColumn() !== 8 || e.range.getNumColumns() !== 1) return;
