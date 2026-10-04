@@ -2244,6 +2244,93 @@ app.post("/api/plaid/refresh_transactions", async (req, res, next) => {
   }
 });
 
+// Google Sheets dashboard: behind-the-scenes on-demand Plaid refresh.
+// Protected by a dedicated sheet-only token and locked to the TEST workbook/user.
+app.post("/api/plaid/sheets_force_refresh", async (req, res, next) => {
+  const endpoint = "/api/plaid/sheets_force_refresh";
+  try {
+    const expectedToken = String(process.env.SHEETS_FORCE_REFRESH_TOKEN || "").trim();
+    const providedToken = String(req.headers["x-sheet-refresh-token"] || "").trim();
+    const configuredUser = String(process.env.SHEETS_USER_ID || "").trim();
+    const expectedSpreadsheet = "1qaaf0t9il726oQpL2oXMbZqlF7zJpHomsClk8vklE_g";
+    const spreadsheetId = String(req.body?.spreadsheetId || "").trim();
+
+    if (!expectedToken || !configuredUser) {
+      throw createError.internal("Sheet refresh endpoint is not configured.");
+    }
+    if (!providedToken || providedToken !== expectedToken) {
+      return res.status(403).json({ success: false, error: "Unauthorized sheet refresh request." });
+    }
+    if (spreadsheetId !== expectedSpreadsheet) {
+      return res.status(400).json({ success: false, error: "Refresh is locked to the TEST workbook." });
+    }
+
+    const guardRef = db.collection("users").doc(configuredUser)
+      .collection("settings").doc("sheetForceRefreshGuard");
+    const guardSnap = await guardRef.get();
+    const lastRequestedMs = guardSnap.exists ? Number(guardSnap.data()?.lastRequestedMs || 0) : 0;
+    const nowMs = Date.now();
+
+    if (lastRequestedMs && nowMs - lastRequestedMs < 120000) {
+      const retryAfterSeconds = Math.ceil((120000 - (nowMs - lastRequestedMs)) / 1000);
+      return res.status(429).json({
+        success: false,
+        cooldown: true,
+        retryAfterSeconds,
+        error: "A bank refresh was already requested recently."
+      });
+    }
+
+    const items = await getAllPlaidItems(configuredUser);
+    if (!items || items.length === 0) {
+      throw createError.notFound("No active Plaid connections found.");
+    }
+
+    await guardRef.set({
+      lastRequestedMs: nowMs,
+      source: "google_sheets_test_dashboard"
+    }, { merge: true });
+
+    const results = [];
+    for (const item of items) {
+      try {
+        const response = await plaidClient.transactionsRefresh({
+          access_token: item.accessToken
+        });
+        results.push({
+          institution_name: item.institutionName,
+          success: true,
+          request_id: response.data.request_id
+        });
+      } catch (itemError) {
+        results.push({
+          institution_name: item.institutionName,
+          success: false,
+          error: itemError.message
+        });
+      }
+    }
+
+    const successCount = results.filter(r => r.success).length;
+    logDiagnostic.response(endpoint, 200, {
+      success: successCount > 0,
+      refreshed_count: successCount,
+      total_count: items.length
+    });
+
+    res.json({
+      success: successCount > 0,
+      refreshed_count: successCount,
+      total_count: items.length,
+      message: "Plaid bank refresh requested. New activity normally arrives within a few minutes."
+    });
+  } catch (error) {
+    logger.error("SHEETS_FORCE_REFRESH", "Sheet-triggered bank refresh failed", error, {});
+    if (error.statusCode) return next(error);
+    next(createError.internal(error.message || "Sheet-triggered bank refresh failed"));
+  }
+});
+
 // Webhook endpoint for Plaid
 app.post("/api/plaid/webhook", async (req, res, next) => {
   const endpoint = "/api/plaid/webhook";
