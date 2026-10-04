@@ -1050,7 +1050,7 @@ function familyFinancesRequestPlaidRefresh_() {
     method: 'post',
     contentType: 'application/json',
     headers: {
-      Authorization: 'Bearer ' + ScriptApp.getOAuthToken()
+      'X-Sheet-Refresh-Token': 'ljS2LrFzKEk_iz-Cau29fJboVpoxBpU_G7QPDBHaNr4'
     },
     payload: JSON.stringify({
       spreadsheetId: FAMILY_FINANCES_TEST_SHEET_ID
