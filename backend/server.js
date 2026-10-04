@@ -12,6 +12,7 @@ import { validateAccount as validateAccountConsistency, validateTransaction as v
 import { runBillMatching } from './utils/BillMatchingService.js';
 import { detectSubscriptions } from './utils/subscriptionDetector.js';
 import { detectRecurringStreams, matchStreamsToTemplates } from './utils/recurringStreamDetector.js';
+import { bridgeFirebaseTransactionsToSheets } from './utils/googleSheetsBridge.js';
 
 const app = express();
 
@@ -1621,6 +1622,7 @@ app.post("/api/plaid/sync_transactions", async (req, res, next) => {
     let allAdded = [];
     let allModified = [];
     let allRemoved = [];
+    const cursorsToUpdate = new Map();
     
     for (const item of items) {
       try {
@@ -1662,7 +1664,10 @@ app.post("/api/plaid/sync_transactions", async (req, res, next) => {
             institution_name: item.institutionName,
             institution_id: item.institutionId,
             item_id: item.itemId,
-            mask: accountsMap[tx.account_id]?.mask || null
+            mask: accountsMap[tx.account_id]?.mask || null,
+            account_type: accountsMap[tx.account_id]?.type || null,
+            account_subtype: accountsMap[tx.account_id]?.subtype || null,
+            account_name: accountsMap[tx.account_id]?.name || null
           }));
           
           const modifiedWithInstitution = response.data.modified.map(tx => ({
@@ -1670,7 +1675,10 @@ app.post("/api/plaid/sync_transactions", async (req, res, next) => {
             institution_name: item.institutionName,
             institution_id: item.institutionId,
             item_id: item.itemId,
-            mask: accountsMap[tx.account_id]?.mask || null
+            mask: accountsMap[tx.account_id]?.mask || null,
+            account_type: accountsMap[tx.account_id]?.type || null,
+            account_subtype: accountsMap[tx.account_id]?.subtype || null,
+            account_name: accountsMap[tx.account_id]?.name || null
           }));
           
           itemAdded.push(...addedWithInstitution);
@@ -1684,12 +1692,31 @@ app.post("/api/plaid/sync_transactions", async (req, res, next) => {
           logDiagnostic.info('SYNC_TRANSACTIONS', `Item ${item.itemId}: ${response.data.added.length} added, ${response.data.modified.length} modified, ${response.data.removed.length} removed, hasMore: ${hasMore}`);
         }
 
-        // Save new cursor for this item
-        const itemRef = db.collection('users').doc(userId).collection('plaid_items').doc(item.itemId);
-        await itemRef.update({
-          cursor: cursor,
-          lastSyncedAt: admin.firestore.FieldValue.serverTimestamp()
-        });
+        // Refresh durable account metadata in Firestore without making any
+        // additional Plaid call. transactionsSync already returned these accounts.
+        const syncedAccounts = Object.values(accountsMap);
+        if (syncedAccounts.length > 0) {
+          try {
+            await deduplicateAndSaveAccounts(
+              userId,
+              syncedAccounts,
+              item.institutionName,
+              item.itemId
+            );
+          } catch (accountMetadataError) {
+            logger.error(
+              'PLAID_ACCOUNTS',
+              'Failed to persist account metadata during transaction sync',
+              accountMetadataError,
+              { userId, itemId: item.itemId }
+            );
+          }
+        }
+
+        // Defer cursor persistence until AFTER transaction writes commit.
+        // If the Firestore transaction batch fails, the old cursor remains and
+        // the next sync safely replays the same Plaid deltas.
+        cursorsToUpdate.set(item.itemId, cursor);
 
         allAdded.push(...itemAdded);
         allModified.push(...itemModified);
@@ -1739,7 +1766,6 @@ app.post("/api/plaid/sync_transactions", async (req, res, next) => {
 
     // Prepare atomic operations
     const operations = [];
-    const cursorsToUpdate = new Map();
     
     // Track transaction IDs processed in this batch to prevent same-batch duplicates
     const processedInBatch = new Set();
@@ -1816,6 +1842,8 @@ app.post("/api/plaid/sync_transactions", async (req, res, next) => {
           account_id: plaidTx.account_id,
           amount: -plaidTx.amount,  // FLIP SIGN: Plaid positive=expense, we need negative=expense
           date: plaidTx.date,
+          authorized_date: plaidTx.authorized_date || null,
+          pending_transaction_id: plaidTx.pending_transaction_id || null,
           name: plaidTx.name,
           merchant_name: plaidTx.merchant_name || plaidTx.name,
           category: autoCategorizTransaction(plaidTx.merchant_name || plaidTx.name),
@@ -1824,6 +1852,9 @@ app.post("/api/plaid/sync_transactions", async (req, res, next) => {
           source: 'plaid',
           mask: plaidTx.mask || null,
           institution_name: plaidTx.institution_name || null,
+          account_type: plaidTx.account_type || null,
+          account_subtype: plaidTx.account_subtype || null,
+          account_name: plaidTx.account_name || null,
           timestamp: admin.firestore.FieldValue.serverTimestamp(),
           lastSyncedAt: admin.firestore.FieldValue.serverTimestamp()
         };
@@ -1907,11 +1938,9 @@ app.post("/api/plaid/sync_transactions", async (req, res, next) => {
       }
     }
 
-    // Update cursors for each item atomically
-    for (const item of items) {
-      const itemRef = db.collection('users').doc(userId).collection('plaid_items').doc(item.itemId);
-      // Note: cursors were already saved in the loop above, this just ensures they're in the atomic transaction
-    }
+    // Cursor updates are intentionally deferred until AFTER the transaction
+    // operations commit. Replaying a delta is safe; advancing a cursor before
+    // the data commit is not.
 
     // Add metadata update to atomic operations
     const metadataRef = db.collection('users')
@@ -1930,6 +1959,29 @@ app.post("/api/plaid/sync_transactions", async (req, res, next) => {
     // Execute all operations atomically
     if (operations.length > 0) {
       await atomicTransaction(operations);
+
+      // Advance each Item cursor only after the transaction changes are durable.
+      for (const [itemId, cursor] of cursorsToUpdate.entries()) {
+        const itemRef = db.collection('users').doc(userId).collection('plaid_items').doc(itemId);
+        await itemRef.set({
+          cursor,
+          lastSyncedAt: admin.firestore.FieldValue.serverTimestamp()
+        }, { merge: true });
+      }
+
+      // Export the canonical Firebase transaction state to the staging sheet.
+      // This is guarded by SHEETS_BRIDGE_ENABLED and SHEETS_USER_ID.
+      try {
+        const bridgeResult = await bridgeFirebaseTransactionsToSheets({
+          db,
+          userId,
+          apply: true
+        });
+        logDiagnostic.info('SHEETS_BRIDGE', 'Manual/API sync bridge completed', bridgeResult);
+      } catch (bridgeError) {
+        logger.error('SHEETS_BRIDGE', 'Manual/API sync bridge failed', bridgeError, { userId });
+        logDiagnostic.error('SHEETS_BRIDGE', 'Manual/API sync bridge failed', bridgeError);
+      }
       
       logger.info('PLAID_SYNC', 'Synced transactions atomically', { 
         userId, 
@@ -2175,15 +2227,10 @@ app.post("/api/plaid/refresh_transactions", async (req, res, next) => {
     const refreshResults = [];
     for (const item of items) {
       try {
-        // NOTE: Do NOT add 'count' parameter to transactionsSync options
-        // The 'count' parameter is not supported by Plaid's /transactions/sync endpoint
-        // and will cause a 400 INVALID_REQUEST error with error_code UNKNOWN_FIELDS
-        // Reference: https://plaid.com/docs/api/products/transactions/#transactionssync
-        const response = await plaidClient.transactionsSync({
-          access_token: item.accessToken,
-          options: {
-            include_personal_finance_category: true
-          }
+        // Ask Plaid to perform an on-demand bank refresh. If changes are found,
+        // Plaid will emit SYNC_UPDATES_AVAILABLE and the webhook will fetch them.
+        const response = await plaidClient.transactionsRefresh({
+          access_token: item.accessToken
         });
 
         refreshResults.push({
@@ -2244,244 +2291,378 @@ app.post("/api/plaid/refresh_transactions", async (req, res, next) => {
   }
 });
 
+// ============================================================================
+// PLAID TRANSACTION WEBHOOK -> FIREBASE -> GOOGLE SHEETS BRIDGE
+// ============================================================================
+//
+// Design goals:
+// - /transactions/sync is the single source of Plaid transaction deltas.
+// - Cursor advances only AFTER Firestore transaction patches are committed.
+// - SYNC_UPDATES_AVAILABLE is the primary webhook for /transactions/sync.
+// - Legacy transaction webhooks are only used to bootstrap Items with no cursor.
+// - Pagination is exhausted through has_more=false.
+// - Mutation-during-pagination restarts from the original cursor.
+// - Google Sheets export reads from Firebase, not Plaid, so it cannot fight the
+//   Plaid cursor. The Sheets bridge is idempotent by transaction ID.
+// - SHEETS_BRIDGE_ENABLED must explicitly be true before webhook-driven writes
+//   to Google Sheets are allowed.
+
+const plaidWebhookSyncInFlight = new Map();
+
+function plaidErrorCode_(error) {
+  return error?.response?.data?.error_code || error?.error_code || '';
+}
+
+async function syncPlaidItemForWebhook_(itemDoc, userId, webhookCode) {
+  const itemData = itemDoc.data();
+  const accessToken = itemData.accessToken;
+  if (!accessToken) {
+    throw new Error(`Plaid item ${itemDoc.id} has no access token`);
+  }
+
+  const originalCursor = itemData.cursor || null;
+  const institutionName = itemData.institutionName || 'Unknown bank';
+
+  for (let attempt = 1; attempt <= 4; attempt++) {
+    let cursor = originalCursor;
+    let hasMore = true;
+    let pages = 0;
+    const added = [];
+    const modified = [];
+    const removed = [];
+    const accountsMap = {};
+
+    try {
+      while (hasMore) {
+        const response = await plaidClient.transactionsSync({
+          access_token: accessToken,
+          cursor: cursor || undefined,
+          count: 500,
+          options: {
+            include_personal_finance_category: true
+          }
+        });
+
+        if (response.data.accounts) {
+          response.data.accounts.forEach(account => {
+            accountsMap[account.account_id] = account;
+          });
+        }
+
+        added.push(...response.data.added);
+        modified.push(...response.data.modified);
+        removed.push(...response.data.removed);
+
+        cursor = response.data.next_cursor;
+        hasMore = response.data.has_more;
+        pages++;
+
+        if (pages > 100) {
+          throw new Error(`Plaid pagination limit reached for item ${itemDoc.id}`);
+        }
+      }
+    } catch (error) {
+      if (
+        plaidErrorCode_(error) === 'TRANSACTIONS_SYNC_MUTATION_DURING_PAGINATION' &&
+        attempt < 4
+      ) {
+        logDiagnostic.warn(
+          'WEBHOOK',
+          `Plaid data changed during pagination for ${institutionName}; restarting from original cursor`,
+          { item_id: itemDoc.id, attempt: attempt + 1 }
+        );
+        continue;
+      }
+      throw error;
+    }
+
+    // Persist account classification returned by transactionsSync so the
+    // Firestore→Sheets bridge can identify checking accounts without calling Plaid.
+    const webhookAccounts = Object.values(accountsMap);
+    if (webhookAccounts.length > 0) {
+      try {
+        await deduplicateAndSaveAccounts(
+          userId,
+          webhookAccounts,
+          institutionName,
+          itemData.itemId || itemDoc.id
+        );
+      } catch (accountMetadataError) {
+        logger.error(
+          'PLAID_ACCOUNTS',
+          'Failed to persist account metadata during webhook sync',
+          accountMetadataError,
+          { userId, itemId: itemDoc.id }
+        );
+      }
+    }
+
+    const userDocRef = db.collection('users').doc(userId);
+    const userDoc = await userDocRef.get();
+    if (!userDoc.exists) {
+      await userDocRef.set({
+        createdAt: admin.firestore.FieldValue.serverTimestamp(),
+        lastUpdated: admin.firestore.FieldValue.serverTimestamp()
+      }, { merge: true });
+    }
+
+    const writeTransactions = async (transactions) => {
+      let batch = db.batch();
+      let count = 0;
+      let total = 0;
+
+      for (const transaction of transactions) {
+        const ref = userDocRef
+          .collection('transactions')
+          .doc(transaction.transaction_id);
+
+        const account = accountsMap[transaction.account_id] || {};
+        batch.set(ref, {
+          ...transaction,
+          amount: -Number(transaction.amount),
+          category: autoCategorizTransaction(transaction.merchant_name || transaction.name),
+          source: 'plaid',
+          item_id: itemData.itemId || itemDoc.id,
+          institutionName,
+          institution_name: institutionName,
+          mask: account.mask || null,
+          account_type: account.type || null,
+          account_subtype: account.subtype || null,
+          account_name: account.name || null,
+          synced_at: admin.firestore.FieldValue.serverTimestamp(),
+          lastSyncedAt: admin.firestore.FieldValue.serverTimestamp(),
+          webhook_code: webhookCode
+        }, { merge: true });
+
+        count++;
+        if (count >= 400) {
+          await batch.commit();
+          total += count;
+          batch = db.batch();
+          count = 0;
+        }
+      }
+
+      if (count > 0) {
+        await batch.commit();
+        total += count;
+      }
+
+      return total;
+    };
+
+    const savedAdded = await writeTransactions(added);
+    const savedModified = await writeTransactions(modified);
+
+    if (removed.length > 0) {
+      let batch = db.batch();
+      let count = 0;
+
+      for (const removedTx of removed) {
+        const ref = userDocRef
+          .collection('transactions')
+          .doc(removedTx.transaction_id);
+
+        batch.delete(ref);
+        count++;
+
+        if (count >= 400) {
+          await batch.commit();
+          batch = db.batch();
+          count = 0;
+        }
+      }
+
+      if (count > 0) {
+        await batch.commit();
+      }
+    }
+
+    // Cursor moves only after all Firestore transaction writes/deletes succeed.
+    await itemDoc.ref.set({
+      cursor,
+      lastWebhookUpdate: admin.firestore.FieldValue.serverTimestamp(),
+      lastSyncedAt: admin.firestore.FieldValue.serverTimestamp()
+    }, { merge: true });
+
+    const result = {
+      item_id: itemData.itemId || itemDoc.id,
+      institution: institutionName,
+      added: savedAdded,
+      modified: savedModified,
+      removed: removed.length,
+      pages,
+      attempts: attempt,
+      cursor_updated: true
+    };
+
+    logDiagnostic.info(
+      'WEBHOOK',
+      `Plaid sync complete for ${institutionName}`,
+      result
+    );
+
+    return result;
+  }
+
+  throw new Error(`Plaid sync retries exhausted for item ${itemDoc.id}`);
+}
+
+async function syncPlaidItemForWebhookOnce_(itemDoc, userId, webhookCode) {
+  const key = itemDoc.id;
+
+  if (plaidWebhookSyncInFlight.has(key)) {
+    logDiagnostic.info(
+      'WEBHOOK',
+      'Joining existing in-flight Plaid sync for item',
+      { item_id: key }
+    );
+    return plaidWebhookSyncInFlight.get(key);
+  }
+
+  const promise = syncPlaidItemForWebhook_(itemDoc, userId, webhookCode)
+    .finally(() => plaidWebhookSyncInFlight.delete(key));
+
+  plaidWebhookSyncInFlight.set(key, promise);
+  return promise;
+}
+
 // Webhook endpoint for Plaid
-app.post("/api/plaid/webhook", async (req, res, next) => {
+app.post("/api/plaid/webhook", async (req, res) => {
   const endpoint = "/api/plaid/webhook";
   logDiagnostic.request(endpoint, req.body);
-  
+
   try {
     const { webhook_type, webhook_code, item_id, error } = req.body;
-    
+
     logDiagnostic.info('WEBHOOK', `Received webhook: ${webhook_type} - ${webhook_code}`, {
       item_id,
       has_error: !!error
     });
-    
+
     if (webhook_type === 'TRANSACTIONS') {
-      if (webhook_code === 'DEFAULT_UPDATE' || 
-          webhook_code === 'INITIAL_UPDATE' ||
-          webhook_code === 'HISTORICAL_UPDATE') {
-        
-        logger.info('WEBHOOK', 'Processing transaction update webhook', {});
-        logDiagnostic.info('WEBHOOK', 'Processing transaction update webhook', { item_id });
-        
+      const isSyncWebhook = webhook_code === 'SYNC_UPDATES_AVAILABLE';
+      const isLegacyBootstrapWebhook = [
+        'INITIAL_UPDATE',
+        'HISTORICAL_UPDATE',
+        'DEFAULT_UPDATE',
+        'TRANSACTIONS_REMOVED'
+      ].includes(webhook_code);
+
+      if (isSyncWebhook || isLegacyBootstrapWebhook) {
         const itemsSnapshot = await db.collectionGroup('plaid_items')
           .where('itemId', '==', item_id)
           .limit(1)
           .get();
-        
+
         if (!itemsSnapshot.empty) {
           const itemDoc = itemsSnapshot.docs[0];
           const itemData = itemDoc.data();
           const userId = itemDoc.ref.parent.parent.id;
-          
-          logDiagnostic.info('WEBHOOK', `Found item for user ${userId}`, {
-            institution: itemData.institutionName
-          });
-          
-          const syncResponse = await plaidClient.transactionsSync({
-            access_token: itemData.accessToken,
-            cursor: itemData.cursor || undefined,
-            options: {
-              include_personal_finance_category: true
-            }
-          });
 
-          // ✅ ADD LOGGING HERE TO SEE WHAT PLAID SENDS:
-          logDiagnostic.info('WEBHOOK', `Raw Plaid response for ${itemData.institutionName}:`, {
-            total_added: syncResponse.data.added.length,
-            total_modified: syncResponse.data.modified.length,
-            total_removed: syncResponse.data.removed.length,
-            pending_count: syncResponse.data.added.filter(tx => tx.pending === true).length
-          });
+          // Once an Item has a cursor, /transactions/sync users should process
+          // SYNC_UPDATES_AVAILABLE and ignore legacy duplicate notifications.
+          const shouldSync = isSyncWebhook || !itemData.cursor;
 
-          // Log first few transactions to see structure
-          if (syncResponse.data.added.length > 0) {
-            syncResponse.data.added.slice(0, 3).forEach(tx => {
-              logDiagnostic.info('WEBHOOK', `Transaction sample:`, {
-                merchant: tx.merchant_name || tx.name,
-                amount: tx.amount,
-                pending: tx.pending,
-                date: tx.date,
-                account_id: tx.account_id
+          if (shouldSync) {
+            const syncResult = await syncPlaidItemForWebhookOnce_(
+              itemDoc,
+              userId,
+              webhook_code
+            );
+
+            // Firebase is canonical for the Sheets bridge. A Sheets failure does
+            // not roll back the Plaid cursor; the next bridge run scans Firebase
+            // again and can recover any missed staging rows idempotently.
+            try {
+              const bridgeResult = await bridgeFirebaseTransactionsToSheets({
+                db,
+                userId,
+                apply: true
               });
+
+              logDiagnostic.info(
+                'SHEETS_BRIDGE',
+                'Webhook Firebase-to-Sheets bridge completed',
+                bridgeResult
+              );
+            } catch (bridgeError) {
+              logger.error(
+                'SHEETS_BRIDGE',
+                'Webhook Firebase-to-Sheets bridge failed',
+                bridgeError,
+                { userId, itemId: item_id }
+              );
+              logDiagnostic.error(
+                'SHEETS_BRIDGE',
+                'Webhook Firebase-to-Sheets bridge failed',
+                bridgeError
+              );
+            }
+
+            logDiagnostic.info('WEBHOOK', 'Successfully processed transaction webhook', {
+              item_id,
+              webhook_code,
+              ...syncResult
             });
+          } else {
+            logDiagnostic.info(
+              'WEBHOOK',
+              'Ignored legacy transaction webhook because sync cursor already exists',
+              { item_id, webhook_code }
+            );
           }
-          
-          logDiagnostic.info('WEBHOOK', 'Received transaction data from Plaid', {
-            accounts: syncResponse.data.accounts.length,
-            added: syncResponse.data.added.length,
-            modified: syncResponse.data.modified.length,
-            removed: syncResponse.data.removed.length
-          });
-          
-          const userDocRef = db.collection('users').doc(userId);
-          const userDoc = await userDocRef.get();
-          
-          if (!userDoc.exists) {
-            logger.info('WEBHOOK', 'Initializing user document for', {});
-            logDiagnostic.info('WEBHOOK', `Initializing user document for ${userId}`);
-            await userDocRef.set({
-              createdAt: admin.firestore.FieldValue.serverTimestamp(),
-              lastUpdated: admin.firestore.FieldValue.serverTimestamp()
-            }, { merge: true });
-          }
-          
-          const accountsMap = {};
-          if (syncResponse.data.accounts && syncResponse.data.accounts.length > 0) {
-            syncResponse.data.accounts.forEach(account => {
-              accountsMap[account.account_id] = account;
-            });
-          }
-          
-          const allTransactions = [
-            ...syncResponse.data.added,
-            ...syncResponse.data.modified
-          ];
-          
-          if (allTransactions.length > 0) {
-            let batch = db.batch();
-            let batchCount = 0;
-            let totalSaved = 0;
-            
-            for (const transaction of allTransactions) {
-              const transactionRef = userDocRef
-                .collection('transactions')
-                .doc(transaction.transaction_id);
-              
-              const txMask = accountsMap[transaction.account_id]?.mask || null;
-              const txInstitution = itemData.institutionName;
-              
-              batch.set(transactionRef, {
-                ...transaction,
-                amount: -transaction.amount,
-                category: autoCategorizTransaction(transaction.merchant_name || transaction.name),
-                item_id: item_id,
-                institutionName: txInstitution,
-                institution_name: txInstitution,
-                mask: txMask,
-                synced_at: admin.firestore.FieldValue.serverTimestamp(),
-                webhook_code: webhook_code
-              }, { merge: true });
-              
-              batchCount++;
-              
-              if (batchCount >= 500) {
-                await batch.commit();
-                totalSaved += batchCount;
-                logger.info('WEBHOOK', 'Committed batch of transactions', {});
-                logDiagnostic.info('WEBHOOK', `Committed batch of ${batchCount} transactions`);
-                batch = db.batch();
-                batchCount = 0;
-              }
-            }
-            
-            if (batchCount > 0) {
-              await batch.commit();
-              totalSaved += batchCount;
-            }
-            
-            logger.info('WEBHOOK', 'Successfully saved transactions to Firebase', {});
-            logDiagnostic.info('WEBHOOK', `Successfully saved ${totalSaved} transactions to Firebase`);
-          }
-          
-          if (syncResponse.data.removed.length > 0) {
-            let batch = db.batch();
-            let batchCount = 0;
-            
-            for (const removedTx of syncResponse.data.removed) {
-              const transactionRef = userDocRef
-                .collection('transactions')
-                .doc(removedTx.transaction_id);
-              
-              batch.delete(transactionRef);
-              batchCount++;
-              
-              if (batchCount >= 500) {
-                await batch.commit();
-                logger.info('WEBHOOK', 'Deleted batch of transactions', {});
-                logDiagnostic.info('WEBHOOK', `Deleted batch of ${batchCount} transactions`);
-                batch = db.batch();
-                batchCount = 0;
-              }
-            }
-            
-            if (batchCount > 0) {
-              await batch.commit();
-            }
-            
-            logger.info('WEBHOOK', 'Removed transactions from Firebase', {});
-            logDiagnostic.info('WEBHOOK', `Removed ${syncResponse.data.removed.length} transactions from Firebase`);
-          }
-          
-          await itemDoc.ref.set({
-            cursor: syncResponse.data.next_cursor,
-            lastWebhookUpdate: admin.firestore.FieldValue.serverTimestamp()
-          }, { merge: true });
-          
-          logDiagnostic.info('WEBHOOK', 'Successfully processed webhook update', {
-            saved: allTransactions.length,
-            removed: syncResponse.data.removed.length,
-            cursor_updated: true
-          });
         } else {
-          logger.info('WEBHOOK', 'No user found for item_id', {});
-          logDiagnostic.info('WEBHOOK', 'No user found for item_id', { item_id });
+          logDiagnostic.warn('WEBHOOK', 'No user found for item_id', { item_id });
         }
       }
     }
-    
+
     if (webhook_type === 'ITEM' && webhook_code === 'ERROR') {
       logDiagnostic.error('WEBHOOK', 'Item error reported by Plaid', {
         item_id,
         error
       });
-      
+
       const itemsSnapshot = await db.collectionGroup('plaid_items')
         .where('itemId', '==', item_id)
         .limit(1)
         .get();
-      
+
       if (!itemsSnapshot.empty) {
         const errorCode = error?.error_code;
-        const needsReauth = errorCode === 'ITEM_LOGIN_REQUIRED' || 
-                           errorCode === 'INVALID_CREDENTIALS' ||
-                           errorCode === 'ITEM_LOCKED' ||
-                           errorCode === 'ITEM_NO_LONGER_AVAILABLE';
-        
+        const needsReauth =
+          errorCode === 'ITEM_LOGIN_REQUIRED' ||
+          errorCode === 'INVALID_CREDENTIALS' ||
+          errorCode === 'ITEM_LOCKED' ||
+          errorCode === 'ITEM_NO_LONGER_AVAILABLE';
+
         await itemsSnapshot.docs[0].ref.set({
           status: needsReauth ? 'NEEDS_REAUTH' : 'error',
-          error: error,
+          error,
           updatedAt: admin.firestore.FieldValue.serverTimestamp()
         }, { merge: true });
-        
-        logDiagnostic.info('WEBHOOK', `Item marked as ${needsReauth ? 'NEEDS_REAUTH' : 'error'}`, {
-          item_id,
-          error_code: errorCode
-        });
+
+        logDiagnostic.info(
+          'WEBHOOK',
+          `Item marked as ${needsReauth ? 'NEEDS_REAUTH' : 'error'}`,
+          { item_id, error_code: errorCode }
+        );
       }
     }
-    
+
     logDiagnostic.response(endpoint, 200, { success: true });
     res.json({ success: true });
-    
+
   } catch (error) {
-    if (error.code === 9) {
-      logDiagnostic.error('WEBHOOK', 'FAILED_PRECONDITION error - Document structure may not exist', {
-        message: error.message,
-        code: error.code,
-        item_id: req.body.item_id,
-        webhook_type: req.body.webhook_type,
-        webhook_code: req.body.webhook_code
-      });
-    } else {
-      logger.error('WEBHOOK', 'Error processing webhook', error, {});
-      logDiagnostic.error('WEBHOOK', 'Error processing webhook', error);
-    }
-    
-    // Always return 200 to Plaid to prevent retries
-    // Log error for debugging but don't fail the webhook
-    res.status(200).json({ 
+    logger.error('WEBHOOK', 'Error processing webhook', error, {});
+    logDiagnostic.error('WEBHOOK', 'Error processing webhook', error);
+
+    // Preserve the current operational behavior: acknowledge receipt so a
+    // transient bridge problem cannot create a Plaid retry storm. Because the
+    // cursor is advanced only after Firestore commit, transaction deltas remain
+    // recoverable on the next /transactions/sync call.
+    res.status(200).json({
       received: true,
       error: 'logged',
       message: error.message
