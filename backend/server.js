@@ -2250,39 +2250,20 @@ app.post("/api/plaid/sheets_force_refresh", async (req, res, next) => {
   const endpoint = "/api/plaid/sheets_force_refresh";
   try {
     const configuredUser = String(process.env.SHEETS_USER_ID || "").trim();
+    const expectedToken = String(process.env.SHEETS_FORCE_REFRESH_TOKEN || "").trim();
+    const providedToken = String(req.headers["x-sheet-refresh-token"] || "").trim();
     const expectedSpreadsheet = "1qaaf0t9il726oQpL2oXMbZqlF7zJpHomsClk8vklE_g";
     const spreadsheetId = String(req.body?.spreadsheetId || "").trim();
-    const authHeader = String(req.headers.authorization || "");
-    const match = authHeader.match(/^Bearer\s+(.+)$/i);
-    const googleToken = match ? match[1] : "";
 
-    if (!configuredUser) {
+    if (!configuredUser || !expectedToken) {
       throw createError.internal("Sheet refresh endpoint is not configured.");
     }
     if (spreadsheetId !== expectedSpreadsheet) {
       return res.status(400).json({ success: false, error: "Refresh is locked to the TEST workbook." });
     }
-    if (!googleToken) {
-      return res.status(401).json({ success: false, error: "Google authorization token is required." });
-    }
-
-    // Verify the Apps Script OAuth token can read the locked TEST spreadsheet.
-    const verifyUrl =
-      "https://sheets.googleapis.com/v4/spreadsheets/" +
-      encodeURIComponent(expectedSpreadsheet) +
-      "?fields=spreadsheetId";
-    const verifyResponse = await fetch(verifyUrl, {
-      headers: { Authorization: "Bearer " + googleToken }
-    });
-
-    if (!verifyResponse.ok) {
-      logger.warn("SHEETS_FORCE_REFRESH", "Google token could not verify TEST workbook access", {
-        status: verifyResponse.status
-      });
-      return res.status(403).json({
-        success: false,
-        error: "Google authorization could not verify access to the TEST workbook."
-      });
+    if (!providedToken || providedToken !== expectedToken) {
+      logger.warn("SHEETS_FORCE_REFRESH", "Rejected unauthorized sheet refresh request", {});
+      return res.status(403).json({ success: false, error: "Unauthorized sheet refresh request." });
     }
 
     // Durable 2-minute guard against double-clicks / accidental repeat paid refreshes.
