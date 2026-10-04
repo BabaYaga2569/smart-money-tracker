@@ -1018,6 +1018,27 @@ function familyFinancesOnEdit(e) {
   }
 }
 
+function authorizeFamilyFinancesBankRefresh() {
+  // Harmless one-time authorization helper. This does NOT call Plaid and does
+  // NOT consume a paid refresh. It only grants Apps Script permission to make
+  // the behind-the-scenes HTTPS request used by the dashboard checkbox.
+  ScriptApp.getOAuthToken();
+  const response = UrlFetchApp.fetch('https://smart-money-tracker-09ks.onrender.com/api/health', {
+    method: 'get',
+    muteHttpExceptions: true
+  });
+
+  const ss = familyFinancesSpreadsheet_();
+  ss.toast(
+    'Authorization is ready. The Refresh Banks checkbox can now run behind the scenes.',
+    'Refresh Banks',
+    8
+  );
+
+  return response.getResponseCode();
+}
+
+
 function familyFinancesRequestPlaidRefresh_() {
   const ss = familyFinancesSpreadsheet_();
 
