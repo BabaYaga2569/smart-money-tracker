@@ -3,6 +3,16 @@ import admin from 'firebase-admin';
 import { Configuration, PlaidApi, PlaidEnvironments } from 'plaid';
 import { createSign } from 'node:crypto';
 
+if (String(process.env.SHEETS_BRIDGE_ENABLED || '').trim().toLowerCase() === 'true') {
+  const testSpreadsheetId = '1qaaf0t9il726oQpL2oXMbZqlF7zJpHomsClk8vklE_g';
+  if (String(process.env.SHEETS_SPREADSHEET_ID || '').trim() !== testSpreadsheetId) {
+    throw new Error('Automatic Firestore→Sheets bridge is TEST-only until production rollout is approved.');
+  }
+  console.log('Running automatic Firestore→Sheets bridge for TEST workbook.');
+  await import('./export-firestore-to-sheets.mjs');
+  process.exit(process.exitCode || 0);
+}
+
 // Safety gate: the legacy Plaid→Sheets importer consumes Plaid sync directly.
 // Keep it disabled while the Firestore→Sheets bridge is the source of truth.
 if (process.env.LEGACY_PLAID_IMPORTER_ENABLED !== 'true') {
