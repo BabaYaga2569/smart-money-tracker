@@ -16,6 +16,7 @@ const Transactions = () => {
   const [syncingPlaid, setSyncingPlaid] = useState(false);
   const [autoSyncing, setAutoSyncing] = useState(false);
   const [forceRefreshing, setForceRefreshing] = useState(false);
+  const sheetForceRefreshHandledRef = useRef(false);
   const [accounts, setAccounts] = useState({});
   const [transactions, setTransactions] = useState([]);
   const [filteredTransactions, setFilteredTransactions] = useState([]);
@@ -669,6 +670,26 @@ useEffect(() => {
       setForceRefreshing(false);
     }
   };
+
+  // One-click entry point from the Google Sheets dashboard.
+  // The sheet links to /transactions?forceRefresh=1. Once the signed-in user
+  // is available, trigger the existing authenticated Force Bank Check exactly
+  // once, then remove the query flag so refresh/re-render cannot charge twice.
+  useEffect(() => {
+    if (!currentUser || sheetForceRefreshHandledRef.current) return;
+
+    const params = new URLSearchParams(window.location.search);
+    if (params.get('forceRefresh') !== '1') return;
+
+    sheetForceRefreshHandledRef.current = true;
+    params.delete('forceRefresh');
+
+    const cleanQuery = params.toString();
+    const cleanUrl = window.location.pathname + (cleanQuery ? '?' + cleanQuery : '') + window.location.hash;
+    window.history.replaceState({}, '', cleanUrl);
+
+    forceRefresh();
+  }, [currentUser]);
 
   const handleResetCursors = async () => {
     if (!window.confirm('Reset sync cursors? This will force a full re-sync of all transactions on next sync.')) {
