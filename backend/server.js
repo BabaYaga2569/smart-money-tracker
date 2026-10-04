@@ -2354,13 +2354,23 @@ app.post("/api/plaid/webhook", async (req, res, next) => {
         logger.info('WEBHOOK', 'Processing transaction update webhook', {});
         logDiagnostic.info('WEBHOOK', 'Processing transaction update webhook', { item_id });
         
-        const itemsSnapshot = await db.collectionGroup('plaid_items')
-          .where('itemId', '==', item_id)
-          .limit(1)
-          .get();
+        // Avoid a collection-group query here. Firestore can require a
+        // collection-group index for plaid_items.itemId, which previously caused
+        // DEFAULT_UPDATE webhooks to fail before transactions were saved.
+        // Plaid item documents are stored with itemId as the document ID, so scan
+        // the small users collection and perform direct document reads instead.
+        const usersSnapshot = await db.collection('users').get();
+        let itemDoc = null;
+
+        for (const userDoc of usersSnapshot.docs) {
+          const candidate = await userDoc.ref.collection('plaid_items').doc(item_id).get();
+          if (candidate.exists) {
+            itemDoc = candidate;
+            break;
+          }
+        }
         
-        if (!itemsSnapshot.empty) {
-          const itemDoc = itemsSnapshot.docs[0];
+        if (itemDoc) {
           const itemData = itemDoc.data();
           const userId = itemDoc.ref.parent.parent.id;
           
