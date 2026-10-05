@@ -49,6 +49,7 @@ const Sidebar = () => {
     { name: "💳 Payment History", path: "/payment-history" },
     { name: "⚙️ Payment Rules", path: "/payment-rules" },  // ← NEW
     { name: "Recurring", path: "/recurring" },
+    { name: "🩺 Bill Doctor", path: "/bill-doctor" },
     { name: "Credit Cards", path: "/creditcards" },
     { name: "🧠 Debt Optimizer", path: "/debt-optimizer" },
     { name: "Subscriptions", path: "/subscriptions", badge: detectionCount },
