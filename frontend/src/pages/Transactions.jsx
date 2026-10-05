@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { doc, getDoc, collection, addDoc, deleteDoc, query, orderBy, limit, getDocs, writeBatch, onSnapshot } from 'firebase/firestore';
+import { doc, getDoc, collection, addDoc, deleteDoc, query, orderBy, limit, getDocs, writeBatch, onSnapshot, startAfter, where, getCountFromServer } from 'firebase/firestore';
 import { db } from '../firebase';
 import { formatDateForDisplay, formatDateForInput } from '../utils/DateUtils';
 import { CATEGORY_KEYWORDS } from '../constants/categories';
@@ -9,6 +9,8 @@ import './Transactions.css';
 import { useAuth } from '../contexts/AuthContext';
 import { shouldRunDetection, updateLastRun, saveDetections } from '../utils/detectionStorage';
 import { getCanonicalDisplayBalance, getVisiblePlaidAccounts } from '../utils/accountVisibility';
+
+const TRANSACTIONS_PAGE_SIZE = 100;
 
 const Transactions = () => {
   const { currentUser } = useAuth();
@@ -20,6 +22,10 @@ const Transactions = () => {
   const sheetForceRefreshHandledRef = useRef(false);
   const [accounts, setAccounts] = useState({});
   const [transactions, setTransactions] = useState([]);
+  const [monthlyAnalyticsTransactions, setMonthlyAnalyticsTransactions] = useState([]);
+  const [totalTransactionCount, setTotalTransactionCount] = useState(null);
+  const [hasMoreTransactions, setHasMoreTransactions] = useState(false);
+  const [loadingMoreTransactions, setLoadingMoreTransactions] = useState(false);
   const [filteredTransactions, setFilteredTransactions] = useState([]);
   const [showAddForm, setShowAddForm] = useState(false);
   const [showPendingForm, setShowPendingForm] = useState(false);
@@ -41,6 +47,9 @@ const Transactions = () => {
   
   // Ref for scrolling to transactions section
   const transactionsListRef = useRef(null);
+  const paginationCursorRef = useRef(null);
+  const recentSnapshotIdsRef = useRef(new Set());
+  const loadedOlderPagesRef = useRef(false);
   
   // Analytics state
   const [analytics, setAnalytics] = useState({
@@ -158,7 +167,7 @@ const Transactions = () => {
 
   useEffect(() => {
     calculateAnalytics();
-  }, [transactions]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [monthlyAnalyticsTransactions]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ✅ FIXED CODE - REPLACE WITH THIS:
 useEffect(() => {
@@ -222,40 +231,201 @@ useEffect(() => {
   }
 }, [currentUser]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Real-time transactions listener
+  const isCurrentMonthDate = (dateValue) => {
+    if (!dateValue) return false;
+    const date = new Date(`${dateValue}T12:00:00`);
+    const now = new Date();
+    return date.getFullYear() === now.getFullYear() &&
+      date.getMonth() === now.getMonth();
+  };
+
+  const loadTransactionMetrics = async () => {
+    if (!currentUser) return;
+
+    const transactionsRef = collection(db, 'users', currentUser.uid, 'transactions');
+    const now = new Date();
+    const monthStart = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-01`;
+    const nextMonth = new Date(now.getFullYear(), now.getMonth() + 1, 1);
+    const nextMonthStart = `${nextMonth.getFullYear()}-${String(nextMonth.getMonth() + 1).padStart(2, '0')}-01`;
+
+    try {
+      const countSnapshot = await getCountFromServer(transactionsRef);
+      setTotalTransactionCount(countSnapshot.data().count);
+    } catch (error) {
+      console.warn('[Transactions] Unable to load all-time count:', error.message);
+    }
+
+    try {
+      const monthlyQuery = query(
+        transactionsRef,
+        where('date', '>=', monthStart),
+        where('date', '<', nextMonthStart),
+        orderBy('date', 'desc')
+      );
+      const monthlySnapshot = await getDocs(monthlyQuery);
+      setMonthlyAnalyticsTransactions(
+        monthlySnapshot.docs.map(docSnap => ({
+          id: docSnap.id,
+          ...docSnap.data()
+        }))
+      );
+    } catch (error) {
+      console.warn('[Transactions] Unable to load monthly analytics:', error.message);
+    }
+  };
+
+  const loadMoreTransactions = async () => {
+    if (!currentUser || !paginationCursorRef.current || loadingMoreTransactions) return;
+
+    try {
+      setLoadingMoreTransactions(true);
+      const transactionsRef = collection(db, 'users', currentUser.uid, 'transactions');
+      const olderQuery = query(
+        transactionsRef,
+        orderBy('timestamp', 'desc'),
+        startAfter(paginationCursorRef.current),
+        limit(TRANSACTIONS_PAGE_SIZE)
+      );
+
+      const snapshot = await getDocs(olderQuery);
+      const page = snapshot.docs.map(docSnap => ({
+        id: docSnap.id,
+        ...docSnap.data()
+      }));
+
+      if (snapshot.docs.length > 0) {
+        paginationCursorRef.current = snapshot.docs[snapshot.docs.length - 1];
+        loadedOlderPagesRef.current = true;
+
+        setTransactions(previous => {
+          const byId = new Map(previous.map(transaction => [transaction.id, transaction]));
+          page.forEach(transaction => byId.set(transaction.id, transaction));
+          return [...byId.values()];
+        });
+      }
+
+      const expectedLoaded = transactions.length + page.length;
+      setHasMoreTransactions(
+        snapshot.docs.length === TRANSACTIONS_PAGE_SIZE &&
+        (totalTransactionCount === null || expectedLoaded < totalTransactionCount)
+      );
+    } catch (error) {
+      console.error('[Transactions] Failed to load older transactions:', error);
+      if (
+        error?.code === 8 ||
+        String(error?.message || '').includes('RESOURCE_EXHAUSTED') ||
+        String(error?.message || '').toLowerCase().includes('quota exceeded')
+      ) {
+        localStorage.setItem(
+          'smt_firestore_quota_backoff_until',
+          String(Date.now() + 30 * 60 * 1000)
+        );
+        showNotification('Firestore quota is temporarily exhausted. Older history will be available after the quota recovers.', 'error');
+      } else {
+        showNotification('Unable to load older transactions', 'error');
+      }
+    } finally {
+      setLoadingMoreTransactions(false);
+    }
+  };
+
   useEffect(() => {
     if (!currentUser) return;
-    
-    console.log('📡 [Transactions] Setting up real-time listener...');
-    
+
+    loadTransactionMetrics();
+  }, [currentUser]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  useEffect(() => {
+    if (totalTransactionCount !== null && transactions.length >= totalTransactionCount) {
+      setHasMoreTransactions(false);
+    }
+  }, [totalTransactionCount, transactions.length]);
+
+  // Keep only the newest page live. Older history is loaded on demand.
+  useEffect(() => {
+    if (!currentUser) return;
+
+    console.log(`📡 [Transactions] Setting up ${TRANSACTIONS_PAGE_SIZE}-transaction live window...`);
+
+    paginationCursorRef.current = null;
+    recentSnapshotIdsRef.current = new Set();
+    loadedOlderPagesRef.current = false;
+    setHasMoreTransactions(false);
+
     const transactionsRef = collection(db, 'users', currentUser.uid, 'transactions');
-    const q = query(transactionsRef, orderBy('timestamp', 'desc'), limit(1000));
-    
+    const recentQuery = query(
+      transactionsRef,
+      orderBy('timestamp', 'desc'),
+      limit(TRANSACTIONS_PAGE_SIZE)
+    );
+
     const unsubscribe = onSnapshot(
-      q,
+      recentQuery,
       (snapshot) => {
-        const txs = snapshot.docs.map(doc => ({
-          id: doc.id,
-          ...doc.data()
+        const recentTransactions = snapshot.docs.map(docSnap => ({
+          id: docSnap.id,
+          ...docSnap.data()
         }));
-        
-        console.log('✅ [Transactions] Real-time update:', txs.length, 'transactions');
-        setTransactions(txs);
+
+        const newRecentIds = new Set(recentTransactions.map(transaction => transaction.id));
+
+        setTransactions(previous => {
+          const olderLoaded = loadedOlderPagesRef.current
+            ? previous.filter(transaction => !newRecentIds.has(transaction.id))
+            : [];
+          return [...recentTransactions, ...olderLoaded];
+        });
+
+        // New/modified current-month transactions arriving through Plaid webhooks
+        // should update analytics without re-reading the whole month.
+        setMonthlyAnalyticsTransactions(previous => {
+          const byId = new Map(previous.map(transaction => [transaction.id, transaction]));
+          recentTransactions
+            .filter(transaction => isCurrentMonthDate(transaction.date))
+            .forEach(transaction => byId.set(transaction.id, transaction));
+          return [...byId.values()];
+        });
+
+        recentSnapshotIdsRef.current = newRecentIds;
+
+        if (!loadedOlderPagesRef.current) {
+          paginationCursorRef.current =
+            snapshot.docs.length > 0
+              ? snapshot.docs[snapshot.docs.length - 1]
+              : null;
+          setHasMoreTransactions(snapshot.docs.length === TRANSACTIONS_PAGE_SIZE);
+        }
+
+        console.log(
+          '✅ [Transactions] Live window update:',
+          recentTransactions.length,
+          'transactions'
+        );
       },
       (error) => {
         console.error('❌ [Transactions] Listener error:', error);
-        showNotification('Error loading transactions', 'error');
+        if (
+          error?.code === 8 ||
+          String(error?.message || '').includes('RESOURCE_EXHAUSTED') ||
+          String(error?.message || '').toLowerCase().includes('quota exceeded')
+        ) {
+          showNotification('Firestore quota is temporarily exhausted. Existing transaction data remains safe.', 'error');
+        } else {
+          showNotification('Error loading recent transactions', 'error');
+        }
       }
     );
 
     return () => {
-      console.log('🔌 [Transactions] Cleaning up listener');
+      console.log('🔌 [Transactions] Cleaning up live transaction window');
       unsubscribe();
     };
-  }, [currentUser]);
+  }, [currentUser]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Expose state for debugging
+  // Development-only state inspection. Never expose financial state globally in production.
   useEffect(() => {
+    if (!import.meta.env.DEV) return undefined;
+
     window.__DEBUG_STATE__ = {
       transactions,
       filteredTransactions,
@@ -490,6 +660,15 @@ useEffect(() => {
       }
 
       localStorage.removeItem('smt_firestore_quota_backoff_until');
+
+      if (
+        (data.added || 0) > 0 ||
+        (data.updated || 0) > 0 ||
+        (data.removed || 0) > 0 ||
+        (data.pending_replaced || 0) > 0
+      ) {
+        loadTransactionMetrics();
+      }
 
       // Real-time listener will auto-update, no manual reload needed
       
@@ -761,6 +940,13 @@ useEffect(() => {
       // Add to local state
       const newTransactionWithId = { id: docRef.id, ...transaction };
       setTransactions(prev => [newTransactionWithId, ...prev]);
+      setTotalTransactionCount(previous => previous === null ? null : previous + 1);
+      if (isCurrentMonthDate(newTransactionWithId.date)) {
+        setMonthlyAnalyticsTransactions(previous => [
+          newTransactionWithId,
+          ...previous.filter(existing => existing.id !== newTransactionWithId.id)
+        ]);
+      }
       
       // Update account balance
       await updateAccountBalance(newTransaction.account, finalAmount);
@@ -827,6 +1013,13 @@ useEffect(() => {
       // Add to local state
       const newTransactionWithId = { id: docRef.id, ...transaction };
       setTransactions(prev => [newTransactionWithId, ...prev]);
+      setTotalTransactionCount(previous => previous === null ? null : previous + 1);
+      if (isCurrentMonthDate(newTransactionWithId.date)) {
+        setMonthlyAnalyticsTransactions(previous => [
+          newTransactionWithId,
+          ...previous.filter(existing => existing.id !== newTransactionWithId.id)
+        ]);
+      }
       
       // Reset form
       setPendingCharge({
@@ -873,6 +1066,8 @@ useEffect(() => {
   };
 
   const updateTransaction = async (transactionId, updates) => {
+    const existingTransaction = transactions.find(transaction => transaction.id === transactionId);
+
     try {
       setSaving(true);
       setNotification({ message: '', type: '' });
@@ -900,9 +1095,22 @@ useEffect(() => {
       }
       
       // Update local state
+      const updatedTransaction = existingTransaction
+        ? { ...existingTransaction, ...updates }
+        : null;
+
       setTransactions(prev => prev.map(t => 
         t.id === transactionId ? { ...t, ...updates } : t
       ));
+
+      if (updatedTransaction) {
+        setMonthlyAnalyticsTransactions(previous => {
+          const withoutEdited = previous.filter(transaction => transaction.id !== transactionId);
+          return isCurrentMonthDate(updatedTransaction.date)
+            ? [updatedTransaction, ...withoutEdited]
+            : withoutEdited;
+        });
+      }
       
       showNotification('✅ Transaction updated successfully!', 'success');
       setEditingTransaction(null);
@@ -987,6 +1195,10 @@ useEffect(() => {
       
       // Remove from local state
       setTransactions(prev => prev.filter(t => t.id !== transactionId));
+      setMonthlyAnalyticsTransactions(prev => prev.filter(t => t.id !== transactionId));
+      setTotalTransactionCount(previous =>
+        previous === null ? null : Math.max(0, previous - 1)
+      );
       
       showNotification('Transaction deleted successfully!', 'success');
     } catch (error) {
@@ -1552,14 +1764,7 @@ useEffect(() => {
   };
 
   const calculateAnalytics = () => {
-    const currentMonth = new Date().getMonth();
-    const currentYear = new Date().getFullYear();
-    
-    const monthlyTransactions = transactions.filter(t => {
-      const transactionDate = new Date(t.date);
-      return transactionDate.getMonth() === currentMonth && 
-             transactionDate.getFullYear() === currentYear;
-    });
+    const monthlyTransactions = monthlyAnalyticsTransactions;
     
     let totalIncome = 0;
     let totalExpenses = 0;
@@ -1865,8 +2070,8 @@ useEffect(() => {
         </div>
         <div className="summary-card">
           <h3>Total Transactions</h3>
-          <div className="total-amount">{transactions.length}</div>
-          <small>All time</small>
+          <div className="total-amount">{totalTransactionCount ?? transactions.length}</div>
+          <small>{totalTransactionCount === null ? 'Loaded' : 'All time'}</small>
         </div>
       </div>
 
@@ -2343,7 +2548,10 @@ useEffect(() => {
       <div className="transactions-list" ref={transactionsListRef}>
         <div className="transactions-header">
           <h3>Recent Transactions</h3>
-          <p>Showing {filteredTransactions.length} of {transactions.length} transactions</p>
+          <p>
+            Showing {filteredTransactions.length} filtered from {transactions.length} loaded
+            {totalTransactionCount !== null ? ` of ${totalTransactionCount} total` : ''}
+          </p>
         </div>
         
         {/* Filter banner */}
@@ -2554,6 +2762,34 @@ useEffect(() => {
                 )}
               </div>
             ))}
+          </div>
+        )}
+
+        {hasMoreTransactions && (
+          <div className="transactions-pagination">
+            <button
+              type="button"
+              className="load-more-transactions-btn"
+              onClick={loadMoreTransactions}
+              disabled={loadingMoreTransactions}
+            >
+              {loadingMoreTransactions
+                ? 'Loading older transactions...'
+                : `Load ${TRANSACTIONS_PAGE_SIZE} More`}
+            </button>
+            <span>
+              Older history is loaded only when you ask for it to reduce Firestore reads.
+            </span>
+          </div>
+        )}
+
+        {hasMoreTransactions && (
+          filters.search || filters.category || filters.account ||
+          filters.dateFrom || filters.dateTo || filters.type || selectedCategory
+        ) && (
+          <div className="loaded-history-note">
+            Filters currently search the {transactions.length} loaded transactions.
+            Load more to search farther back in history.
           </div>
         )}
       </div>
