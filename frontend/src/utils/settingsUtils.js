@@ -39,6 +39,8 @@ const getDefaultSettings = () => ({
   bills: [],
   recurringItems: [],
   plaidAccounts: [],
+  accountPreferences: {},
+  accountVisibilitySchemaVersion: 1,
   bankAccounts: {
     bofa: { name: 'Bank of America', type: 'Checking', balance: '' },
     sofi: { name: 'SoFi', type: 'Savings', balance: '' },
