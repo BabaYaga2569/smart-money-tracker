@@ -198,12 +198,12 @@ const PLAID_CLIENT_ID = process.env.PLAID_CLIENT_ID || "demo_client_id";
 const PLAID_SECRET = process.env.PLAID_SECRET || "demo_secret";
 const PLAID_ENV = process.env.PLAID_ENV || "sandbox";
 
-// Log startup configuration (with masked secrets)
+// Log startup configuration without exposing any credential material.
 console.log('\n========================================');
 console.log('PLAID CONFIGURATION');
 console.log('========================================');
-console.log('PLAID_CLIENT_ID:', PLAID_CLIENT_ID ? `${PLAID_CLIENT_ID.substring(0, 8)}...` : '[NOT SET]');
-console.log('PLAID_SECRET:', PLAID_SECRET ? `${PLAID_SECRET.substring(0, 8)}...` : '[NOT SET]');
+console.log('PLAID_CLIENT_ID configured:', Boolean(PLAID_CLIENT_ID && PLAID_CLIENT_ID !== 'demo_client_id'));
+console.log('PLAID_SECRET configured:', Boolean(PLAID_SECRET && PLAID_SECRET !== 'demo_secret'));
 console.log('PLAID_ENV:', PLAID_ENV);
 console.log('NODE_ENV:', process.env.NODE_ENV || 'development');
 console.log('========================================\n');
