@@ -2,6 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 
 import {
+  collectRelevantTransactionIds,
   findCompositeDuplicate,
   findPendingReplacement,
   isManualPendingMatch
@@ -125,4 +126,32 @@ test("manual pending charge does not match a different account", () => {
   };
 
   assert.equal(isManualPendingMatch(manual, posted), false);
+});
+
+
+test("reconciliation planner reads only changed, predecessor, and removed transaction ids", () => {
+  const ids = collectRelevantTransactionIds(
+    [
+      {
+        transaction_id: "posted-1",
+        pending_transaction_id: "pending-1"
+      },
+      {
+        transaction_id: "posted-2",
+        pending_transaction_id: "pending-1"
+      }
+    ],
+    [
+      { transaction_id: "removed-1" }
+    ]
+  );
+
+  assert.deepEqual(
+    ids.sort(),
+    ["pending-1", "posted-1", "posted-2", "removed-1"].sort()
+  );
+});
+
+test("reconciliation planner performs no transaction document reads when Plaid returns no changes", () => {
+  assert.deepEqual(collectRelevantTransactionIds([], []), []);
 });
