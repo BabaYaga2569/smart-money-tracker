@@ -1035,106 +1035,87 @@ app.post("/api/plaid/exchange_token", async (req, res, next) => {
 app.post("/api/plaid/get_balances", async (req, res, next) => {
   const endpoint = "/api/plaid/get_balances";
   logDiagnostic.request(endpoint, req.body);
-  
+
   try {
-    const { userId } = req.body;
+    const { userId } = req.body || {};
 
     if (!userId) {
-      logger.error('PLAID_ACCOUNTS', 'Missing userId in request', null, {});
-      logDiagnostic.error('GET_BALANCES', 'Missing userId in request');
       throw createError.badRequest('userId is required', 'MISSING_USER_ID');
     }
-    
-    // Validate userId
+
     validators.validateUserId(userId);
 
-    // Retrieve all Plaid items for the user
     const items = await getAllPlaidItems(userId);
     if (!items || items.length === 0) {
-      logger.error('PLAID_ACCOUNTS', 'No Plaid credentials found for user', null, { userId });
-      logDiagnostic.error('GET_BALANCES', 'No Plaid credentials found for user');
       throw createError.notFound('No Plaid connection found. Please connect your bank account first.');
     }
 
-    logger.info('PLAID_ACCOUNTS', 'Fetching account balances for bank connections', { userId, itemCount: items.length });
-    logDiagnostic.info('GET_BALANCES', `Fetching account balances for ${items.length} bank connections`);
+    const allAccounts = [];
+    let successfulItems = 0;
 
-    // Fetch balances from all items
-    let allAccounts = [];
     for (const item of items) {
       try {
-        // Use accountsBalanceGet to fetch real-time balance data
-        // This ensures we get fresh balances directly from the bank instead of cached data
         const balanceResponse = await plaidClient.accountsBalanceGet({
           access_token: item.accessToken
         });
-        
-        // Extract accounts with fresh balance from balance response
-        const accountsWithInstitution = balanceResponse.data.accounts.map(account => ({
-          account_id: account.account_id,
-          name: account.name,
-          official_name: account.official_name,
-          type: account.type,
-          subtype: account.subtype,
-          mask: account.mask,
-          // Primary balance fields
-          available_balance: account.balances.available || account.balances.current || 0,
-          current_balance: account.balances.current || 0,
-          // Full balances object for flexibility
-          balances: account.balances,
-          institution_name: item.institutionName,
-          institution_id: item.institutionId,
-          item_id: item.itemId
-        }));
-        
-        allAccounts.push(...accountsWithInstitution);
+
+        for (const account of balanceResponse.data.accounts || []) {
+          validators.validateAccount(account);
+          allAccounts.push({
+            ...account,
+            available_balance: account.balances?.available ?? account.balances?.current ?? 0,
+            current_balance: account.balances?.current ?? 0,
+            institution_name: item.institutionName,
+            institution_id: item.institutionId,
+            item_id: item.itemId
+          });
+        }
+
+        successfulItems++;
       } catch (itemError) {
-        logger.error('PLAID_ACCOUNTS', 'Failed to fetch balances for item', itemError, { userId, itemId: item.itemId });
-        logDiagnostic.error('GET_BALANCES', `Failed to fetch balances for item ${item.itemId}`, itemError);
-        // Continue with other items even if one fails
+        logger.error('PLAID_ACCOUNTS', 'Failed to refresh balances for Plaid item', itemError, {
+          userId,
+          institution: item.institutionName
+        });
       }
     }
 
-    const accountCount = allAccounts.length;
-    logger.info('PLAID_ACCOUNTS', 'Successfully fetched balances for accounts from banks', { userId, accountCount: allAccounts.length });
-    logDiagnostic.info('GET_BALANCES', `Successfully fetched balances for ${accountCount} accounts from ${items.length} banks`);
-    
-    // Update account balances in Firebase settings/personal collection
-    try {
-      const updateResult = await updateAccountBalances(userId, allAccounts);
-      logger.info('GET_BALANCES', 'Persisted balances to Firebase: accounts updated', {});
-      logDiagnostic.info('GET_BALANCES', `Persisted balances to Firebase: ${updateResult.updated} accounts updated`);
-    } catch (updateError) {
-      logger.error('GET_BALANCES', 'Failed to persist balances to Firebase', updateError, {});
-      logDiagnostic.error('GET_BALANCES', 'Failed to persist balances to Firebase', updateError);
-      // Continue anyway - don't fail the request if Firebase update fails
-    }
-    
-    logDiagnostic.response(endpoint, 200, { success: true, account_count: accountCount, item_count: items.length });
+    const updateResult = await updateAccountBalances(userId, allAccounts, {
+      completeSnapshot: successfulItems === items.length
+    });
+
+    logDiagnostic.response(endpoint, 200, {
+      success: true,
+      visible_account_count: updateResult.visibleAccounts.length,
+      hidden_account_count: updateResult.hiddenAccounts.length,
+      canonical_account_count: updateResult.accounts.length,
+      item_count: items.length,
+      successful_item_count: successfulItems
+    });
 
     res.json({
       success: true,
-      accounts: allAccounts,
+      accounts: updateResult.visibleAccounts,
+      account_count: updateResult.visibleAccounts.length,
+      connected_account_count: updateResult.accounts.length,
+      hidden_account_count: updateResult.hiddenAccounts.length,
+      item_count: items.length,
+      partial: successfulItems !== items.length,
+      last_updated: new Date().toISOString()
     });
   } catch (error) {
     logger.error('GET_BALANCES', 'Failed to fetch balances', error, {});
-    logDiagnostic.error('GET_BALANCES', 'Failed to fetch balances', error);
-    
-    // Check if it's already an AppError
-    if (error.statusCode) {
-      return next(error);
-    }
-    
-    // Handle Plaid-specific errors
-    if (error.response?.data) {
-      const plaidError = error.response.data;
+
+    if (error.statusCode) return next(error);
+
+    const plaidError = error.response?.data;
+    if (plaidError) {
       return next(createError.plaidError(
         plaidError.error_message || 'Plaid API error',
         shouldRetryPlaidError(plaidError.error_type)
       ));
     }
-    
-    // Generic error
+
     next(createError.plaidError(error.message || 'Failed to fetch balances'));
   }
 });
@@ -1142,149 +1123,304 @@ app.post("/api/plaid/get_balances", async (req, res, next) => {
 // Get accounts - provides account list for frontend (gracefully handles missing credentials)
 app.get("/api/accounts", async (req, res, next) => {
   try {
-    // Extract userId from query parameter or header
     const userId = req.query.userId || req.headers['x-user-id'];
+    const includeHidden = String(req.query.includeHidden || '').toLowerCase() === 'true';
+    const forceBalanceRefresh = String(req.query.refresh || '').toLowerCase() === 'true';
 
     if (!userId) {
-      return res.status(200).json({ 
+      return res.status(200).json({
         success: false,
         accounts: [],
-        message: "No userId provided. Please authenticate." 
+        message: "No userId provided. Please authenticate."
       });
     }
-    
-    // Validate userId
+
     validators.validateUserId(userId);
 
-    // Retrieve all Plaid items for the user
     const items = await getAllPlaidItems(userId);
     if (!items || items.length === 0) {
-      return res.status(200).json({ 
+      return res.status(200).json({
         success: false,
         accounts: [],
+        connected_account_count: 0,
+        hidden_account_count: 0,
         message: "No Plaid connection found. Please connect your bank account."
       });
     }
 
-    // Fetch accounts from all items
-    let allAccounts = [];
+    const allAccounts = [];
+    let successfulItems = 0;
+
     for (const item of items) {
       try {
-        // Use transactionsSync for fresher balance data (same approach as Rocket Money)
-        // Why transactionsSync instead of accountsBalanceGet:
-        // - Plaid prioritizes transaction sync endpoints (called more frequently by apps)
-        // - Transaction sync has less aggressive caching (updates more often)
-        // - Returns both transactions AND current balance in one call
-        // - Balance data comes from transaction stream (more up-to-date)
-        const syncResponse = await plaidClient.transactionsSync({
-          access_token: item.accessToken,
-          options: {
-            include_personal_finance_category: true
-          }
-        });
-        
-        // Extract accounts with fresh balance from sync response
-        // transactionsSync returns more up-to-date balance data than accountsBalanceGet
-        const accountsWithInstitution = syncResponse.data.accounts.map(account => {
-          // Validate account data
+        const accountResponse = forceBalanceRefresh
+          ? await plaidClient.accountsBalanceGet({ access_token: item.accessToken })
+          : await plaidClient.accountsGet({ access_token: item.accessToken });
+
+        for (const account of accountResponse.data.accounts || []) {
           validators.validateAccount(account);
-          
-          return {
-            account_id: account.account_id,
-            name: account.name,
-            official_name: account.official_name,
-            type: account.type,
-            subtype: account.subtype,
-            mask: account.mask,
-            // Primary balance fields
-            available_balance: account.balances.available || account.balances.current || 0,
-            current_balance: account.balances.current || 0,
-            // Full balances object for flexibility
-            balances: account.balances, // This balance is FRESH from transaction sync!
+          allAccounts.push({
+            ...account,
+            available_balance: account.balances?.available ?? account.balances?.current ?? 0,
+            current_balance: account.balances?.current ?? 0,
             institution_name: item.institutionName,
             institution_id: item.institutionId,
             item_id: item.itemId
-          };
-        });
-        
-        allAccounts.push(...accountsWithInstitution);
-      } catch (itemError) {
-        console.error(`Error getting accounts for item ${item.itemId}:`, itemError);
-
-        const plaidError = itemError?.response?.data;
-        if (plaidError?.error_code === 'ITEM_LOGIN_REQUIRED' && item.itemId) {
-          try {
-            await db
-              .collection('users')
-              .doc(userId)
-              .collection('plaid_items')
-              .doc(item.itemId)
-              .set({
-                status: 'NEEDS_REAUTH',
-                error: {
-                  error_code: plaidError.error_code,
-                  error_type: plaidError.error_type || 'ITEM_ERROR',
-                  error_message: plaidError.error_message || 'Bank login required'
-                },
-                updatedAt: admin.firestore.FieldValue.serverTimestamp()
-              }, { merge: true });
-
-            logDiagnostic.info(
-              'GET_ACCOUNTS',
-              `Marked ${item.institutionName || item.itemId} as NEEDS_REAUTH after ITEM_LOGIN_REQUIRED`
-            );
-          } catch (statusError) {
-            logger.error('PLAID_ACCOUNTS', 'Failed to mark item as NEEDS_REAUTH', statusError, {
-              userId,
-              itemId: item.itemId
-            });
-          }
+          });
         }
 
-        // Continue with other items even if one fails.
-        // The frontend health check will render a reconnect card for this item.
+        successfulItems++;
+      } catch (itemError) {
+        const plaidError = itemError?.response?.data;
+
+        if (plaidError?.error_code === 'ITEM_LOGIN_REQUIRED' && item.documentId) {
+          await db.collection('users')
+            .doc(userId)
+            .collection('plaid_items')
+            .doc(item.documentId)
+            .set({
+              status: 'NEEDS_REAUTH',
+              error: {
+                error_code: plaidError.error_code,
+                error_type: plaidError.error_type || 'ITEM_ERROR',
+                error_message: plaidError.error_message || 'Bank login required'
+              },
+              updatedAt: admin.firestore.FieldValue.serverTimestamp()
+            }, { merge: true })
+            .catch(() => {});
+        }
+
+        logger.error('PLAID_ACCOUNTS', 'Failed to fetch accounts for Plaid item', itemError, {
+          userId,
+          institution: item.institutionName
+        });
       }
     }
 
-    // Update account balances in Firebase settings/personal collection
-    try {
-      const updateResult = await updateAccountBalances(userId, allAccounts);
-      logger.info('PLAID_ACCOUNTS', 'Persisted balances to Firebase: accounts updated', {});
-      logDiagnostic.info('GET_ACCOUNTS', `Persisted balances to Firebase: ${updateResult.updated} accounts updated`);
-    } catch (updateError) {
-      logger.error('PLAID_ACCOUNTS', 'Failed to persist balances to Firebase', updateError, {});
-      logDiagnostic.error('GET_ACCOUNTS', 'Failed to persist balances to Firebase', updateError);
-      // Continue anyway - don't fail the request if Firebase update fails
-    }
+    const updateResult = await updateAccountBalances(userId, allAccounts, {
+      completeSnapshot: successfulItems === items.length
+    });
+
+    const accountsForResponse = includeHidden
+      ? withVisibility(updateResult.accounts, updateResult.preferences)
+      : updateResult.visibleAccounts;
 
     res.json({
       success: true,
-      accounts: allAccounts,
+      accounts: accountsForResponse,
+      account_count: accountsForResponse.length,
+      connected_account_count: updateResult.accounts.length,
+      visible_account_count: updateResult.visibleAccounts.length,
+      hidden_account_count: updateResult.hiddenAccounts.length,
+      item_count: items.length,
+      partial: successfulItems !== items.length,
+      visibility_schema: updateResult.visibilitySchemaVersion,
+      last_updated: new Date().toISOString()
     });
   } catch (error) {
-    console.error("Error getting accounts:", error);
-    
-    // Check if it's already an AppError
-    if (error.statusCode) {
-      return next(error);
-    }
-    
-    // Handle Plaid-specific errors
-    if (error.response?.data) {
-      const plaidError = error.response.data;
+    logger.error('GET_ACCOUNTS', 'Failed to get accounts', error, {});
+
+    if (error.statusCode) return next(error);
+
+    const plaidError = error.response?.data;
+    if (plaidError) {
       return next(createError.plaidError(
         plaidError.error_message || 'Unable to fetch accounts. Please reconnect your bank account.',
         shouldRetryPlaidError(plaidError.error_type)
       ));
     }
-    
-    // Return graceful error instead of 500
-    res.status(200).json({ 
+
+    res.status(200).json({
       success: false,
       accounts: [],
-      error: "Unable to fetch accounts. Please reconnect your bank account.",
-      error_details: error.message
+      error: "Unable to fetch accounts. Please reconnect your bank account."
     });
+  }
+});
+
+app.post("/api/accounts/visibility", async (req, res, next) => {
+  const endpoint = "/api/accounts/visibility";
+
+  try {
+    const { userId, accountId, visible } = req.body || {};
+
+    if (!userId || !accountId || typeof visible !== 'boolean') {
+      throw createError.badRequest(
+        'userId, accountId, and boolean visible are required',
+        'INVALID_ACCOUNT_VISIBILITY_REQUEST'
+      );
+    }
+
+    validators.validateUserId(userId);
+
+    const settingsRef = db.collection('users').doc(userId)
+      .collection('settings').doc('personal');
+    const settingsDoc = await settingsRef.get();
+
+    if (!settingsDoc.exists) {
+      throw createError.notFound('Account settings not found');
+    }
+
+    const settings = settingsDoc.data();
+    const canonicalAccounts = settings.plaidAccounts || [];
+    const account = canonicalAccounts.find(candidate => candidate.account_id === accountId);
+
+    if (!account) {
+      throw createError.notFound('Connected account not found');
+    }
+
+    const preferences = {
+      ...(settings.accountPreferences || {}),
+      [accountId]: {
+        ...(settings.accountPreferences?.[accountId] || {}),
+        visible,
+        updatedAt: new Date().toISOString()
+      }
+    };
+
+    const accountsWithVisibility = withVisibility(canonicalAccounts, preferences);
+    const currentVisibleAccounts = accountsWithVisibility.filter(candidate => candidate.visible !== false);
+    const hiddenAccounts = accountsWithVisibility.filter(candidate => candidate.visible === false);
+    const visibleDepositoryAccounts = currentVisibleAccounts.filter(isDepositoryAccount);
+    const totalBalance = calculateVisibleDepositoryTotal(canonicalAccounts, preferences);
+
+    const operations = [
+      createOperation('set', settingsRef, {
+        accountPreferences: preferences,
+        accountVisibilitySchemaVersion: ACCOUNT_VISIBILITY_SCHEMA_VERSION,
+        lastUpdated: admin.firestore.FieldValue.serverTimestamp()
+      }),
+      createOperation('update', db.collection('users').doc(userId), {
+        totalBalance,
+        accountCount: visibleDepositoryAccounts.length,
+        connectedAccountCount: canonicalAccounts.length,
+        hiddenAccountCount: hiddenAccounts.length,
+        lastSyncedAt: new Date()
+      })
+    ];
+
+    await atomicTransaction(operations);
+
+    logDiagnostic.info('ACCOUNT_VISIBILITY', visible ? 'Account restored' : 'Account hidden', {
+      visible_accounts: currentVisibleAccounts.length,
+      hidden_accounts: hiddenAccounts.length
+    });
+
+    logDiagnostic.response(endpoint, 200, {
+      success: true,
+      visible,
+      visible_account_count: currentVisibleAccounts.length,
+      hidden_account_count: hiddenAccounts.length
+    });
+
+    res.json({
+      success: true,
+      account_id: accountId,
+      visible,
+      visible_account_count: currentVisibleAccounts.length,
+      hidden_account_count: hiddenAccounts.length
+    });
+  } catch (error) {
+    logger.error('ACCOUNT_VISIBILITY', 'Failed to update account visibility', error, {});
+    next(error.statusCode ? error : createError.internal(error.message || 'Failed to update account visibility'));
+  }
+});
+
+app.post("/api/plaid/disconnect_item", async (req, res, next) => {
+  const endpoint = "/api/plaid/disconnect_item";
+
+  try {
+    const { userId, itemId } = req.body || {};
+
+    if (!userId || !itemId) {
+      throw createError.badRequest('userId and itemId are required', 'MISSING_DISCONNECT_FIELDS');
+    }
+
+    validators.validateUserId(userId);
+
+    const itemDoc = await findPlaidItemDocument(db, itemId);
+    if (!itemDoc || itemDoc.ref.parent.parent.id !== userId) {
+      throw createError.notFound('Bank connection not found');
+    }
+
+    const itemData = itemDoc.data();
+    const accessToken = itemData.accessToken || itemData.access_token;
+
+    if (accessToken) {
+      try {
+        await plaidClient.itemRemove({ access_token: accessToken });
+      } catch (plaidRemoveError) {
+        const code = plaidRemoveError?.response?.data?.error_code;
+        if (code !== 'INVALID_ACCESS_TOKEN' && code !== 'ITEM_NOT_FOUND') {
+          throw plaidRemoveError;
+        }
+      }
+    }
+
+    const settingsRef = db.collection('users').doc(userId)
+      .collection('settings').doc('personal');
+    const settingsDoc = await settingsRef.get();
+    const settings = settingsDoc.exists ? settingsDoc.data() : {};
+    const canonicalAccounts = settings.plaidAccounts || [];
+    const removedAccounts = canonicalAccounts.filter(account => account.item_id === itemId);
+    const remainingAccounts = canonicalAccounts.filter(account => account.item_id !== itemId);
+    const preferences = { ...(settings.accountPreferences || {}) };
+
+    for (const account of removedAccounts) {
+      if (account.account_id) delete preferences[account.account_id];
+    }
+
+    const visibleRemaining = visibleAccounts(remainingAccounts, preferences);
+    const visibleDepositoryAccounts = visibleRemaining.filter(isDepositoryAccount);
+    const totalBalance = calculateVisibleDepositoryTotal(remainingAccounts, preferences);
+
+    const operations = [
+      createOperation('delete', itemDoc.ref),
+      createOperation('set', settingsRef, {
+        plaidAccounts: remainingAccounts,
+        accountPreferences: preferences,
+        accountVisibilitySchemaVersion: ACCOUNT_VISIBILITY_SCHEMA_VERSION,
+        lastUpdated: admin.firestore.FieldValue.serverTimestamp()
+      }),
+      createOperation('update', db.collection('users').doc(userId), {
+        totalBalance,
+        accountCount: visibleDepositoryAccounts.length,
+        connectedAccountCount: remainingAccounts.length,
+        hiddenAccountCount: remainingAccounts.length - visibleRemaining.length,
+        lastSyncedAt: new Date()
+      })
+    ];
+
+    await atomicTransaction(operations);
+
+    logDiagnostic.info('DISCONNECT_ITEM', 'Plaid bank connection disconnected', {
+      removed_account_count: removedAccounts.length,
+      remaining_account_count: remainingAccounts.length
+    });
+
+    logDiagnostic.response(endpoint, 200, {
+      success: true,
+      removed_account_count: removedAccounts.length
+    });
+
+    res.json({
+      success: true,
+      removed_account_count: removedAccounts.length,
+      message: 'Bank disconnected. Historical transactions were retained.'
+    });
+  } catch (error) {
+    logger.error('DISCONNECT_ITEM', 'Failed to disconnect bank', error, {});
+    if (error.statusCode) return next(error);
+
+    const plaidError = error.response?.data;
+    if (plaidError) {
+      return next(createError.plaidError(
+        plaidError.error_message || 'Failed to disconnect bank',
+        false
+      ));
+    }
+
+    next(createError.internal(error.message || 'Failed to disconnect bank'));
   }
 });
 
