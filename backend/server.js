@@ -26,6 +26,8 @@ import { detectRecurringStreams, matchStreamsToTemplates } from './utils/recurri
 
 const app = express();
 
+const activePlaidSyncUsers = new Set();
+
 const allowedOrigins = new Set([
   'https://smart-money-tracker.netlify.app',
   'https://smart-money-tracker-v2.netlify.app',
@@ -1647,6 +1649,7 @@ app.post("/api/plaid/sync_transactions", async (req, res, next) => {
   logDiagnostic.request(endpoint, req.body);
 
   const { userId } = req.body || {};
+  let syncLockAcquired = false;
 
   try {
     if (!userId) {
@@ -1654,6 +1657,23 @@ app.post("/api/plaid/sync_transactions", async (req, res, next) => {
     }
 
     validators.validateUserId(userId);
+
+    if (activePlaidSyncUsers.has(userId)) {
+      logDiagnostic.info('PLAID_SYNC', 'Duplicate sync request skipped because a sync is already running');
+      return res.status(200).json({
+        success: true,
+        skipped: true,
+        already_syncing: true,
+        added: 0,
+        updated: 0,
+        pending: 0,
+        removed: 0,
+        message: 'A Plaid sync is already in progress. This duplicate request was skipped.'
+      });
+    }
+
+    activePlaidSyncUsers.add(userId);
+    syncLockAcquired = true;
 
     const metadataRef = db.collection('users')
       .doc(userId)
@@ -1827,7 +1847,9 @@ app.post("/api/plaid/sync_transactions", async (req, res, next) => {
   } catch (error) {
     logger.error('PLAID_SYNC', 'Failed to sync transactions', error, { userId });
 
-    if (userId) {
+    const quotaExceeded = isFirestoreQuotaExceeded(error);
+
+    if (userId && !quotaExceeded) {
       await db.collection('users')
         .doc(userId)
         .collection('metadata')
@@ -1841,6 +1863,11 @@ app.post("/api/plaid/sync_transactions", async (req, res, next) => {
     }
 
     if (error.statusCode) return next(error);
+    if (quotaExceeded) {
+      return next(createError.resourceExhausted(
+        'Firestore quota is temporarily exhausted. Transaction sync is paused; existing transactions remain safe.'
+      ));
+    }
 
     const plaidError = error?.response?.data;
     if (plaidError?.error_code === 'ITEM_LOGIN_REQUIRED') {
@@ -1851,6 +1878,10 @@ app.post("/api/plaid/sync_transactions", async (req, res, next) => {
     }
 
     next(createError.plaidError(error.message || 'Failed to sync transactions from your bank'));
+  } finally {
+    if (syncLockAcquired && userId) {
+      activePlaidSyncUsers.delete(userId);
+    }
   }
 });
 
