@@ -12,6 +12,7 @@ import {
   getUpcomingRenewals,
   countActiveSubscriptions
 } from '../utils/subscriptionCalculations';
+import { getVisiblePlaidAccounts } from '../utils/accountVisibility';
 import './Subscriptions.css';
 
 const Subscriptions = () => {
@@ -65,7 +66,7 @@ const Subscriptions = () => {
       
       if (settingsDocSnap.exists()) {
         const data = settingsDocSnap.data();
-        const plaidAccountsList = data.plaidAccounts || [];
+        const plaidAccountsList = getVisiblePlaidAccounts(data.plaidAccounts || [], data);
         setAccounts(plaidAccountsList);
       }
     } catch (error) {
