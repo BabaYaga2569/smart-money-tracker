@@ -49,6 +49,8 @@ const SCHEMA_V3 = {
     'lastPayDate',
     'payAmount',
     'plaidAccounts',
+    'accountPreferences',
+    'accountVisibilitySchemaVersion',
     'personalInfo.yourName',
     'personalInfo.spouseName'
   ],
@@ -331,10 +333,19 @@ const mergeSafely = (existing, newData) => {
     }
   }
   
-  // Always preserve plaidAccounts - never lose bank connections
+  // Always preserve canonical Plaid state and visibility preferences.
   if (existing.plaidAccounts && (!merged.plaidAccounts || merged.plaidAccounts.length === 0)) {
     console.log('🔒 Preserving plaidAccounts from being cleared');
     merged.plaidAccounts = existing.plaidAccounts;
+  }
+  if (existing.accountPreferences && !merged.accountPreferences) {
+    merged.accountPreferences = existing.accountPreferences;
+  }
+  if (
+    existing.accountVisibilitySchemaVersion &&
+    !merged.accountVisibilitySchemaVersion
+  ) {
+    merged.accountVisibilitySchemaVersion = existing.accountVisibilitySchemaVersion;
   }
   
   return merged;
@@ -373,6 +384,9 @@ const getDefaults = () => {
       usaa: { name: 'USAA', type: 'Checking', balance: '' },
       cap1: { name: 'Capital One', type: 'Credit', balance: '' }
     },
+    plaidAccounts: [],
+    accountPreferences: {},
+    accountVisibilitySchemaVersion: 1,
     bills: [],
     preferences: { ...SCHEMA_V3.defaults.preferences },
     // Backward compatibility fields
