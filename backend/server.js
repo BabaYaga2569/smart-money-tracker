@@ -23,6 +23,7 @@ import {
 } from './utils/accountRegistry.js';
 import { detectSubscriptions } from './utils/subscriptionDetector.js';
 import { detectRecurringStreams, matchStreamsToTemplates } from './utils/recurringStreamDetector.js';
+import { analyzeBillStores } from './utils/billDoctor.js';
 
 const app = express();
 
@@ -3025,6 +3026,101 @@ app.post("/api/subscriptions/detect", async (req, res, next) => {
 });
 
 app.get("/healthz", (req, res) => res.send("ok"));
+
+/**
+ * GET /api/diagnostics/bill-doctor
+ *
+ * Read-only census of the user's bill/recurring stores. This endpoint never
+ * writes, migrates, deletes, advances, clears, or generates financial data.
+ * It is intentionally manual-run from the UI to avoid background Firestore
+ * usage.
+ */
+app.get("/api/diagnostics/bill-doctor", async (req, res, next) => {
+  const userId = req.authUid;
+
+  try {
+    if (!userId) {
+      return next(createError.unauthorized('Authentication is required'));
+    }
+
+    const userRef = db.collection('users').doc(userId);
+
+    const [
+      settingsDoc,
+      recurringPatternsSnap,
+      recurringItemsSnap,
+      subscriptionsSnap,
+      financialEventsSnap,
+      billInstancesSnap,
+      paidBillsSnap,
+      billPaymentsSnap,
+      paymentRulesSnap
+    ] = await Promise.all([
+      userRef.collection('settings').doc('personal').get(),
+      userRef.collection('recurringPatterns').get(),
+      userRef.collection('recurringItems').get(),
+      userRef.collection('subscriptions').get(),
+      userRef.collection('financialEvents').get(),
+      userRef.collection('billInstances').get(),
+      userRef.collection('paidBills').get(),
+      userRef.collection('bill_payments').get(),
+      userRef.collection('paymentRules').get()
+    ]);
+
+    const settings = settingsDoc.exists ? settingsDoc.data() : {};
+    const docs = snapshot => snapshot.docs.map(docSnap => ({
+      id: docSnap.id,
+      ...docSnap.data()
+    }));
+
+    const report = analyzeBillStores({
+      recurringPatterns: docs(recurringPatternsSnap),
+      recurringItems: docs(recurringItemsSnap),
+      subscriptions: docs(subscriptionsSnap),
+      financialEvents: docs(financialEventsSnap),
+      billInstances: docs(billInstancesSnap),
+      paidBills: docs(paidBillsSnap),
+      billPayments: docs(billPaymentsSnap),
+      paymentRules: docs(paymentRulesSnap),
+      settingsBills: Array.isArray(settings.bills) ? settings.bills : [],
+      settingsRecurringItems: Array.isArray(settings.recurringItems)
+        ? settings.recurringItems
+        : []
+    });
+
+    const documentReads =
+      1 +
+      recurringPatternsSnap.size +
+      recurringItemsSnap.size +
+      subscriptionsSnap.size +
+      financialEventsSnap.size +
+      billInstancesSnap.size +
+      paidBillsSnap.size +
+      billPaymentsSnap.size +
+      paymentRulesSnap.size;
+
+    res.set('Cache-Control', 'no-store');
+    return res.json({
+      success: true,
+      readOnly: true,
+      estimatedDocumentsRead: documentReads,
+      report
+    });
+  } catch (error) {
+    logger.error('BILL_DOCTOR', 'Read-only bill audit failed', error, {});
+
+    if (isFirestoreQuotaExceeded(error)) {
+      return next(createError.resourceExhausted(
+        'Firestore quota is temporarily exhausted. The Bill Doctor made no changes; run the audit after quota is available.'
+      ));
+    }
+
+    if (error.statusCode) return next(error);
+    return next(createError.firebaseError(
+      error.message || 'Unable to run read-only bill audit'
+    ));
+  }
+});
 
 /**
  * POST /api/recurring/detect
