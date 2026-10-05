@@ -672,8 +672,10 @@ app.get('/api/health', async (req, res) => {
   try {
     const healthStatus = await healthMonitor.getHealthStatus(plaidClient);
     
-    // Return 503 if any service is unhealthy
-    const statusCode = healthStatus.status === 'healthy' ? 200 : 503;
+    // Degraded means the process is up but one dependency is constrained
+    // (for example Firestore quota exhaustion). Reserve 503 for a genuinely
+    // unhealthy service so the UI can distinguish "limited" from "down".
+    const statusCode = healthStatus.status === 'unhealthy' ? 503 : 200;
     
     res.status(statusCode).json(healthStatus);
   } catch (error) {
