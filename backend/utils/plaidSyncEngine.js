@@ -231,6 +231,84 @@ async function commitOperationGroups(db, operationGroups) {
   return committedWrites;
 }
 
+async function getTransactionsByIds(db, transactionsRef, ids) {
+  const uniqueIds = [...new Set((ids || []).filter(Boolean))];
+  if (uniqueIds.length === 0) return [];
+
+  const results = [];
+  const CHUNK_SIZE = 100;
+
+  for (let index = 0; index < uniqueIds.length; index += CHUNK_SIZE) {
+    const chunk = uniqueIds.slice(index, index + CHUNK_SIZE);
+    const refs = chunk.map(id => transactionsRef.doc(id));
+    const snapshots = await db.getAll(...refs);
+
+    for (const snapshot of snapshots) {
+      if (snapshot.exists) {
+        results.push({
+          id: snapshot.id,
+          ...snapshot.data()
+        });
+      }
+    }
+  }
+
+  return results;
+}
+
+function mergeTransactionSets(...groups) {
+  const byId = new Map();
+
+  for (const group of groups) {
+    for (const transaction of group || []) {
+      const id = transaction?.transaction_id || transaction?.id;
+      if (!id) continue;
+      byId.set(id, transaction);
+    }
+  }
+
+  return [...byId.values()];
+}
+
+async function loadRelevantExistingTransactions({
+  db,
+  transactionsRef,
+  incomingTransactions,
+  removedTransactions
+}) {
+  const directIds = [];
+
+  for (const transaction of incomingTransactions) {
+    if (transaction?.transaction_id) directIds.push(transaction.transaction_id);
+    if (transaction?.pending_transaction_id) directIds.push(transaction.pending_transaction_id);
+  }
+
+  for (const transaction of removedTransactions) {
+    if (transaction?.transaction_id) directIds.push(transaction.transaction_id);
+  }
+
+  const directMatches = await getTransactionsByIds(db, transactionsRef, directIds);
+
+  let pendingMatches = [];
+  if (incomingTransactions.some(transaction => !transaction?.pending)) {
+    const pendingSnapshot = await transactionsRef
+      .where("pending", "==", true)
+      .get();
+
+    pendingMatches = pendingSnapshot.docs.map(doc => ({
+      id: doc.id,
+      ...doc.data()
+    }));
+  }
+
+  return {
+    transactions: mergeTransactionSets(directMatches, pendingMatches),
+    readCount: directMatches.length + pendingMatches.length,
+    requestedDirectIds: [...new Set(directIds)].length,
+    pendingReadCount: pendingMatches.length
+  };
+}
+
 async function advanceCursorSafely({ db, itemRef, startingCursor, nextCursor, admin, trigger }) {
   if (!nextCursor) return false;
 
@@ -297,11 +375,21 @@ export async function syncPlaidItemTransactions({
   if (!item?.itemId) throw new Error("Plaid itemId is missing");
 
   const transactionsRef = db.collection("users").doc(userId).collection("transactions");
-  const existingSnapshot = await transactionsRef.get();
-  const existingTransactions = existingSnapshot.docs.map(doc => ({
-    id: doc.id,
-    ...doc.data()
-  }));
+  const changes = await fetchPlaidChanges({ plaidClient, item });
+  const incomingTransactions = [...changes.added, ...changes.modified];
+
+  // Cursor-based Plaid sync normally returns only a handful of changes. Do not
+  // read the user's entire transaction history for every bank item. Fetch only
+  // exact transaction IDs involved in this change set plus currently pending
+  // rows needed for pending -> posted reconciliation.
+  const existingLoad = await loadRelevantExistingTransactions({
+    db,
+    transactionsRef,
+    incomingTransactions,
+    removedTransactions: changes.removed
+  });
+
+  const existingTransactions = existingLoad.transactions;
   const existingById = new Map(
     existingTransactions.map(transaction => [
       transaction.transaction_id || transaction.id,
@@ -312,9 +400,6 @@ export async function syncPlaidItemTransactions({
   const manualPendingCharges = existingTransactions.filter(transaction =>
     transaction.source === "manual" && transaction.pending === true
   );
-
-  const changes = await fetchPlaidChanges({ plaidClient, item });
-  const incomingTransactions = [...changes.added, ...changes.modified];
   const incomingIds = new Set(incomingTransactions.map(tx => tx.transaction_id));
   const plannedDeleteIds = new Set();
   const processedIncomingIds = new Set();
@@ -337,33 +422,13 @@ export async function syncPlaidItemTransactions({
 
     const currentExisting = existingById.get(plaidTx.transaction_id) || null;
     const pendingReplacement = findPendingReplacement(plaidTx, existingTransactions);
-    const ignoredDuplicateIds = new Set();
 
-    if (pendingReplacement) {
-      const replacementId = pendingReplacement.transaction_id || pendingReplacement.id;
-      if (replacementId && replacementId !== plaidTx.transaction_id) {
-        ignoredDuplicateIds.add(replacementId);
-      }
-    }
-
-    const compositeDuplicate = findCompositeDuplicate(
-      plaidTx,
-      existingTransactions,
-      ignoredDuplicateIds
-    );
-
-    if (compositeDuplicate && !plaidTx.pending && compositeDuplicate.pending === true) {
-      const duplicateId = compositeDuplicate.transaction_id || compositeDuplicate.id;
-      ignoredDuplicateIds.add(duplicateId);
-    } else if (compositeDuplicate) {
-      skipped++;
-      continue;
-    }
-
+    // Do not discard a posted transaction solely because another posted
+    // transaction has the same date/merchant/amount. Two legitimate purchases
+    // can be identical. Composite matching is used only as a fallback for
+    // pending -> posted replacement.
     const group = [];
-    const predecessor =
-      pendingReplacement ||
-      (!plaidTx.pending && compositeDuplicate?.pending === true ? compositeDuplicate : null);
+    const predecessor = pendingReplacement;
 
     if (predecessor) {
       const predecessorId = predecessor.transaction_id || predecessor.id;
@@ -511,7 +576,10 @@ export async function syncPlaidItemTransactions({
     pending_replaced: pendingReplaced,
     skipped,
     committed_writes: committedWrites,
-    cursor_advanced: cursorAdvanced
+    cursor_advanced: cursorAdvanced,
+    reconciliation_documents_read: existingLoad.readCount,
+    direct_ids_requested: existingLoad.requestedDirectIds,
+    pending_documents_read: existingLoad.pendingReadCount
   });
 
   return {
@@ -524,6 +592,7 @@ export async function syncPlaidItemTransactions({
     skipped,
     committedWrites,
     cursorAdvanced,
-    nextCursor: changes.nextCursor
+    nextCursor: changes.nextCursor,
+    reconciliationReadCount: existingLoad.readCount
   };
 }
