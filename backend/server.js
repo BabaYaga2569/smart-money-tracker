@@ -3,6 +3,7 @@ import cors from "cors";
 import { Configuration, PlaidApi, PlaidEnvironments } from "plaid";
 import admin from "firebase-admin";
 import { errorHandler, createError } from './middleware/errorHandler.js';
+import authMiddleware from './middleware/authMiddleware.js';
 import validators from './utils/validators.js';
 import healthMonitor from './utils/healthMonitor.js';
 import performanceTracker from './middleware/performanceTracker.js';
@@ -52,6 +53,7 @@ app.use(cors({
 }));
 app.use(express.json());
 app.use(performanceTracker);
+app.use(authMiddleware);
 
 // ============================================================================
 // DIAGNOSTIC LOGGING UTILITY
@@ -1128,7 +1130,7 @@ app.post("/api/plaid/get_balances", async (req, res, next) => {
 // Get accounts - provides account list for frontend (gracefully handles missing credentials)
 app.get("/api/accounts", async (req, res, next) => {
   try {
-    const userId = req.query.userId || req.headers['x-user-id'];
+    const userId = req.authUid || req.query.userId || req.headers['x-user-id'];
     const includeHidden = String(req.query.includeHidden || '').toLowerCase() === 'true';
     const forceBalanceRefresh = String(req.query.refresh || '').toLowerCase() === 'true';
 
