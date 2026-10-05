@@ -1,6 +1,4 @@
 import { useState, useEffect, useRef } from 'react';
-import { doc, getDoc, setDoc } from 'firebase/firestore';
-import { db } from '../firebase';
 
 /**
  * Smart Background Balance Sync Hook
@@ -23,49 +21,33 @@ export function useSmartBalanceSync(userId) {
   // Constants
   const MIN_REFRESH_INTERVAL = 2 * 60 * 1000; // 2 minutes - minimum time between any syncs
   const AUTO_REFRESH_INTERVAL = 5 * 60 * 1000; // 5 minutes - automatic background refresh
+  const QUOTA_BACKOFF_MS = 30 * 60 * 1000;
+  const QUOTA_BACKOFF_KEY = 'smt_firestore_quota_backoff_until';
+  const BALANCE_SYNC_KEY = `smt_last_balance_sync_${userId || 'anonymous'}`;
   const API_URL = import.meta.env.VITE_API_URL || 'https://smart-money-tracker-09ks.onrender.com';
 
-  /**
-   * Read last sync timestamp from Firestore
-   */
+  // Background-refresh timing is a browser concern, not canonical financial
+  // state. Keep it in localStorage so every five-minute check does not burn a
+  // Firestore read and write just to decide whether to refresh.
   const getLastSyncTime = async () => {
-    if (!userId) return 0;
-    
-    try {
-      const syncDocRef = doc(db, 'users', userId, 'metadata', 'sync');
-      const syncDoc = await getDoc(syncDocRef);
-      
-      if (syncDoc.exists()) {
-        const data = syncDoc.data();
-        const lastSync = data.lastBalanceSync?.toMillis() || 0;
-        console.log('[BalanceSync] Last sync from Firestore:', new Date(lastSync).toLocaleString());
-        return lastSync;
-      }
-      
-      console.log('[BalanceSync] No sync record found in Firestore');
-      return 0;
-    } catch (error) {
-      console.error('[BalanceSync] Error reading last sync time:', error);
-      return 0;
-    }
+    const value = Number(localStorage.getItem(BALANCE_SYNC_KEY) || 0);
+    return Number.isFinite(value) ? value : 0;
   };
 
-  /**
-   * Update last sync timestamp in Firestore
-   */
   const updateLastSyncTime = async (timestamp) => {
-    if (!userId) return;
-    
-    try {
-      const syncDocRef = doc(db, 'users', userId, 'metadata', 'sync');
-      await setDoc(syncDocRef, {
-        lastBalanceSync: new Date(timestamp)
-      }, { merge: true });
-      
-      console.log('[BalanceSync] Updated last sync time in Firestore:', new Date(timestamp).toLocaleString());
-    } catch (error) {
-      console.error('[BalanceSync] Error updating last sync time:', error);
-    }
+    localStorage.setItem(BALANCE_SYNC_KEY, String(timestamp));
+  };
+
+  const quotaBackoffActive = () => {
+    const until = Number(localStorage.getItem(QUOTA_BACKOFF_KEY) || 0);
+    return Number.isFinite(until) && Date.now() < until;
+  };
+
+  const startQuotaBackoff = () => {
+    localStorage.setItem(
+      QUOTA_BACKOFF_KEY,
+      String(Date.now() + QUOTA_BACKOFF_MS)
+    );
   };
 
   /**
@@ -94,6 +76,11 @@ export function useSmartBalanceSync(userId) {
     // Check network status
     if (!isOnline()) {
       console.log('[BalanceSync] Offline, skipping sync');
+      return;
+    }
+
+    if (quotaBackoffActive()) {
+      console.log('[BalanceSync] Firestore quota backoff active, skipping background refresh');
       return;
     }
 
@@ -132,14 +119,19 @@ export function useSmartBalanceSync(userId) {
 
       if (!response.ok) {
         const errorData = await response.json().catch(() => ({}));
+        if (errorData.code === 'FIRESTORE_QUOTA_EXCEEDED') {
+          startQuotaBackoff();
+          console.warn('[BalanceSync] Firestore quota reached; background refresh paused temporarily');
+          return;
+        }
         console.error('[BalanceSync] Sync failed:', response.status, errorData);
         return;
       }
 
       const data = await response.json();
+      localStorage.removeItem(QUOTA_BACKOFF_KEY);
       console.log(`[BalanceSync] ✅ Sync successful - ${data.accounts?.length || 0} accounts updated`);
       
-      // Update Firestore with new sync time
       await updateLastSyncTime(now);
       
     } catch (error) {
