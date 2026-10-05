@@ -2,37 +2,42 @@
 import React, { useEffect, useState } from "react";
 import { currency } from "../utils/debt";
 import { getMonthlyOutflowForAccounts, subscribePlans } from "../store/creditCards";
+import { useAuth } from "../contexts/AuthContext";
+import { isCreditAccount } from "../utils/accountVisibility";
 
 export default function DashboardTileCreditCard() {
+  const { currentUser } = useAuth();
   const [accounts, setAccounts] = useState([]);
   const [liabByAcc, setLiabByAcc] = useState({});
   const [tick, setTick] = useState(0); // re-render on plan changes
 
   useEffect(() => {
-    // Pull all accounts then filter locally
-    fetch("/api/accounts")
+    if (!currentUser) {
+      setAccounts([]);
+      return undefined;
+    }
+
+    const apiUrl =
+      import.meta.env.VITE_API_URL ||
+      "https://smart-money-tracker-09ks.onrender.com";
+
+    fetch(`${apiUrl}/api/accounts?userId=${currentUser.uid}&_t=${Date.now()}`)
       .then(r => r.json())
       .then(data => {
-        const credit = (data.accounts || data || []).filter(a => a.type === "credit");
+        const credit = (data.accounts || []).filter(isCreditAccount);
         setAccounts(credit);
       })
-      .catch(() => {});
+      .catch(() => setAccounts([]));
 
-    // Try liabilities if available (optional)
-    fetch("/api/liabilities/credit")
-      .then(r => r.ok ? r.json() : [])
-      .then(list => {
-        const map = {};
-        (list || []).forEach(l => { map[l.account_id] = l; });
-        setLiabByAcc(map);
-      })
-      .catch(() => {});
+    // No backend liabilities endpoint is currently implemented. Card plan
+    // settings remain local until a canonical liabilities source is added.
+    setLiabByAcc({});
 
     const unsub = subscribePlans(() => setTick(t => t + 1));
     return () => unsub();
-  }, []);
+  }, [currentUser]);
 
-  const totalBalance = accounts.reduce((s, a) => s + (a?.balances?.current || 0), 0);
+  const totalBalance = accounts.reduce((sum, account) => sum + Number(account.current_balance ?? account.current ?? account.balances?.current ?? account.balance ?? 0), 0);
   const monthlyOutflow = getMonthlyOutflowForAccounts(accounts, liabByAcc);
 
   return (
