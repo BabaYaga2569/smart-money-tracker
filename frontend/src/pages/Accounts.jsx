@@ -1420,6 +1420,22 @@ const Accounts = () => {
                 >
                   🔄 Reconnect
                 </button>
+                <button
+                  className="action-btn delete-btn"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setShowDisconnectModal({
+                      itemId: item.itemId,
+                      institutionName: item.institutionName || 'this bank',
+                      accountCount: 0,
+                      brokenConnection: true
+                    });
+                  }}
+                  disabled={saving}
+                  title="Remove this broken bank connection from Smart Money Tracker"
+                >
+                  🗑️ Remove Bank
+                </button>
               </div>
             </div>
           ))}
@@ -1531,7 +1547,9 @@ const Accounts = () => {
                     e.stopPropagation();
                     setShowDisconnectModal({
                       itemId: account.item_id,
-                      institutionName: account.institution_name || 'this bank'
+                      institutionName: account.institution_name || 'this bank',
+                      accountCount: [...plaidAccounts, ...hiddenPlaidAccounts]
+                        .filter(candidate => candidate.item_id === account.item_id).length
                     });
                   }}
                   disabled={saving}
@@ -1591,16 +1609,28 @@ const Accounts = () => {
                 >
                   👁️ Show Account
                 </button>
-                <button
-                  className="action-btn delete-btn"
-                  onClick={() => setShowDisconnectModal({
-                    itemId: account.item_id,
-                    institutionName: account.institution_name || 'this bank'
-                  })}
-                  disabled={saving}
-                >
-                  🔌 Disconnect Bank
-                </button>
+                {[...plaidAccounts, ...hiddenPlaidAccounts]
+                  .filter(candidate => candidate.item_id === account.item_id).length === 1 ? (
+                  <button
+                    className="action-btn delete-btn"
+                    onClick={() => setShowDisconnectModal({
+                      itemId: account.item_id,
+                      institutionName: account.institution_name || 'this bank',
+                      accountCount: 1
+                    })}
+                    disabled={saving}
+                    title="This is the only account under this bank connection"
+                  >
+                    🔌 Disconnect Bank
+                  </button>
+                ) : (
+                  <span
+                    style={{ fontSize: '0.8rem', opacity: 0.7 }}
+                    title="Disconnecting here would remove every account under this bank connection"
+                  >
+                    Keep hidden
+                  </span>
+                )}
               </div>
             ))}
           </div>
@@ -1792,12 +1822,20 @@ const Accounts = () => {
             </div>
             <div className="modal-body">
               <p>
-                Disconnect <strong>{showDisconnectModal.institutionName}</strong> from Smart Money Tracker?
+                {showDisconnectModal.brokenConnection ? 'Remove' : 'Disconnect'}{' '}
+                <strong>{showDisconnectModal.institutionName}</strong> from Smart Money Tracker?
               </p>
               <p className="warning">
-                This ends the Plaid connection for the entire bank and stops future balance and
-                transaction syncing for every account under that connection.
+                {showDisconnectModal.brokenConnection
+                  ? 'This removes the broken Plaid bank connection without requiring you to reconnect it first.'
+                  : 'This ends the Plaid connection for the entire bank and stops future balance and transaction syncing for every account under that connection.'}
               </p>
+              {showDisconnectModal.accountCount > 1 && (
+                <p style={{ color: '#f59e0b', fontSize: '0.9rem', marginTop: '10px' }}>
+                  ⚠️ This bank connection currently includes {showDisconnectModal.accountCount} accounts.
+                  Disconnecting it will remove all of them from future syncing.
+                </p>
+              )}
               <p style={{ color: '#ccc', fontSize: '0.9rem', marginTop: '10px' }}>
                 Historical transactions already stored in Smart Money Tracker will be kept.
               </p>
@@ -1815,7 +1853,9 @@ const Accounts = () => {
                 onClick={disconnectBank}
                 disabled={saving}
               >
-                {saving ? 'Disconnecting...' : 'Disconnect Bank'}
+                {saving
+                  ? 'Removing...'
+                  : (showDisconnectModal.brokenConnection ? 'Remove Bank' : 'Disconnect Bank')}
               </button>
             </div>
           </div>
