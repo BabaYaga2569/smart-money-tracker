@@ -11,31 +11,37 @@ import DebugButton from './components/DebugButton';
 import SentryTestButton from './components/SentryTestButton';
 import PWAInstallPrompt from './components/PWAInstallPrompt';
 import { useWindowSize } from './hooks/useWindowSize';
+import { importWithStaleChunkRecovery } from './utils/lazyImportRecovery';
 import './App.css';
 
-// Lazy load all page components
-const Dashboard = lazy(() => import('./pages/Dashboard'));
-const Accounts = lazy(() => import('./pages/Accounts'));
-const Transactions = lazy(() => import('./pages/Transactions'));
-const Spendability = lazy(() => import('./pages/Spendability'));
-const Bills = lazy(() => import('./pages/Bills'));
-const Recurring = lazy(() => import('./pages/Recurring'));
-const Subscriptions = lazy(() => import('./pages/Subscriptions'));
-const Goals = lazy(() => import('./pages/Goals'));
-const Categories = lazy(() => import('./pages/Categories'));
-const Cashflow = lazy(() => import('./pages/Cashflow'));
-const Paycycle = lazy(() => import('./pages/Paycycle'));
-const Settings = lazy(() => import('./pages/Settings'));
-const BankDetail = lazy(() => import('./pages/BankDetail'));
-const CreditCards = lazy(() => import('./pages/CreditCards'));
-const PaymentHistory = lazy(() => import('./pages/PaymentHistory'));
-const Reports = lazy(() => import('./pages/Reports'));
-const DebtOptimizer = lazy(() => import('./pages/DebtOptimizer'));
-const PaymentRulesManager = lazy(() => import('./pages/PaymentRulesManager'));
-const PaymentRules = lazy(() => import('./pages/PaymentRules'));  // ← NEW
-const Login = lazy(() => import('./pages/Login'));
-const Onboarding = lazy(() => import('./pages/Onboarding'));
-const Debug = lazy(() => import('./pages/Debug'));
+// Lazy load all page components with one-time recovery for stale deploy chunks.
+// If an open tab references a chunk from the previous deployment, the importer
+// clears only browser app caches/service-worker state and reloads once.
+const lazyPage = (importer, label) =>
+  lazy(() => importWithStaleChunkRecovery(importer, label));
+
+const Dashboard = lazyPage(() => import('./pages/Dashboard'), 'Dashboard');
+const Accounts = lazyPage(() => import('./pages/Accounts'), 'Accounts');
+const Transactions = lazyPage(() => import('./pages/Transactions'), 'Transactions');
+const Spendability = lazyPage(() => import('./pages/Spendability'), 'Spendability');
+const Bills = lazyPage(() => import('./pages/Bills'), 'Bills');
+const Recurring = lazyPage(() => import('./pages/Recurring'), 'Recurring');
+const Subscriptions = lazyPage(() => import('./pages/Subscriptions'), 'Subscriptions');
+const Goals = lazyPage(() => import('./pages/Goals'), 'Goals');
+const Categories = lazyPage(() => import('./pages/Categories'), 'Categories');
+const Cashflow = lazyPage(() => import('./pages/Cashflow'), 'Cashflow');
+const Paycycle = lazyPage(() => import('./pages/Paycycle'), 'Paycycle');
+const Settings = lazyPage(() => import('./pages/Settings'), 'Settings');
+const BankDetail = lazyPage(() => import('./pages/BankDetail'), 'BankDetail');
+const CreditCards = lazyPage(() => import('./pages/CreditCards'), 'CreditCards');
+const PaymentHistory = lazyPage(() => import('./pages/PaymentHistory'), 'PaymentHistory');
+const Reports = lazyPage(() => import('./pages/Reports'), 'Reports');
+const DebtOptimizer = lazyPage(() => import('./pages/DebtOptimizer'), 'DebtOptimizer');
+const PaymentRulesManager = lazyPage(() => import('./pages/PaymentRulesManager'), 'PaymentRulesManager');
+const PaymentRules = lazyPage(() => import('./pages/PaymentRules'), 'PaymentRules');
+const Login = lazyPage(() => import('./pages/Login'), 'Login');
+const Onboarding = lazyPage(() => import('./pages/Onboarding'), 'Onboarding');
+const Debug = lazyPage(() => import('./pages/Debug'), 'Debug');
 
 // Force bundle hash change to deploy pending fixes
 export const APP_VERSION = '2.0.1-' + Date.now();
@@ -48,17 +54,32 @@ const PrivateRoute = ({ children }) => {
   return currentUser ? children : <Navigate to="/login" />;
 };
 
-// Error Fallback for OnboardingGuard failures
-const OnboardingErrorFallback = (
+// Route-level fallback for errors that make it past stale-chunk recovery.
+const RouteErrorFallback = (
   <div style={{ padding: '40px', maxWidth: '600px', margin: '0 auto', color: 'white', textAlign: 'center' }}>
-    <h2>⚠️ Onboarding Check Failed</h2>
-    <p style={{ marginBottom: '20px' }}>There was an error checking your onboarding status.</p>
-    <a href="/dashboard?skip_onboarding=true" style={{ textDecoration: 'none' }}>
-      <button style={{ padding: '12px 24px', fontSize: '16px', cursor: 'pointer', background: '#4CAF50', color: 'white', border: 'none', borderRadius: '4px' }}>
-        Continue to Dashboard
+    <h2>⚠️ Page Load Failed</h2>
+    <p style={{ marginBottom: '20px' }}>
+      Smart Money Tracker could not load this page. Your financial data was not changed.
+    </p>
+    <div style={{ display: 'flex', gap: '12px', justifyContent: 'center', flexWrap: 'wrap' }}>
+      <button
+        onClick={() => window.location.reload()}
+        style={{ padding: '12px 24px', fontSize: '16px', cursor: 'pointer', background: '#4CAF50', color: 'white', border: 'none', borderRadius: '4px' }}
+      >
+        Reload Page
       </button>
-    </a>
+      <a href="/" style={{ textDecoration: 'none' }}>
+        <button style={{ padding: '12px 24px', fontSize: '16px', cursor: 'pointer', background: '#555', color: 'white', border: 'none', borderRadius: '4px' }}>
+          Go to Dashboard
+        </button>
+      </a>
+    </div>
   </div>
+);
+
+// Preserve old /dashboard links instead of rendering a blank unmatched route.
+const LegacyDashboardRedirect = () => (
+  <Navigate to={`/${window.location.search}`} replace />
 );
 
 // Onboarding Guard - Redirects to onboarding if not complete
@@ -191,6 +212,7 @@ function App() {
                 {/* Public routes - No authentication required */}
                 <Route path="/login" element={<Login />} />
                 <Route path="/debug" element={<Debug />} />
+                <Route path="/dashboard" element={<LegacyDashboardRedirect />} />
             
                 {/* Onboarding route */}
                 <Route path="/onboarding" element={
@@ -202,7 +224,7 @@ function App() {
                 {/* Protected routes */}
                 <Route path="/" element={
                   <PrivateRoute>
-                    <ErrorBoundary fallback={OnboardingErrorFallback}>
+                    <ErrorBoundary fallback={RouteErrorFallback}>
                       <OnboardingGuard>
                         <AppLayout showDebugButton={debugModeEnabled}>
                           <Dashboard />
@@ -214,7 +236,7 @@ function App() {
             
                 <Route path="/accounts" element={
                   <PrivateRoute>
-                    <ErrorBoundary fallback={OnboardingErrorFallback}>
+                    <ErrorBoundary fallback={RouteErrorFallback}>
                       <OnboardingGuard>
                         <AppLayout showDebugButton={debugModeEnabled}>
                           <Accounts />
@@ -226,7 +248,7 @@ function App() {
             
                 <Route path="/bank/:accountId" element={
                   <PrivateRoute>
-                    <ErrorBoundary fallback={OnboardingErrorFallback}>
+                    <ErrorBoundary fallback={RouteErrorFallback}>
                       <OnboardingGuard>
                         <AppLayout showDebugButton={debugModeEnabled}>
                           <BankDetail />
@@ -238,7 +260,7 @@ function App() {
             
                 <Route path="/transactions" element={
                   <PrivateRoute>
-                    <ErrorBoundary fallback={OnboardingErrorFallback}>
+                    <ErrorBoundary fallback={RouteErrorFallback}>
                       <OnboardingGuard>
                         <AppLayout showDebugButton={debugModeEnabled}>
                           <Transactions />
@@ -250,7 +272,7 @@ function App() {
             
                 <Route path="/spendability" element={
                   <PrivateRoute>
-                    <ErrorBoundary fallback={OnboardingErrorFallback}>
+                    <ErrorBoundary fallback={RouteErrorFallback}>
                       <OnboardingGuard>
                         <AppLayout showDebugButton={debugModeEnabled}>
                           <Spendability />
@@ -262,7 +284,7 @@ function App() {
             
                 <Route path="/bills" element={
                   <PrivateRoute>
-                    <ErrorBoundary fallback={OnboardingErrorFallback}>
+                    <ErrorBoundary fallback={RouteErrorFallback}>
                       <OnboardingGuard>
                         <AppLayout showDebugButton={debugModeEnabled}>
                           <Bills />
@@ -274,7 +296,7 @@ function App() {
             
                 <Route path="/recurring" element={
                   <PrivateRoute>
-                    <ErrorBoundary fallback={OnboardingErrorFallback}>
+                    <ErrorBoundary fallback={RouteErrorFallback}>
                       <OnboardingGuard>
                         <AppLayout showDebugButton={debugModeEnabled}>
                           <Recurring />
@@ -286,7 +308,7 @@ function App() {
             
                 <Route path="/subscriptions" element={
                   <PrivateRoute>
-                    <ErrorBoundary fallback={OnboardingErrorFallback}>
+                    <ErrorBoundary fallback={RouteErrorFallback}>
                       <OnboardingGuard>
                         <AppLayout showDebugButton={debugModeEnabled}>
                           <Subscriptions />
@@ -298,7 +320,7 @@ function App() {
             
                 <Route path="/goals" element={
                   <PrivateRoute>
-                    <ErrorBoundary fallback={OnboardingErrorFallback}>
+                    <ErrorBoundary fallback={RouteErrorFallback}>
                       <OnboardingGuard>
                         <AppLayout showDebugButton={debugModeEnabled}>
                           <Goals />
@@ -310,7 +332,7 @@ function App() {
             
                 <Route path="/categories" element={
                   <PrivateRoute>
-                    <ErrorBoundary fallback={OnboardingErrorFallback}>
+                    <ErrorBoundary fallback={RouteErrorFallback}>
                       <OnboardingGuard>
                         <AppLayout showDebugButton={debugModeEnabled}>
                           <Categories />
@@ -322,7 +344,7 @@ function App() {
             
                 <Route path="/creditcards" element={
                   <PrivateRoute>
-                    <ErrorBoundary fallback={OnboardingErrorFallback}>
+                    <ErrorBoundary fallback={RouteErrorFallback}>
                       <OnboardingGuard>
                         <AppLayout showDebugButton={debugModeEnabled}>
                           <CreditCards />
@@ -334,7 +356,7 @@ function App() {
             
                 <Route path="/cashflow" element={
                   <PrivateRoute>
-                    <ErrorBoundary fallback={OnboardingErrorFallback}>
+                    <ErrorBoundary fallback={RouteErrorFallback}>
                       <OnboardingGuard>
                         <AppLayout showDebugButton={debugModeEnabled}>
                           <Cashflow />
@@ -346,7 +368,7 @@ function App() {
             
                 <Route path="/paycycle" element={
                   <PrivateRoute>
-                    <ErrorBoundary fallback={OnboardingErrorFallback}>
+                    <ErrorBoundary fallback={RouteErrorFallback}>
                       <OnboardingGuard>
                         <AppLayout showDebugButton={debugModeEnabled}>
                           <Paycycle />
@@ -358,7 +380,7 @@ function App() {
             
                 <Route path="/settings" element={
                   <PrivateRoute>
-                    <ErrorBoundary fallback={OnboardingErrorFallback}>
+                    <ErrorBoundary fallback={RouteErrorFallback}>
                       <OnboardingGuard>
                         <AppLayout showDebugButton={debugModeEnabled}>
                           <Settings />
@@ -370,7 +392,7 @@ function App() {
             
                 <Route path="/payment-history" element={
                   <PrivateRoute>
-                    <ErrorBoundary fallback={OnboardingErrorFallback}>
+                    <ErrorBoundary fallback={RouteErrorFallback}>
                       <OnboardingGuard>
                         <AppLayout showDebugButton={debugModeEnabled}>
                           <PaymentHistory />
@@ -382,7 +404,7 @@ function App() {
             
                 <Route path="/reports" element={
                   <PrivateRoute>
-                    <ErrorBoundary fallback={OnboardingErrorFallback}>
+                    <ErrorBoundary fallback={RouteErrorFallback}>
                       <OnboardingGuard>
                         <AppLayout showDebugButton={debugModeEnabled}>
                           <Reports />
@@ -394,7 +416,7 @@ function App() {
             
                 <Route path="/debt-optimizer" element={
                   <PrivateRoute>
-                    <ErrorBoundary fallback={OnboardingErrorFallback}>
+                    <ErrorBoundary fallback={RouteErrorFallback}>
                       <OnboardingGuard>
                         <AppLayout showDebugButton={debugModeEnabled}>
                           <DebtOptimizer />
@@ -407,7 +429,7 @@ function App() {
                 {/* NEW:  Payment Rules route */}
                 <Route path="/payment-rules" element={
                   <PrivateRoute>
-                    <ErrorBoundary fallback={OnboardingErrorFallback}>
+                    <ErrorBoundary fallback={RouteErrorFallback}>
                       <OnboardingGuard>
                         <AppLayout showDebugButton={debugModeEnabled}>
                           <PaymentRules />
