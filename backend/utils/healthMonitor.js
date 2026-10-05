@@ -5,6 +5,16 @@
 
 import admin from 'firebase-admin';
 
+export function classifyFirebaseHealthError(error) {
+  const message = String(error?.message || '');
+  const quotaLimited =
+    error?.code === 8 ||
+    message.includes('RESOURCE_EXHAUSTED') ||
+    message.toLowerCase().includes('quota exceeded');
+
+  return quotaLimited ? 'quota_limited' : 'unhealthy';
+}
+
 class HealthMonitor {
   constructor() {
     this.startTime = Date.now();
@@ -68,13 +78,7 @@ class HealthMonitor {
         message: 'Firebase connection successful'
       };
     } catch (error) {
-      const message = String(error?.message || '');
-      const quotaLimited =
-        error?.code === 8 ||
-        message.includes('RESOURCE_EXHAUSTED') ||
-        message.toLowerCase().includes('quota exceeded');
-
-      if (quotaLimited) {
+      if (classifyFirebaseHealthError(error) === 'quota_limited') {
         return {
           status: 'degraded',
           code: 'quota_limited',
