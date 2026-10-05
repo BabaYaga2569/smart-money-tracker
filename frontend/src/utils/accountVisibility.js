@@ -4,6 +4,7 @@ export function getAccountPreferences(settings = {}) {
 
 export function isAccountVisible(account, settingsOrPreferences = {}) {
   if (!account?.account_id) return true;
+  if (account.connection_status === "inactive") return false;
   if (account.visible === false) return false;
 
   const preferences = settingsOrPreferences?.accountPreferences
