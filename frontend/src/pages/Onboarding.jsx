@@ -145,6 +145,8 @@ const Onboarding = () => {
         bills: existingData.bills || [],
         recurringItems: existingData.recurringItems || [],
         plaidAccounts: existingData.plaidAccounts || [],
+        accountPreferences: existingData.accountPreferences || {},
+        accountVisibilitySchemaVersion: existingData.accountVisibilitySchemaVersion || 1,
         bankAccounts: {
           bofa: { name: 'Bank of America', type: 'Checking', balance: '' },
           sofi: { name: 'SoFi', type: 'Savings', balance: '' },
