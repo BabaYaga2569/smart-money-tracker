@@ -26,6 +26,7 @@ const Transactions = lazyPage(() => import('./pages/Transactions'), 'Transaction
 const Spendability = lazyPage(() => import('./pages/Spendability'), 'Spendability');
 const Bills = lazyPage(() => import('./pages/Bills'), 'Bills');
 const Recurring = lazyPage(() => import('./pages/Recurring'), 'Recurring');
+const BillDoctor = lazyPage(() => import('./pages/BillDoctor'), 'BillDoctor');
 const Subscriptions = lazyPage(() => import('./pages/Subscriptions'), 'Subscriptions');
 const Goals = lazyPage(() => import('./pages/Goals'), 'Goals');
 const Categories = lazyPage(() => import('./pages/Categories'), 'Categories');
@@ -300,6 +301,18 @@ function App() {
                       <OnboardingGuard>
                         <AppLayout showDebugButton={debugModeEnabled}>
                           <Recurring />
+                        </AppLayout>
+                      </OnboardingGuard>
+                    </ErrorBoundary>
+                  </PrivateRoute>
+                } />
+
+                <Route path="/bill-doctor" element={
+                  <PrivateRoute>
+                    <ErrorBoundary fallback={RouteErrorFallback}>
+                      <OnboardingGuard>
+                        <AppLayout showDebugButton={debugModeEnabled}>
+                          <BillDoctor />
                         </AppLayout>
                       </OnboardingGuard>
                     </ErrorBoundary>
