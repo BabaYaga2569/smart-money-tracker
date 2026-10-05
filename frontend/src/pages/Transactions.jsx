@@ -164,6 +164,14 @@ const Transactions = () => {
 useEffect(() => {
   const autoSyncIfNeeded = async () => {
     if (!currentUser) return;
+
+    const quotaBackoffUntil = Number(
+      localStorage.getItem('smt_firestore_quota_backoff_until') || 0
+    );
+    if (Date.now() < quotaBackoffUntil) {
+      console.log('[AutoSync] Firestore quota backoff active, skipping auto-sync');
+      return;
+    }
     
     try {
       // ✅ Query Firebase directly to check for Plaid accounts
@@ -468,12 +476,20 @@ useEffect(() => {
       const data = await response.json().catch(() => ({}));
 
       if (!response.ok || !data.success) {
+        if (data.code === 'FIRESTORE_QUOTA_EXCEEDED') {
+          localStorage.setItem(
+            'smt_firestore_quota_backoff_until',
+            String(Date.now() + 30 * 60 * 1000)
+          );
+        }
         throw new Error(
           data.message ||
           data.error ||
           `Failed to sync transactions: ${response.status} ${response.statusText}`
         );
       }
+
+      localStorage.removeItem('smt_firestore_quota_backoff_until');
 
       // Real-time listener will auto-update, no manual reload needed
       
