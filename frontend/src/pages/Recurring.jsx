@@ -25,6 +25,7 @@ import { getDateOnly } from '../utils/dateNormalization';
 import './Recurring.css';
 import { useAuth } from '../contexts/AuthContext';
 import { ensureSettingsDocument } from '../utils/settingsUtils';
+import { getCanonicalDisplayBalance, getVisiblePlaidAccounts } from '../utils/accountVisibility';
 
 /**
  * Helper function to build update data without undefined values for Firebase updateDoc.
@@ -226,14 +227,7 @@ const Recurring = () => {
           const accountsMap = {};
           cachedData.accounts.forEach((account) => {
             const accountId = account.account_id || account.id || account._id;
-            let balance = 0;
-            if (account.balances) {
-              balance = account.balances.current || account.balances.available || 0;
-            } else if (account.current_balance !== undefined) {
-              balance = account.current_balance;
-            } else if (account.balance !== undefined) {
-              balance = account.balance;
-            }
+            const balance = getCanonicalDisplayBalance(account);
 
             accountsMap[accountId] = {
               name: account.name || account.official_name || 'Unknown Account',
@@ -257,8 +251,9 @@ const Recurring = () => {
       // Try to load from Plaid API first (fallback if cache failed)
       if (token) {
         try {
+          const apiUrl = import.meta.env.VITE_API_URL || 'https://smart-money-tracker-09ks.onrender.com';
           const response = await fetch(
-            'https://smart-money-tracker-09ks.onrender.com/api/accounts',
+            `${apiUrl}/api/accounts?userId=${currentUser.uid}&_t=${Date.now()}`,
             {
               headers: {
                 Authorization: `Bearer ${token}`,
@@ -286,14 +281,7 @@ const Recurring = () => {
                 const accountsMap = {};
                 accountsList.forEach((account) => {
                   const accountId = account.account_id || account.id || account._id;
-                  let balance = 0;
-                  if (account.balances) {
-                    balance = account.balances.current || account.balances.available || 0;
-                  } else if (account.current_balance !== undefined) {
-                    balance = account.current_balance;
-                  } else if (account.balance !== undefined) {
-                    balance = account.balance;
-                  }
+                  const balance = getCanonicalDisplayBalance(account);
 
                   accountsMap[accountId] = {
                     name: account.name || account.official_name || 'Unknown Account',
@@ -326,11 +314,12 @@ const Recurring = () => {
 
       if (settingsDocSnap.exists()) {
         const data = settingsDocSnap.data();
-        const plaidAccountsList = data.plaidAccounts || [];
+        const canonicalPlaidAccounts = data.plaidAccounts || [];
+        const plaidAccountsList = getVisiblePlaidAccounts(canonicalPlaidAccounts, data);
         const bankAccounts = data.bankAccounts || {};
 
-        // Prioritize Plaid accounts if they exist
-        if (plaidAccountsList.length > 0) {
+        // Keep connection truth separate from visibility.
+        if (canonicalPlaidAccounts.length > 0) {
           const accountsMap = {};
           plaidAccountsList.forEach((account) => {
             const accountId = account.account_id;
@@ -351,11 +340,7 @@ const Recurring = () => {
     } catch (error) {
       console.error('Error loading accounts:', error);
       // Fallback accounts
-      setAccounts({
-        bofa: { name: 'Bank of America', type: 'checking' },
-        usaa: { name: 'USAA', type: 'checking' },
-        capone: { name: 'Capital One', type: 'credit' },
-      });
+      setAccounts({});
     }
   };
 
