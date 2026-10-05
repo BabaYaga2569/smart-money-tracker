@@ -84,6 +84,69 @@ test("legacy migration keeps previously visible accounts visible and marks missi
   assert.equal(result.preferences["savings-1"].visible, false);
 });
 
+test("legacy-missing credit cards remain visible", () => {
+  const result = reconcileAccountRegistry({
+    existingAccounts: [
+      {
+        account_id: "checking-1",
+        item_id: "item-a",
+        mask: "1111",
+        institution_name: "Example Bank",
+        type: "depository",
+        subtype: "checking"
+      }
+    ],
+    freshAccounts: [
+      {
+        account_id: "checking-1",
+        item_id: "item-a",
+        mask: "1111",
+        institution_name: "Example Bank",
+        type: "depository",
+        subtype: "checking",
+        balances: { current: 100, available: 100 }
+      },
+      {
+        account_id: "credit-1",
+        item_id: "item-a",
+        mask: "9999",
+        institution_name: "Example Bank",
+        type: "credit",
+        subtype: "credit card",
+        balances: { current: 250, available: 4750, limit: 5000 }
+      }
+    ],
+    preferences: {},
+    visibilitySchemaVersion: 0,
+    completeSnapshot: true
+  });
+
+  assert.equal(result.preferences["credit-1"].visible, true);
+});
+
+test("missing account in a complete snapshot is retained as inactive and hidden", () => {
+  const result = reconcileAccountRegistry({
+    existingAccounts: [
+      {
+        account_id: "closed-1",
+        item_id: "item-a",
+        mask: "7777",
+        institution_name: "Example Bank",
+        type: "depository",
+        subtype: "checking",
+        balance: 321
+      }
+    ],
+    freshAccounts: [],
+    preferences: { "closed-1": { visible: true } },
+    visibilitySchemaVersion: ACCOUNT_VISIBILITY_SCHEMA_VERSION,
+    completeSnapshot: true
+  });
+
+  assert.equal(result.accounts[0].connection_status, "inactive");
+  assert.equal(result.preferences["closed-1"].visible, false);
+});
+
 test("new accounts default visible after migration", () => {
   const result = reconcileAccountRegistry({
     existingAccounts: [
