@@ -283,7 +283,6 @@ useEffect(() => {
   const loadAccounts = async () => {
     console.log('🔄 [loadAccounts] Starting account load...');
     try {
-      const token = localStorage.getItem('token');
       const apiUrl = import.meta.env.VITE_API_URL || 'https://smart-money-tracker-09ks.onrender.com';
       
       // Add timeout to prevent slow API from blocking page load
@@ -292,7 +291,6 @@ useEffect(() => {
       
       const response = await fetch(`${apiUrl}/api/accounts?userId=${currentUser.uid}&_t=${Date.now()}`, {
         headers: {
-          'Authorization': `Bearer ${token}`,
           'Content-Type': 'application/json'
         },
         signal: controller.signal
@@ -441,12 +439,6 @@ useEffect(() => {
     try {
       setSyncingPlaid(true);
       
-      // Check if user has Plaid accounts configured
-      if (!hasPlaidAccounts) {
-        showNotification('Plaid not connected. Please connect your bank account first.', 'warning');
-        return;
-      }
-
       // Determine backend URL
       const backendUrl = import.meta.env.VITE_API_URL || 
         (window.location.hostname === 'localhost' 
@@ -473,14 +465,14 @@ useEffect(() => {
         })
       });
 
-      if (!response.ok) {
-        throw new Error(`Failed to sync transactions: ${response.statusText}`);
-      }
+      const data = await response.json().catch(() => ({}));
 
-      const data = await response.json();
-      
-      if (!data.success) {
-        throw new Error(data.error || 'Failed to sync transactions');
+      if (!response.ok || !data.success) {
+        throw new Error(
+          data.message ||
+          data.error ||
+          `Failed to sync transactions: ${response.status} ${response.statusText}`
+        );
       }
 
       // Real-time listener will auto-update, no manual reload needed

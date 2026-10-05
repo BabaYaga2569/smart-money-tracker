@@ -249,7 +249,6 @@ const refreshPlaidTransactions = async () => {
   
   try {
     // Step 1: Sync Plaid transactions from backend (last 90 days)
-    const token = localStorage.getItem('token');
     const apiUrl = import.meta.env.VITE_API_URL || 'https://smart-money-tracker-09ks.onrender.com';
     
     // Calculate date range (90 days ago to today)
@@ -260,7 +259,6 @@ const refreshPlaidTransactions = async () => {
     const response = await fetch(`${apiUrl}/api/plaid/sync_transactions`, {
       method: 'POST',
       headers: {
-        'Authorization': `Bearer ${token}`,
         'Content-Type': 'application/json'
       },
       body: JSON.stringify({
@@ -947,62 +945,57 @@ snapshot.docChanges().forEach(async (change) => {
   const loadAccounts = async () => {
     // ... rest of your loadAccounts function stays exactly the same
     try {
-      const token = localStorage.getItem('token');
-      
-      if (token) {
-        try {
-          const apiUrl = import.meta.env.VITE_API_URL || 'https://smart-money-tracker-09ks.onrender.com';
+      try {
+        const apiUrl = import.meta.env.VITE_API_URL || 'https://smart-money-tracker-09ks.onrender.com';
+        
+        const response = await fetch(`${apiUrl}/api/accounts?userId=${currentUser.uid}&_t=${Date.now()}`, {
+          headers: {
+            'Content-Type': 'application/json'
+          }
+        });
+        
+        if (response.ok) {
+          let data;
+          try {
+            data = await response.json();
+          } catch (parseError) {
+            console.warn('Failed to parse API response, falling back to Firebase:', parseError);
+          }
           
-          const response = await fetch(`${apiUrl}/api/accounts?userId=${currentUser.uid}&_t=${Date.now()}`, {
-            headers: {
-              'Authorization': `Bearer ${token}`,
-              'Content-Type': 'application/json'
-            }
-          });
-          
-          if (response.ok) {
-            let data;
-            try {
-              data = await response.json();
-            } catch (parseError) {
-              console.warn('Failed to parse API response, falling back to Firebase:', parseError);
-            }
+          if (data?.success === false) {
+            console.log('API returned success=false, falling back to Firebase');
+          } else if (data) {
+            const accountsList = data?.accounts || data;
             
-            if (data?.success === false) {
-              console.log('API returned success=false, falling back to Firebase');
-            } else if (data) {
-              const accountsList = data?.accounts || data;
-              
-              if (Array.isArray(accountsList) && accountsList.length > 0) {
-                const accountsMap = {};
-                accountsList.forEach(account => {
-                  if (!account) return;
-                  
-                  const accountId = account?.account_id || account?.id || account?._id;
-                  
-                  if (!accountId) {
-                    console.warn('Account missing ID, skipping:', account);
-                    return;
-                  }
-                  
-                  const balance = getCanonicalDisplayBalance(account);
-                  
-                  accountsMap[accountId] = {
-                    name: account?.name || account?.official_name || 'Unknown Account',
-                    type: account?.subtype || account?.type || 'checking',
-                    balance: balance.toString(),
-                    mask: account?.mask || '',
-                    institution: account?.institution_name || ''
-                  };
-                });
-                setAccounts(accountsMap);
-                return;
-              }
+            if (Array.isArray(accountsList) && accountsList.length > 0) {
+              const accountsMap = {};
+              accountsList.forEach(account => {
+                if (!account) return;
+                
+                const accountId = account?.account_id || account?.id || account?._id;
+                
+                if (!accountId) {
+                  console.warn('Account missing ID, skipping:', account);
+                  return;
+                }
+                
+                const balance = getCanonicalDisplayBalance(account);
+                
+                accountsMap[accountId] = {
+                  name: account?.name || account?.official_name || 'Unknown Account',
+                  type: account?.subtype || account?.type || 'checking',
+                  balance: balance.toString(),
+                  mask: account?.mask || '',
+                  institution: account?.institution_name || ''
+                };
+              });
+              setAccounts(accountsMap);
+              return;
             }
           }
-        } catch (error) {
-          console.warn('Error fetching from API, continuing with Firebase fallback:', error);
         }
+      } catch (error) {
+        console.warn('Error fetching from API, continuing with Firebase fallback:', error);
       }
       
       const settingsDocRef = doc(db, 'users', currentUser.uid, 'settings', 'personal');

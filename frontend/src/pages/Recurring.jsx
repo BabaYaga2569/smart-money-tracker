@@ -246,65 +246,58 @@ const Recurring = () => {
         }
       }
 
-      const token = localStorage.getItem('token');
+      // Try to load from Plaid API first (fallback if the API is unavailable).
+      // Authentication is attached globally by authFetch using the Firebase ID token.
+      try {
+        const apiUrl = import.meta.env.VITE_API_URL || 'https://smart-money-tracker-09ks.onrender.com';
+        const response = await fetch(
+          `${apiUrl}/api/accounts?userId=${currentUser.uid}&_t=${Date.now()}`,
+          {
+            headers: {
+              'Content-Type': 'application/json',
+            },
+          }
+        );
 
-      // Try to load from Plaid API first (fallback if cache failed)
-      if (token) {
-        try {
-          const apiUrl = import.meta.env.VITE_API_URL || 'https://smart-money-tracker-09ks.onrender.com';
-          const response = await fetch(
-            `${apiUrl}/api/accounts?userId=${currentUser.uid}&_t=${Date.now()}`,
-            {
-              headers: {
-                Authorization: `Bearer ${token}`,
-                'Content-Type': 'application/json',
-              },
-            }
-          );
+        if (response.ok) {
+          const data = await response.json();
 
-          if (response.ok) {
-            const data = await response.json();
-
-            // Check if API returned success flag
-            if (data.success === false) {
-              if (import.meta.env.DEV) {
-                console.log(
-                  'Plaid API returned no accounts:',
-                  data.message || 'No accounts available'
-                );
-              }
-              // Fall through to Firebase fallback
-            } else {
-              const accountsList = data.accounts || data;
-
-              if (Array.isArray(accountsList) && accountsList.length > 0) {
-                const accountsMap = {};
-                accountsList.forEach((account) => {
-                  const accountId = account.account_id || account.id || account._id;
-                  const balance = getCanonicalDisplayBalance(account);
-
-                  accountsMap[accountId] = {
-                    name: account.name || account.official_name || 'Unknown Account',
-                    type: account.subtype || account.type || 'checking',
-                    balance: balance.toString(),
-                    mask: account.mask || '',
-                    institution: account.institution_name || '',
-                  };
-                });
-                setAccounts(accountsMap);
-                return;
-              }
-            }
-          } else if (response.status === 404) {
+          if (data.success === false) {
             if (import.meta.env.DEV) {
-              console.log('Accounts endpoint not available, using Firebase fallback');
+              console.log(
+                'Plaid API returned no accounts:',
+                data.message || 'No accounts available'
+              );
+            }
+          } else {
+            const accountsList = data.accounts || data;
+
+            if (Array.isArray(accountsList) && accountsList.length > 0) {
+              const accountsMap = {};
+              accountsList.forEach((account) => {
+                const accountId = account.account_id || account.id || account._id;
+                const balance = getCanonicalDisplayBalance(account);
+
+                accountsMap[accountId] = {
+                  name: account.name || account.official_name || 'Unknown Account',
+                  type: account.subtype || account.type || 'checking',
+                  balance: balance.toString(),
+                  mask: account.mask || '',
+                  institution: account.institution_name || '',
+                };
+              });
+              setAccounts(accountsMap);
+              return;
             }
           }
-        } catch (apiError) {
-          // Network errors are expected when API is not available
+        } else if (response.status === 404) {
           if (import.meta.env.DEV) {
-            console.log('Plaid API not available, trying Firebase...', apiError.message || '');
+            console.log('Accounts endpoint not available, using Firebase fallback');
           }
+        }
+      } catch (apiError) {
+        if (import.meta.env.DEV) {
+          console.log('Plaid API not available, trying Firebase...', apiError.message || '');
         }
       }
 
