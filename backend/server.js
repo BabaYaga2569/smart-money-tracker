@@ -103,6 +103,13 @@ const isFirebaseError = (error) => {
   return error.code && typeof error.code === 'number' && error.code >= 1 && error.code <= 16;
 };
 
+const isFirestoreQuotaExceeded = (error) => {
+  const message = String(error?.message || '');
+  return error?.code === 8 ||
+    message.includes('RESOURCE_EXHAUSTED') ||
+    message.toLowerCase().includes('quota exceeded');
+};
+
 /**
  * Determine if a Plaid error should be retryable
  * INVALID_REQUEST errors are typically not retryable
@@ -1114,6 +1121,11 @@ app.post("/api/plaid/get_balances", async (req, res, next) => {
     logger.error('GET_BALANCES', 'Failed to fetch balances', error, {});
 
     if (error.statusCode) return next(error);
+    if (isFirestoreQuotaExceeded(error)) {
+      return next(createError.resourceExhausted(
+        'Firestore quota is temporarily exhausted. Balance refresh is paused; previously loaded balances remain unchanged.'
+      ));
+    }
 
     const plaidError = error.response?.data;
     if (plaidError) {
@@ -1127,7 +1139,7 @@ app.post("/api/plaid/get_balances", async (req, res, next) => {
   }
 });
 
-// Get accounts - provides account list for frontend (gracefully handles missing credentials)
+// Get accounts - cached canonical registry by default; live Plaid refresh only on demand.
 app.get("/api/accounts", async (req, res, next) => {
   try {
     const userId = req.authUid || req.query.userId || req.headers['x-user-id'];
@@ -1144,6 +1156,54 @@ app.get("/api/accounts", async (req, res, next) => {
 
     validators.validateUserId(userId);
 
+    const settingsRef = db.collection('users').doc(userId)
+      .collection('settings').doc('personal');
+    const settingsDoc = await settingsRef.get();
+    const settings = settingsDoc.exists ? settingsDoc.data() : {};
+    const canonicalAccounts = settings.plaidAccounts || [];
+    const preferences = settings.accountPreferences || {};
+    const connectedCachedAccounts = canonicalAccounts.filter(
+      account => account.connection_status !== 'inactive'
+    );
+
+    if (!forceBalanceRefresh && connectedCachedAccounts.length > 0) {
+      const visibleCachedAccounts = visibleAccounts(connectedCachedAccounts, preferences);
+      const hiddenCachedAccounts = connectedCachedAccounts.filter(
+        account => !visibleCachedAccounts.some(
+          visible => visible.account_id === account.account_id
+        )
+      );
+      const accountsForResponse = includeHidden
+        ? withVisibility(connectedCachedAccounts, preferences)
+        : visibleCachedAccounts;
+      const itemIds = new Set(
+        connectedCachedAccounts.map(account => account.item_id).filter(Boolean)
+      );
+
+      const lastUpdated =
+        settings.lastBalanceUpdate?.toDate?.()?.toISOString?.() ||
+        settings.lastUpdated?.toDate?.()?.toISOString?.() ||
+        settings.lastBalanceUpdate ||
+        null;
+
+      return res.json({
+        success: true,
+        accounts: accountsForResponse,
+        account_count: accountsForResponse.length,
+        connected_account_count: connectedCachedAccounts.length,
+        visible_account_count: visibleCachedAccounts.length,
+        hidden_account_count: hiddenCachedAccounts.length,
+        item_count: itemIds.size,
+        partial: false,
+        visibility_schema:
+          settings.accountVisibilitySchemaVersion || ACCOUNT_VISIBILITY_SCHEMA_VERSION,
+        last_updated: lastUpdated,
+        source: 'canonical_cache'
+      });
+    }
+
+    // A live Plaid call is reserved for explicit refresh=true or first-time
+    // migration when no canonical account registry exists yet.
     const items = await getAllPlaidItems(userId);
     if (!items || items.length === 0) {
       return res.status(200).json({
@@ -1216,18 +1276,24 @@ app.get("/api/accounts", async (req, res, next) => {
       success: true,
       accounts: accountsForResponse,
       account_count: accountsForResponse.length,
-      connected_account_count: updateResult.accounts.length,
+      connected_account_count: updateResult.connectedAccounts.length,
       visible_account_count: updateResult.visibleAccounts.length,
       hidden_account_count: updateResult.hiddenAccounts.length,
       item_count: items.length,
       partial: successfulItems !== items.length,
       visibility_schema: updateResult.visibilitySchemaVersion,
-      last_updated: new Date().toISOString()
+      last_updated: new Date().toISOString(),
+      source: 'plaid_refresh'
     });
   } catch (error) {
     logger.error('GET_ACCOUNTS', 'Failed to get accounts', error, {});
 
     if (error.statusCode) return next(error);
+    if (isFirestoreQuotaExceeded(error)) {
+      return next(createError.resourceExhausted(
+        'Firestore quota is temporarily exhausted. Cached data in the browser remains safe; live account refresh is paused.'
+      ));
+    }
 
     const plaidError = error.response?.data;
     if (plaidError) {
@@ -1237,11 +1303,7 @@ app.get("/api/accounts", async (req, res, next) => {
       ));
     }
 
-    res.status(200).json({
-      success: false,
-      accounts: [],
-      error: "Unable to fetch accounts. Please reconnect your bank account."
-    });
+    next(createError.firebaseError(error.message || 'Unable to load account data'));
   }
 });
 
