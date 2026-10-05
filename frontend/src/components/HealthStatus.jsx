@@ -16,14 +16,19 @@ const HealthStatus = () => {
       setLoading(true);
       const apiUrl = import.meta.env.VITE_API_URL || DEFAULT_API_URL;
       const response = await fetch(`${apiUrl}/api/health`);
-      
-      if (!response.ok) {
+      const data = await response.json().catch(() => null);
+
+      if (!response.ok && !data?.status) {
         throw new Error(`HTTP error! status: ${response.status}`);
       }
-      
-      const data = await response.json();
-      setHealthData(data);
-      setError(null);
+
+      if (data?.status) {
+        setHealthData(data);
+        setError(null);
+        return;
+      }
+
+      throw new Error('Health response was unavailable');
     } catch (err) {
       console.error('Error fetching health status:', err);
       setError(err.message);

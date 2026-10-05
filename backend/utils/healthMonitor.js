@@ -5,6 +5,16 @@
 
 import admin from 'firebase-admin';
 
+export function classifyFirebaseHealthError(error) {
+  const message = String(error?.message || '');
+  const quotaLimited =
+    error?.code === 8 ||
+    message.includes('RESOURCE_EXHAUSTED') ||
+    message.toLowerCase().includes('quota exceeded');
+
+  return quotaLimited ? 'quota_limited' : 'unhealthy';
+}
+
 class HealthMonitor {
   constructor() {
     this.startTime = Date.now();
@@ -68,6 +78,16 @@ class HealthMonitor {
         message: 'Firebase connection successful'
       };
     } catch (error) {
+      if (classifyFirebaseHealthError(error) === 'quota_limited') {
+        return {
+          status: 'degraded',
+          code: 'quota_limited',
+          latency: `${Date.now() - startTime}ms`,
+          message: 'Firestore quota is temporarily exhausted. Existing cached data may still display, but new database reads/writes are limited.',
+          error: true
+        };
+      }
+
       return {
         status: 'unhealthy',
         latency: `${Date.now() - startTime}ms`,
@@ -131,12 +151,15 @@ class HealthMonitor {
       this.checkPlaid(plaidClient)
     ]);
 
-    const allHealthy = 
-      firebaseHealth.status === 'healthy' && 
-      plaidHealth.status === 'healthy';
+    const statuses = [firebaseHealth.status, plaidHealth.status];
+    const overallStatus = statuses.includes('unhealthy')
+      ? 'unhealthy'
+      : statuses.includes('degraded')
+        ? 'degraded'
+        : 'healthy';
 
     return {
-      status: allHealthy ? 'healthy' : 'degraded',
+      status: overallStatus,
       timestamp: new Date().toISOString(),
       uptime: this.getUptime(),
       services: {
