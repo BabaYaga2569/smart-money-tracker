@@ -270,12 +270,10 @@ function mergeTransactionSets(...groups) {
   return [...byId.values()];
 }
 
-async function loadRelevantExistingTransactions({
-  db,
-  transactionsRef,
-  incomingTransactions,
-  removedTransactions
-}) {
+export function collectRelevantTransactionIds(
+  incomingTransactions = [],
+  removedTransactions = []
+) {
   const directIds = [];
 
   for (const transaction of incomingTransactions) {
@@ -286,6 +284,20 @@ async function loadRelevantExistingTransactions({
   for (const transaction of removedTransactions) {
     if (transaction?.transaction_id) directIds.push(transaction.transaction_id);
   }
+
+  return [...new Set(directIds)];
+}
+
+async function loadRelevantExistingTransactions({
+  db,
+  transactionsRef,
+  incomingTransactions,
+  removedTransactions
+}) {
+  const directIds = collectRelevantTransactionIds(
+    incomingTransactions,
+    removedTransactions
+  );
 
   const directMatches = await getTransactionsByIds(db, transactionsRef, directIds);
 
@@ -304,7 +316,7 @@ async function loadRelevantExistingTransactions({
   return {
     transactions: mergeTransactionSets(directMatches, pendingMatches),
     readCount: directMatches.length + pendingMatches.length,
-    requestedDirectIds: [...new Set(directIds)].length,
+    requestedDirectIds: directIds.length,
     pendingReadCount: pendingMatches.length
   };
 }
