@@ -19,6 +19,7 @@ import {
   Legend,
   Filler,
 } from 'chart.js';
+import { getVisiblePlaidAccounts, isDepositoryAccount } from '../utils/accountVisibility';
 import './DebtOptimizer.css';
 
 // Register Chart.js components
@@ -123,7 +124,10 @@ export default function DebtOptimizer() {
         const settingsDoc = await getDoc(settingsDocRef);
         const settingsData = settingsDoc.exists() ? settingsDoc.data() : {};
 
-        const plaidAccounts = settingsData.plaidAccounts || [];
+        const plaidAccounts = getVisiblePlaidAccounts(
+          settingsData.plaidAccounts || [],
+          settingsData
+        ).filter(isDepositoryAccount);
         totalAvailable = calculateTotalProjectedBalance(
           plaidAccounts,
           transactions

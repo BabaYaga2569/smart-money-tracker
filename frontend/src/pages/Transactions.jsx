@@ -8,6 +8,7 @@ import PlaidErrorModal from '../components/PlaidErrorModal';
 import './Transactions.css';
 import { useAuth } from '../contexts/AuthContext';
 import { shouldRunDetection, updateLastRun, saveDetections } from '../utils/detectionStorage';
+import { getCanonicalDisplayBalance, getVisiblePlaidAccounts } from '../utils/accountVisibility';
 
 const Transactions = () => {
   const { currentUser } = useAuth();
@@ -289,7 +290,7 @@ useEffect(() => {
       const controller = new AbortController();
       const timeoutId = setTimeout(() => controller.abort(), 3000); // 3 second timeout
       
-      const response = await fetch(`${apiUrl}/api/accounts`, {
+      const response = await fetch(`${apiUrl}/api/accounts?userId=${currentUser.uid}&_t=${Date.now()}`, {
         headers: {
           'Authorization': `Bearer ${token}`,
           'Content-Type': 'application/json'
@@ -336,15 +337,7 @@ useEffect(() => {
               return;
             }
             
-            // Extract balance - handle different possible structures
-            let balance = 0;
-            if (account?.balances) {
-              balance = account.balances?.current || account.balances?.available || 0;
-            } else if (account?.current_balance !== undefined) {
-              balance = account.current_balance;
-            } else if (account?.balance !== undefined) {
-              balance = account.balance;
-            }
+            const balance = getCanonicalDisplayBalance(account);
             
             accountsMap[accountId] = {
               name: account?.name,
@@ -363,7 +356,7 @@ useEffect(() => {
             accountIds: Object.keys(accountsMap),
             firstAccount: Object.values(accountsMap)[0]
           });
-          setHasPlaidAccounts(Object.keys(accountsMap).length > 0);
+          setHasPlaidAccounts((data?.connected_account_count ?? Object.keys(accountsMap).length) > 0);
         } else {
           // No accounts from API, try Firebase
           console.log('⚠️ [loadAccounts] No accounts from API, falling back to Firebase');
@@ -389,80 +382,59 @@ useEffect(() => {
     }
   };
 
-  // Fallback function to load from Firebase
+  // Fallback function to load canonical account data from Firebase.
   const loadFirebaseAccounts = async () => {
     console.log('🔄 [loadFirebaseAccounts] Starting Firebase account load...');
     try {
       const settingsDocRef = doc(db, 'users', currentUser.uid, 'settings', 'personal');
       const settingsDocSnap = await getDoc(settingsDocRef);
-      
-      if (settingsDocSnap.exists()) {
-        const data = settingsDocSnap.data();
-        const plaidAccountsList = data.plaidAccounts || [];
-        const bankAccounts = data.bankAccounts || {};
-        
-        console.log('📊 [loadFirebaseAccounts] Firebase data retrieved:', {
-          plaidAccountsCount: plaidAccountsList.length,
-          bankAccountsCount: Object.keys(bankAccounts).length,
-          plaidAccountIds: plaidAccountsList.map(a => a.account_id)
+
+      if (!settingsDocSnap.exists()) {
+        console.warn('⚠️ [loadFirebaseAccounts] No Firebase settings document found');
+        setAccounts({});
+        setHasPlaidAccounts(false);
+        return;
+      }
+
+      const data = settingsDocSnap.data();
+      const canonicalPlaidAccounts = data.plaidAccounts || [];
+      const visiblePlaidAccounts = getVisiblePlaidAccounts(canonicalPlaidAccounts, data);
+      const bankAccounts = data.bankAccounts || {};
+
+      PlaidConnectionManager.setPlaidAccounts(canonicalPlaidAccounts);
+      setHasPlaidAccounts(canonicalPlaidAccounts.length > 0);
+
+      if (canonicalPlaidAccounts.length > 0) {
+        const accountsMap = {};
+
+        visiblePlaidAccounts.forEach(account => {
+          if (!account?.account_id) return;
+
+          accountsMap[account.account_id] = {
+            name: account.name,
+            official_name: account.official_name,
+            type: account.subtype || account.type || 'checking',
+            balance: getCanonicalDisplayBalance(account).toString(),
+            mask: account.mask || '',
+            institution_name: account.institution_name || '',
+            institution: account.institution_name || ''
+          };
         });
-        
-        // Update PlaidConnectionManager with account info
-        PlaidConnectionManager.setPlaidAccounts(plaidAccountsList);
-        console.log('✅ [loadFirebaseAccounts] Updated PlaidConnectionManager with', plaidAccountsList.length, 'accounts');
-        setHasPlaidAccounts(plaidAccountsList.length > 0);
-        
-        // Prioritize Plaid accounts if they exist (fully automated flow)
-        if (plaidAccountsList.length > 0) {
-          // Convert Plaid accounts to the format the component expects
-          const accountsMap = {};
-          plaidAccountsList.forEach(account => {
-            const accountId = account.account_id;
-            accountsMap[accountId] = {
-              name: account.name,
-              official_name: account.official_name,
-              type: account.type,
-              balance: account.balance,
-              mask: account.mask || '',
-              institution_name: account.institution_name || '',
-              institution: account.institution_name || ''
-            };
-          });
-          setAccounts(accountsMap);
-          console.log('✅ [loadFirebaseAccounts] Set accounts state from Firebase Plaid:', {
-            count: Object.keys(accountsMap).length,
-            accountIds: Object.keys(accountsMap),
-            firstAccount: Object.values(accountsMap)[0]
-          });
-        } else {
-          // Fall back to manual accounts
-          setAccounts(bankAccounts);
-          console.log('✅ [loadFirebaseAccounts] Set accounts state from Firebase manual accounts:', {
-            count: Object.keys(bankAccounts).length,
-            accountIds: Object.keys(bankAccounts)
-          });
-        }
+
+        setAccounts(accountsMap);
+        console.log('✅ [loadFirebaseAccounts] Loaded visible canonical Plaid accounts:', {
+          visibleCount: visiblePlaidAccounts.length,
+          connectedCount: canonicalPlaidAccounts.length
+        });
       } else {
-        console.warn('⚠️ [loadFirebaseAccounts] No Firebase settings document found, using demo accounts');
-        setDefaultDemoAccounts();
+        setAccounts(bankAccounts);
+        console.log('✅ [loadFirebaseAccounts] Loaded manual accounts:', Object.keys(bankAccounts).length);
       }
     } catch (error) {
       console.error('❌ [loadFirebaseAccounts] Error loading Firebase accounts:', error);
-      setDefaultDemoAccounts();
+      setAccounts({});
     }
   };
-
-  // Set default demo accounts
-  const setDefaultDemoAccounts = () => {
-    console.log('ℹ️ [setDefaultDemoAccounts] Setting demo accounts');
-    const demoAccounts = {
-      bofa: { name: "Bank of America", type: "checking", balance: "1361.97" },
-      capone: { name: "Capital One", type: "checking", balance: "24.74" },
-      usaa: { name: "USAA", type: "checking", balance: "143.36" }
-    };
-    setAccounts(demoAccounts);
-  };
-
 
 
   const syncPlaidTransactions = async () => {

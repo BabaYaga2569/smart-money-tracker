@@ -11,6 +11,7 @@ import { useAuth } from '../contexts/AuthContext';
 import DashboardTileCreditCard from "../components/DashboardTileCreditCard";
 import { useTransactionsQuery } from '../hooks/useFirebaseQuery';
 import HealthStatus from '../components/HealthStatus';
+import { getVisiblePlaidAccounts, isDepositoryAccount } from '../utils/accountVisibility';
 
 
 const Dashboard = () => {
@@ -144,12 +145,14 @@ const Dashboard = () => {
         
         // Calculate your real data here
         // Prioritize Plaid accounts if they exist (fully automated flow)
-        const plaidAccountsList = data.plaidAccounts || [];
+        const canonicalPlaidAccounts = data.plaidAccounts || [];
+        const plaidAccountsList = getVisiblePlaidAccounts(canonicalPlaidAccounts, data)
+          .filter(isDepositoryAccount);
         const bankAccounts = data.bankAccounts || {};
         
-        // Update PlaidConnectionManager with account info
-        PlaidConnectionManager.setPlaidAccounts(plaidAccountsList);
-        setHasPlaidAccounts(plaidAccountsList.length > 0);
+        // Connection state is based on canonical accounts, not visibility.
+        PlaidConnectionManager.setPlaidAccounts(canonicalPlaidAccounts);
+        setHasPlaidAccounts(canonicalPlaidAccounts.length > 0);
         
         let totalBalance = 0;
         let accountCount = 0;

@@ -3,6 +3,7 @@ import { useParams, useNavigate } from 'react-router-dom';
 import { doc, getDoc, collection, query, orderBy, limit, where, onSnapshot } from 'firebase/firestore';
 import { db } from '../firebase';
 import { useAuth } from '../contexts/AuthContext';
+import { getVisiblePlaidAccounts } from '../utils/accountVisibility';
 import './BankDetail.css';
 
 const BankDetail = () => {
@@ -49,7 +50,7 @@ const BankDetail = () => {
         
         if (settingsDocSnap.exists()) {
           const data = settingsDocSnap.data();
-          const plaidAccounts = data.plaidAccounts || [];
+          const plaidAccounts = getVisiblePlaidAccounts(data.plaidAccounts || [], data);
           const foundAccount = plaidAccounts.find(acc => acc.account_id === accountId);
           
           if (foundAccount) {

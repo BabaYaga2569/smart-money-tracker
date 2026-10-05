@@ -10,6 +10,7 @@ import { autoMigrateBills } from '../utils/FirebaseMigration';
 import { runAutoDetection } from '../utils/AutoBillDetection';
 import { matchTransactionToBill } from '../utils/BillPaymentMatcher';
 import { SettingsSchemaManager } from '../utils/SettingsSchemaManager';
+import { getVisiblePlaidAccounts, isDepositoryAccount } from '../utils/accountVisibility';
 import './Spendability.css';
 import { useAuth } from '../contexts/AuthContext';
 // Force rebuild 2025-11-12 v2 - Fix spendability issues
@@ -235,39 +236,22 @@ const SpendabilityV2 = () => {
         }
       } else {
         console.warn('[Spendability] ⚠️ Backend returned no accounts, falling back to Firebase cache');
-        allPlaidAccounts = settingsData.plaidAccounts || [];
+        allPlaidAccounts = getVisiblePlaidAccounts(settingsData.plaidAccounts || [], settingsData);
       }
     } else {
       console.warn('[Spendability] ⚠️ Backend API unavailable, falling back to Firebase cache');
-      allPlaidAccounts = settingsData.plaidAccounts || [];
+      allPlaidAccounts = getVisiblePlaidAccounts(settingsData.plaidAccounts || [], settingsData);
     }
   } catch (error) {
     console.error('[Spendability] ❌ Error loading from backend API:', error);
     if (import.meta.env.DEV) {
       console.log('[Spendability] Falling back to Firebase cache');
     }
-    allPlaidAccounts = settingsData.plaidAccounts || [];
+    allPlaidAccounts = getVisiblePlaidAccounts(settingsData.plaidAccounts || [], settingsData);
   }
 
-      // Filter: ONLY depository accounts (checking, savings, money market)
-      // Exclude credit cards completely
-      const depositoryAccounts = allPlaidAccounts.filter(account => {
-        // Include if type is depository
-        if (account.type === 'depository') return true;
-        
-        // Include if subtype is checking, savings, or money market
-        const depositorySubtypes = ['checking', 'savings', 'money market', 'cd', 'hsa'];
-        if (depositorySubtypes.includes(account.subtype?.toLowerCase())) return true;
-        
-        // Exclude if type is credit
-        if (account.type === 'credit') return false;
-        
-        // Exclude if subtype contains 'credit'
-        if (account.subtype?.toLowerCase().includes('credit')) return false;
-        
-        // Default: include for manual accounts
-        return true;
-      });
+      // Safe-to-Spend only uses visible cash/depository accounts.
+      const depositoryAccounts = allPlaidAccounts.filter(isDepositoryAccount);
 
       if (import.meta.env.DEV) {
         console.log(`[Spendability] Filtered ${allPlaidAccounts.length} accounts to ${depositoryAccounts.length} depository accounts (excluded credit cards)`);

@@ -6,6 +6,7 @@ import PlaidConnectionManager from "../utils/PlaidConnectionManager";
 import { calculateTotalProjectedBalance, getBalanceDifference, formatBalanceDifference } from "../utils/BalanceCalculator";
 import { db } from "../firebase";
 import { doc, getDoc } from "firebase/firestore";
+import { getCanonicalDisplayBalance, isCreditAccount } from "../utils/accountVisibility";
 import "./Accounts.css";
 
 export default function CreditCards() {
@@ -37,26 +38,34 @@ export default function CreditCards() {
         const data = await response.json();
 
         if (data.success && data.accounts) {
-          const creditAccounts = data.accounts.filter(
-            (a) => a.type === "credit" || a.subtype === "credit"
-          );
+          const creditAccounts = data.accounts.filter(isCreditAccount);
           const formatted = creditAccounts.map((account) => {
             const balances = account.balances || {};
-            const currentBalance = parseFloat(balances.current ?? 0);
-            const availableBalance = parseFloat(balances.available ?? currentBalance);
-            const pendingAdjustment = availableBalance - currentBalance;
+            const currentBalance = parseFloat(
+              account.current_balance ?? account.current ?? balances.current ?? 0
+            );
+            const availableRaw =
+              account.available_balance ?? account.available ?? balances.available;
+            const availableCredit =
+              availableRaw === null || availableRaw === undefined
+                ? null
+                : parseFloat(availableRaw);
+
             return {
               ...account,
+              balance: getCanonicalDisplayBalance(account).toFixed(2),
               current: currentBalance.toFixed(2),
-              available: availableBalance.toFixed(2),
-              pending_adjustment: pendingAdjustment.toFixed(2),
+              available:
+                Number.isFinite(availableCredit)
+                  ? availableCredit.toFixed(2)
+                  : null,
             };
           });
 
           setPlaidAccounts(formatted);
 
           const liveTotal = formatted.reduce(
-            (sum, acc) => sum + parseFloat(acc.available || 0),
+            (sum, acc) => sum + parseFloat(acc.current || acc.balance || 0),
             0
           );
           const projectedTotal = calculateTotalProjectedBalance(formatted, transactions);
@@ -114,7 +123,7 @@ export default function CreditCards() {
       <div className="accounts-summary">
         <div className="summary-card">
           <div className="summary-header">
-            <h3>Total Balances</h3>
+            <h3>Total Card Balances Owed</h3>
             <div className="balance-toggle">
               <button
                 className={showBalanceType === "live" ? "active" : ""}
@@ -139,7 +148,7 @@ export default function CreditCards() {
           <div className="balance-display">
             {(showBalanceType === "live" || showBalanceType === "both") && (
               <div className="balance-item">
-                <span className="balance-label">💳 Live Balance</span>
+                <span className="balance-label">💳 Current Balance Owed</span>
                 <div className="balance-value">{formatCurrency(totalBalance)}</div>
               </div>
             )}
@@ -186,7 +195,7 @@ export default function CreditCards() {
           </div>
         ) : (
           plaidAccounts.map((account) => {
-            const liveBalance = parseFloat(account.available) || 0;
+            const liveBalance = parseFloat(account.current || account.balance) || 0;
             const projectedBalance = calculateTotalProjectedBalance(
               [account],
               transactions
@@ -212,37 +221,19 @@ export default function CreditCards() {
 
                 <div className="account-balances">
                   <div className="balance-row">
-                    <span className="balance-label">💰 Available Credit</span>
+                    <span className="balance-label">📖 Current Balance Owed</span>
                     <span className="balance-amount">
-                      {formatCurrency(parseFloat(account.available || 0))}
+                      {formatCurrency(parseFloat(account.current || account.balance || 0))}
                     </span>
                   </div>
                   <div className="balance-row" style={{ fontSize: "0.9em", opacity: 0.8 }}>
-                    <span className="balance-label">📖 Current Balance</span>
+                    <span className="balance-label">💰 Available Credit</span>
                     <span className="balance-amount">
-                      {formatCurrency(parseFloat(account.current || 0))}
+                      {account.available === null
+                        ? "Not reported"
+                        : formatCurrency(parseFloat(account.available || 0))}
                     </span>
                   </div>
-                  {account.pending_adjustment &&
-                    parseFloat(account.pending_adjustment) !== 0 && (
-                      <div
-                        className="balance-row"
-                        style={{ fontSize: "0.85em", opacity: 0.7 }}
-                      >
-                        <span className="balance-label">⏳ Pending</span>
-                        <span
-                          className="balance-amount"
-                          style={{
-                            color:
-                              parseFloat(account.pending_adjustment) > 0
-                                ? "#10b981"
-                                : "#f59e0b",
-                          }}
-                        >
-                          {formatCurrency(parseFloat(account.pending_adjustment))}
-                        </span>
-                      </div>
-                    )}
                 </div>
 
                 {utilization && (
