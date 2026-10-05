@@ -26,6 +26,7 @@ import { detectAndAutoAddRecurringBills } from '../components/SubscriptionDetect
 import { generateAllBills, updateTemplatesDates } from '../utils/billGenerator';
 import { ensureSettingsDocument } from '../utils/settingsUtils';
 import { getDateOnly, getMonthOnly } from '../utils/dateNormalization';
+import { getCanonicalDisplayBalance, getVisiblePlaidAccounts } from '../utils/accountVisibility';
 import "./Bills.css";
 
 const generateBillId = () => {
@@ -952,7 +953,7 @@ snapshot.docChanges().forEach(async (change) => {
         try {
           const apiUrl = import.meta.env.VITE_API_URL || 'https://smart-money-tracker-09ks.onrender.com';
           
-          const response = await fetch(`${apiUrl}/api/accounts`, {
+          const response = await fetch(`${apiUrl}/api/accounts?userId=${currentUser.uid}&_t=${Date.now()}`, {
             headers: {
               'Authorization': `Bearer ${token}`,
               'Content-Type': 'application/json'
@@ -984,14 +985,7 @@ snapshot.docChanges().forEach(async (change) => {
                     return;
                   }
                   
-                  let balance = 0;
-                  if (account?.balances) {
-                    balance = account.balances?.current || account.balances?.available || 0;
-                  } else if (account?.current_balance !== undefined) {
-                    balance = account.current_balance;
-                  } else if (account?.balance !== undefined) {
-                    balance = account.balance;
-                  }
+                  const balance = getCanonicalDisplayBalance(account);
                   
                   accountsMap[accountId] = {
                     name: account?.name || account?.official_name || 'Unknown Account',
@@ -1016,12 +1010,13 @@ snapshot.docChanges().forEach(async (change) => {
       
       if (settingsDocSnap.exists()) {
         const data = settingsDocSnap.data();
-        const plaidAccountsList = data.plaidAccounts || [];
+        const canonicalPlaidAccounts = data.plaidAccounts || [];
+        const plaidAccountsList = getVisiblePlaidAccounts(canonicalPlaidAccounts, data);
         const bankAccounts = data.bankAccounts || {};
         
-        setHasPlaidAccounts(plaidAccountsList.length > 0);
+        setHasPlaidAccounts(canonicalPlaidAccounts.length > 0);
         
-        if (plaidAccountsList.length > 0) {
+        if (canonicalPlaidAccounts.length > 0) {
           const accountsMap = {};
           plaidAccountsList.forEach(account => {
             const accountId = account.account_id;
@@ -1042,12 +1037,7 @@ snapshot.docChanges().forEach(async (change) => {
       if (error.name !== 'TypeError') {
         console.warn('Error loading accounts, using defaults:', error.message);
       }
-      setAccounts({
-        bofa: { name: 'Bank of America', type: 'Checking', balance: '0' },
-        chase: { name: 'Chase', type: 'Checking', balance: '0' },
-        wells: { name: 'Wells Fargo', type: 'Savings', balance: '0' },
-        capital_one: { name: 'Capital One', type: 'Credit', balance: '0' }
-      });
+      setAccounts({});
     }
   };
 
