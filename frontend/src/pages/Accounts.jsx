@@ -1117,7 +1117,7 @@ const Accounts = () => {
           >
             ❓ Help
           </button>
-          {plaidAccounts.length === 0 ? (
+          {connectedPlaidAccountCount === 0 ? (
             <PlaidLink
               onSuccess={handlePlaidSuccess}
               onExit={handlePlaidExit}
@@ -1138,7 +1138,7 @@ const Accounts = () => {
       </div>
 
       {/* Plaid Connection Status Banner - Compact Version */}
-      {plaidAccounts.length === 0 && !plaidStatus.hasError && (
+      {connectedPlaidAccountCount === 0 && !plaidStatus.hasError && (
         <div style={{
           background: 'linear-gradient(135deg, #f59e0b 0%, #d97706 100%)',
           color: '#fff',
@@ -1204,7 +1204,7 @@ const Accounts = () => {
         </div>
       )}
 
-      {plaidAccounts.length > 0 && !plaidStatus.hasError && showSuccessBanner && !bannerDismissed && (
+      {connectedPlaidAccountCount > 0 && !plaidStatus.hasError && showSuccessBanner && !bannerDismissed && (
         <div style={{
           background: 'linear-gradient(135deg, #11998e 0%, #38ef7d 100%)',
           color: '#fff',
@@ -1369,7 +1369,7 @@ const Accounts = () => {
         {(healthStatus?.items || [])
           .filter(item =>
             item.needsReauth &&
-            !plaidAccounts.some(account => account.item_id === item.itemId)
+            ![...plaidAccounts, ...hiddenPlaidAccounts].some(account => account.item_id === item.itemId)
           )
           .map(item => (
             <div
@@ -1521,14 +1521,90 @@ const Accounts = () => {
                     setShowDeleteModal(account.account_id);
                   }}
                   disabled={saving}
-                  title="Remove this account from the app"
+                  title="Hide this account from Smart Money Tracker"
                 >
-                  🗑️ Delete
+                  🙈 Hide
+                </button>
+                <button
+                  className="action-btn delete-btn"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setShowDisconnectModal({
+                      itemId: account.item_id,
+                      institutionName: account.institution_name || 'this bank'
+                    });
+                  }}
+                  disabled={saving}
+                  title="Disconnect this bank from Plaid"
+                >
+                  🔌 Disconnect Bank
                 </button>
               </div>
             </div>
           );
         })}
+
+        {hiddenPlaidAccounts.length > 0 && (
+          <div
+            className="account-card"
+            style={{
+              gridColumn: '1 / -1',
+              borderStyle: 'dashed',
+              opacity: 0.95
+            }}
+          >
+            <div className="account-header">
+              <div className="account-title">
+                <span className="account-icon">🙈</span>
+                <h3>Hidden Accounts</h3>
+              </div>
+              <span className="account-type">{hiddenPlaidAccounts.length} hidden</span>
+            </div>
+
+            <p style={{ marginBottom: '14px', opacity: 0.8 }}>
+              These accounts are still connected and continue syncing. They are excluded from
+              Smart Money Tracker balances, Safe-to-Spend, account selectors, and totals.
+            </p>
+
+            {hiddenPlaidAccounts.map(account => (
+              <div
+                key={`hidden-${account.account_id}`}
+                className="balance-row"
+                style={{
+                  alignItems: 'center',
+                  gap: '12px',
+                  padding: '10px 0',
+                  borderTop: '1px solid rgba(255,255,255,0.08)'
+                }}
+              >
+                <span style={{ flex: 1 }}>
+                  <strong>{getAccountDisplayName(account)}</strong>
+                  {' '}
+                  <span style={{ opacity: 0.7 }}>
+                    {account.institution_name || ''} {account.mask ? `••${account.mask}` : ''}
+                  </span>
+                </span>
+                <button
+                  className="action-btn"
+                  onClick={() => restorePlaidAccount(account.account_id)}
+                  disabled={saving}
+                >
+                  👁️ Show Account
+                </button>
+                <button
+                  className="action-btn delete-btn"
+                  onClick={() => setShowDisconnectModal({
+                    itemId: account.item_id,
+                    institutionName: account.institution_name || 'this bank'
+                  })}
+                  disabled={saving}
+                >
+                  🔌 Disconnect Bank
+                </button>
+              </div>
+            ))}
+          </div>
+        )}
 
         {/* Manual accounts (hidden if Plaid accounts exist for fully automated flow) */}
         {plaidAccounts.length === 0 && Object.entries(accounts)
@@ -1622,7 +1698,7 @@ const Accounts = () => {
             );
           })}
         
-        {Object.keys(accounts).filter(k => !accounts[k].isPlaid).length === 0 && plaidAccounts.length === 0 && !loading && (
+        {Object.keys(accounts).filter(k => !accounts[k].isPlaid).length === 0 && connectedPlaidAccountCount === 0 && !loading && (
           <div className="no-accounts">
             <h3>No Accounts Yet</h3>
             <p>Connect your bank account to get started with live balances!</p>
@@ -1636,50 +1712,110 @@ const Accounts = () => {
         )}
       </div>
 
-      {/* Delete Confirmation Modal */}
-      {showDeleteModal && (
-        <div className="modal-overlay" onClick={() => setShowDeleteModal(null)}>
+      {/* Hide/Delete Confirmation Modal */}
+      {showDeleteModal && (() => {
+        const plaidAccount = [...plaidAccounts, ...hiddenPlaidAccounts]
+          .find(account => account.account_id === showDeleteModal);
+        const targetAccount =
+          accounts[showDeleteModal] ||
+          plaidAccount ||
+          {};
+        const isPlaid = Boolean(plaidAccount);
+
+        return (
+          <div className="modal-overlay" onClick={() => setShowDeleteModal(null)}>
+            <div className="modal" onClick={(e) => e.stopPropagation()}>
+              <div className="modal-header">
+                <h3>{isPlaid ? 'Hide Account' : 'Delete Account'}</h3>
+                <button
+                  className="close-btn"
+                  onClick={() => setShowDeleteModal(null)}
+                >
+                  ✕
+                </button>
+              </div>
+              <div className="modal-body">
+                <p>
+                  {isPlaid ? 'Hide' : 'Delete'} <strong>{getAccountDisplayName(targetAccount)}</strong>?
+                </p>
+
+                {isPlaid ? (
+                  <>
+                    <p>
+                      The bank connection stays active and this account will keep syncing in the
+                      canonical registry, but it will be excluded from balances, Safe-to-Spend,
+                      account selectors, and totals.
+                    </p>
+                    <p style={{ color: '#ccc', fontSize: '0.9rem', marginTop: '10px' }}>
+                      You can restore it anytime from Hidden Accounts.
+                    </p>
+                  </>
+                ) : (
+                  <p className="warning">This manual account deletion cannot be undone.</p>
+                )}
+              </div>
+              <div className="modal-footer">
+                <button
+                  className="btn-secondary"
+                  onClick={() => setShowDeleteModal(null)}
+                  disabled={saving}
+                >
+                  Cancel
+                </button>
+                <button
+                  className="btn-primary delete-btn"
+                  onClick={() => deleteAccount(showDeleteModal)}
+                  disabled={saving}
+                >
+                  {saving
+                    ? (isPlaid ? 'Hiding...' : 'Deleting...')
+                    : (isPlaid ? 'Hide Account' : 'Delete Account')}
+                </button>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
+
+      {/* Disconnect Bank Confirmation Modal */}
+      {showDisconnectModal && (
+        <div className="modal-overlay" onClick={() => setShowDisconnectModal(null)}>
           <div className="modal" onClick={(e) => e.stopPropagation()}>
             <div className="modal-header">
-              <h3>Delete Account</h3>
-              <button 
+              <h3>Disconnect Bank</h3>
+              <button
                 className="close-btn"
-                onClick={() => setShowDeleteModal(null)}
+                onClick={() => setShowDisconnectModal(null)}
               >
                 ✕
               </button>
             </div>
             <div className="modal-body">
-              <p>Are you sure you want to delete <strong>
-                {showDeleteModal ? 
-                  getAccountDisplayName(
-                    accounts[showDeleteModal] || 
-                    plaidAccounts.find(acc => acc.account_id === showDeleteModal) || 
-                    {}
-                  ) : 
-                  'this account'}
-              </strong>?</p>
-              <p className="warning">This action cannot be undone.</p>
-              {plaidAccounts.find(acc => acc.account_id === showDeleteModal) && (
-                <p style={{ color: '#ccc', fontSize: '0.9rem', marginTop: '10px' }}>
-                  Note: This will remove the account from your app but won't close your actual bank account.
-                </p>
-              )}
+              <p>
+                Disconnect <strong>{showDisconnectModal.institutionName}</strong> from Smart Money Tracker?
+              </p>
+              <p className="warning">
+                This ends the Plaid connection for the entire bank and stops future balance and
+                transaction syncing for every account under that connection.
+              </p>
+              <p style={{ color: '#ccc', fontSize: '0.9rem', marginTop: '10px' }}>
+                Historical transactions already stored in Smart Money Tracker will be kept.
+              </p>
             </div>
             <div className="modal-footer">
-              <button 
+              <button
                 className="btn-secondary"
-                onClick={() => setShowDeleteModal(null)}
+                onClick={() => setShowDisconnectModal(null)}
                 disabled={saving}
               >
                 Cancel
               </button>
-              <button 
+              <button
                 className="btn-primary delete-btn"
-                onClick={() => deleteAccount(showDeleteModal)}
+                onClick={disconnectBank}
                 disabled={saving}
               >
-                {saving ? 'Deleting...' : 'Delete Account'}
+                {saving ? 'Disconnecting...' : 'Disconnect Bank'}
               </button>
             </div>
           </div>
