@@ -14,7 +14,16 @@
 import { auth } from '../firebase';
 
 const API_BASE = import.meta.env.VITE_API_URL || '';
+const DEFAULT_API_BASE = 'https://smart-money-tracker-09ks.onrender.com';
 const originalFetch = window.fetch.bind(window);
+
+function isBackendApiUrl(url) {
+  if (!url) return false;
+
+  if (url.startsWith('/api/')) return true;
+  if (API_BASE && url.startsWith(API_BASE)) return true;
+  return url.startsWith(DEFAULT_API_BASE);
+}
 
 window.fetch = async function authenticatedFetch(input, init = {}) {
   try {
@@ -23,7 +32,7 @@ window.fetch = async function authenticatedFetch(input, init = {}) {
       input instanceof URL ? input.href :
       (input && input.url) || '';
 
-    if (API_BASE && url.startsWith(API_BASE)) {
+    if (isBackendApiUrl(url)) {
       const user = auth.currentUser;
       if (user) {
         const token = await user.getIdToken(); // cached by SDK, auto-refreshes
