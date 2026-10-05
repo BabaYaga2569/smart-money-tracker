@@ -2614,7 +2614,7 @@ app.get("/api/subscriptions", async (req, res, next) => {
   logDiagnostic.request(endpoint, req.query);
   
   try {
-    const { userId } = req.query;
+    const userId = req.authUid || req.query.userId;
     
     if (!userId) {
       throw createError.badRequest('userId is required', 'MISSING_USER_ID');
@@ -2759,7 +2759,7 @@ app.delete("/api/subscriptions/:id", async (req, res, next) => {
   
   try {
     const { id } = req.params;
-    const { userId } = req.query;
+    const userId = req.authUid || req.query.userId;
     
     if (!userId) {
       throw createError.badRequest('userId is required', 'MISSING_USER_ID');
