@@ -10,6 +10,7 @@ import logger from './utils/logger.js';
 import { atomicTransaction, createOperation } from './utils/atomicTransaction.js';
 import { validateAccount as validateAccountConsistency, validateTransaction as validateTransactionConsistency, validateBalanceConsistency, checkDuplicateTransaction } from './utils/consistencyValidators.js';
 import { runBillMatching } from './utils/BillMatchingService.js';
+import { findPlaidItemDocument, syncPlaidItemTransactions } from './utils/plaidSyncEngine.js';
 import { detectSubscriptions } from './utils/subscriptionDetector.js';
 import { detectRecurringStreams, matchStreamsToTemplates } from './utils/recurringStreamDetector.js';
 
@@ -375,7 +376,10 @@ async function getAllPlaidItems(userId) {
     .where('status', '==', 'active')
     .get();
   
-  const items = itemsSnapshot.docs.map(doc => doc.data());
+  const items = itemsSnapshot.docs.map(doc => ({
+    documentId: doc.id,
+    ...doc.data()
+  }));
   logger.info('FIREBASE', 'Retrieved active items', { userId, itemCount: items.length });
   logDiagnostic.info('GET_ALL_ITEMS', `Retrieved ${items.length} active items`);
   
@@ -1575,499 +1579,216 @@ app.post("/api/plaid/get_transactions", async (req, res, next) => {
     next(createError.plaidError(error.message || errorMessage));
   }
 });
-// Sync transactions to Firebase (includes pending transactions)
+// Sync transactions to Firebase using the canonical Plaid reconciliation engine.
 app.post("/api/plaid/sync_transactions", async (req, res, next) => {
   const endpoint = "/api/plaid/sync_transactions";
   logDiagnostic.request(endpoint, req.body);
-  
-  try {
-    const { userId, start_date, end_date } = req.body;
 
+  const { userId } = req.body || {};
+
+  try {
     if (!userId) {
-      logger.error('PLAID_SYNC', 'Missing userId in request', null, {});
-      logDiagnostic.error('SYNC_TRANSACTIONS', 'Missing userId in request');
       throw createError.badRequest('userId is required. Please authenticate.', 'MISSING_USER_ID');
     }
-    
-    // Validate userId
+
     validators.validateUserId(userId);
-    
-    // Set sync status to "syncing"
-    await db.collection('users')
-      .doc(userId)
-      .collection('metadata')
-      .doc('sync')
-      .set({
-        syncStatus: 'syncing',
-        lastSyncStart: admin.firestore.FieldValue.serverTimestamp()
-      }, { merge: true });
 
-    // Retrieve all Plaid items for the user
-    const items = await getAllPlaidItems(userId);
-    if (!items || items.length === 0) {
-      logger.error('PLAID_SYNC', 'No Plaid credentials found for user', null, {});
-      logDiagnostic.error('SYNC_TRANSACTIONS', 'No Plaid credentials found for user');
-      throw createError.notFound('No Plaid connection found. Please connect your bank account first.');
-    }
-
-    // Default to last 30 days if no dates provided
-    const endDate = end_date || new Date().toISOString().split('T')[0];
-    const startDate = start_date || new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
-
-    logger.info('PLAID_SYNC', 'Syncing transactions from bank connections', { userId, itemCount: items.length });
-    logDiagnostic.info('SYNC_TRANSACTIONS', `Syncing transactions from ${items.length} bank connections using transactionsSync API`);
-
-    // Fetch all transaction changes from all items
-    let allAdded = [];
-    let allModified = [];
-    let allRemoved = [];
-    
-    for (const item of items) {
-      try {
-        // Get last cursor from the item document for incremental sync
-        const lastCursor = item.cursor || null;
-
-        logger.info('PLAID_SYNC', 'Syncing item (), cursor:', {});
-        logDiagnostic.info('SYNC_TRANSACTIONS', `Syncing item ${item.itemId} (${item.institutionName}), cursor: ${lastCursor ? 'exists' : 'none'}`);
-
-        // Fetch all transaction changes using transactionsSync with pagination
-        let itemAdded = [];
-        let itemModified = [];
-        let itemRemoved = [];
-        let hasMore = true;
-        let cursor = lastCursor;
-        
-        // Map to store account information by account_id for quick lookup
-        let accountsMap = {};
-
-        while (hasMore) {
-          const response = await plaidClient.transactionsSync({
-            access_token: item.accessToken,
-            cursor: cursor,
-            options: {
-              include_personal_finance_category: true
-            }
-          });
-          
-          // Build accounts map from response for mask lookup
-          if (response.data.accounts && response.data.accounts.length > 0) {
-            response.data.accounts.forEach(account => {
-              accountsMap[account.account_id] = account;
-            });
-          }
-          
-          // Add institution info and mask to transactions
-          const addedWithInstitution = response.data.added.map(tx => ({
-            ...tx,
-            institution_name: item.institutionName,
-            institution_id: item.institutionId,
-            item_id: item.itemId,
-            mask: accountsMap[tx.account_id]?.mask || null
-          }));
-          
-          const modifiedWithInstitution = response.data.modified.map(tx => ({
-            ...tx,
-            institution_name: item.institutionName,
-            institution_id: item.institutionId,
-            item_id: item.itemId,
-            mask: accountsMap[tx.account_id]?.mask || null
-          }));
-          
-          itemAdded.push(...addedWithInstitution);
-          itemModified.push(...modifiedWithInstitution);
-          itemRemoved.push(...response.data.removed);
-          
-          cursor = response.data.next_cursor;
-          hasMore = response.data.has_more;
-          
-          logger.info('PLAID_SYNC', 'Item : added, modified, removed, hasMore:', {});
-          logDiagnostic.info('SYNC_TRANSACTIONS', `Item ${item.itemId}: ${response.data.added.length} added, ${response.data.modified.length} modified, ${response.data.removed.length} removed, hasMore: ${hasMore}`);
-        }
-
-        // Save new cursor for this item
-        const itemRef = db.collection('users').doc(userId).collection('plaid_items').doc(item.itemId);
-        await itemRef.update({
-          cursor: cursor,
-          lastSyncedAt: admin.firestore.FieldValue.serverTimestamp()
-        });
-
-        allAdded.push(...itemAdded);
-        allModified.push(...itemModified);
-        allRemoved.push(...itemRemoved);
-        
-        logger.info('PLAID_SYNC', 'Item sync complete: added, modified, removed', {});
-        logDiagnostic.info('SYNC_TRANSACTIONS', `Item ${item.itemId} sync complete: ${itemAdded.length} added, ${itemModified.length} modified, ${itemRemoved.length} removed`);
-      } catch (itemError) {
-        logger.error('PLAID_SYNC', 'Failed to sync item', itemError, {});
-        logDiagnostic.error('SYNC_TRANSACTIONS', `Failed to sync item ${item.itemId}`, itemError);
-        // Continue with other items even if one fails
-      }
-    }
-
-    const plaidTransactions = [...allAdded, ...allModified];
-    const txCount = plaidTransactions.length;
-    const totalTx = plaidTransactions.length;
-    
-    logger.info('PLAID_SYNC', 'Fetched transactions from Plaid', { userId, added: allAdded.length, modified: allModified.length, removed: allRemoved.length });
-    logDiagnostic.info('SYNC_TRANSACTIONS', `Fetched total: ${allAdded.length} new, ${allModified.length} modified, ${allRemoved.length} removed transactions from Plaid`);
-
-    // Load existing manual pending charges for deduplication
-    const transactionsRef = db.collection('users').doc(userId).collection('transactions');
-    const manualPendingSnapshot = await transactionsRef
-      .where('source', '==', 'manual')
-      .where('pending', '==', true)
-      .get();
-    
-    const manualPendingCharges = [];
-    manualPendingSnapshot.forEach(doc => {
-      manualPendingCharges.push({ id: doc.id, ...doc.data() });
-    });
-
-    logger.info('PLAID_SYNC', 'Found manual pending charges for deduplication check', {});
-    logDiagnostic.info('SYNC_TRANSACTIONS', `Found ${manualPendingCharges.length} manual pending charges for deduplication check`);
-
-    // Get existing transactions for duplicate detection
-    const existingSnapshot = await transactionsRef.get();
-    const existingTransactions = existingSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-
-    // Sync transactions to Firebase
-    let addedCount = 0;
-    let updatedCount = 0;
-    let pendingCount = 0;
-    let deduplicatedCount = 0;
-    let skippedCount = 0;
-
-    // Prepare atomic operations
-    const operations = [];
-    const cursorsToUpdate = new Map();
-    
-    // Track transaction IDs processed in this batch to prevent same-batch duplicates
-    const processedInBatch = new Set();
-
-    for (const plaidTx of plaidTransactions) {
-      try {
-        // Validate transaction data
-        validateTransactionConsistency(plaidTx);
-        
-        const txDocRef = transactionsRef.doc(plaidTx.transaction_id);
-        
-        // STEP 1: Check if already processed in THIS batch
-        if (processedInBatch.has(plaidTx.transaction_id)) {
-          logger.info('TRANSACTION_SYNC', 'Skipping duplicate in same batch', { 
-            transaction_id: plaidTx.transaction_id,
-            name: plaidTx.name
-          });
-          skippedCount++;
-          continue;
-        }
-        
-        // Check if transaction exists
-        const existingTx = existingTransactions.find(t => t.transaction_id === plaidTx.transaction_id);
-        
-        // STEP 2: Skip updating transactions that were manually edited
-        if (existingTx && existingTx.manuallyEdited === true) {
-          logger.info('TRANSACTION_SYNC', 'Skipping update - transaction was manually edited', {
-            transaction_id: plaidTx.transaction_id,
-            name: plaidTx.name
-          });
-          skippedCount++;
-          continue;
-        }
-        
-        // STEP 3: Check for duplicate by composite key (date + amount + merchant + account)
-        const duplicateByComposite = existingTransactions.find(existing =>
-          existing.date === plaidTx.date &&
-          Math.abs(existing.amount - (-plaidTx.amount)) < 0.01 &&
-          existing.account_id === plaidTx.account_id &&
-          normalizeString(existing.name) === normalizeString(plaidTx.name)
-        );
-        
-        if (duplicateByComposite && duplicateByComposite.transaction_id !== plaidTx.transaction_id) {
-          logger.info('TRANSACTION_SYNC', 'Skipping duplicate by composite key', {
-            transaction_id: plaidTx.transaction_id,
-            name: plaidTx.name,
-            date: plaidTx.date,
-            amount: plaidTx.amount,
-            existing_id: duplicateByComposite.transaction_id
-          });
-          skippedCount++;
-          continue;
-        }
-        
-        // Check for duplicates using consistency validator
-        const duplicate = checkDuplicateTransaction(plaidTx, existingTransactions);
-        if (duplicate && duplicate.transaction_id !== plaidTx.transaction_id) {
-          logger.warn('TRANSACTION_SYNC', 'Duplicate transaction skipped', { 
-            transaction: plaidTx.transaction_id,
-            duplicate: duplicate.transaction_id 
-          });
-          skippedCount++;
-          continue;
-        }
-        
-        // Mark as processed in this batch
-        processedInBatch.add(plaidTx.transaction_id);
-        
-        // Prepare transaction data in our format
-        const isPending = Boolean(plaidTx.pending);
-        
-        const transactionData = {
-          transaction_id: plaidTx.transaction_id,
-          account_id: plaidTx.account_id,
-          amount: -plaidTx.amount,  // FLIP SIGN: Plaid positive=expense, we need negative=expense
-          date: plaidTx.date,
-          name: plaidTx.name,
-          merchant_name: plaidTx.merchant_name || plaidTx.name,
-          category: autoCategorizTransaction(plaidTx.merchant_name || plaidTx.name),
-          pending: isPending,
-          payment_channel: plaidTx.payment_channel || 'other',
-          source: 'plaid',
-          mask: plaidTx.mask || null,
-          institution_name: plaidTx.institution_name || null,
-          timestamp: admin.firestore.FieldValue.serverTimestamp(),
-          lastSyncedAt: admin.firestore.FieldValue.serverTimestamp()
-        };
-
-        if (isPending) {
-          pendingCount++;
-        }
-
-        // Check for duplicate manual pending charges
-        const matchingManualCharge = manualPendingCharges.find(manual => {
-          // Skip if Plaid transaction is still pending
-          if (plaidTx.pending) {
-            return false;
-          }
-          
-          const accountMatch = manual.account_id === plaidTx.account_id || manual.account === plaidTx.account_id;
-          const amountMatch = Math.abs(manual.amount - (-plaidTx.amount)) < 0.01;
-          
-          const manualDate = new Date(manual.date);
-          const plaidDate = new Date(plaidTx.date);
-          const daysDiff = Math.abs((manualDate - plaidDate) / (1000 * 60 * 60 * 24));
-          const dateMatch = daysDiff <= 3;
-          
-          const manualName = (manual.merchant_name || manual.name || manual.description || '').toLowerCase().trim();
-          const plaidName = (plaidTx.merchant_name || plaidTx.name || '').toLowerCase().trim();
-          
-          const exactMatch = manualName === plaidName;
-          const containsMatch = manualName.includes(plaidName) || plaidName.includes(manualName);
-          const prefixMatch = manualName.length > 5 && plaidName.length > 5 && 
-                              manualName.substring(0, 5) === plaidName.substring(0, 5);
-          
-          const similarity = calculateSimilarity(manualName, plaidName);
-          const fuzzyMatch = similarity > 0.6;
-          
-          const nameMatch = exactMatch || containsMatch || prefixMatch || fuzzyMatch;
-          
-          return accountMatch && amountMatch && dateMatch && nameMatch;
-        });
-
-        if (matchingManualCharge) {
-          const manualDocRef = transactionsRef.doc(matchingManualCharge.id);
-          operations.push(createOperation('delete', manualDocRef));
-          deduplicatedCount++;
-          
-          logDiagnostic.info('DEDUPE', 
-            `Deleting manual pending: "${matchingManualCharge.merchant_name}" (${matchingManualCharge.amount}) ` +
-            `matched with Plaid posted: "${plaidTx.merchant_name || plaidTx.name}" (${plaidTx.amount})`
-          );
-          
-          const index = manualPendingCharges.indexOf(matchingManualCharge);
-          if (index > -1) {
-            manualPendingCharges.splice(index, 1);
-          }
-        }
-
-        if (!existingTx) {
-          operations.push(createOperation('set', txDocRef, transactionData));
-          addedCount++;
-        } else {
-          operations.push(createOperation('update', txDocRef, transactionData));
-          updatedCount++;
-        }
-      } catch (validationError) {
-        logger.warn('TRANSACTION_SYNC', 'Invalid transaction skipped', { 
-          transaction: plaidTx.transaction_id, 
-          error: validationError.message 
-        });
-        skippedCount++;
-      }
-    }
-
-    // Handle removed transactions from Plaid
-    for (const removedTx of allRemoved) {
-      const removedDocRef = transactionsRef.doc(removedTx.transaction_id);
-      const existingRemoved = existingTransactions.find(t => t.transaction_id === removedTx.transaction_id);
-      
-      if (existingRemoved && existingRemoved.source === 'plaid') {
-        operations.push(createOperation('delete', removedDocRef));
-        logger.info('PLAID_SYNC', 'Removing transaction:', {});
-        logDiagnostic.info('SYNC_TRANSACTIONS', `Removing transaction: ${removedTx.transaction_id}`);
-      }
-    }
-
-    // Update cursors for each item atomically
-    for (const item of items) {
-      const itemRef = db.collection('users').doc(userId).collection('plaid_items').doc(item.itemId);
-      // Note: cursors were already saved in the loop above, this just ensures they're in the atomic transaction
-    }
-
-    // Add metadata update to atomic operations
     const metadataRef = db.collection('users')
       .doc(userId)
       .collection('metadata')
       .doc('sync');
-    
-    operations.push(createOperation('set', metadataRef, {
+
+    await metadataRef.set({
+      syncStatus: 'syncing',
+      lastSyncStart: admin.firestore.FieldValue.serverTimestamp()
+    }, { merge: true });
+
+    const items = await getAllPlaidItems(userId);
+    if (!items || items.length === 0) {
+      throw createError.notFound('No Plaid connection found. Please connect your bank account first.');
+    }
+
+    const totals = {
+      added: 0,
+      updated: 0,
+      pending: 0,
+      deduplicated: 0,
+      pendingReplaced: 0,
+      removed: 0,
+      skipped: 0,
+      committedWrites: 0
+    };
+    const failedItems = [];
+    let successfulItems = 0;
+
+    for (const item of items) {
+      try {
+        const result = await syncPlaidItemTransactions({
+          db,
+          admin,
+          plaidClient,
+          userId,
+          item,
+          trigger: 'manual',
+          autoCategorize: autoCategorizTransaction,
+          logDiagnostic
+        });
+
+        totals.added += result.added;
+        totals.updated += result.updated;
+        totals.pending += result.pending;
+        totals.deduplicated += result.deduplicated;
+        totals.pendingReplaced += result.pendingReplaced;
+        totals.removed += result.removed;
+        totals.skipped += result.skipped;
+        totals.committedWrites += result.committedWrites;
+        successfulItems++;
+      } catch (itemError) {
+        const plaidError = itemError?.response?.data;
+
+        if (plaidError?.error_code === 'ITEM_LOGIN_REQUIRED' && item.documentId) {
+          await db.collection('users')
+            .doc(userId)
+            .collection('plaid_items')
+            .doc(item.documentId)
+            .set({
+              status: 'NEEDS_REAUTH',
+              error: {
+                error_code: plaidError.error_code,
+                error_type: plaidError.error_type || 'ITEM_ERROR',
+                error_message: plaidError.error_message || 'Bank login required'
+              },
+              updatedAt: admin.firestore.FieldValue.serverTimestamp()
+            }, { merge: true })
+            .catch(statusError => {
+              logger.error('PLAID_SYNC', 'Failed to mark item as NEEDS_REAUTH', statusError, {
+                userId,
+                itemId: item.itemId
+              });
+            });
+        }
+
+        logger.error('PLAID_SYNC', 'Failed to sync Plaid item', itemError, {
+          userId,
+          itemId: item.itemId,
+          institution: item.institutionName
+        });
+
+        failedItems.push({
+          item_id: item.itemId,
+          institution_name: item.institutionName || 'Unknown Bank',
+          error_code: plaidError?.error_code || itemError.code || 'SYNC_FAILED'
+        });
+      }
+    }
+
+    const fullySuccessful = failedItems.length === 0;
+
+    await metadataRef.set({
       lastPlaidSync: admin.firestore.FieldValue.serverTimestamp(),
       lastPlaidSyncDate: new Date().toISOString(),
-      syncStatus: 'idle',
-      lastSyncError: null,
-      transactionCount: existingTransactions.length + addedCount - allRemoved.length
-    }));
+      syncStatus: fullySuccessful ? 'idle' : 'partial_error',
+      lastSyncError: fullySuccessful ? null : `${failedItems.length} bank connection(s) failed to sync`,
+      successfulItemCount: successfulItems,
+      failedItemCount: failedItems.length
+    }, { merge: true });
 
-    // Execute all operations atomically
-    if (operations.length > 0) {
-      await atomicTransaction(operations);
-      
-      logger.info('PLAID_SYNC', 'Synced transactions atomically', { 
-        userId, 
-        added: addedCount, 
-        updated: updatedCount, 
-        pending: pendingCount, 
-        deduplicated: deduplicatedCount, 
-        removed: allRemoved.length,
-        skipped: skippedCount
-      });
-      logDiagnostic.info('SYNC_TRANSACTIONS', `Synced atomically: ${addedCount} new, ${updatedCount} updated, ${pendingCount} pending, ${deduplicatedCount} deduplicated, ${allRemoved.length} removed, ${skippedCount} skipped`);
-    }
-    
-    // ✅ NEW: Trigger automatic bill clearing if transactions were added or updated
-    if (addedCount > 0 || updatedCount > 0) {
-      // Run in background - don't await or block the response
+    if (totals.added > 0 || totals.updated > 0) {
       setImmediate(async () => {
         try {
-          console.log('[AUTO_BILL_CLEAR] Triggering automatic bill clearing after transaction sync...');
-          
-          // Load unpaid bills
           const billsSnapshot = await db.collection('users').doc(userId)
             .collection('financialEvents')
             .where('type', '==', 'bill')
             .where('isPaid', '==', false)
             .get();
-          
+
           const unpaidBills = billsSnapshot.docs.map(doc => ({
             id: doc.id,
             ...doc.data()
           }));
-          
-          // Load recent transactions (last 60 days)
+
           const sixtyDaysAgo = new Date();
           sixtyDaysAgo.setDate(sixtyDaysAgo.getDate() - 60);
           const startDate = sixtyDaysAgo.toISOString().split('T')[0];
-          
+
           const txSnapshot = await db.collection('users').doc(userId)
             .collection('transactions')
             .where('date', '>=', startDate)
             .get();
-          
+
           const transactions = txSnapshot.docs.map(doc => ({
             id: doc.id,
             ...doc.data()
           }));
-          
-          console.log(`[AUTO_BILL_CLEAR] Found ${unpaidBills.length} unpaid bills and ${transactions.length} transactions`);
-          
-          // Run matching and clearing
+
           const results = await runBillMatching(db, userId, transactions, unpaidBills);
-          
-          if (results.success) {
-            console.log(`[AUTO_BILL_CLEAR] ✅ Cleared ${results.cleared} bills, advanced ${results.advanced} patterns, generated ${results.generated} bills`);
-          } else {
-            console.error('[AUTO_BILL_CLEAR] ❌ Failed:', results.error);
+          if (!results.success) {
+            logger.error('AUTO_BILL_CLEAR', 'Bill clearing failed after Plaid sync', new Error(results.error), {});
           }
         } catch (clearingError) {
-          console.error('[AUTO_BILL_CLEAR] Error running automatic bill clearing:', clearingError);
-          // Don't fail the transaction sync if bill clearing fails
+          logger.error('AUTO_BILL_CLEAR', 'Automatic bill clearing failed after Plaid sync', clearingError, {});
         }
       });
     }
-    
-    logDiagnostic.response(endpoint, 200, { 
-      success: true, 
-      added: addedCount,
-      updated: updatedCount,
-      pending: pendingCount,
-      deduplicated: deduplicatedCount,
-      removed: allRemoved.length,
-      skipped: skippedCount
+
+    const responseBody = {
+      success: fullySuccessful,
+      partial: !fullySuccessful && successfulItems > 0,
+      added: totals.added,
+      updated: totals.updated,
+      pending: totals.pending,
+      deduplicated: totals.deduplicated,
+      pending_replaced: totals.pendingReplaced,
+      removed: totals.removed,
+      skipped: totals.skipped,
+      committed_writes: totals.committedWrites,
+      synced_items: successfulItems,
+      failed_items: failedItems,
+      message: fullySuccessful
+        ? `Synced ${totals.added} new transactions across ${successfulItems} bank connection(s).`
+        : `Synced ${successfulItems} bank connection(s); ${failedItems.length} connection(s) need attention.`
+    };
+
+    logDiagnostic.response(endpoint, 200, {
+      success: responseBody.success,
+      partial: responseBody.partial,
+      added: responseBody.added,
+      updated: responseBody.updated,
+      pending: responseBody.pending,
+      pending_replaced: responseBody.pending_replaced,
+      removed: responseBody.removed,
+      synced_items: responseBody.synced_items,
+      failed_item_count: failedItems.length
     });
 
-    res.json({
-      success: true,
-      added: addedCount,
-      updated: updatedCount,
-      pending: pendingCount,
-      deduplicated: deduplicatedCount,
-      removed: allRemoved.length,
-      skipped: skippedCount,
-      total: txCount,
-      message: `Synced ${addedCount} new transactions (${pendingCount} pending${deduplicatedCount > 0 ? `, ${deduplicatedCount} deduplicated` : ''}${allRemoved.length > 0 ? `, ${allRemoved.length} removed` : ''}${skippedCount > 0 ? `, ${skippedCount} skipped` : ''})`
-    });
+    res.json(responseBody);
   } catch (error) {
-    logger.error('PLAID_SYNC', 'Failed to sync transactions', error, {});
-    logDiagnostic.error('SYNC_TRANSACTIONS', 'Failed to sync transactions', error);
+    logger.error('PLAID_SYNC', 'Failed to sync transactions', error, { userId });
 
-    // Mark sync as failed
-    try {
+    if (userId) {
       await db.collection('users')
-        .doc(req.body.userId)
+        .doc(userId)
         .collection('metadata')
         .doc('sync')
         .set({
           syncStatus: 'error',
           lastSyncError: error.message,
           lastErrorTime: admin.firestore.FieldValue.serverTimestamp()
-        }, { merge: true });
-    } catch (metadataError) {
-      logger.error('PLAID_SYNC', 'Could not update error status:', metadataError, {});
-      logDiagnostic.error('SYNC_TRANSACTIONS', 'Could not update error status:', metadataError);
+        }, { merge: true })
+        .catch(() => {});
     }
-    
-    // Check if it's already an AppError
-    if (error.statusCode) {
-      return next(error);
+
+    if (error.statusCode) return next(error);
+
+    const plaidError = error?.response?.data;
+    if (plaidError?.error_code === 'ITEM_LOGIN_REQUIRED') {
+      return next(createError.unauthorized('Your bank connection has expired. Please reconnect your bank account.'));
     }
-    
-    let errorMessage = "Failed to sync transactions from your bank";
-    
-    if (error.response) {
-      const plaidError = error.response.data;
-      
-      logDiagnostic.error('SYNC_TRANSACTIONS', `Plaid API error: ${plaidError.error_code}`, {
-        error_code: plaidError.error_code,
-        error_type: plaidError.error_type,
-        error_message: plaidError.error_message
-      });
-      
-      if (plaidError.error_code === 'ITEM_LOGIN_REQUIRED') {
-        errorMessage = "Your bank connection has expired. Please reconnect your account.";
-        return next(createError.unauthorized(errorMessage));
-      } else if (plaidError.error_code === 'INVALID_ACCESS_TOKEN') {
-        errorMessage = "Invalid access token. Please reconnect your bank account.";
-        return next(createError.unauthorized(errorMessage));
-      } else if (plaidError.error_code === 'PRODUCT_NOT_READY') {
-        errorMessage = "Transaction data is not yet available. Please try again in a few moments.";
-        return next(createError.plaidError(errorMessage, true));
-      } else if (plaidError.error_message) {
-        errorMessage = `Bank error: ${plaidError.error_message}`;
-        return next(createError.plaidError(errorMessage, shouldRetryPlaidError(plaidError.error_type)));
-      }
+    if (plaidError?.error_code === 'INVALID_ACCESS_TOKEN') {
+      return next(createError.unauthorized('Invalid access token. Please reconnect your bank account.'));
     }
-    
-    // Generic error
-    next(createError.plaidError(error.message || errorMessage));
+
+    next(createError.plaidError(error.message || 'Failed to sync transactions from your bank'));
   }
 });
 
@@ -2145,101 +1866,95 @@ app.post("/api/bills/auto_clear", async (req, res, next) => {
   }
 });
 
-// Force Plaid to check the bank immediately
+// Force Plaid to poll connected institutions for fresh transaction data.
 app.post("/api/plaid/refresh_transactions", async (req, res, next) => {
   const endpoint = "/api/plaid/refresh_transactions";
   logDiagnostic.request(endpoint, req.body);
-  
+
   try {
-    const { userId } = req.body;
+    const { userId } = req.body || {};
 
     if (!userId) {
-      logger.error('REFRESH_TRANSACTIONS', 'Missing userId in request', null, {});
-      logDiagnostic.error('REFRESH_TRANSACTIONS', 'Missing userId in request');
       throw createError.badRequest('userId is required', 'MISSING_USER_ID');
     }
-    
-    // Validate userId
+
     validators.validateUserId(userId);
 
     const items = await getAllPlaidItems(userId);
     if (!items || items.length === 0) {
-      logger.error('REFRESH_TRANSACTIONS', 'No Plaid credentials found for user', null, {});
-      logDiagnostic.error('REFRESH_TRANSACTIONS', 'No Plaid credentials found for user');
       throw createError.notFound('No Plaid connection found. Please connect your bank account first.');
     }
 
-    logger.info('REFRESH_TRANSACTIONS', 'Requesting Plaid to refresh transactions for bank connection', {});
-    logDiagnostic.info('REFRESH_TRANSACTIONS', `Requesting Plaid to refresh transactions for ${items.length} bank connections`);
+    const results = [];
 
-    const refreshResults = [];
     for (const item of items) {
       try {
-        // NOTE: Do NOT add 'count' parameter to transactionsSync options
-        // The 'count' parameter is not supported by Plaid's /transactions/sync endpoint
-        // and will cause a 400 INVALID_REQUEST error with error_code UNKNOWN_FIELDS
-        // Reference: https://plaid.com/docs/api/products/transactions/#transactionssync
-        const response = await plaidClient.transactionsSync({
-          access_token: item.accessToken,
-          options: {
-            include_personal_finance_category: true
-          }
+        const response = await plaidClient.transactionsRefresh({
+          access_token: item.accessToken
         });
 
-        refreshResults.push({
+        results.push({
           item_id: item.itemId,
           institution_name: item.institutionName,
           request_id: response.data.request_id,
           success: true
         });
-        
-        logDiagnostic.info('REFRESH_TRANSACTIONS', `Refresh request sent for ${item.institutionName} (${item.itemId})`, {
-          request_id: response.data.request_id
-        });
       } catch (itemError) {
-        logger.error('REFRESH_TRANSACTIONS', 'Failed to refresh item', itemError, {});
-        logDiagnostic.error('REFRESH_TRANSACTIONS', `Failed to refresh item ${item.itemId}`, itemError);
-        refreshResults.push({
+        const plaidError = itemError?.response?.data;
+
+        if (plaidError?.error_code === 'ITEM_LOGIN_REQUIRED' && item.documentId) {
+          await db.collection('users')
+            .doc(userId)
+            .collection('plaid_items')
+            .doc(item.documentId)
+            .set({
+              status: 'NEEDS_REAUTH',
+              error: {
+                error_code: plaidError.error_code,
+                error_type: plaidError.error_type || 'ITEM_ERROR',
+                error_message: plaidError.error_message || 'Bank login required'
+              },
+              updatedAt: admin.firestore.FieldValue.serverTimestamp()
+            }, { merge: true })
+            .catch(() => {});
+        }
+
+        results.push({
           item_id: item.itemId,
           institution_name: item.institutionName,
           success: false,
-          error: itemError.message
+          error_code: plaidError?.error_code || itemError.code || 'REFRESH_FAILED'
         });
       }
     }
 
-    const successCount = refreshResults.filter(r => r.success).length;
-    
-    logDiagnostic.response(endpoint, 200, { 
-      success: true,
+    const successCount = results.filter(result => result.success).length;
+
+    logDiagnostic.response(endpoint, 200, {
+      success: successCount > 0,
       refreshed_count: successCount,
       total_count: items.length
     });
 
     res.json({
-      success: true,
-      message: `Plaid is checking ${successCount} of ${items.length} banks now. New transactions should appear in 1-5 minutes.`,
-      results: refreshResults
+      success: successCount > 0,
+      refreshed_count: successCount,
+      total_count: items.length,
+      results,
+      message: 'Plaid bank refresh requested. New activity will be reconciled through the normal sync pipeline.'
     });
   } catch (error) {
     logger.error('REFRESH_TRANSACTIONS', 'Failed to refresh transactions', error, {});
-    logDiagnostic.error('REFRESH_TRANSACTIONS', 'Failed to refresh transactions', error);
-    
-    // Check if it's already an AppError
-    if (error.statusCode) {
-      return next(error);
-    }
-    
-    // Handle Plaid-specific errors
-    if (error.response?.data) {
-      const plaidError = error.response.data;
+    if (error.statusCode) return next(error);
+
+    const plaidError = error?.response?.data;
+    if (plaidError) {
       return next(createError.plaidError(
         plaidError.error_message || 'Plaid API error',
         shouldRetryPlaidError(plaidError.error_type)
       ));
     }
-    
-    // Generic error
+
     next(createError.plaidError(error.message || 'Failed to refresh transactions'));
   }
 });
@@ -2333,257 +2048,132 @@ app.post("/api/plaid/sheets_force_refresh", async (req, res, next) => {
   }
 });
 
-// Webhook endpoint for Plaid
-app.post("/api/plaid/webhook", async (req, res, next) => {
+// Plaid webhook: trigger the same canonical sync engine used by manual refresh.
+app.post("/api/plaid/webhook", async (req, res) => {
   const endpoint = "/api/plaid/webhook";
-  logDiagnostic.request(endpoint, req.body);
-  
+  const { webhook_type, webhook_code, item_id, error: plaidWebhookError } = req.body || {};
+
+  logDiagnostic.request(endpoint, {
+    webhook_type,
+    webhook_code,
+    item_id,
+    has_error: Boolean(plaidWebhookError)
+  });
+
   try {
-    const { webhook_type, webhook_code, item_id, error } = req.body;
-    
-    logDiagnostic.info('WEBHOOK', `Received webhook: ${webhook_type} - ${webhook_code}`, {
-      item_id,
-      has_error: !!error
-    });
-    
-    if (webhook_type === 'TRANSACTIONS') {
-      if (webhook_code === 'DEFAULT_UPDATE' || 
-          webhook_code === 'INITIAL_UPDATE' ||
-          webhook_code === 'HISTORICAL_UPDATE') {
-        
-        logger.info('WEBHOOK', 'Processing transaction update webhook', {});
-        logDiagnostic.info('WEBHOOK', 'Processing transaction update webhook', { item_id });
-        
-        // Avoid a collection-group query here. Firestore can require a
-        // collection-group index for plaid_items.itemId, which previously caused
-        // DEFAULT_UPDATE webhooks to fail before transactions were saved.
-        // Plaid item documents are stored with itemId as the document ID, so scan
-        // the small users collection and perform direct document reads instead.
-        const usersSnapshot = await db.collection('users').get();
-        let itemDoc = null;
+    const transactionCodes = new Set([
+      'SYNC_UPDATES_AVAILABLE',
+      'DEFAULT_UPDATE',
+      'INITIAL_UPDATE',
+      'HISTORICAL_UPDATE'
+    ]);
 
-        for (const userDoc of usersSnapshot.docs) {
-          const candidate = await userDoc.ref.collection('plaid_items').doc(item_id).get();
-          if (candidate.exists) {
-            itemDoc = candidate;
-            break;
-          }
-        }
-        
-        if (itemDoc) {
-          const itemData = itemDoc.data();
-          const userId = itemDoc.ref.parent.parent.id;
-          
-          logDiagnostic.info('WEBHOOK', `Found item for user ${userId}`, {
-            institution: itemData.institutionName
-          });
-          
-          const syncResponse = await plaidClient.transactionsSync({
-            access_token: itemData.accessToken,
-            cursor: itemData.cursor || undefined,
-            options: {
-              include_personal_finance_category: true
-            }
-          });
+    if (webhook_type === 'TRANSACTIONS' && transactionCodes.has(webhook_code)) {
+      const itemDoc = await findPlaidItemDocument(db, item_id);
 
-          // ✅ ADD LOGGING HERE TO SEE WHAT PLAID SENDS:
-          logDiagnostic.info('WEBHOOK', `Raw Plaid response for ${itemData.institutionName}:`, {
-            total_added: syncResponse.data.added.length,
-            total_modified: syncResponse.data.modified.length,
-            total_removed: syncResponse.data.removed.length,
-            pending_count: syncResponse.data.added.filter(tx => tx.pending === true).length
-          });
+      if (!itemDoc) {
+        logDiagnostic.warn('WEBHOOK', 'No Plaid item mapping found for transaction webhook', {
+          webhook_code,
+          item_id
+        });
+      } else {
+        const itemData = itemDoc.data();
+        const userId = itemDoc.ref.parent.parent.id;
 
-          // Log first few transactions to see structure
-          if (syncResponse.data.added.length > 0) {
-            syncResponse.data.added.slice(0, 3).forEach(tx => {
-              logDiagnostic.info('WEBHOOK', `Transaction sample:`, {
-                merchant: tx.merchant_name || tx.name,
-                amount: tx.amount,
-                pending: tx.pending,
-                date: tx.date,
-                account_id: tx.account_id
-              });
-            });
-          }
-          
-          logDiagnostic.info('WEBHOOK', 'Received transaction data from Plaid', {
-            accounts: syncResponse.data.accounts.length,
-            added: syncResponse.data.added.length,
-            modified: syncResponse.data.modified.length,
-            removed: syncResponse.data.removed.length
-          });
-          
-          const userDocRef = db.collection('users').doc(userId);
-          const userDoc = await userDocRef.get();
-          
-          if (!userDoc.exists) {
-            logger.info('WEBHOOK', 'Initializing user document for', {});
-            logDiagnostic.info('WEBHOOK', `Initializing user document for ${userId}`);
-            await userDocRef.set({
-              createdAt: admin.firestore.FieldValue.serverTimestamp(),
-              lastUpdated: admin.firestore.FieldValue.serverTimestamp()
-            }, { merge: true });
-          }
-          
-          const accountsMap = {};
-          if (syncResponse.data.accounts && syncResponse.data.accounts.length > 0) {
-            syncResponse.data.accounts.forEach(account => {
-              accountsMap[account.account_id] = account;
-            });
-          }
-          
-          const allTransactions = [
-            ...syncResponse.data.added,
-            ...syncResponse.data.modified
-          ];
-          
-          if (allTransactions.length > 0) {
-            let batch = db.batch();
-            let batchCount = 0;
-            let totalSaved = 0;
-            
-            for (const transaction of allTransactions) {
-              const transactionRef = userDocRef
-                .collection('transactions')
-                .doc(transaction.transaction_id);
-              
-              const txMask = accountsMap[transaction.account_id]?.mask || null;
-              const txInstitution = itemData.institutionName;
-              
-              batch.set(transactionRef, {
-                ...transaction,
-                amount: -transaction.amount,
-                category: autoCategorizTransaction(transaction.merchant_name || transaction.name),
-                item_id: item_id,
-                institutionName: txInstitution,
-                institution_name: txInstitution,
-                mask: txMask,
-                synced_at: admin.firestore.FieldValue.serverTimestamp(),
-                webhook_code: webhook_code
-              }, { merge: true });
-              
-              batchCount++;
-              
-              if (batchCount >= 500) {
-                await batch.commit();
-                totalSaved += batchCount;
-                logger.info('WEBHOOK', 'Committed batch of transactions', {});
-                logDiagnostic.info('WEBHOOK', `Committed batch of ${batchCount} transactions`);
-                batch = db.batch();
-                batchCount = 0;
-              }
-            }
-            
-            if (batchCount > 0) {
-              await batch.commit();
-              totalSaved += batchCount;
-            }
-            
-            logger.info('WEBHOOK', 'Successfully saved transactions to Firebase', {});
-            logDiagnostic.info('WEBHOOK', `Successfully saved ${totalSaved} transactions to Firebase`);
-          }
-          
-          if (syncResponse.data.removed.length > 0) {
-            let batch = db.batch();
-            let batchCount = 0;
-            
-            for (const removedTx of syncResponse.data.removed) {
-              const transactionRef = userDocRef
-                .collection('transactions')
-                .doc(removedTx.transaction_id);
-              
-              batch.delete(transactionRef);
-              batchCount++;
-              
-              if (batchCount >= 500) {
-                await batch.commit();
-                logger.info('WEBHOOK', 'Deleted batch of transactions', {});
-                logDiagnostic.info('WEBHOOK', `Deleted batch of ${batchCount} transactions`);
-                batch = db.batch();
-                batchCount = 0;
-              }
-            }
-            
-            if (batchCount > 0) {
-              await batch.commit();
-            }
-            
-            logger.info('WEBHOOK', 'Removed transactions from Firebase', {});
-            logDiagnostic.info('WEBHOOK', `Removed ${syncResponse.data.removed.length} transactions from Firebase`);
-          }
-          
-          await itemDoc.ref.set({
-            cursor: syncResponse.data.next_cursor,
-            lastWebhookUpdate: admin.firestore.FieldValue.serverTimestamp()
+        const result = await syncPlaidItemTransactions({
+          db,
+          admin,
+          plaidClient,
+          userId,
+          item: {
+            documentId: itemDoc.id,
+            ...itemData,
+            itemId: itemData.itemId || itemData.item_id || item_id
+          },
+          trigger: 'webhook',
+          autoCategorize: autoCategorizTransaction,
+          logDiagnostic
+        });
+
+        await db.collection('users')
+          .doc(userId)
+          .collection('metadata')
+          .doc('sync')
+          .set({
+            lastPlaidSync: admin.firestore.FieldValue.serverTimestamp(),
+            lastPlaidSyncDate: new Date().toISOString(),
+            syncStatus: 'idle',
+            lastSyncError: null,
+            lastSyncTrigger: 'webhook'
           }, { merge: true });
-          
-          logDiagnostic.info('WEBHOOK', 'Successfully processed webhook update', {
-            saved: allTransactions.length,
-            removed: syncResponse.data.removed.length,
-            cursor_updated: true
-          });
-        } else {
-          logger.info('WEBHOOK', 'No user found for item_id', {});
-          logDiagnostic.info('WEBHOOK', 'No user found for item_id', { item_id });
-        }
-      }
-    }
-    
-    if (webhook_type === 'ITEM' && webhook_code === 'ERROR') {
-      logDiagnostic.error('WEBHOOK', 'Item error reported by Plaid', {
-        item_id,
-        error
-      });
-      
-      const itemsSnapshot = await db.collectionGroup('plaid_items')
-        .where('itemId', '==', item_id)
-        .limit(1)
-        .get();
-      
-      if (!itemsSnapshot.empty) {
-        const errorCode = error?.error_code;
-        const needsReauth = errorCode === 'ITEM_LOGIN_REQUIRED' || 
-                           errorCode === 'INVALID_CREDENTIALS' ||
-                           errorCode === 'ITEM_LOCKED' ||
-                           errorCode === 'ITEM_NO_LONGER_AVAILABLE';
-        
-        await itemsSnapshot.docs[0].ref.set({
-          status: needsReauth ? 'NEEDS_REAUTH' : 'error',
-          error: error,
-          updatedAt: admin.firestore.FieldValue.serverTimestamp()
-        }, { merge: true });
-        
-        logDiagnostic.info('WEBHOOK', `Item marked as ${needsReauth ? 'NEEDS_REAUTH' : 'error'}`, {
-          item_id,
-          error_code: errorCode
+
+        logDiagnostic.info('WEBHOOK', 'Transaction webhook reconciled', {
+          webhook_code,
+          added: result.added,
+          updated: result.updated,
+          pending: result.pending,
+          pending_replaced: result.pendingReplaced,
+          removed: result.removed,
+          cursor_advanced: result.cursorAdvanced
         });
       }
     }
-    
-    logDiagnostic.response(endpoint, 200, { success: true });
-    res.json({ success: true });
-    
-  } catch (error) {
-    if (error.code === 9) {
-      logDiagnostic.error('WEBHOOK', 'FAILED_PRECONDITION error - Document structure may not exist', {
-        message: error.message,
-        code: error.code,
-        item_id: req.body.item_id,
-        webhook_type: req.body.webhook_type,
-        webhook_code: req.body.webhook_code
-      });
-    } else {
-      logger.error('WEBHOOK', 'Error processing webhook', error, {});
-      logDiagnostic.error('WEBHOOK', 'Error processing webhook', error);
+
+    if (webhook_type === 'ITEM' && webhook_code === 'ERROR') {
+      const itemDoc = await findPlaidItemDocument(db, item_id);
+
+      if (itemDoc) {
+        const errorCode = plaidWebhookError?.error_code || 'UNKNOWN_ERROR';
+        const needsReauth =
+          errorCode === 'ITEM_LOGIN_REQUIRED' ||
+          errorCode === 'INVALID_ACCESS_TOKEN';
+
+        await itemDoc.ref.set({
+          status: needsReauth ? 'NEEDS_REAUTH' : 'error',
+          error: plaidWebhookError || null,
+          updatedAt: admin.firestore.FieldValue.serverTimestamp()
+        }, { merge: true });
+
+        logDiagnostic.info('WEBHOOK', 'Plaid item status updated from ITEM error', {
+          item_id,
+          error_code: errorCode,
+          status: needsReauth ? 'NEEDS_REAUTH' : 'error'
+        });
+      }
     }
-    
-    // Always return 200 to Plaid to prevent retries
-    // Log error for debugging but don't fail the webhook
-    res.status(200).json({ 
+
+    logDiagnostic.response(endpoint, 200, { success: true });
+    res.status(200).json({ success: true });
+  } catch (error) {
+    const plaidError = error?.response?.data;
+
+    if (plaidError?.error_code === 'ITEM_LOGIN_REQUIRED' && item_id) {
+      const itemDoc = await findPlaidItemDocument(db, item_id).catch(() => null);
+      if (itemDoc) {
+        await itemDoc.ref.set({
+          status: 'NEEDS_REAUTH',
+          error: {
+            error_code: plaidError.error_code,
+            error_type: plaidError.error_type || 'ITEM_ERROR',
+            error_message: plaidError.error_message || 'Bank login required'
+          },
+          updatedAt: admin.firestore.FieldValue.serverTimestamp()
+        }, { merge: true }).catch(() => {});
+      }
+    }
+
+    logger.error('WEBHOOK', 'Error processing Plaid webhook', error, {
+      webhook_type,
+      webhook_code,
+      item_id
+    });
+
+    // Plaid webhook delivery should not retry indefinitely because of an
+    // application-side reconciliation failure. The error remains visible in logs
+    // and the stored cursor is not advanced, so the next sync can safely retry.
+    res.status(200).json({
       received: true,
-      error: 'logged',
-      message: error.message
+      error: 'logged'
     });
   }
 });
