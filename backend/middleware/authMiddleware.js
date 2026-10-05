@@ -14,8 +14,8 @@
  * Rollout: deploy in 'log' mode → deploy frontend interceptor → confirm logs
  * show "token ok" on real traffic → set AUTH_MODE=enforce in Render env vars.
  *
- * Exempt paths: health checks and the Plaid webhook (Plaid's servers cannot
- * send Firebase tokens; that endpoint must rely on Plaid's own verification).
+ * Exempt paths: public health checks, Plaid webhook delivery, and the
+ * Google Sheets refresh endpoint (which has its own dedicated token).
  */
 
 import admin from 'firebase-admin';
@@ -56,7 +56,7 @@ export async function authMiddleware(req, res, next) {
   const targetUserId = requestedUserId(req);
 
   if (!token) {
-    console.warn(`[AUTH] NO TOKEN  ${req.method} ${req.path}  userId=${targetUserId || '-'} ip=${req.ip}`);
+    console.warn(`[AUTH] NO TOKEN  ${req.method} ${req.path}`);
     if (enforce) {
       return res.status(401).json({ error: true, code: 'AUTH_REQUIRED', message: 'Authentication required' });
     }
