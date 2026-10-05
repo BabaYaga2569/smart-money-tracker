@@ -67,6 +67,9 @@ const createError = {
   
   firebaseError: (message) => 
     new AppError(message, 500, 'FIREBASE_ERROR', true),
+
+  resourceExhausted: (message = 'Database quota temporarily exhausted') =>
+    new AppError(message, 503, 'FIRESTORE_QUOTA_EXCEEDED', true),
   
   validationError: (message, errors = []) => {
     const err = new AppError(message, 400, 'VALIDATION_ERROR', false);
