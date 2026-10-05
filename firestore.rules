@@ -194,18 +194,13 @@ service cloud.firestore {
       }
       
       // ---------------------------------------------------------------------------
-      // PLAID ITEMS - Connected Plaid bank accounts
+      // PLAID ITEMS - Backend-only credential documents
       // ---------------------------------------------------------------------------
+      // The browser must never read or mutate Plaid access-token documents.
+      // Firebase Admin on the Render backend bypasses client security rules,
+      // so all Plaid Item access remains available to trusted server code.
       match /plaid_items/{itemId} {
-        allow read, delete: if isOwner(userId);
-        
-        allow create, update: if isOwner(userId)
-          && request.resource.data.keys().hasAll(['access_token', 'item_id'])
-          && request.resource.data.access_token is string
-          && request.resource.data.access_token.size() > 0 && request.resource.data.access_token.size() <= 500
-          && request.resource.data.item_id is string
-          && request.resource.data.item_id.size() > 0 && request.resource.data.item_id.size() <= 200
-          && isValidSize();
+        allow read, write: if false;
       }
       
       // ---------------------------------------------------------------------------
