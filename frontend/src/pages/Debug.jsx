@@ -187,7 +187,7 @@ const Debug = () => {
 
       <h2>🚀 Emergency Access</h2>
       <p style={{ marginBottom: '10px' }}>Use this button to bypass onboarding checks and access the dashboard directly:</p>
-      <a href="/dashboard?skip_onboarding=true" style={{ textDecoration: 'none' }}>
+      <a href="/?skip_onboarding=true" style={{ textDecoration: 'none' }}>
         <button style={{ padding: '12px 24px', fontSize: '14px', cursor: 'pointer', background: '#f44336', color: 'white', border: 'none', borderRadius: '4px' }}>
           ⚠️ Bypass Onboarding & Go to Dashboard
         </button>

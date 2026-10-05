@@ -42,6 +42,11 @@ export default defineConfig({
         ]
       },
       workbox: {
+        // Remove precache entries from previous deployments so old chunk names
+        // are not kept around after a new release becomes active.
+        cleanupOutdatedCaches: true,
+        clientsClaim: true,
+        skipWaiting: true,
         globPatterns: ['**/*.{js,css,html,ico,png,svg,woff2}'],
         runtimeCaching: [
           {
