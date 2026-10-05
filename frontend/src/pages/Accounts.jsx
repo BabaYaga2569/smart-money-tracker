@@ -10,6 +10,13 @@ import './Accounts.css';
 import { useAuth } from '../contexts/AuthContext';
 import { useSmartBalanceSync } from '../hooks/useSmartBalanceSync';
 import { ensureSettingsDocument } from '../utils/settingsUtils';
+import {
+  getCanonicalDisplayBalance,
+  getHiddenPlaidAccounts,
+  getVisiblePlaidAccounts,
+  isCreditAccount,
+  isDepositoryAccount
+} from '../utils/accountVisibility';
 
 const Accounts = () => {
   const { currentUser } = useAuth();
@@ -24,11 +31,12 @@ const Accounts = () => {
   // Prefers top-level fields from backend, falls back to balances object
   const extractBalances = (account) => {
     const balances = account.balances || {};
-    const currentBalance = parseFloat(account.current_balance ?? balances.current ?? 0);
-    const availableBalance = parseFloat(account.available_balance ?? balances.available ?? currentBalance);
-    const liveBalance = availableBalance; // available includes pending
-    const pendingAdjustment = availableBalance - currentBalance;
-    
+    const currentBalance = parseFloat(account.current_balance ?? account.current ?? balances.current ?? 0);
+    const availableRaw = account.available_balance ?? account.available ?? balances.available;
+    const availableBalance = parseFloat(availableRaw ?? currentBalance);
+    const liveBalance = isCreditAccount(account) ? currentBalance : availableBalance;
+    const pendingAdjustment = isCreditAccount(account) ? 0 : (availableBalance - currentBalance);
+
     return { currentBalance, availableBalance, liveBalance, pendingAdjustment };
   };
 
@@ -56,6 +64,9 @@ const Accounts = () => {
   const [showDeleteModal, setShowDeleteModal] = useState(null);
   const [notification, setNotification] = useState({ message: '', type: '' });
   const [plaidAccounts, setPlaidAccounts] = useState([]);
+  const [hiddenPlaidAccounts, setHiddenPlaidAccounts] = useState([]);
+  const [connectedPlaidAccountCount, setConnectedPlaidAccountCount] = useState(0);
+  const [showDisconnectModal, setShowDisconnectModal] = useState(null);
   const [plaidStatus, setPlaidStatus] = useState({
     isConnected: false,
     hasError: false,
@@ -591,238 +602,145 @@ const Accounts = () => {
     }
   };
 
+  const formatPlaidAccountForUi = (account) => {
+    const { currentBalance, availableBalance, liveBalance, pendingAdjustment } = extractBalances(account);
+
+    return {
+      ...account,
+      account_id: account.account_id ?? '',
+      name: account.name ?? 'Unknown Account',
+      official_name: account.official_name ?? account.name ?? 'Unknown Account',
+      type: account.subtype || account.type || 'checking',
+      balance: liveBalance.toFixed(2),
+      available: availableBalance.toFixed(2),
+      current: currentBalance.toFixed(2),
+      pending_adjustment: pendingAdjustment.toFixed(2),
+      mask: account.mask ?? '',
+      isPlaid: true,
+      item_id: account.item_id ?? '',
+      institution_name: account.institution_name ?? '',
+      institution_id: account.institution_id ?? '',
+      originalType: account.originalType || account.type,
+      originalSubtype: account.originalSubtype || account.subtype,
+      visible: account.visible !== false,
+      lastBalanceUpdate:
+        typeof account.lastBalanceUpdate === 'number'
+          ? account.lastBalanceUpdate
+          : Date.parse(account.lastBalanceUpdate || account.lastSeenAt || '') || Date.now()
+    };
+  };
+
+  const applyCanonicalAccountState = (canonicalAccounts, settings = null, connectedCount = null) => {
+    const accountsWithVisibility = settings
+      ? canonicalAccounts.map(account => ({
+          ...account,
+          visible: getVisiblePlaidAccounts([account], settings).length === 1
+        }))
+      : canonicalAccounts;
+
+    const formatted = accountsWithVisibility.map(formatPlaidAccountForUi);
+    const visible = formatted.filter(account => account.visible !== false);
+    const visibleDepository = visible.filter(account => isDepositoryAccount(account));
+    const hidden = formatted.filter(account => account.visible === false);
+
+    setPlaidAccounts(visibleDepository);
+    setHiddenPlaidAccounts(hidden);
+    setConnectedPlaidAccountCount(connectedCount ?? formatted.length);
+    PlaidConnectionManager.setPlaidAccounts(formatted);
+
+    const plaidTotal = visibleDepository.reduce(
+      (sum, account) => sum + getCanonicalDisplayBalance(account),
+      0
+    );
+    setTotalBalance(plaidTotal);
+    setTotalProjectedBalance(
+      calculateTotalProjectedBalance(visibleDepository, transactions)
+    );
+
+    return { formatted, visibleDepository, hidden };
+  };
+
+  const loadAccountsFromFirebase = async () => {
+    const settingsDocRef = doc(db, 'users', currentUser.uid, 'settings', 'personal');
+    const settingsDocSnap = await getDoc(settingsDocRef);
+
+    if (!settingsDocSnap.exists()) {
+      setAccounts({});
+      setPlaidAccounts([]);
+      setHiddenPlaidAccounts([]);
+      setConnectedPlaidAccountCount(0);
+      setTotalBalance(0);
+      setTotalProjectedBalance(0);
+      return;
+    }
+
+    const settings = settingsDocSnap.data();
+    const canonicalAccounts = settings.plaidAccounts || [];
+    const bankAccounts = settings.bankAccounts || {};
+
+    if (canonicalAccounts.length > 0) {
+      applyCanonicalAccountState(canonicalAccounts, settings, canonicalAccounts.length);
+      setAccounts(bankAccounts);
+    } else {
+      setAccounts(bankAccounts);
+      setPlaidAccounts([]);
+      setHiddenPlaidAccounts([]);
+      setConnectedPlaidAccountCount(0);
+
+      const manualTotal = Object.values(bankAccounts).reduce(
+        (sum, account) => sum + (parseFloat(account.balance) || 0),
+        0
+      );
+      setTotalBalance(manualTotal);
+      setTotalProjectedBalance(
+        calculateTotalProjectedBalance(bankAccounts, transactions)
+      );
+    }
+  };
+
   const loadAccounts = async () => {
-    // Prevent concurrent requests
     if (isRefreshing) {
       console.log('Already refreshing, skipping...');
       return;
     }
-    
+
     try {
       setIsRefreshing(true);
-      
-      // Call backend API to get FRESH balances (uses transactionsSync from PR #130)
+
       const apiUrl = import.meta.env.VITE_API_URL || 'https://smart-money-tracker-09ks.onrender.com';
-      const response = await fetch(`${apiUrl}/api/accounts?userId=${currentUser.uid}&_t=${Date.now()}`);
+      const response = await fetch(
+        `${apiUrl}/api/accounts?userId=${currentUser.uid}&includeHidden=true&_t=${Date.now()}`
+      );
       const data = await response.json();
 
-      if (data.success && data.accounts && data.accounts.length > 0) {
-        // Format backend accounts for frontend display
-       // ✅ Improved mapping logic – reflects pending (uses available first) and safely handles null balances
-const allAccounts = data.accounts.map(account => {
-  const { currentBalance, availableBalance, liveBalance, pendingAdjustment } = extractBalances(account);
+      if (response.ok && data.success && Array.isArray(data.accounts)) {
+        applyCanonicalAccountState(
+          data.accounts,
+          null,
+          data.connected_account_count ?? data.accounts.length
+        );
 
-  // Check if balance changed compared to existing account
-  const existingAccount = plaidAccounts.find(acc => acc.account_id === account.account_id);
-  const balanceChanged = !existingAccount || existingAccount.balance !== liveBalance.toFixed(2);
-
-  return {
-    account_id: account.account_id ?? '',
-    name: account.name ?? 'Unknown Account',
-    official_name: account.official_name ?? account.name ?? 'Unknown Account',
-    type: account.subtype || account.type || 'checking',
-    balance: liveBalance.toFixed(2), // ✅ main displayed balance
-    available: availableBalance.toFixed(2),
-    current: currentBalance.toFixed(2),
-    pending_adjustment: pendingAdjustment.toFixed(2),
-    mask: account.mask ?? '',
-    isPlaid: true,
-    item_id: account.item_id ?? '',
-    institution_name: account.institution_name ?? data?.institution_name ?? '',
-    institution_id: account.institution_id ?? '',
-    lastBalanceUpdate: balanceChanged ? Date.now() : (existingAccount?.lastBalanceUpdate || Date.now()),
-    previousBalance: existingAccount?.balance,
-    // Store original type and subtype for filtering
-    originalType: account.type,
-    originalSubtype: account.subtype
-  };
-});
-
-// Filter: ONLY depository accounts (checking, savings, money market)
-// Exclude credit cards completely (opposite of CreditCards.jsx filter)
-const formattedPlaidAccounts = allAccounts.filter(account => {
-  // Exclude if type is 'credit' (matches CreditCards.jsx: a.type === "credit")
-  if (account.originalType === 'credit') return false;
-  
-  // Exclude if subtype is 'credit' (matches CreditCards.jsx: a.subtype === "credit")
-  if (account.originalSubtype === 'credit') return false;
-  
-  // Exclude if formatted type contains 'credit' (catches "credit card", etc.)
-  const accountType = (account.type || '').toLowerCase();
-  if (accountType.includes('credit')) return false;
-  
-  // Include all other accounts (depository accounts like checking, savings, etc.)
-  return true;
-});
-
-
-        
-        setPlaidAccounts(formattedPlaidAccounts);
-        
-        // Update PlaidConnectionManager with account info
-        PlaidConnectionManager.setPlaidAccounts(formattedPlaidAccounts);
-        
-        // Calculate fresh total from backend data
-        const plaidTotal = formattedPlaidAccounts.reduce((sum, account) => {
-          return sum + (parseFloat(account.balance) || 0);
-        }, 0);
-        setTotalBalance(plaidTotal);
-        
-        // Calculate projected balance
-        const projectedTotal = calculateTotalProjectedBalance(formattedPlaidAccounts, transactions);
-        setTotalProjectedBalance(projectedTotal);
-        
-        console.log('✅ Loaded fresh balances from backend API:', formattedPlaidAccounts.length, 'accounts');
-        
-        // Persist accounts with lastBalanceUpdate to Firebase
-        try {
-          const settingsDocRef = doc(db, 'users', currentUser.uid, 'settings', 'personal');
-          const currentDoc = await getDoc(settingsDocRef);
-          const currentData = currentDoc.exists() ? currentDoc.data() : {};
-          
-          // Sanitize accounts to remove undefined values (Firebase doesn't support undefined)
-          const sanitizedAccounts = formattedPlaidAccounts.map(account => sanitizeForFirebase(account));
-          
-          await updateDoc(settingsDocRef, {
-            ...currentData,
-            plaidAccounts: sanitizedAccounts,
-            lastUpdated: new Date().toISOString()
-          });
-          
-          console.log('✅ Persisted accounts with lastBalanceUpdate to Firebase');
-        } catch (fbError) {
-          console.warn('Failed to persist accounts to Firebase:', fbError);
-          // Not critical - continue with cached data
-        }
+        console.log('✅ Loaded canonical account registry from backend:', {
+          connected: data.connected_account_count ?? data.accounts.length,
+          visible: data.visible_account_count,
+          hidden: data.hidden_account_count
+        });
       } else {
-        // Fallback to Firebase if API fails or returns no accounts
-        console.warn('⚠️ Backend returned no accounts, falling back to Firebase');
-        const settingsDocRef = doc(db, 'users', currentUser.uid, 'settings', 'personal');
-        const settingsDocSnap = await getDoc(settingsDocRef);
-        
-        if (settingsDocSnap.exists()) {
-          const firebaseData = settingsDocSnap.data();
-          const bankAccounts = firebaseData.bankAccounts || {};
-          const allPlaidAccounts = firebaseData.plaidAccounts || [];
-          
-          // Filter: ONLY depository accounts (exclude credit cards)
-          const plaidAccountsList = allPlaidAccounts.filter(account => {
-            // Exclude if originalType is 'credit'
-            if (account.originalType === 'credit') return false;
-            
-            // Exclude if originalSubtype is 'credit'
-            if (account.originalSubtype === 'credit') return false;
-            
-            // Exclude if formatted type contains 'credit'
-            const accountType = (account.type || '').toLowerCase();
-            if (accountType.includes('credit')) return false;
-            
-            // Include all other accounts
-            return true;
-          });
-          
-          setAccounts(bankAccounts);
-          setPlaidAccounts(plaidAccountsList);
-          
-          // Update PlaidConnectionManager with account info
-          PlaidConnectionManager.setPlaidAccounts(plaidAccountsList);
-          
-          // If Plaid accounts exist, only use their balances (fully automated flow)
-          // Otherwise, use manual account balances
-          if (plaidAccountsList.length > 0) {
-            const plaidTotal = plaidAccountsList.reduce((sum, account) => {
-              return sum + (parseFloat(account.balance) || 0);
-            }, 0);
-            setTotalBalance(plaidTotal);
-            
-            // Calculate projected balance
-            const projectedTotal = calculateTotalProjectedBalance(plaidAccountsList, transactions);
-            setTotalProjectedBalance(projectedTotal);
-          } else {
-            const manualTotal = Object.values(bankAccounts).reduce((sum, account) => {
-              if (!account.isPlaid) {
-                return sum + (parseFloat(account.balance) || 0);
-              }
-              return sum;
-            }, 0);
-            setTotalBalance(manualTotal);
-            
-            // Calculate projected balance for manual accounts
-            const projectedTotal = calculateTotalProjectedBalance(bankAccounts, transactions);
-            setTotalProjectedBalance(projectedTotal);
-          }
-        }
+        console.warn('⚠️ Backend account registry unavailable, using Firebase cache');
+        await loadAccountsFromFirebase();
       }
     } catch (error) {
       console.error('Error loading accounts:', error);
-      
-      // Fallback to Firebase on error
-      try {
-        const settingsDocRef = doc(db, 'users', currentUser.uid, 'settings', 'personal');
-        const settingsDocSnap = await getDoc(settingsDocRef);
-        
-        if (settingsDocSnap.exists()) {
-          const data = settingsDocSnap.data();
-          const bankAccounts = data.bankAccounts || {};
-          const allPlaidAccounts = data.plaidAccounts || [];
-          
-          // Filter: ONLY depository accounts (exclude credit cards)
-          const plaidAccountsList = allPlaidAccounts.filter(account => {
-            // Exclude if originalType is 'credit'
-            if (account.originalType === 'credit') return false;
-            
-            // Exclude if originalSubtype is 'credit'
-            if (account.originalSubtype === 'credit') return false;
-            
-            // Exclude if formatted type contains 'credit'
-            const accountType = (account.type || '').toLowerCase();
-            if (accountType.includes('credit')) return false;
-            
-            // Include all other accounts
-            return true;
-          });
-          
-          setAccounts(bankAccounts);
-          setPlaidAccounts(plaidAccountsList);
-          
-          // Update PlaidConnectionManager with account info
-          PlaidConnectionManager.setPlaidAccounts(plaidAccountsList);
-          
-          if (plaidAccountsList.length > 0) {
-            const plaidTotal = plaidAccountsList.reduce((sum, account) => {
-              return sum + (parseFloat(account.balance) || 0);
-            }, 0);
-            setTotalBalance(plaidTotal);
-          } else {
-            const manualTotal = Object.values(bankAccounts).reduce((sum, account) => {
-              if (!account.isPlaid) {
-                return sum + (parseFloat(account.balance) || 0);
-              }
-              return sum;
-            }, 0);
-            setTotalBalance(manualTotal);
-          }
-        } else {
-          // Use demo data when both API and Firebase fail
-          showNotification('Unable to load accounts, using demo data', 'error');
-          const demoAccounts = {
-            bofa: { name: "Bank of America", type: "checking", balance: "1127.68" },
-            sofi: { name: "SoFi", type: "savings", balance: "234.29" },
-            capone: { name: "Capital One", type: "checking", balance: "24.74" },
-            usaa: { name: "USAA", type: "checking", balance: "143.36" }
-          };
-          
-          setAccounts(demoAccounts);
-          const total = Object.values(demoAccounts).reduce((sum, account) => {
-            return sum + (parseFloat(account.balance) || 0);
-          }, 0);
-          setTotalBalance(total);
-          setTotalProjectedBalance(total); // Same as live when no transactions
-        }
-      } catch (fallbackError) {
-        console.error('Fallback to Firebase also failed:', fallbackError);
-        showNotification('Unable to load accounts', 'error');
-      }
+      await loadAccountsFromFirebase().catch(fallbackError => {
+        console.error('Firebase account fallback failed:', fallbackError);
+        setAccounts({});
+        setPlaidAccounts([]);
+        setHiddenPlaidAccounts([]);
+        setConnectedPlaidAccountCount(0);
+        setTotalBalance(0);
+        setTotalProjectedBalance(0);
+        showNotification('Unable to load account balances right now', 'error');
+      });
     } finally {
       setLoading(false);
       setIsRefreshing(false);
@@ -899,164 +817,103 @@ const formattedPlaidAccounts = allAccounts.filter(account => {
     setEditingAccount(null);
   };
 
+  const updatePlaidAccountVisibility = async (accountId, visible) => {
+    const apiUrl = import.meta.env.VITE_API_URL || 'https://smart-money-tracker-09ks.onrender.com';
+    const response = await fetch(`${apiUrl}/api/accounts/visibility`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        userId: currentUser.uid,
+        accountId,
+        visible
+      })
+    });
+    const data = await response.json();
+
+    if (!response.ok || !data.success) {
+      throw new Error(data.error || data.message || 'Failed to update account visibility');
+    }
+
+    await loadAccounts();
+    return data;
+  };
+
   const deleteAccount = async (accountKey) => {
     try {
       setSaving(true);
+
+      const plaidAccount = [...plaidAccounts, ...hiddenPlaidAccounts]
+        .find(account => account.account_id === accountKey);
+
+      if (plaidAccount) {
+        await updatePlaidAccountVisibility(accountKey, false);
+        showNotification('Account hidden. You can restore it from Hidden Accounts.', 'success');
+        setShowDeleteModal(null);
+        return;
+      }
+
+      const updatedAccounts = { ...accounts };
+      delete updatedAccounts[accountKey];
+      await saveAccountsToFirebase(updatedAccounts);
+
       const userId = currentUser.uid;
-
-      // Check if this is a Plaid account
-      const accountToDelete = plaidAccounts.find(acc => acc.account_id === accountKey);
-      
-      if (accountToDelete) {
-        // For Plaid accounts, delete ONLY this specific account
-        const itemId = accountToDelete.item_id;
-
-        if (!itemId) {
-          console.error('Account does not have item_id');
-          showNotification('Cannot delete account: missing item_id', 'error');
-          setSaving(false);
-          return;
-        }
-
-        console.log('[DELETE] Starting account deletion:', accountKey);
-        console.log('[DELETE] Account to delete:', accountToDelete);
-
-        // 1. Load current settings from Firebase
-        const settingsDocRef = doc(db, 'users', userId, 'settings', 'personal');
-        const currentDoc = await getDoc(settingsDocRef);
-        const currentData = currentDoc.exists() ? currentDoc.data() : {};
-        
-        console.log('[DELETE] Current Firebase plaidAccounts:', currentData.plaidAccounts);
-        
-        // 2. Remove ONLY this specific account from plaidAccounts array
-        const updatedPlaidAccounts = (currentData.plaidAccounts || []).filter(
-          acc => acc.account_id !== accountKey
-        );
-        
-        // 3. Ensure all remaining accounts have complete data by enriching from local state
-        // This prevents losing fields like institution_name if Firebase data is stale
-        const enrichedPlaidAccounts = updatedPlaidAccounts.map(firebaseAcc => {
-          // Find corresponding account in local state which has fresh data from backend API
-          const localAcc = plaidAccounts.find(acc => acc.account_id === firebaseAcc.account_id);
-          
-          if (localAcc) {
-            // Merge Firebase data with local state, preferring local state for display fields
-            return {
-              ...firebaseAcc,
-              // Preserve critical display fields from local state
-              institution_name: localAcc.institution_name || firebaseAcc.institution_name || '',
-              institution_id: localAcc.institution_id || firebaseAcc.institution_id || '',
-              name: localAcc.name || firebaseAcc.name,
-              official_name: localAcc.official_name || firebaseAcc.official_name,
-              mask: localAcc.mask || firebaseAcc.mask,
-              balance: firebaseAcc.balance || localAcc.balance, // Prefer Firebase for consistency
-            };
-          }
-          
-          // If not found in local state, use Firebase data as-is
-          return firebaseAcc;
-        });
-        
-        console.log('[DELETE] Enriched plaidAccounts:', enrichedPlaidAccounts);
-        
-        // 4. Validate that institution_name is preserved
-        enrichedPlaidAccounts.forEach(acc => {
-          if (!acc.institution_name) {
-            console.warn('[DELETE] WARNING: Account missing institution_name after enrichment!', acc);
-          } else {
-            console.log('[DELETE] ✓ Account has institution_name:', acc.account_id, acc.institution_name);
-          }
-        });
-        
-        // 5. Check if any OTHER accounts from this bank still exist
-        const remainingAccountsFromBank = enrichedPlaidAccounts.filter(
-          acc => acc.item_id === itemId
-        );
-        
-        console.log('[DELETE] Remaining accounts from bank:', remainingAccountsFromBank.length);
-
-        // 6. Only delete plaid_items if NO accounts remain from this bank
-        if (remainingAccountsFromBank.length === 0) {
-          // All accounts from this bank deleted - remove plaid_items
-          const plaidItemsRef = collection(db, 'users', userId, 'plaid_items');
-          const plaidItemsQuery = query(plaidItemsRef, where('itemId', '==', itemId));
-          const plaidItemsSnapshot = await getDocs(plaidItemsQuery);
-          
-          const batch = writeBatch(db);
-          plaidItemsSnapshot.forEach(doc => {
-            batch.delete(doc.ref);
-          });
-          await batch.commit();
-          
-          console.log('[DELETE] Deleted plaid_items for', itemId, '(no accounts remaining)');
-        } else {
-          console.log('[DELETE] Kept plaid_items for', itemId, `(${remainingAccountsFromBank.length} accounts remaining)`);
-        }
-
-        // 7. Update plaidAccounts array in settings/personal with enriched data
-        // Sanitize to remove undefined values (Firebase doesn't support undefined)
-        const sanitizedEnrichedAccounts = enrichedPlaidAccounts.map(account => sanitizeForFirebase(account));
-        await updateDoc(settingsDocRef, {
-          ...currentData,
-          plaidAccounts: sanitizedEnrichedAccounts,
-          lastUpdated: new Date().toISOString()
-        });
-        
-        console.log('[DELETE] Updated Firebase settings/personal with enriched accounts');
-        
-        // 8. Update local state with enriched data
-        setPlaidAccounts(enrichedPlaidAccounts);
-        PlaidConnectionManager.setPlaidAccounts(enrichedPlaidAccounts);
-        
-        // 9. Recalculate total balance
-        const plaidTotal = enrichedPlaidAccounts.reduce((sum, acc) => sum + parseFloat(acc.balance || 0), 0);
-        setTotalBalance(plaidTotal);
-        
-        console.log('[DELETE] Account deletion completed successfully');
-        showNotification('Account deleted successfully', 'success');
-      } else {
-        // For manual accounts, remove from bankAccounts object in settings
-        const updatedAccounts = { ...accounts };
-        delete updatedAccounts[accountKey];
-        
-        await saveAccountsToFirebase(updatedAccounts);
-      }
-
-      // Try deleting from multiple possible Firebase locations (for old/stale data)
-      // Location 1: Root level accounts collection
-      try {
-        const rootAccountRef = doc(db, 'accounts', accountKey);
-        await deleteDoc(rootAccountRef);
-        console.log('Deleted from root accounts collection');
-      } catch (e) {
-        // Not in root accounts collection or doesn't exist
-        console.log('Not in root accounts collection:', e.message);
-      }
-
-      // Location 2: User's financial subcollection
-      try {
-        const financialRef = doc(db, 'users', userId, 'financial', accountKey);
-        await deleteDoc(financialRef);
-        console.log('Deleted from financial subcollection');
-      } catch (e) {
-        // Not in financial subcollection or doesn't exist
-        console.log('Not in financial subcollection:', e.message);
-      }
-
-      // Location 3: User's accounts subcollection (if exists)
-      try {
-        const userAccountRef = doc(db, 'users', userId, 'accounts', accountKey);
-        await deleteDoc(userAccountRef);
-        console.log('Deleted from accounts subcollection');
-      } catch (e) {
-        // Not in accounts subcollection or doesn't exist
-        console.log('Not in accounts subcollection:', e.message);
+      for (const ref of [
+        doc(db, 'accounts', accountKey),
+        doc(db, 'users', userId, 'financial', accountKey),
+        doc(db, 'users', userId, 'accounts', accountKey)
+      ]) {
+        await deleteDoc(ref).catch(() => {});
       }
 
       setShowDeleteModal(null);
     } catch (error) {
-      console.error('Error deleting account:', error);
-      showNotification('Failed to delete account. Please try again.', 'error');
+      console.error('Error updating account:', error);
+      showNotification('Failed to update account. Please try again.', 'error');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const restorePlaidAccount = async (accountId) => {
+    try {
+      setSaving(true);
+      await updatePlaidAccountVisibility(accountId, true);
+      showNotification('Account restored.', 'success');
+    } catch (error) {
+      console.error('Error restoring account:', error);
+      showNotification('Failed to restore account.', 'error');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const disconnectBank = async () => {
+    if (!showDisconnectModal?.itemId) return;
+
+    try {
+      setSaving(true);
+      const apiUrl = import.meta.env.VITE_API_URL || 'https://smart-money-tracker-09ks.onrender.com';
+      const response = await fetch(`${apiUrl}/api/plaid/disconnect_item`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          userId: currentUser.uid,
+          itemId: showDisconnectModal.itemId
+        })
+      });
+      const data = await response.json();
+
+      if (!response.ok || !data.success) {
+        throw new Error(data.error || data.message || 'Failed to disconnect bank');
+      }
+
+      setShowDisconnectModal(null);
+      await loadAccounts();
+      await checkConnectionHealth().catch(() => {});
+      showNotification('Bank disconnected. Historical transactions were kept.', 'success');
+    } catch (error) {
+      console.error('Error disconnecting bank:', error);
+      showNotification(`Failed to disconnect bank: ${error.message}`, 'error');
     } finally {
       setSaving(false);
     }
@@ -1066,114 +923,35 @@ const formattedPlaidAccounts = allAccounts.filter(account => {
     try {
       setSaving(true);
       showNotification('Connecting your bank account...', 'success');
-      
-      // Show success banner temporarily when connection succeeds
       setShowSuccessBanner(true);
       setBannerDismissed(false);
 
-      // Validate and construct API URL
       const apiUrl = import.meta.env.VITE_API_URL || 'https://smart-money-tracker-09ks.onrender.com';
-      if (!apiUrl) {
-        throw new Error('API URL is not configured');
-      }
-
-      // Exchange public token for access token and get accounts
       const response = await fetch(`${apiUrl}/api/plaid/exchange_token`, {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ 
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
           public_token: publicToken,
-          userId: currentUser.uid 
-        }),
+          userId: currentUser.uid
+        })
       });
 
       const data = await response.json();
 
-      if (data?.success && data?.accounts) {
-        // Format Plaid accounts for display with null checks
-        // IMPORTANT: Do NOT store access_token - it's now stored securely server-side
-        // ✅ Improved mapping logic – reflects pending (uses available first) and safely handles null balances
-const allNewAccounts = data.accounts.map(account => {
-  const { currentBalance, availableBalance, liveBalance, pendingAdjustment } = extractBalances(account);
-
-  return {
-    account_id: account.account_id ?? '',
-    name: account.name ?? 'Unknown Account',
-    official_name: account.official_name ?? account.name ?? 'Unknown Account',
-    type: account.subtype || account.type || 'checking',
-    balance: liveBalance.toFixed(2), // ✅ main displayed balance
-    available: availableBalance.toFixed(2),
-    current: currentBalance.toFixed(2),
-    pending_adjustment: pendingAdjustment.toFixed(2),
-    mask: account.mask ?? '',
-    isPlaid: true,
-    item_id: account.item_id ?? '',
-    institution_name: account.institution_name ?? data?.institution_name ?? '',
-    institution_id: account.institution_id ?? '',
-    // Store original type and subtype for filtering
-    originalType: account.type,
-    originalSubtype: account.subtype
-  };
-});
-
-// Filter: ONLY depository accounts (exclude credit cards)
-const formattedPlaidAccounts = allNewAccounts.filter(account => {
-  // Exclude if originalType is 'credit'
-  if (account.originalType === 'credit') return false;
-  
-  // Exclude if originalSubtype is 'credit'
-  if (account.originalSubtype === 'credit') return false;
-  
-  // Exclude if formatted type contains 'credit'
-  const accountType = (account.type || '').toLowerCase();
-  if (accountType.includes('credit')) return false;
-  
-  // Include all other accounts
-  return true;
-});
-
-
-
-        // Ensure settings document exists before attempting to save
-        await ensureSettingsDocument(currentUser.uid);
-
-        // Save to Firebase
-        const settingsDocRef = doc(db, 'users', currentUser.uid, 'settings', 'personal');
-        const currentDoc = await getDoc(settingsDocRef);
-        const currentData = currentDoc.exists() ? currentDoc.data() : {};
-
-        // Remove any existing accounts for this item_id to avoid duplicates (backend also does this, but this ensures consistency)
-        const existingAccounts = currentData.plaidAccounts || [];
-        const filteredAccounts = existingAccounts.filter(acc => acc.item_id !== data.item_id);
-
-        // Sanitize accounts to remove undefined values (Firebase doesn't support undefined)
-        const sanitizedNewAccounts = formattedPlaidAccounts.map(account => sanitizeForFirebase(account));
-        await updateDoc(settingsDocRef, {
-          ...currentData,
-          plaidAccounts: [...filteredAccounts, ...sanitizedNewAccounts],
-          lastUpdated: new Date().toISOString(),
-        });
-
-        // Update state (use filteredAccounts to avoid duplicates in state as well)
-        const updatedPlaidAccounts = [...filteredAccounts, ...formattedPlaidAccounts];
-        setPlaidAccounts(updatedPlaidAccounts);
-        PlaidConnectionManager.setPlaidAccounts(updatedPlaidAccounts);
-
-        // Recalculate total balance (only Plaid accounts when they exist)
-        const plaidTotal = updatedPlaidAccounts.reduce((sum, acc) => sum + parseFloat(acc.balance), 0);
-        setTotalBalance(plaidTotal);
-
-        showNotification(`Successfully connected ${formattedPlaidAccounts.length} account(s)!`, 'success');
-        
-        // Auto-hide success banner after 5 seconds
-        setTimeout(() => {
-          setShowSuccessBanner(false);
-        }, 5000);
-      } else {
-        showNotification('Failed to connect bank account', 'error');
+      if (!response.ok || !data?.success) {
+        throw new Error(data?.error || 'Failed to connect bank account');
       }
+
+      // The backend owns the canonical Plaid account registry. Reload it rather
+      // than writing a second frontend version of the account list.
+      await loadAccounts();
+
+      showNotification(
+        `Successfully connected ${data.accounts?.length || 0} account(s)!`,
+        'success'
+      );
+
+      setTimeout(() => setShowSuccessBanner(false), 5000);
     } catch (error) {
       console.error('Error connecting Plaid account:', error);
       showNotification('Failed to connect bank account', 'error');
