@@ -11,6 +11,15 @@ import { atomicTransaction, createOperation } from './utils/atomicTransaction.js
 import { validateAccount as validateAccountConsistency, validateTransaction as validateTransactionConsistency, validateBalanceConsistency, checkDuplicateTransaction } from './utils/consistencyValidators.js';
 import { runBillMatching } from './utils/BillMatchingService.js';
 import { findPlaidItemDocument, syncPlaidItemTransactions } from './utils/plaidSyncEngine.js';
+import {
+  ACCOUNT_VISIBILITY_SCHEMA_VERSION,
+  accountIdentityMatch,
+  calculateVisibleDepositoryTotal,
+  isDepositoryAccount,
+  reconcileAccountRegistry,
+  visibleAccounts,
+  withVisibility
+} from './utils/accountRegistry.js';
 import { detectSubscriptions } from './utils/subscriptionDetector.js';
 import { detectRecurringStreams, matchStreamsToTemplates } from './utils/recurringStreamDetector.js';
 
@@ -400,76 +409,55 @@ async function deduplicateAndSaveAccounts(userId, newAccounts, institutionName, 
     throw new Error('Invalid parameters for deduplicateAndSaveAccounts');
   }
 
-  logger.info('FIREBASE', 'Deduplicating accounts for user', { userId, newAccountCount: newAccounts.length });
-  logDiagnostic.info('DEDUPLICATE_ACCOUNTS', `Deduplicating ${newAccounts.length} accounts for user: ${userId}`);
-
   const settingsRef = db.collection('users').doc(userId)
     .collection('settings').doc('personal');
-
-  // Get current settings to preserve other data
   const settingsDoc = await settingsRef.get();
   const currentSettings = settingsDoc.exists ? settingsDoc.data() : {};
-  const existingPlaidAccounts = currentSettings.plaidAccounts || [];
 
-  // Format accounts for frontend display
-  const accountsToAdd = newAccounts.map(account => ({
-    account_id: account.account_id,
-    name: account.name,
-    official_name: account.official_name || null,
-    mask: account.mask || null,
-    type: account.type,
-    subtype: account.subtype || null,
-    // Primary balance fields - using ?? to handle null without treating 0 as falsy
-    available_balance: account.balances.available ?? account.balances.current ?? 0,
-    current_balance: account.balances.current ?? 0,
-    balance: account.balances.available ?? account.balances.current ?? 0, // For backwards compatibility
-    // Full balances object for flexibility - no undefined values
-    balances: {
-      available: account.balances.available ?? null,
-      current: account.balances.current ?? 0,
-      limit: account.balances.limit ?? null,
-      iso_currency_code: account.balances.iso_currency_code ?? 'USD',
-      unofficial_currency_code: account.balances.unofficial_currency_code ?? null
-    },
+  const freshAccounts = newAccounts.map(account => ({
+    ...account,
     institution_name: institutionName,
     item_id: itemId
   }));
 
-  // Deduplicate by institution + mask
-  // This handles reconnection scenarios where the same account gets a new item_id
-  let deduplicatedCount = 0;
-  const filteredExistingAccounts = existingPlaidAccounts.filter(existingAcc => {
-    const isDuplicate = accountsToAdd.some(newAcc => 
-      existingAcc.institution_name === newAcc.institution_name &&
-      existingAcc.mask === newAcc.mask
-    );
-    
-    if (isDuplicate) {
-      deduplicatedCount++;
-      logger.info('FIREBASE', 'Removing duplicate account', { userId, institution: existingAcc.institution_name, mask: existingAcc.mask });
-      logDiagnostic.info('DEDUPLICATE_ACCOUNTS', `Removing duplicate account: ${existingAcc.institution_name} ...${existingAcc.mask}`);
-    }
-    
-    return !isDuplicate;
+  const reconciliation = reconcileAccountRegistry({
+    existingAccounts: currentSettings.plaidAccounts || [],
+    freshAccounts,
+    preferences: currentSettings.accountPreferences || {},
+    visibilitySchemaVersion: currentSettings.accountVisibilitySchemaVersion || 0,
+    completeSnapshot: false,
+    newAccountsVisible: true
   });
 
-  // Add new accounts
-  const updatedPlaidAccounts = [...filteredExistingAccounts, ...accountsToAdd];
+  const now = new Date().toISOString();
+  const updatedAccounts = reconciliation.accounts.map(account => {
+    const isFresh = freshAccounts.some(fresh => accountIdentityMatch(account, fresh));
+    return isFresh
+      ? { ...account, lastBalanceUpdate: now, lastSeenAt: now }
+      : account;
+  });
 
-  // Update settings/personal
   await settingsRef.set({
-    ...currentSettings,
-    plaidAccounts: updatedPlaidAccounts,
+    plaidAccounts: updatedAccounts,
+    accountPreferences: reconciliation.preferences,
+    accountVisibilitySchemaVersion: reconciliation.visibilitySchemaVersion,
     lastUpdated: admin.firestore.FieldValue.serverTimestamp()
   }, { merge: true });
 
-  logger.info('FIREBASE', 'Saved accounts, deduplicated', { userId, saved: accountsToAdd.length, deduplicated: deduplicatedCount });
-  logDiagnostic.info('DEDUPLICATE_ACCOUNTS', `Saved ${accountsToAdd.length} accounts, deduplicated ${deduplicatedCount}`);
+  const matchedExistingCount = (currentSettings.plaidAccounts || []).filter(existing =>
+    freshAccounts.some(fresh => accountIdentityMatch(existing, fresh))
+  ).length;
+
+  logDiagnostic.info('ACCOUNT_REGISTRY', 'Merged newly connected Plaid accounts into canonical registry', {
+    connected_accounts: freshAccounts.length,
+    matched_existing: matchedExistingCount,
+    canonical_accounts: updatedAccounts.length
+  });
 
   return {
-    added: accountsToAdd.length,
-    deduplicated: deduplicatedCount,
-    total: updatedPlaidAccounts.length
+    added: Math.max(0, freshAccounts.length - matchedExistingCount),
+    deduplicated: matchedExistingCount,
+    total: updatedAccounts.length
   };
 }
 
@@ -480,227 +468,90 @@ async function deduplicateAndSaveAccounts(userId, newAccounts, institutionName, 
  * @param {Array} accounts - Array of accounts with fresh balance data from Plaid
  * @returns {Promise<Object>} Result with { updated, total, unmatched } counts
  */
-async function updateAccountBalances(userId, accounts) {
+async function updateAccountBalances(userId, accounts, options = {}) {
   if (!userId || !Array.isArray(accounts)) {
     throw new Error('Invalid parameters for updateAccountBalances');
   }
 
-  logger.info('PLAID_ACCOUNTS', 'Updating balances for accounts for user', { userId, accountCount: accounts.length });
-  logDiagnostic.info('UPDATE_BALANCES', `Updating balances for ${accounts.length} accounts for user: ${userId}`);
-
+  const completeSnapshot = options.completeSnapshot === true;
   const settingsRef = db.collection('users').doc(userId)
     .collection('settings').doc('personal');
 
-  // Get current settings
   const settingsDoc = await settingsRef.get();
   const currentSettings = settingsDoc.exists ? settingsDoc.data() : {};
-  const existingPlaidAccounts = currentSettings.plaidAccounts || [];
+  const existingAccounts = currentSettings.plaidAccounts || [];
+  const existingPreferences = currentSettings.accountPreferences || {};
 
-  if (existingPlaidAccounts.length === 0) {
-    logger.info('PLAID_ACCOUNTS', 'No existing accounts to update', { userId });
-    logDiagnostic.info('UPDATE_BALANCES', 'No existing accounts to update');
-    return { updated: 0, total: 0, unmatched: 0 };
-  }
-
-  // 🔍 Log all account IDs from Plaid
-  logDiagnostic.info('UPDATE_BALANCES_PLAID_ACCOUNTS', 'Fresh account data from Plaid:', {
-    count: accounts.length,
-    accounts: accounts.map(a => ({
-      account_id: a.account_id,
-      name: a.name,
-      institution: a.institution_name || 'Unknown',
-      mask: a.mask,
-      balance_available: a.balances?.available,
-      balance_current: a.balances?.current
-    }))
+  const reconciliation = reconcileAccountRegistry({
+    existingAccounts,
+    freshAccounts: accounts,
+    preferences: existingPreferences,
+    visibilitySchemaVersion: currentSettings.accountVisibilitySchemaVersion || 0,
+    completeSnapshot,
+    newAccountsVisible: true
   });
 
-  // 🔍 Log all account IDs in Firebase
-  logDiagnostic.info('UPDATE_BALANCES_FIREBASE_ACCOUNTS', 'Existing accounts in Firebase:', {
-    count: existingPlaidAccounts.length,
-    accounts: existingPlaidAccounts.map(a => ({
-      account_id: a.account_id,
-      name: a.name,
-      institution: a.institution_name || 'Unknown',
-      mask: a.mask,
-      current_balance: a.balance
-    }))
+  const now = new Date().toISOString();
+  const canonicalAccounts = reconciliation.accounts.map(account => {
+    const isFresh = accounts.some(fresh => accountIdentityMatch(account, fresh));
+    return isFresh
+      ? { ...account, lastBalanceUpdate: now, lastSeenAt: now }
+      : account;
   });
 
-  let updatedCount = 0;
-  let unmatchedAccounts = [];
-  let newAccountsFound = [];
+  const accountsWithVisibility = withVisibility(
+    canonicalAccounts,
+    reconciliation.preferences
+  );
+  const currentVisibleAccounts = accountsWithVisibility.filter(account => account.visible !== false);
+  const hiddenAccounts = accountsWithVisibility.filter(account => account.visible === false);
+  const visibleDepositoryAccounts = currentVisibleAccounts.filter(isDepositoryAccount);
+  const totalBalance = calculateVisibleDepositoryTotal(
+    canonicalAccounts,
+    reconciliation.preferences
+  );
 
-  // Update balances for matching accounts
-  const updatedPlaidAccounts = existingPlaidAccounts.map(existingAcc => {
-    // Strategy 1: Match by account_id (most reliable)
-    let freshAccount = accounts.find(acc => acc.account_id === existingAcc.account_id);
-    let matchStrategy = 'account_id';
-    
-    // Strategy 2: Match by institution + mask (for reconnected accounts)
-    if (!freshAccount && existingAcc.mask) {
-      freshAccount = accounts.find(acc => 
-        acc.mask === existingAcc.mask && 
-        (acc.institution_name === existingAcc.institution_name || 
-         acc.institution_id === existingAcc.institution_id)
-      );
-      if (freshAccount) {
-        matchStrategy = 'institution+mask';
-      }
-    }
-    
-    if (freshAccount) {
-      updatedCount++;
-      const balances = freshAccount.balances || {};
-      
-      // Track both available and current balances - using ?? to handle null without treating 0 as falsy
-      const oldAvailable = existingAcc.available_balance ?? existingAcc.available ?? existingAcc.balance ?? 0;
-      const oldCurrent = existingAcc.current_balance ?? existingAcc.current ?? existingAcc.balance ?? 0;
-      const newAvailable = balances.available ?? balances.current ?? 0;
-      const newCurrent = balances.current ?? 0;
-      
-      // Calculate changes
-      const availableChange = newAvailable - oldAvailable;
-      const currentChange = newCurrent - oldCurrent;
-      // Pending amount = current - available (when positive, means pending debits reducing available)
-      const pendingAmount = newCurrent - newAvailable;
-      
-      // 🔍 Enhanced logging with both balance types and match strategy
-      logDiagnostic.info('UPDATE_BALANCES_MATCH', `✅ Matched: ${existingAcc.name} (${matchStrategy})`, {
-        account_id: freshAccount.account_id,
-        match_strategy: matchStrategy,
-        old_account_id: existingAcc.account_id !== freshAccount.account_id ? existingAcc.account_id : null,
-        institution: existingAcc.institution_name,
-        mask: existingAcc.mask,
-        old_available: oldAvailable,
-        new_available: newAvailable,
-        available_change: availableChange,
-        old_current: oldCurrent,
-        new_current: newCurrent,
-        current_change: currentChange,
-        pending_amount: pendingAmount
-      });
-      
-      // Update balance fields with fresh data - no undefined values
-      // If account_id changed (reconnection), update it
-      return {
-        ...existingAcc,
-        account_id: freshAccount.account_id, // Update account_id if it changed
-        balance: newAvailable ?? newCurrent ?? 0, // Primary balance = available (what you can spend)
-        available_balance: newAvailable ?? newCurrent ?? 0,
-        current_balance: newCurrent ?? 0,
-        available: newAvailable ?? newCurrent ?? 0, // For compatibility
-        current: newCurrent ?? 0, // For compatibility
-        balances: {
-          available: balances.available ?? null,
-          current: balances.current ?? 0,
-          limit: balances.limit ?? null,
-          iso_currency_code: balances.iso_currency_code ?? 'USD',
-          unofficial_currency_code: balances.unofficial_currency_code ?? null
-        },
-        lastUpdated: new Date().toISOString()
-      };
-    }
-    
-    // 🚨 Track and log unmatched accounts
-    unmatchedAccounts.push({
-      account_id: existingAcc.account_id,
-      name: existingAcc.name,
-      institution: existingAcc.institution_name,
-      mask: existingAcc.mask,
-      balance: existingAcc.balance
-    });
-    
-    logDiagnostic.warn('UPDATE_BALANCES_NO_MATCH', `❌ No fresh data found for account: ${existingAcc.name}`, {
-      account_id: existingAcc.account_id,
-      institution: existingAcc.institution_name,
-      mask: existingAcc.mask,
-      stored_balance: existingAcc.balance,
-      reason: 'No match by account_id or institution+mask',
-      action: 'Keeping old balance (DATA MAY BE STALE!)'
-    });
-    
-    // Keep existing account unchanged if no fresh data
-    return existingAcc;
-  });
+  validateBalanceConsistency(visibleDepositoryAccounts, totalBalance);
 
-  // Identify new accounts from Plaid not in Firebase
-  // We need to check if any Plaid account wasn't matched (either by account_id or institution+mask)
-  const matchedPlaidAccountIds = [];
-  existingPlaidAccounts.forEach(existingAcc => {
-    // Try to find match using same logic
-    let matched = accounts.find(acc => acc.account_id === existingAcc.account_id);
-    if (!matched && existingAcc.mask) {
-      matched = accounts.find(acc => 
-        acc.mask === existingAcc.mask && 
-        (acc.institution_name === existingAcc.institution_name || 
-         acc.institution_id === existingAcc.institution_id)
-      );
-    }
-    if (matched) {
-      matchedPlaidAccountIds.push(matched.account_id);
-    }
-  });
-  
-  newAccountsFound = accounts.filter(plaidAcc => !matchedPlaidAccountIds.includes(plaidAcc.account_id));
-  
-  if (newAccountsFound.length > 0) {
-    logDiagnostic.info('UPDATE_BALANCES_NEW_ACCOUNTS', `Found ${newAccountsFound.length} new accounts in Plaid not in Firebase:`, {
-      new_accounts: newAccountsFound.map(acc => ({
-        account_id: acc.account_id,
-        name: acc.name,
-        institution: acc.institution_name,
-        mask: acc.mask,
-        balance_available: acc.balances?.available,
-        balance_current: acc.balances?.current
-      }))
-    });
-  }
-  
-  // 🔍 Enhanced final summary with new accounts
-  logDiagnostic.info('UPDATE_BALANCES_SUMMARY', `Balance update complete`, {
-    total_accounts_in_firebase: existingPlaidAccounts.length,
-    updated: updatedCount,
-    unmatched: unmatchedAccounts.length,
-    new_accounts_found: newAccountsFound.length,
-    success_rate: `${Math.round((updatedCount / existingPlaidAccounts.length) * 100)}%`,
-    unmatched_accounts: unmatchedAccounts
-  });
+  const operations = [
+    createOperation('set', settingsRef, {
+      plaidAccounts: canonicalAccounts,
+      accountPreferences: reconciliation.preferences,
+      accountVisibilitySchemaVersion: reconciliation.visibilitySchemaVersion,
+      lastBalanceUpdate: admin.firestore.FieldValue.serverTimestamp(),
+      lastUpdated: admin.firestore.FieldValue.serverTimestamp()
+    }),
+    createOperation('update', db.collection('users').doc(userId), {
+      totalBalance,
+      accountCount: visibleDepositoryAccounts.length,
+      connectedAccountCount: canonicalAccounts.length,
+      hiddenAccountCount: hiddenAccounts.length,
+      lastSyncedAt: new Date()
+    })
+  ];
 
-  // Calculate total balance from updated accounts
-  const totalBalance = updatedPlaidAccounts.reduce((sum, acc) => sum + (acc.current_balance || 0), 0);
-  
-  // Validate balance consistency
-  validateBalanceConsistency(updatedPlaidAccounts, totalBalance);
-  
-  // Create atomic operations
-  const operations = [];
-  
-  // Add settings/personal update with fresh balances
-  operations.push(createOperation('set', settingsRef, {
-    ...currentSettings,
-    plaidAccounts: updatedPlaidAccounts,
-    lastBalanceUpdate: admin.firestore.FieldValue.serverTimestamp()
-  }));
-  
-  // Add user total balance update
-  const userRef = db.collection('users').doc(userId);
-  operations.push(createOperation('update', userRef, {
-    totalBalance,
-    accountCount: updatedPlaidAccounts.length,
-    lastSyncedAt: new Date()
-  }));
-  
-  // Execute atomically
   await atomicTransaction(operations);
 
-  logger.info('PLAID_ACCOUNTS', 'Persisted to Firebase atomically: accounts updated', { userId, updatedCount, totalBalance });
-  logDiagnostic.info('UPDATE_BALANCES', `Persisted to Firebase atomically: ${updatedCount} accounts updated, total balance: ${totalBalance}`);
+  logDiagnostic.info('ACCOUNT_REGISTRY', 'Canonical Plaid account registry reconciled', {
+    fresh_accounts: accounts.length,
+    canonical_accounts: canonicalAccounts.length,
+    visible_accounts: currentVisibleAccounts.length,
+    hidden_accounts: hiddenAccounts.length,
+    visible_depository_accounts: visibleDepositoryAccounts.length,
+    complete_snapshot: completeSnapshot,
+    visibility_schema: reconciliation.visibilitySchemaVersion
+  });
 
   return {
-    updated: updatedCount,
-    total: updatedPlaidAccounts.length,
-    unmatched: unmatchedAccounts.length
+    updated: accounts.length,
+    total: canonicalAccounts.length,
+    unmatched: Math.max(0, existingAccounts.length - accounts.length),
+    accounts: canonicalAccounts,
+    preferences: reconciliation.preferences,
+    visibleAccounts: currentVisibleAccounts,
+    hiddenAccounts,
+    totalBalance,
+    visibilitySchemaVersion: reconciliation.visibilitySchemaVersion
   };
 }
 
