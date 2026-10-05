@@ -335,6 +335,12 @@ useEffect(() => {
     loadTransactionMetrics();
   }, [currentUser]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  useEffect(() => {
+    if (totalTransactionCount !== null && transactions.length >= totalTransactionCount) {
+      setHasMoreTransactions(false);
+    }
+  }, [totalTransactionCount, transactions.length]);
+
   // Keep only the newest page live. Older history is loaded on demand.
   useEffect(() => {
     if (!currentUser) return;
@@ -361,14 +367,12 @@ useEffect(() => {
           ...docSnap.data()
         }));
 
-        const previousRecentIds = recentSnapshotIdsRef.current;
         const newRecentIds = new Set(recentTransactions.map(transaction => transaction.id));
 
         setTransactions(previous => {
-          const olderLoaded = previous.filter(transaction =>
-            !previousRecentIds.has(transaction.id) &&
-            !newRecentIds.has(transaction.id)
-          );
+          const olderLoaded = loadedOlderPagesRef.current
+            ? previous.filter(transaction => !newRecentIds.has(transaction.id))
+            : [];
           return [...recentTransactions, ...olderLoaded];
         });
 
@@ -657,6 +661,15 @@ useEffect(() => {
 
       localStorage.removeItem('smt_firestore_quota_backoff_until');
 
+      if (
+        (data.added || 0) > 0 ||
+        (data.updated || 0) > 0 ||
+        (data.removed || 0) > 0 ||
+        (data.pending_replaced || 0) > 0
+      ) {
+        loadTransactionMetrics();
+      }
+
       // Real-time listener will auto-update, no manual reload needed
       
       // Update last sync timestamp (shared with Accounts.jsx)
@@ -927,6 +940,13 @@ useEffect(() => {
       // Add to local state
       const newTransactionWithId = { id: docRef.id, ...transaction };
       setTransactions(prev => [newTransactionWithId, ...prev]);
+      setTotalTransactionCount(previous => previous === null ? null : previous + 1);
+      if (isCurrentMonthDate(newTransactionWithId.date)) {
+        setMonthlyAnalyticsTransactions(previous => [
+          newTransactionWithId,
+          ...previous.filter(existing => existing.id !== newTransactionWithId.id)
+        ]);
+      }
       
       // Update account balance
       await updateAccountBalance(newTransaction.account, finalAmount);
@@ -993,6 +1013,13 @@ useEffect(() => {
       // Add to local state
       const newTransactionWithId = { id: docRef.id, ...transaction };
       setTransactions(prev => [newTransactionWithId, ...prev]);
+      setTotalTransactionCount(previous => previous === null ? null : previous + 1);
+      if (isCurrentMonthDate(newTransactionWithId.date)) {
+        setMonthlyAnalyticsTransactions(previous => [
+          newTransactionWithId,
+          ...previous.filter(existing => existing.id !== newTransactionWithId.id)
+        ]);
+      }
       
       // Reset form
       setPendingCharge({
@@ -1039,6 +1066,8 @@ useEffect(() => {
   };
 
   const updateTransaction = async (transactionId, updates) => {
+    const existingTransaction = transactions.find(transaction => transaction.id === transactionId);
+
     try {
       setSaving(true);
       setNotification({ message: '', type: '' });
@@ -1066,9 +1095,22 @@ useEffect(() => {
       }
       
       // Update local state
+      const updatedTransaction = existingTransaction
+        ? { ...existingTransaction, ...updates }
+        : null;
+
       setTransactions(prev => prev.map(t => 
         t.id === transactionId ? { ...t, ...updates } : t
       ));
+
+      if (updatedTransaction) {
+        setMonthlyAnalyticsTransactions(previous => {
+          const withoutEdited = previous.filter(transaction => transaction.id !== transactionId);
+          return isCurrentMonthDate(updatedTransaction.date)
+            ? [updatedTransaction, ...withoutEdited]
+            : withoutEdited;
+        });
+      }
       
       showNotification('✅ Transaction updated successfully!', 'success');
       setEditingTransaction(null);
@@ -1153,6 +1195,10 @@ useEffect(() => {
       
       // Remove from local state
       setTransactions(prev => prev.filter(t => t.id !== transactionId));
+      setMonthlyAnalyticsTransactions(prev => prev.filter(t => t.id !== transactionId));
+      setTotalTransactionCount(previous =>
+        previous === null ? null : Math.max(0, previous - 1)
+      );
       
       showNotification('Transaction deleted successfully!', 'success');
     } catch (error) {
