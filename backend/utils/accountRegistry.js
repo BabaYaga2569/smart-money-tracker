@@ -181,11 +181,16 @@ export function reconcileAccountRegistry({
     }
 
     if (newAccountId && !nextPreferences[newAccountId]) {
+      // The legacy Accounts page persisted only depository accounts, so a
+      // credit card missing from the old Firestore array was often a storage bug,
+      // not a user hide choice. Preserve legacy hide behavior for cash accounts,
+      // while keeping newly discovered credit accounts visible.
       const isLegacyHiddenAccount =
         completeSnapshot &&
         visibilitySchemaVersion < ACCOUNT_VISIBILITY_SCHEMA_VERSION &&
         existingAccounts.length > 0 &&
-        !oldAccountId;
+        !oldAccountId &&
+        isDepositoryAccount(fresh);
 
       nextPreferences[newAccountId] = {
         visible: isLegacyHiddenAccount ? false : newAccountsVisible
@@ -195,13 +200,37 @@ export function reconcileAccountRegistry({
     normalizedFresh.push(normalizePlaidAccount(fresh, existing));
   }
 
-  const untouchedExisting = existingAccounts.filter(existing => {
-    if (!existing.account_id) return true;
-    return !matchedExistingIds.has(existing.account_id);
-  });
+  const untouchedExisting = existingAccounts
+    .filter(existing => {
+      if (!existing.account_id) return true;
+      return !matchedExistingIds.has(existing.account_id);
+    })
+    .map(existing => {
+      if (!completeSnapshot) return existing;
+
+      // A full successful Plaid snapshot did not return this account. Keep a
+      // tombstone for transaction/account-name history, but never let a stale
+      // balance remain spendable or visible.
+      if (existing.account_id) {
+        nextPreferences[existing.account_id] = {
+          ...(nextPreferences[existing.account_id] || {}),
+          visible: false
+        };
+      }
+
+      return {
+        ...existing,
+        connection_status: "inactive",
+        disconnectedAt: existing.disconnectedAt || new Date().toISOString()
+      };
+    });
 
   const deduped = [];
-  for (const account of [...untouchedExisting, ...normalizedFresh]) {
+  for (const account of [...untouchedExisting, ...normalizedFresh.map(account => ({
+    ...account,
+    connection_status: "active",
+    disconnectedAt: null
+  }))]) {
     const index = deduped.findIndex(existing => accountIdentityMatch(existing, account));
     if (index === -1) {
       deduped.push(account);
