@@ -499,8 +499,11 @@ async function updateAccountBalances(userId, accounts, options = {}) {
       : account;
   });
 
+  const connectedAccounts = canonicalAccounts.filter(
+    account => account.connection_status !== 'inactive'
+  );
   const accountsWithVisibility = withVisibility(
-    canonicalAccounts,
+    connectedAccounts,
     reconciliation.preferences
   );
   const currentVisibleAccounts = accountsWithVisibility.filter(account => account.visible !== false);
@@ -524,7 +527,7 @@ async function updateAccountBalances(userId, accounts, options = {}) {
     createOperation('update', db.collection('users').doc(userId), {
       totalBalance,
       accountCount: visibleDepositoryAccounts.length,
-      connectedAccountCount: canonicalAccounts.length,
+      connectedAccountCount: connectedAccounts.length,
       hiddenAccountCount: hiddenAccounts.length,
       lastSyncedAt: new Date()
     })
@@ -535,6 +538,7 @@ async function updateAccountBalances(userId, accounts, options = {}) {
   logDiagnostic.info('ACCOUNT_REGISTRY', 'Canonical Plaid account registry reconciled', {
     fresh_accounts: accounts.length,
     canonical_accounts: canonicalAccounts.length,
+    connected_accounts: connectedAccounts.length,
     visible_accounts: currentVisibleAccounts.length,
     hidden_accounts: hiddenAccounts.length,
     visible_depository_accounts: visibleDepositoryAccounts.length,
@@ -547,6 +551,7 @@ async function updateAccountBalances(userId, accounts, options = {}) {
     total: canonicalAccounts.length,
     unmatched: Math.max(0, existingAccounts.length - accounts.length),
     accounts: canonicalAccounts,
+    connectedAccounts,
     preferences: reconciliation.preferences,
     visibleAccounts: currentVisibleAccounts,
     hiddenAccounts,
@@ -1097,7 +1102,7 @@ app.post("/api/plaid/get_balances", async (req, res, next) => {
       success: true,
       accounts: updateResult.visibleAccounts,
       account_count: updateResult.visibleAccounts.length,
-      connected_account_count: updateResult.accounts.length,
+      connected_account_count: updateResult.connectedAccounts.length,
       hidden_account_count: updateResult.hiddenAccounts.length,
       item_count: items.length,
       partial: successfulItems !== items.length,
@@ -1202,7 +1207,7 @@ app.get("/api/accounts", async (req, res, next) => {
     });
 
     const accountsForResponse = includeHidden
-      ? withVisibility(updateResult.accounts, updateResult.preferences)
+      ? withVisibility(updateResult.connectedAccounts, updateResult.preferences)
       : updateResult.visibleAccounts;
 
     res.json({
@@ -1265,7 +1270,7 @@ app.post("/api/accounts/visibility", async (req, res, next) => {
     const canonicalAccounts = settings.plaidAccounts || [];
     const account = canonicalAccounts.find(candidate => candidate.account_id === accountId);
 
-    if (!account) {
+    if (!account || account.connection_status === 'inactive') {
       throw createError.notFound('Connected account not found');
     }
 
@@ -1370,7 +1375,13 @@ app.post("/api/plaid/disconnect_item", async (req, res, next) => {
       if (account.account_id) delete preferences[account.account_id];
     }
 
-    const visibleRemaining = visibleAccounts(remainingAccounts, preferences);
+    const connectedRemaining = remainingAccounts.filter(
+      account => account.connection_status !== 'inactive'
+    );
+    const visibleRemaining = visibleAccounts(connectedRemaining, preferences);
+    const hiddenRemaining = connectedRemaining.filter(
+      account => !visibleRemaining.some(visible => visible.account_id === account.account_id)
+    );
     const visibleDepositoryAccounts = visibleRemaining.filter(isDepositoryAccount);
     const totalBalance = calculateVisibleDepositoryTotal(remainingAccounts, preferences);
 
@@ -1385,8 +1396,8 @@ app.post("/api/plaid/disconnect_item", async (req, res, next) => {
       createOperation('update', db.collection('users').doc(userId), {
         totalBalance,
         accountCount: visibleDepositoryAccounts.length,
-        connectedAccountCount: remainingAccounts.length,
-        hiddenAccountCount: remainingAccounts.length - visibleRemaining.length,
+        connectedAccountCount: connectedRemaining.length,
+        hiddenAccountCount: hiddenRemaining.length,
         lastSyncedAt: new Date()
       })
     ];
