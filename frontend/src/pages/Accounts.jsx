@@ -216,6 +216,14 @@ const Accounts = () => {
   useEffect(() => {
     const autoSyncOnStartup = async () => {
       if (!currentUser) return;
+
+      const quotaBackoffUntil = Number(
+        localStorage.getItem('smt_firestore_quota_backoff_until') || 0
+      );
+      if (Date.now() < quotaBackoffUntil) {
+        console.log('[AutoSync] Firestore quota backoff active, skipping account-page auto-sync');
+        return;
+      }
       
       try {
         // ✅ Query Firebase directly instead of checking React state
@@ -445,12 +453,6 @@ const Accounts = () => {
     try {
       setSyncingPlaid(true);
       
-      // Check if user has Plaid accounts configured
-      if (plaidAccounts.length === 0) {
-        showNotification('Plaid not connected. Please connect your bank account first.', 'warning');
-        return;
-      }
-
       // Determine backend URL
       const backendUrl = import.meta.env.VITE_API_URL || 
         (window.location.hostname === 'localhost' 
@@ -477,15 +479,23 @@ const Accounts = () => {
         })
       });
 
-      if (!response.ok) {
-        throw new Error(`Failed to sync transactions: ${response.statusText}`);
+      const data = await response.json().catch(() => ({}));
+
+      if (!response.ok || !data.success) {
+        if (data.code === 'FIRESTORE_QUOTA_EXCEEDED') {
+          localStorage.setItem(
+            'smt_firestore_quota_backoff_until',
+            String(Date.now() + 30 * 60 * 1000)
+          );
+        }
+        throw new Error(
+          data.message ||
+          data.error ||
+          `Failed to sync transactions: ${response.status} ${response.statusText}`
+        );
       }
 
-      const data = await response.json();
-      
-      if (!data.success) {
-        throw new Error(data.error || 'Failed to sync transactions');
-      }
+      localStorage.removeItem('smt_firestore_quota_backoff_until');
 
       // Real-time listener will auto-update, no manual reload needed
       
