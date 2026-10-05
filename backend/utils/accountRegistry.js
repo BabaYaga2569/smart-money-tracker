@@ -131,6 +131,7 @@ function getPreference(preferences, accountId) {
 export function isAccountVisible(account, preferences = {}) {
   if (!account?.account_id) return true;
 
+  if (account.connection_status === "inactive") return false;
   if (account.visible === false) return false;
 
   const preference = getPreference(preferences, account.account_id);
