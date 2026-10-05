@@ -12,6 +12,7 @@ import {
   IncomeSourcesChart,
   PayFrequencyChart
 } from '../components/charts/PaycycleCharts';
+import { getVisiblePlaidAccounts, isDepositoryAccount } from '../utils/accountVisibility';
 import './Paycycle.css';
 
 const PayCycle = () => {
@@ -124,23 +125,9 @@ const PayCycle = () => {
       
       if (!settingsSnap.exists()) return { totalBalance: 0, accounts: [] };
       
-      const allPlaidAccounts = settingsSnap.data()?.plaidAccounts || [];
-      
-      // Filter to depository accounts only (same logic as Accounts.jsx)
-      const depositoryAccounts = allPlaidAccounts.filter(account => {
-        // Exclude if originalType is 'credit'
-        if (account.originalType === 'credit') return false;
-        
-        // Exclude if originalSubtype is 'credit'
-        if (account.originalSubtype === 'credit') return false;
-        
-        // Exclude if formatted type contains 'credit'
-        const accountType = (account.type || '').toLowerCase();
-        if (accountType.includes('credit')) return false;
-        
-        // Include all other accounts (depository accounts like checking, savings, etc.)
-        return true;
-      });
+      const settings = settingsSnap.data() || {};
+      const allPlaidAccounts = getVisiblePlaidAccounts(settings.plaidAccounts || [], settings);
+      const depositoryAccounts = allPlaidAccounts.filter(isDepositoryAccount);
       
       const totalBalance = depositoryAccounts.reduce((sum, account) => 
         sum + (parseFloat(account.balance) || 0), 0
