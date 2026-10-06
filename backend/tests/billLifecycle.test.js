@@ -377,3 +377,242 @@ test('auto/Plaid payments cannot be unmarked through the manual reversal endpoin
   assert.equal(result.success, false);
   assert.equal(result.reason, 'ONLY_CANONICAL_MANUAL_PAYMENTS_CAN_BE_UNMARKED');
 });
+
+
+test('seasonal recurring pattern skips inactive months', async () => {
+  const patternPath = `users/${userId}/recurringPatterns/rams-pattern`;
+  const seasonalBillPath = `users/${userId}/financialEvents/rams-bill`;
+  const db = createDb({
+    [seasonalBillPath]: {
+      type: 'bill',
+      name: 'Season Tickets Rams',
+      amount: 601,
+      dueDate: '2026-08-15',
+      isPaid: false,
+      status: 'pending',
+      recurrence: 'monthly',
+      recurringPatternId: 'rams-pattern'
+    },
+    [patternPath]: {
+      name: 'Season Tickets Rams',
+      amount: 601,
+      frequency: 'monthly',
+      nextOccurrence: '2026-08-15',
+      activeMonths: [1,2,3,4,5,6,7,8,11,12],
+      scheduleRule: { kind: 'dayOfMonth', day: 15 }
+    }
+  });
+
+  const result = await applyManualBillPayment(
+    db,
+    userId,
+    'rams-bill',
+    { paidDate: '2026-08-15' }
+  );
+
+  assert.equal(result.success, true);
+  assert.equal(result.nextOccurrence, '2026-11-15');
+  assert.equal(db.store.get(patternPath).nextOccurrence, '2026-11-15');
+  assert.equal(
+    db.store.has(`users/${userId}/financialEvents/bill_rams-pattern_2026-09-15`),
+    false
+  );
+  assert.equal(
+    db.store.has(`users/${userId}/financialEvents/bill_rams-pattern_2026-11-15`),
+    true
+  );
+});
+
+test('quarter-end recurring pattern preserves quarter-end last day', async () => {
+  const patternPath = `users/${userId}/recurringPatterns/republic-pattern`;
+  const republicBillPath = `users/${userId}/financialEvents/republic-bill`;
+  const db = createDb({
+    [republicBillPath]: {
+      type: 'bill',
+      name: 'Republic Services',
+      amount: 59.19,
+      dueDate: '2026-09-30',
+      isPaid: false,
+      status: 'pending',
+      recurrence: 'quarterly',
+      recurringPatternId: 'republic-pattern'
+    },
+    [patternPath]: {
+      name: 'Republic Services',
+      amount: 59.19,
+      frequency: 'quarterly',
+      nextOccurrence: '2026-09-30',
+      scheduleRule: {
+        kind: 'quarterEndLastDay',
+        months: [3, 6, 9, 12]
+      }
+    }
+  });
+
+  const result = await applyManualBillPayment(
+    db,
+    userId,
+    'republic-bill',
+    { paidDate: '2026-09-30' }
+  );
+
+  assert.equal(result.success, true);
+  assert.equal(result.nextOccurrence, '2026-12-31');
+  assert.equal(db.store.get(patternPath).nextOccurrence, '2026-12-31');
+  assert.equal(
+    db.store.has(`users/${userId}/financialEvents/bill_republic-pattern_2026-12-31`),
+    true
+  );
+});
+
+test('installment plan generates final occurrence with exact final amount', async () => {
+  const patternPath = `users/${userId}/recurringPatterns/amazon-pattern`;
+  const installmentBillPath = `users/${userId}/financialEvents/amazon-oct`;
+  const db = createDb({
+    [installmentBillPath]: {
+      type: 'bill',
+      name: 'Affirm Dog Water Bowl and Vacuum',
+      amount: 21.21,
+      dueDate: '2026-10-07',
+      isPaid: false,
+      status: 'pending',
+      recurrence: 'monthly',
+      recurringPatternId: 'amazon-pattern'
+    },
+    [patternPath]: {
+      name: 'Affirm Dog Water Bowl and Vacuum',
+      amount: 21.21,
+      frequency: 'monthly',
+      nextOccurrence: '2026-10-07',
+      scheduleRule: { kind: 'dayOfMonth', day: 7 },
+      installmentPlan: true,
+      remainingPayments: 2,
+      remainingBalance: 42.39,
+      endDate: '2026-11-07',
+      finalPaymentAmount: 21.18
+    }
+  });
+
+  const result = await applyManualBillPayment(
+    db,
+    userId,
+    'amazon-oct',
+    { paidDate: '2026-10-07', amount: 21.21 }
+  );
+
+  assert.equal(result.success, true);
+  assert.equal(result.completed, false);
+  assert.equal(result.nextOccurrence, '2026-11-07');
+
+  const pattern = db.store.get(patternPath);
+  assert.equal(pattern.remainingPayments, 1);
+  assert.equal(pattern.remainingBalance, 21.18);
+  assert.equal(pattern.nextOccurrence, '2026-11-07');
+
+  const finalBill = db.store.get(
+    `users/${userId}/financialEvents/bill_amazon-pattern_2026-11-07`
+  );
+  assert.equal(finalBill.amount, 21.18);
+  assert.equal(finalBill.dueDate, '2026-11-07');
+});
+
+test('final installment completes pattern and creates no future bill', async () => {
+  const patternPath = `users/${userId}/recurringPatterns/vevor-pattern`;
+  const finalBillPath = `users/${userId}/financialEvents/vevor-final`;
+  const db = createDb({
+    [finalBillPath]: {
+      type: 'bill',
+      name: 'Affirm Vevor Meat Slicer',
+      amount: 35.83,
+      dueDate: '2026-10-10',
+      isPaid: false,
+      status: 'pending',
+      recurrence: 'monthly',
+      recurringPatternId: 'vevor-pattern'
+    },
+    [patternPath]: {
+      name: 'Affirm Vevor Meat Slicer',
+      amount: 35.83,
+      frequency: 'monthly',
+      nextOccurrence: '2026-10-10',
+      scheduleRule: { kind: 'dayOfMonth', day: 10 },
+      installmentPlan: true,
+      remainingPayments: 1,
+      remainingBalance: 35.83,
+      endDate: '2026-10-10',
+      finalPaymentAmount: 35.83,
+      status: 'active'
+    }
+  });
+
+  const result = await applyManualBillPayment(
+    db,
+    userId,
+    'vevor-final',
+    { paidDate: '2026-10-10', amount: 35.83 }
+  );
+
+  assert.equal(result.success, true);
+  assert.equal(result.completed, true);
+  assert.equal(result.generated, false);
+  assert.equal(result.nextOccurrence, null);
+
+  const pattern = db.store.get(patternPath);
+  assert.equal(pattern.status, 'ended');
+  assert.equal(pattern.nextOccurrence, null);
+  assert.equal(pattern.remainingPayments, 0);
+  assert.equal(pattern.remainingBalance, 0);
+  assert.equal(
+    db.store.has(`users/${userId}/financialEvents/bill_vevor-pattern_2026-11-10`),
+    false
+  );
+});
+
+test('manual final installment can be unmarked and restores installment state', async () => {
+  const patternPath = `users/${userId}/recurringPatterns/vevor-pattern`;
+  const finalBillPath = `users/${userId}/financialEvents/vevor-final`;
+  const db = createDb({
+    [finalBillPath]: {
+      type: 'bill',
+      name: 'Affirm Vevor Meat Slicer',
+      amount: 35.83,
+      dueDate: '2026-10-10',
+      isPaid: false,
+      status: 'pending',
+      recurrence: 'monthly',
+      recurringPatternId: 'vevor-pattern'
+    },
+    [patternPath]: {
+      name: 'Affirm Vevor Meat Slicer',
+      amount: 35.83,
+      frequency: 'monthly',
+      nextOccurrence: '2026-10-10',
+      scheduleRule: { kind: 'dayOfMonth', day: 10 },
+      installmentPlan: true,
+      remainingPayments: 1,
+      remainingBalance: 35.83,
+      endDate: '2026-10-10',
+      finalPaymentAmount: 35.83,
+      status: 'active'
+    }
+  });
+
+  const paid = await applyManualBillPayment(
+    db,
+    userId,
+    'vevor-final',
+    { paidDate: '2026-10-10', amount: 35.83 }
+  );
+  assert.equal(paid.completed, true);
+
+  const unmarked = await unmarkManualBillPayment(db, userId, 'vevor-final');
+  assert.equal(unmarked.success, true);
+  assert.equal(unmarked.unmarked, true);
+
+  const pattern = db.store.get(patternPath);
+  assert.equal(pattern.status, 'active');
+  assert.equal(pattern.nextOccurrence, '2026-10-10');
+  assert.equal(pattern.remainingPayments, 1);
+  assert.equal(pattern.remainingBalance, 35.83);
+  assert.equal(db.store.get(finalBillPath).isPaid, false);
+});
