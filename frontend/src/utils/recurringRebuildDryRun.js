@@ -274,6 +274,12 @@ export function buildRecurringRebuildDryRun(currentPatterns, proposal, reviewIte
         changes.push('Installment plan: not configured → finite plan');
       }
 
+      if (target.nextOccurrence && matched.nextOccurrence !== target.nextOccurrence) {
+        changes.push(
+          `Next payment: ${matched.nextOccurrence || 'not configured'} → ${target.nextOccurrence}`
+        );
+      }
+
       if (Number(matched.remainingPayments) !== Number(target.remainingPayments)) {
         changes.push(
           `Payments left: ${matched.remainingPayments ?? 'not configured'} → ${target.remainingPayments}`
