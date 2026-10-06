@@ -258,3 +258,106 @@
     opacity: 1;
   }
 }
+
+/* ===== Responsive audit: dashboard ===== */
+@media (max-width: 1024px) {
+  .dashboard-container {
+    padding: 18px 16px;
+  }
+
+  .backend-status {
+    flex-wrap: wrap !important;
+    gap: 10px !important;
+  }
+
+  .health-status-container {
+    width: 100%;
+    overflow: hidden;
+  }
+
+  .dashboard-tiles-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 16px;
+  }
+
+  .dashboard-tile {
+    min-width: 0;
+  }
+
+  .tile-subtitle {
+    overflow-wrap: anywhere;
+  }
+}
+
+@media (max-width: 640px) {
+  .dashboard-container {
+    padding: 12px;
+  }
+
+  .page-header {
+    margin-bottom: 20px;
+  }
+
+  .page-header h2 {
+    font-size: 1.65rem;
+    line-height: 1.15;
+  }
+
+  .page-header p {
+    font-size: 0.95rem;
+  }
+
+  .backend-status {
+    align-items: stretch !important;
+  }
+
+  .backend-status > div {
+    flex: 1 1 100%;
+    justify-content: center;
+    min-width: 0;
+  }
+
+  .dashboard-tiles-grid {
+    grid-template-columns: 1fr;
+    gap: 12px;
+  }
+
+  .dashboard-tile {
+    padding: 16px;
+  }
+
+  .tile-header {
+    margin-bottom: 10px;
+  }
+
+  .tile-icon {
+    font-size: 1.6rem;
+  }
+
+  .tile-header h3 {
+    font-size: 1.05rem;
+  }
+
+  .tile-content {
+    margin-bottom: 14px;
+  }
+
+  .tile-value {
+    font-size: 1.35rem;
+    overflow-wrap: anywhere;
+  }
+
+  .tile-button {
+    min-height: 44px;
+  }
+}
+
+@media (max-width: 420px) {
+  .dashboard-container {
+    padding: 10px;
+  }
+
+  .page-header h2 {
+    font-size: 1.45rem;
+  }
+}
