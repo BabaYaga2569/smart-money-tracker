@@ -25,12 +25,13 @@ export const RECURRING_REBUILD_PROPOSAL = [
   monthly('Dodge Challenger Tracker', 8.95, 3, null, { aliases: ['Challenger Tracker'] }),
   monthly('Starlink Internet', 35.00, 4, null, { aliases: ['Starlink'] }),
   monthly('Pierce Prime Platinum Movies', 37.45, 6, null, { aliases: ['Pierceprime', 'Pierce Prime'] }),
-  monthly('Affirm Dog Water Bowl and Vacuum', 21.21, 7, 'Capital One', { aliases: ['Affirm'] }),
+  monthly('Affirm Dog Water Bowl and Vacuum', 21.21, 7, 'Capital One'),
   monthly('Geico SXS', 31.42, 8, 'Bank of America'),
   monthly('LAS VEGAS VALLEY Water Bill', 26.30, 8, 'SoFi', { aliases: ['Valley', 'Las Vegas Valley Water District'] }),
   monthly('Barclay Card', 30.00, 9, 'Capital One', { aliases: ['Barclays'] }),
-  monthly('Geico For all cars kids included', 496.94, 10, null, { aliases: ['GEICO'] }),
-  monthly('Affirm Vevor Meat Slicer', 42.96, 10, null, { aliases: ['Affirm'] }),
+  monthly('Geico For all cars kids included', 496.94, 10, null, { aliases: ['Geico Charger Durango', 'Geico Charger Durango and Challenger', 'Geico Charger, Durango, and Challenger'] }),
+  monthly('Walmart Card', null, 10, null, { variableAmount: true, amountNote: 'Amount is set month-to-month based on actual card usage.' }),
+  monthly('Affirm Vevor Meat Slicer', 42.96, 10, null),
   monthly('Clean Freak Car Wash Subscription', 27.00, 11, null, { aliases: ['Clean Freak Car Wash'] }),
   monthly('CVS Membership', 5.00, 12, null, { aliases: ['CVS Pharmacy', 'CVS ExtraCare'] }),
   monthly('Rent - Raylene (15th)', 350.00, 15, 'Capital One', { aliases: ['Zelle to Raylene'] }),
@@ -49,11 +50,11 @@ export const RECURRING_REBUILD_PROPOSAL = [
   monthly('Peacock / Apple Pay', 12.99, 17, null, { aliases: ['Peacock'] }),
   monthly('Clean Freak Tancis Car', 27.00, 17, null, { aliases: ['Clean Freak Car Wash'] }),
   monthly('Disney Plus / Apple Pay', 18.99, 19, null, { aliases: ['Disney Plus'] }),
-  monthly('Affirm Buffet setup and Network Switch', 32.46, 19, null, { aliases: ['Affirm'] }),
+  monthly('Affirm Buffet setup and Network Switch', 32.46, 19, null),
   monthly('Sirius Bubba', 12.99, 19, null, { aliases: ['SiriusXM'] }),
   monthly('Courtneys BofA Credit Card', 200.00, 20, null),
   monthly('T-Mobile Cell Phone Bill', 485.26, 21, null, { aliases: ['T-Mobile'] }),
-  monthly('Family Apple Music / Apple Pay', 19.99, 21, null, { aliases: ['Apple Music'] }),
+  monthly('Family Apple Music / Apple Pay', 19.99, 21, null, { aliases: ['Family Apple Music', 'Apple Music'] }),
   monthly('Optimum Cell Phone', 15.64, 25, 'Bank of America', { aliases: ['Optimum', 'Optimum Mobile'] }),
   monthly('NV Energy', 177.00, 26, 'Bank of America'),
   monthly('GitHub Subscription', 10.00, 26, null, { aliases: ['GitHub'] }),
@@ -63,11 +64,10 @@ export const RECURRING_REBUILD_PROPOSAL = [
   monthly('Southwest Gas', 36.62, 29, null),
   monthly('Google One Storage', 19.99, 30, null, { aliases: ['Google One'] }),
   monthly('Bankruptcy Payment', 1390.99, 30, null),
-  {
-    ...monthly('Rent - Raylene (Month End)', 350.00, 31, 'Capital One', { aliases: ['Zelle to Raylene'] }),
-    scheduleRule: { kind: 'lastDayOfMonth' },
-    engineRequirement: 'last-day-of-month',
-  },
+  monthly('Rent - Raylene (30th)', 350.00, 30, 'Capital One', {
+    aliases: ['Zelle to Raylene'],
+    scheduleNote: 'Second partial rent payment; fixed on the 30th.'
+  }),
   {
     name: 'Republic Services',
     amount: 59.19,
@@ -87,21 +87,10 @@ export const RECURRING_REBUILD_PROPOSAL = [
 
 // TEMPLATE rows intentionally not auto-imported because they are not normal
 // recurring bills or do not contain enough information to safely create one.
-export const RECURRING_REBUILD_REVIEW = [
-  {
-    sourceName: 'Walmart Card',
-    reason: 'TEMPLATE has no forecast amount. October currently shows $200, but TEMPLATE remains authoritative.',
-    suggestedAction: 'Confirm amount before import.',
-  },
-  {
-    sourceName: 'Food',
-    amount: 500,
-    reason: 'Looks like a household budget envelope rather than a merchant bill.',
-    suggestedAction: 'Keep in budgeting/Safe-to-Spend unless you want it represented as a recurring obligation.',
-  },
-];
+export const RECURRING_REBUILD_REVIEW = [];
 
 export const RECURRING_REBUILD_EXCLUSIONS = [
   { sourceName: 'Tanci Pay Day', reason: 'Income, not a bill.' },
   { sourceName: 'Trans to Cap1 Rent', reason: 'Internal transfer; the actual rent obligation is represented separately.' },
+  { sourceName: 'Food', reason: 'Cash-flow / food spending buffer, not a bill due on one date.' },
 ];
