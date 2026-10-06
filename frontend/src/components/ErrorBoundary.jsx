@@ -84,6 +84,17 @@ class ErrorBoundary extends React.Component {
             errorInfo: this.state.errorInfo
           });
         }
+
+        if (typeof this.props.fallback === 'function') {
+          const FallbackComponent = this.props.fallback;
+          return (
+            <FallbackComponent
+              error={this.state.error}
+              errorInfo={this.state.errorInfo}
+            />
+          );
+        }
+
         return this.props.fallback;
       }
 
