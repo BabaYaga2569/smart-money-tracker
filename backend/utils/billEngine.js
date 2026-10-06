@@ -57,6 +57,7 @@ export async function ensureCurrentBillOccurrences({
   let seeded = 0;
   let linked = 0;
   let skippedNoAmount = 0;
+  let ambiguousLegacy = 0;
 
   for (const pattern of activePatterns) {
     const dueDate = String(pattern.nextOccurrence).slice(0, 10);
@@ -93,6 +94,17 @@ export async function ensureCurrentBillOccurrences({
       existingKeys.add(key);
       linked += 1;
       writes += 1;
+      continue;
+    }
+
+    if (safeLegacyCandidates.length > 1) {
+      ambiguousLegacy += 1;
+      log?.warn?.('[BILL_ENGINE] Ambiguous legacy bill occurrence; refusing to seed duplicate', {
+        recurringPatternId: pattern.id,
+        patternName: pattern.name,
+        dueDate,
+        candidateBillIds: safeLegacyCandidates.map(candidate => candidate.id)
+      });
       continue;
     }
 
@@ -134,7 +146,8 @@ export async function ensureCurrentBillOccurrences({
     log?.info?.('[BILL_ENGINE] Ensured current recurring bill occurrences', {
       seeded,
       linked,
-      skippedNoAmount
+      skippedNoAmount,
+      ambiguousLegacy
     });
   }
 
@@ -142,7 +155,8 @@ export async function ensureCurrentBillOccurrences({
     bills,
     seeded,
     linked,
-    skippedNoAmount
+    skippedNoAmount,
+    ambiguousLegacy
   };
 }
 
@@ -219,6 +233,7 @@ export async function runCanonicalBillEngine({
       linked: occurrenceResult.linked,
       seeded: occurrenceResult.seeded,
       skippedNoAmount: occurrenceResult.skippedNoAmount,
+      ambiguousLegacy: occurrenceResult.ambiguousLegacy,
       billsScanned: unpaidBills.length,
       transactionsScanned: transactions.length,
       patternsScanned: patterns.length
@@ -246,6 +261,7 @@ export async function runCanonicalBillEngine({
     seeded: occurrenceResult.seeded,
     linked: occurrenceResult.linked,
     skippedNoAmount: occurrenceResult.skippedNoAmount,
+    ambiguousLegacy: occurrenceResult.ambiguousLegacy,
     billsScanned: unpaidBills.length,
     transactionsScanned: transactions.length,
     patternsScanned: patterns.length
