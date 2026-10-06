@@ -1,11 +1,22 @@
 const normalizeName = (value) =>
   String(value || '')
     .toLowerCase()
-    .replace(/[^a-z0-9]/g, '');
+    .replace(/&/g, ' and ')
+    .replace(/[^a-z0-9]+/g, ' ')
+    .trim();
+
+const compactName = (value) => normalizeName(value).replace(/\s+/g, '');
+
+const tokens = (value) =>
+  normalizeName(value)
+    .split(/\s+/)
+    .filter(Boolean)
+    .filter(token => !['the', 'and', 'for', 'payment', 'bill', 'card'].includes(token));
 
 const money = (value) => {
+  if (value === null || value === undefined || value === '') return null;
   const parsed = Number(value);
-  return Number.isFinite(parsed) ? Math.round(parsed * 100) / 100 : 0;
+  return Number.isFinite(parsed) ? Math.round(parsed * 100) / 100 : null;
 };
 
 const frequency = (value) =>
@@ -29,10 +40,24 @@ const arraysEqual = (a = [], b = []) => {
   return left.length === right.length && left.every((value, index) => value === right[index]);
 };
 
+const tokenSimilarity = (left, right) => {
+  const a = new Set(tokens(left));
+  const b = new Set(tokens(right));
+  if (!a.size || !b.size) return 0;
+
+  let intersection = 0;
+  a.forEach(token => {
+    if (b.has(token)) intersection += 1;
+  });
+
+  return (2 * intersection) / (a.size + b.size);
+};
+
+const isAffirm = (value) => normalizeName(value).includes('affirm');
+
 const scheduleLabel = (proposal) => {
   const rule = proposal.scheduleRule || {};
   if (rule.kind === 'dayOfMonth') return `Monthly on day ${rule.day}`;
-  if (rule.kind === 'lastDayOfMonth') return 'Monthly on the last day of the month';
   if (rule.kind === 'quarterEndLastDay') return 'Quarterly on Mar/Jun/Sep/Dec month-end';
   return proposal.frequency || 'monthly';
 };
@@ -45,57 +70,156 @@ const compactCurrent = (item) => ({
   nextOccurrence: item.nextOccurrence || item.nextDueDate || item.dueDate || null,
   type: item.type || 'expense',
   status: item.status || 'active',
+  category: item.category || null,
+  institutionName:
+    item.institutionName ||
+    item.institution ||
+    item.linkedInstitution ||
+    item.accountInstitution ||
+    null,
+  linkedAccount: item.linkedAccount || item.accountId || null,
+  variableAmount: Boolean(item.variableAmount),
   customRecurrence: Boolean(item.customRecurrence),
   activeMonths: item.activeMonths || [],
 });
 
 const compactProposal = (proposal) => ({
   ...proposal,
+  amount: money(proposal.amount),
   scheduleLabel: scheduleLabel(proposal),
 });
+
+const aliasExact = (currentName, target) => {
+  const current = compactName(currentName);
+  return (target.aliases || []).some(alias => compactName(alias) === current);
+};
+
+const nameEvidence = (currentName, target) => {
+  const current = compactName(currentName);
+  const proposed = compactName(target.name);
+
+  if (current === proposed) return { score: 100, reason: 'exact-name' };
+  if (aliasExact(currentName, target)) return { score: 95, reason: 'known-alias' };
+
+  const similarity = tokenSimilarity(currentName, target.name);
+  if (similarity >= 0.86) return { score: 70, reason: 'strong-name-similarity' };
+
+  const currentNormalized = normalizeName(currentName);
+  const targetNormalized = normalizeName(target.name);
+  if (
+    currentNormalized.length >= 8 &&
+    targetNormalized.length >= 8 &&
+    (currentNormalized.includes(targetNormalized) || targetNormalized.includes(currentNormalized))
+  ) {
+    return { score: 65, reason: 'name-contained' };
+  }
+
+  if (similarity >= 0.65) return { score: 45, reason: 'moderate-name-similarity' };
+  return { score: 0, reason: null };
+};
+
+const scoreCandidate = (current, target) => {
+  const name = nameEvidence(current.name, target);
+  let score = name.score;
+  const reasons = name.reason ? [name.reason] : [];
+
+  const currentAmount = money(current.amount);
+  const targetAmount = money(target.amount);
+  const amountComparable = !target.variableAmount && targetAmount !== null && currentAmount !== null;
+  const amountMatches = amountComparable && Math.abs(currentAmount - targetAmount) <= 0.01;
+
+  if (amountMatches) {
+    score += 20;
+    reasons.push('amount');
+  }
+
+  const currentDay = dateDay(current.nextOccurrence);
+  const targetDay = target.scheduleRule?.kind === 'dayOfMonth'
+    ? target.scheduleRule.day
+    : null;
+  const dayMatches = currentDay && targetDay && currentDay === targetDay;
+
+  if (dayMatches) {
+    score += 15;
+    reasons.push('due-day');
+  }
+
+  if (frequency(current.frequency) === frequency(target.frequency)) {
+    score += 5;
+    reasons.push('frequency');
+  }
+
+  const currentInstitution = compactName(current.institutionName);
+  const targetInstitution = compactName(target.institutionName);
+  if (currentInstitution && targetInstitution && currentInstitution === targetInstitution) {
+    score += 5;
+    reasons.push('institution');
+  }
+
+  // Distinct Affirm installment plans must not collapse just because the
+  // merchant name contains "Affirm". Require strong name evidence, or both
+  // amount and due-day evidence, before considering the candidate.
+  if (isAffirm(current.name) || isAffirm(target.name)) {
+    const strongAffirmIdentity =
+      name.score >= 65 ||
+      (amountMatches && dayMatches);
+
+    if (!strongAffirmIdentity) {
+      return { score: -1, reasons: ['affirm-identity-not-proven'] };
+    }
+  }
+
+  return { score, reasons };
+};
+
+const bestMatchForTarget = (availableCurrent, target) => {
+  const ranked = availableCurrent
+    .map(current => ({
+      current,
+      ...scoreCandidate(current, target),
+    }))
+    .filter(candidate => candidate.score >= 0)
+    .sort((a, b) => b.score - a.score);
+
+  if (!ranked.length) return null;
+
+  const best = ranked[0];
+  const second = ranked[1];
+
+  // Exact/known alias matches are safe. Fuzzy matches need corroboration and
+  // must beat the runner-up by enough margin to avoid accidental merges.
+  const hasStrongIdentity = best.reasons.includes('exact-name') || best.reasons.includes('known-alias');
+  const hasCorroboration =
+    best.reasons.includes('amount') ||
+    best.reasons.includes('due-day') ||
+    best.reasons.includes('institution');
+
+  if (hasStrongIdentity && best.score >= 95) return best;
+
+  if (best.score >= 80 && hasCorroboration) {
+    if (!second || best.score - second.score >= 12) return best;
+  }
+
+  return null;
+};
 
 export function buildRecurringRebuildDryRun(currentPatterns, proposal, reviewItems = [], exclusions = []) {
   const current = (currentPatterns || []).map(compactCurrent);
   const proposed = (proposal || []).map(compactProposal);
-
-  const exactIndex = new Map();
-  const aliasIndex = new Map();
-
-  proposed.forEach((item, index) => {
-    const exact = normalizeName(item.name);
-    if (exact) exactIndex.set(exact, index);
-
-    for (const alias of item.aliases || []) {
-      const key = normalizeName(alias);
-      if (!key) continue;
-      if (!aliasIndex.has(key)) aliasIndex.set(key, []);
-      aliasIndex.get(key).push(index);
-    }
-  });
-
   const usedCurrentIds = new Set();
   const results = [];
 
-  proposed.forEach((target, proposalIndex) => {
-    let matched = current.find(item =>
-      !usedCurrentIds.has(item.id) &&
-      normalizeName(item.name) === normalizeName(target.name)
-    );
-
-    if (!matched) {
-      const possibleCurrent = current.filter(item => {
-        if (usedCurrentIds.has(item.id)) return false;
-        const indexes = aliasIndex.get(normalizeName(item.name)) || [];
-        return indexes.length === 1 && indexes[0] === proposalIndex;
-      });
-      if (possibleCurrent.length === 1) matched = possibleCurrent[0];
-    }
+  proposed.forEach(target => {
+    const availableCurrent = current.filter(item => !usedCurrentIds.has(item.id));
+    const match = bestMatchForTarget(availableCurrent, target);
+    const matched = match?.current || null;
 
     if (!matched) {
       results.push({
         action: 'add',
         current: null,
         proposed: target,
+        matchReasons: [],
         changes: ['New recurring pattern'],
       });
       return;
@@ -104,8 +228,20 @@ export function buildRecurringRebuildDryRun(currentPatterns, proposal, reviewIte
     usedCurrentIds.add(matched.id);
     const changes = [];
 
-    if (Math.abs(matched.amount - money(target.amount)) > 0.009) {
-      changes.push(`Amount: $${matched.amount.toFixed(2)} → $${money(target.amount).toFixed(2)}`);
+    if (!target.variableAmount) {
+      const currentAmount = money(matched.amount);
+      const targetAmount = money(target.amount);
+      if (
+        currentAmount !== null &&
+        targetAmount !== null &&
+        Math.abs(currentAmount - targetAmount) > 0.009
+      ) {
+        changes.push(
+          `Amount: $${currentAmount.toFixed(2)} → $${targetAmount.toFixed(2)}`
+        );
+      }
+    } else if (!matched.variableAmount) {
+      changes.push('Amount mode: fixed → variable');
     }
 
     if (frequency(matched.frequency) !== frequency(target.frequency)) {
@@ -119,24 +255,41 @@ export function buildRecurringRebuildDryRun(currentPatterns, proposal, reviewIte
       }
     }
 
-    if (target.customRecurrence &&
-        (!matched.customRecurrence || !arraysEqual(matched.activeMonths, target.activeMonths))) {
+    if (
+      target.customRecurrence &&
+      (!matched.customRecurrence || !arraysEqual(matched.activeMonths, target.activeMonths))
+    ) {
       changes.push(
         `Active months: ${matched.activeMonths?.length ? matched.activeMonths.join(',') : 'not configured'} → ${target.activeMonths.join(',')}`
       );
+    }
+
+    if (normalizeName(matched.name) !== normalizeName(target.name)) {
+      changes.push(`Canonical name: ${matched.name} → ${target.name}`);
     }
 
     results.push({
       action: changes.length ? 'update' : 'keep',
       current: matched,
       proposed: target,
+      matchReasons: match?.reasons || [],
       changes,
     });
   });
 
   const unmatchedCurrent = current.filter(item => !usedCurrentIds.has(item.id));
   const preserve = unmatchedCurrent.filter(item => item.type !== 'expense');
-  const remove = unmatchedCurrent.filter(item => item.type === 'expense');
+  const unmatchedExpense = unmatchedCurrent.filter(item => item.type === 'expense');
+
+  const unmatchedReviews = unmatchedExpense.map(item => ({
+    sourceName: item.name,
+    amount: item.amount,
+    reason: 'Existing expense pattern could not be matched confidently to the TEMPLATE proposal.',
+    suggestedAction: 'Review before any retirement decision.',
+    currentPattern: item,
+  }));
+
+  const allReviewItems = [...reviewItems, ...unmatchedReviews];
 
   const engineRequirements = [...new Set(
     proposed.map(item => item.engineRequirement).filter(Boolean)
@@ -149,16 +302,16 @@ export function buildRecurringRebuildDryRun(currentPatterns, proposal, reviewIte
       keep: results.filter(item => item.action === 'keep').length,
       update: results.filter(item => item.action === 'update').length,
       add: results.filter(item => item.action === 'add').length,
-      removeCandidates: remove.length,
+      unmatchedExisting: unmatchedExpense.length,
       preserveNonExpense: preserve.length,
-      needsReview: reviewItems.length,
+      needsReview: allReviewItems.length,
     },
     results,
-    removeCandidates: remove,
+    unmatchedExisting: unmatchedExpense,
     preserveNonExpense: preserve,
-    reviewItems,
+    reviewItems: allReviewItems,
     exclusions,
     engineRequirements,
-    safeToApply: engineRequirements.length === 0 && reviewItems.length === 0,
+    safeToApply: engineRequirements.length === 0 && allReviewItems.length === 0,
   };
 }

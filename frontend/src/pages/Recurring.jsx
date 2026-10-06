@@ -1479,7 +1479,7 @@ const Recurring = () => {
                   ['Keep', rebuildDryRun.summary.keep],
                   ['Update', rebuildDryRun.summary.update],
                   ['Add', rebuildDryRun.summary.add],
-                  ['Remove?', rebuildDryRun.summary.removeCandidates],
+                  ['Unmatched', rebuildDryRun.summary.unmatchedExisting],
                   ['Review', rebuildDryRun.summary.needsReview],
                 ].map(([label, value]) => (
                   <div key={label} style={{ padding: '12px', border: '1px solid #ddd', borderRadius: '8px', textAlign: 'center' }}>
@@ -1496,7 +1496,6 @@ const Recurring = () => {
                     {rebuildDryRun.engineRequirements.map(requirement => (
                       <li key={requirement}>
                         {requirement === 'active-months' && 'Seasonal active-month support: Rams must skip September and October.'}
-                        {requirement === 'last-day-of-month' && 'True last-day-of-month support for the month-end rent occurrence.'}
                         {requirement === 'quarter-end-last-day' && 'Quarter-end last-day support for Republic Services.'}
                       </li>
                     ))}
@@ -1543,7 +1542,9 @@ const Recurring = () => {
                           )}
                         </td>
                         <td style={{ padding: '8px', borderBottom: '1px solid #eee', textAlign: 'right' }}>
-                          {'$' + Number(row.proposed.amount || 0).toFixed(2)}
+                          {row.proposed.variableAmount
+                            ? 'Variable'
+                            : '$' + Number(row.proposed.amount || 0).toFixed(2)}
                         </td>
                         <td style={{ padding: '8px', borderBottom: '1px solid #eee' }}>
                           {row.proposed.scheduleLabel}
@@ -1560,14 +1561,14 @@ const Recurring = () => {
                 </table>
               </div>
 
-              {rebuildDryRun.removeCandidates.length > 0 && (
+              {rebuildDryRun.unmatchedExisting.length > 0 && (
                 <div style={{ marginTop: '20px' }}>
-                  <h4>🟥 Existing expense patterns not found in the TEMPLATE proposal</h4>
+                  <h4>🟨 Existing expense patterns still unmatched</h4>
                   <p style={{ fontSize: '13px' }}>
-                    These are candidates for retirement only. This dry run does not delete them.
+                    These are not deletion candidates. They require review because the matcher could not prove a safe TEMPLATE match.
                   </p>
                   <ul>
-                    {rebuildDryRun.removeCandidates.map(item => (
+                    {rebuildDryRun.unmatchedExisting.map(item => (
                       <li key={item.id}>
                         {item.name} — {'$' + Number(item.amount || 0).toFixed(2)} — {item.frequency}
                       </li>
