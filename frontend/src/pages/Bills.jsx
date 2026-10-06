@@ -1,5 +1,5 @@
 import React, { useMemo, useState, useEffect } from "react";
-import { collection, doc, onSnapshot, orderBy, query, updateDoc, getDoc, addDoc, where, getDocs, setDoc, deleteDoc, serverTimestamp, arrayUnion } from "firebase/firestore";
+import { collection, doc, orderBy, query, updateDoc, getDoc, addDoc, where, getDocs, setDoc, deleteDoc, serverTimestamp, arrayUnion } from "firebase/firestore";
 import { db } from "../firebase";
 import { useAuth } from "../contexts/AuthContext";
 import { RecurringBillManager } from '../utils/RecurringBillManager';
@@ -505,79 +505,36 @@ console.log(`✅ Normalized template date for ${template.name}:  ${templateDate}
     }
   };
 
-  // Load recurring bills from recurringPatterns collection and auto-generate instances
+  // Load recurring templates for display only. Bills must never generate or
+  // mutate bill occurrences merely because the page was opened.
   useEffect(() => {
     if (!currentUser) return;
 
-    const recurringPatternsRef = collection(db, 'users', currentUser.uid, 'recurringPatterns');
-    const unsubscribe = onSnapshot(
-      recurringPatternsRef,
-      async (snapshot) => {
+    const loadRecurringTemplatesForDisplay = async () => {
+      try {
+        const recurringPatternsRef = collection(
+          db,
+          'users',
+          currentUser.uid,
+          'recurringPatterns'
+        );
+        const snapshot = await getDocs(recurringPatternsRef);
         const patterns = snapshot.docs.map(doc => ({
           id: doc.id,
           ...doc.data()
         }));
-        // Filter for active patterns only
-        const bills = patterns.filter(pattern => 
-          pattern.status === 'active'
+
+        setRecurringBills(
+          patterns.filter(pattern => pattern.status === 'active')
         );
-        setRecurringBills(bills);
-        
-        // Auto-generate bill instances when new recurring patterns are added or modified
-// Don't process if settings haven't loaded yet
-if (!settingsLoaded || userSettings === null) {
-  console.log('[AutoBillDetection] Settings not loaded yet, skipping auto-generation');
-  return;
-}
-
-snapshot.docChanges().forEach(async (change) => {
-  if (change.type === 'added' || change.type === 'modified') {
-    const pattern = { id: change. doc.id, ... change.doc.data() };
-
-    // Only process active recurring patterns
-    if (pattern.status !== 'active') {
-      return;
-    }
-
-            // Don't auto-generate if disabled in settings
-            if (userSettings?.autoDetectBills === false || userSettings?.disableAutoGeneration === true) {
-              console.log('[AutoBillDetection] Auto-generation disabled in settings');
-              return;
-            }
-            
-            // Check if bill instance already exists for this pattern and due date
-            // Prefer nextOccurrence over nextRenewal as it's more specific
-            const patternDate = getDateOnly(pattern.nextOccurrence || pattern.nextRenewal);
-            const existingBill = processedBills.find(b => {
-              const billDate = getDateOnly(b.dueDate);
-              return b.recurringPatternId === pattern.id && billDate === patternDate;
-            });
-            
-            // Also check if a bill with same name exists for this month
-            const patternMonth = getMonthOnly(pattern.nextOccurrence || pattern.nextRenewal);
-            const existingByName = processedBills.find(b => {
-              const billMonth = getMonthOnly(b.dueDate);
-              return b.name.toLowerCase() === pattern.name.toLowerCase() && 
-                     billMonth === patternMonth &&
-                     !b.isPaid;
-            });
-            
-            if (!existingBill && !existingByName) {
-              // AUTO-GENERATE bill instance from pattern
-              console.log(`🔄 Auto-generating bill from pattern: ${pattern.name}`);
-              await autoGenerateBillFromTemplate(pattern);
-            }
-          }
-        });
-      },
-      (error) => {
+      } catch (error) {
         console.error('Error loading recurring bills:', error);
+        setRecurringBills([]);
       }
-    );
+    };
 
-    return () => unsubscribe();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [currentUser, processedBills, userSettings, settingsLoaded]);
+    loadRecurringTemplatesForDisplay();
+  }, [currentUser]);
 
   // Load bills on mount - ADDED
   useEffect(() => {
