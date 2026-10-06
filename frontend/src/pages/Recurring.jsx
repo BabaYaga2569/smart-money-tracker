@@ -21,42 +21,8 @@ import { useAuth } from '../contexts/AuthContext';
 import { ensureSettingsDocument } from '../utils/settingsUtils';
 import { getCanonicalDisplayBalance, getVisiblePlaidAccounts } from '../utils/accountVisibility';
 
-/**
- * Helper function to build update data without undefined values for Firebase updateDoc.
- * Firebase Firestore rejects updates containing undefined values, so this function filters them out.
- *
- * @param {Object} currentData - The current document data from Firestore
- * @param {Array} recurringItems - Array of recurring items to save (may contain undefined values)
- * @param {Object} additionalFields - Optional additional fields to include in the update (e.g., {bills: updatedBills})
- * @returns {Object} Object containing:
- *   - updateData: Clean object ready for Firebase updateDoc (no undefined values)
- *   - cleanedItems: Recurring items array with undefined values filtered out
- */
-const buildUpdateData = (currentData, recurringItems, additionalFields = {}) => {
-  // Clean undefined values from items
-  const cleanedItems = recurringItems.map((item) =>
-    Object.fromEntries(Object.entries(item).filter(([, value]) => value !== undefined))
-  );
-
-  // Build update data without undefined values
-  const updateData = { recurringItems: cleanedItems };
-  if (currentData.plaidAccounts !== undefined) updateData.plaidAccounts = currentData.plaidAccounts;
-  if (currentData.bankAccounts !== undefined) updateData.bankAccounts = currentData.bankAccounts;
-  if (currentData.institutionMapping !== undefined)
-    updateData.institutionMapping = currentData.institutionMapping;
-  if (currentData.bills !== undefined) updateData.bills = currentData.bills;
-
-  // Merge additional fields (e.g., when updating bills alongside recurringItems)
-  Object.assign(updateData, additionalFields);
-
-  return { updateData, cleanedItems };
-};
-
 // ✅ OPTIMIZATION: Cache TTL for Plaid API responses
 const PLAID_CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutes
-
-// Fallback date for sorting bills with missing dates (far in the future to sort last)
-const MISSING_DATE_FALLBACK = new Date('2099-12-31');
 
 const Recurring = () => {
   const { currentUser } = useAuth();
@@ -107,8 +73,6 @@ const Recurring = () => {
   const [itemToDelete, setItemToDelete] = useState(null);
   const [showDeleteModal, setShowDeleteModal] = useState(false);
 
-  // Cleanup menu
-
   useEffect(() => {
     loadRecurringData();
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
@@ -118,7 +82,6 @@ const Recurring = () => {
     setProcessedItems(processed);
   }, [recurringItems]);
 
-  // Close cleanup menu when clicking outside
   const loadRecurringData = async () => {
     try {
       setLoading(true);
@@ -127,7 +90,7 @@ const Recurring = () => {
       console.error('Error loading recurring data:', error);
       // Never substitute demo financial records for failed production data.
       setRecurringItems([]);
-      setError('Unable to load recurring items. Please try again.');
+      showNotification('Unable to load recurring items. Please try again.', 'error');
     } finally {
       setLoading(false);
     }
@@ -1153,7 +1116,6 @@ const Recurring = () => {
                     className="action-btn delete"
                     onClick={() => {
                       setItemToDelete(item);
-                      setDeleteGeneratedBills(false);
                       setShowDeleteModal(true);
                     }}
                     title="Delete"
