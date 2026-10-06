@@ -19,6 +19,16 @@ const monthly = (name, amount, day, institutionName, extra = {}) => ({
   ...extra,
 });
 
+const preserveSchedule = (name, amount, extra = {}) => ({
+  name,
+  amount,
+  type: 'expense',
+  frequency: 'monthly',
+  status: 'active',
+  scheduleRule: { kind: 'preserveCurrent' },
+  ...extra,
+});
+
 export const RECURRING_REBUILD_PROPOSAL = [
   monthly('Charger Payment', 571.32, 1, 'Bank of America'),
   monthly('Affirm Smoker', 55.25, 3, null),
@@ -57,7 +67,7 @@ export const RECURRING_REBUILD_PROPOSAL = [
   monthly('T-Mobile Cell Phone Bill', 485.26, 21, null, { aliases: ['T-Mobile'] }),
   monthly('Family Apple Music / Apple Pay', 19.99, 21, null, { aliases: ['Family Apple Music', 'Apple Music'] }),
   monthly('Optimum Cell Phone', 15.64, 25, 'Bank of America', { aliases: ['Optimum', 'Optimum Mobile'] }),
-  monthly('Plaid Technologies Inc', 6.26, 25, null, { aliases: ['Plaid Technologies', 'Plaid'] }),
+  preserveSchedule('Plaid Technologies Inc', 6.26, { aliases: ['Plaid Technologies', 'Plaid'], scheduleNote: 'Keep the existing recurring schedule; only the subscription identity is confirmed.' }),
   monthly('NV Energy', 177.00, 26, 'Bank of America'),
   monthly('GitHub Subscription', 10.00, 26, null, { aliases: ['GitHub'] }),
   monthly('Apple iCloud Plus / Apple Pay', 10.99, 28, null, { aliases: ['Apple iCloud', 'iCloud'] }),
