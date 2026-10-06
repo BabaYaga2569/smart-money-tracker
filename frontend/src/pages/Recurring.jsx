@@ -2,12 +2,8 @@ import React, { useState, useEffect, useMemo } from 'react';
 import {
   doc,
   getDoc,
-  updateDoc,
   collection,
   setDoc,
-  serverTimestamp,
-  query,
-  where,
   getDocs,
   deleteDoc,
 } from 'firebase/firestore';
@@ -112,7 +108,6 @@ const Recurring = () => {
   const [showDeleteModal, setShowDeleteModal] = useState(false);
 
   // Cleanup menu
-  const [showCleanupMenu, setShowCleanupMenu] = useState(false);
 
   useEffect(() => {
     loadRecurringData();
@@ -124,21 +119,6 @@ const Recurring = () => {
   }, [recurringItems]);
 
   // Close cleanup menu when clicking outside
-  useEffect(() => {
-    const handleClickOutside = (event) => {
-      if (
-        showCleanupMenu &&
-        !event.target.closest('.cleanup-menu-button') &&
-        !event.target.closest('.cleanup-dropdown')
-      ) {
-        setShowCleanupMenu(false);
-      }
-    };
-
-    document.addEventListener('mousedown', handleClickOutside);
-    return () => document.removeEventListener('mousedown', handleClickOutside);
-  }, [showCleanupMenu]);
-
   const loadRecurringData = async () => {
     try {
       setLoading(true);
