@@ -32,6 +32,10 @@ import {
   RECURRING_REBUILD_VERSION,
   RECURRING_REBUILD_SOURCE
 } from './utils/recurringRebuild.js';
+import {
+  buildBillDuplicateCleanupPlan,
+  fingerprintBills
+} from './utils/billDuplicateCleanup.js';
 
 const app = express();
 
@@ -3182,6 +3186,167 @@ app.get("/api/diagnostics/bill-doctor", async (req, res, next) => {
     if (error.statusCode) return next(error);
     return next(createError.firebaseError(
       error.message || 'Unable to run read-only bill audit'
+    ));
+  }
+});
+
+/**
+ * GET /api/bills/duplicate-cleanup/preview
+ *
+ * Read-only preview of exact unpaid duplicate bill occurrences.
+ */
+app.get("/api/bills/duplicate-cleanup/preview", async (req, res, next) => {
+  const userId = req.authUid;
+
+  try {
+    if (!userId) {
+      return next(createError.unauthorized('Authentication is required'));
+    }
+
+    const billsSnap = await db
+      .collection('users')
+      .doc(userId)
+      .collection('financialEvents')
+      .where('type', '==', 'bill')
+      .where('isPaid', '==', false)
+      .get();
+
+    const bills = billsSnap.docs.map(docSnap => ({
+      id: docSnap.id,
+      ...docSnap.data()
+    }));
+
+    const plan = buildBillDuplicateCleanupPlan(bills);
+    const fingerprint = fingerprintBills(bills);
+
+    res.set('Cache-Control', 'no-store');
+    return res.json({
+      success: true,
+      readOnly: true,
+      fingerprint,
+      summary: plan.summary,
+      canApply: plan.canApply,
+      safeGroups: plan.safeGroups,
+      reviewGroups: plan.reviewGroups
+    });
+  } catch (error) {
+    logger.error('BILL_DUPLICATE_PREVIEW', 'Unable to prepare duplicate cleanup preview', error, {});
+    if (error.statusCode) return next(error);
+    return next(createError.firebaseError(
+      error.message || 'Unable to prepare duplicate cleanup preview'
+    ));
+  }
+});
+
+/**
+ * POST /api/bills/duplicate-cleanup/apply
+ *
+ * Reversible duplicate cleanup. Extra exact duplicate occurrences are archived
+ * and hidden, never hard-deleted.
+ */
+app.post("/api/bills/duplicate-cleanup/apply", async (req, res, next) => {
+  const userId = req.authUid;
+  const { expectedFingerprint, confirmation } = req.body || {};
+
+  try {
+    if (!userId) {
+      return next(createError.unauthorized('Authentication is required'));
+    }
+
+    if (confirmation !== 'ARCHIVE DUPLICATE BILLS') {
+      return res.status(400).json({
+        success: false,
+        code: 'DUPLICATE_CLEANUP_CONFIRMATION_REQUIRED',
+        message: 'Type ARCHIVE DUPLICATE BILLS exactly to confirm.'
+      });
+    }
+
+    const userRef = db.collection('users').doc(userId);
+    const billsRef = userRef.collection('financialEvents');
+    const billsSnap = await billsRef
+      .where('type', '==', 'bill')
+      .where('isPaid', '==', false)
+      .get();
+
+    const bills = billsSnap.docs.map(docSnap => ({
+      id: docSnap.id,
+      ...docSnap.data()
+    }));
+
+    const liveFingerprint = fingerprintBills(bills);
+
+    if (!expectedFingerprint || liveFingerprint !== expectedFingerprint) {
+      return res.status(409).json({
+        success: false,
+        code: 'DUPLICATE_CLEANUP_DRIFTED',
+        message: 'Bills changed after preview. Run the duplicate cleanup preview again.'
+      });
+    }
+
+    const plan = buildBillDuplicateCleanupPlan(bills);
+
+    if (!plan.canApply) {
+      return res.status(409).json({
+        success: false,
+        code: 'DUPLICATE_CLEANUP_NOT_SAFE',
+        message: 'One or more duplicate groups require manual review.',
+        summary: plan.summary,
+        reviewGroups: plan.reviewGroups
+      });
+    }
+
+    const batch = db.batch();
+    const timestamp = admin.firestore.FieldValue.serverTimestamp();
+    const backupId = `duplicate_cleanup_${Date.now()}`;
+    const backupRef = userRef.collection('billCleanupBackups').doc(backupId);
+    const backupBillsRef = backupRef.collection('bills');
+
+    batch.set(backupRef, {
+      id: backupId,
+      createdAt: timestamp,
+      liveFingerprint,
+      duplicateGroups: plan.summary.duplicateGroups,
+      duplicatesArchived: plan.summary.duplicatesToArchive
+    });
+
+    for (const group of plan.safeGroups) {
+      const ids = [group.keeperBillId, ...group.duplicateBillIds];
+      for (const id of ids) {
+        const bill = bills.find(item => item.id === id);
+        if (!bill) continue;
+        const { id: originalId, ...data } = bill;
+        batch.set(backupBillsRef.doc(originalId), {
+          originalId,
+          ...data
+        });
+      }
+
+      for (const duplicateId of group.duplicateBillIds) {
+        batch.set(billsRef.doc(duplicateId), {
+          hiddenFromBills: true,
+          archivedDuplicate: true,
+          duplicateOfBillId: group.keeperBillId,
+          duplicateArchivedAt: timestamp,
+          duplicateCleanupBackupId: backupId,
+          status: 'duplicate-archived',
+          updatedAt: timestamp
+        }, { merge: true });
+      }
+    }
+
+    await batch.commit();
+
+    return res.json({
+      success: true,
+      backupId,
+      archived: plan.summary.duplicatesToArchive,
+      groups: plan.summary.safeGroups
+    });
+  } catch (error) {
+    logger.error('BILL_DUPLICATE_APPLY', 'Duplicate cleanup apply failed', error, {});
+    if (error.statusCode) return next(error);
+    return next(createError.firebaseError(
+      error.message || 'Unable to apply duplicate cleanup'
     ));
   }
 });
