@@ -1287,7 +1287,7 @@ const refreshPlaidTransactions = async () => {
                     {getCategoryIcon(bill.category)}
                   </div>
                   <div className="bill-details">
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <div className="bill-title-row" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                       <h4 style={{ margin: 0 }}>
                         {bill.name}
                         {bill.recurringTemplateId && (
@@ -1308,7 +1308,7 @@ const refreshPlaidTransactions = async () => {
                           </span>
                         )}
                       </h4>
-                      <div style={{ display: 'flex', gap: '8px' }}>
+                      <div className="bill-title-actions" style={{ display: 'flex', gap: '8px' }}>
                         <button
                           onClick={() => {
                             setEditingBill(bill);
