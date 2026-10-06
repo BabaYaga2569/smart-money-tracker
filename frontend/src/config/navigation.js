@@ -1,0 +1,20 @@
+export const APP_NAV_ITEMS = [
+  { name: 'Dashboard', path: '/' },
+  { name: 'Accounts', path: '/accounts' },
+  { name: 'Transactions', path: '/transactions' },
+  { name: 'Spendability', path: '/spendability' },
+  { name: 'Bills', path: '/bills' },
+  { name: '💳 Payment History', path: '/payment-history' },
+  { name: '⚙️ Payment Rules', path: '/payment-rules' },
+  { name: 'Recurring', path: '/recurring' },
+  { name: '🩺 Bill Doctor', path: '/bill-doctor' },
+  { name: 'Credit Cards', path: '/creditcards' },
+  { name: '🧠 Debt Optimizer', path: '/debt-optimizer' },
+  { name: 'Subscriptions', path: '/subscriptions', badgeKey: 'subscriptions' },
+  { name: 'Goals', path: '/goals' },
+  { name: 'Categories', path: '/categories' },
+  { name: 'Cash Flow', path: '/cashflow' },
+  { name: 'Pay Cycle', path: '/paycycle' },
+  { name: '📊 Reports', path: '/reports' },
+  { name: 'Settings', path: '/settings' }
+];
