@@ -1075,7 +1075,7 @@ useEffect(() => {
       const API_URL = import.meta.env.VITE_API_URL || 
         (window.location.hostname === 'localhost' 
           ? 'http://localhost:5000' 
-          : 'https://smart-money-tracker-backend.onrender.com');
+          : 'https://smart-money-tracker-09ks.onrender.com');
       
       const response = await fetch(`${API_URL}/api/transactions/${transactionId}`, {
         method: 'PUT',
