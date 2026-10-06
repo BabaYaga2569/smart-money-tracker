@@ -1544,7 +1544,8 @@ const Recurring = () => {
                         <td style={{ padding: '8px', borderBottom: '1px solid #eee', textAlign: 'right' }}>
                           {row.proposed.variableAmount
                             ? 'Variable'
-                            : '
+                            : '$' + Number(row.proposed.amount || 0).toFixed(2)}
+                        </td>
                         <td style={{ padding: '8px', borderBottom: '1px solid #eee' }}>
                           {row.proposed.scheduleLabel}
                           {row.proposed.scheduleNote && (
