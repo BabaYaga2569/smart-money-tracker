@@ -25,6 +25,13 @@ import {
 import { detectSubscriptions } from './utils/subscriptionDetector.js';
 import { detectRecurringStreams, matchStreamsToTemplates } from './utils/recurringStreamDetector.js';
 import { analyzeBillStores } from './utils/billDoctor.js';
+import {
+  buildRecurringRebuildPlan,
+  buildRecurringPatternWrite,
+  fingerprintRecurringPatterns,
+  RECURRING_REBUILD_VERSION,
+  RECURRING_REBUILD_SOURCE
+} from './utils/recurringRebuild.js';
 
 const app = express();
 
@@ -3175,6 +3182,259 @@ app.get("/api/diagnostics/bill-doctor", async (req, res, next) => {
     if (error.statusCode) return next(error);
     return next(createError.firebaseError(
       error.message || 'Unable to run read-only bill audit'
+    ));
+  }
+});
+
+/**
+ * GET /api/recurring-rebuild/preview
+ *
+ * Server-side, read-only validation of the recurring rebuild plan.
+ * Returns a fingerprint of the live recurringPatterns collection. The apply
+ * endpoint requires that exact fingerprint so any drift after preview blocks
+ * the write.
+ */
+app.get("/api/recurring-rebuild/preview", async (req, res, next) => {
+  const userId = req.authUid;
+
+  try {
+    if (!userId) {
+      return next(createError.unauthorized('Authentication is required'));
+    }
+
+    const patternsSnap = await db
+      .collection('users')
+      .doc(userId)
+      .collection('recurringPatterns')
+      .get();
+
+    const patterns = patternsSnap.docs.map(docSnap => ({
+      id: docSnap.id,
+      ...docSnap.data()
+    }));
+
+    const referenceDate = new Date().toISOString().slice(0, 10);
+    const plan = buildRecurringRebuildPlan(patterns, referenceDate);
+    const fingerprint = fingerprintRecurringPatterns(patterns);
+
+    res.set('Cache-Control', 'no-store');
+    return res.json({
+      success: true,
+      readOnly: true,
+      version: RECURRING_REBUILD_VERSION,
+      source: RECURRING_REBUILD_SOURCE,
+      fingerprint,
+      summary: plan.summary,
+      canApply: plan.canApply,
+      unmatched: plan.unmatched.map(item => ({
+        id: item.id,
+        name: item.name,
+        amount: item.amount ?? item.cost ?? null,
+        frequency: item.frequency || item.recurrence || 'monthly'
+      })),
+      retirements: plan.retirements.map(({ item, retirement }) => ({
+        id: item.id,
+        name: item.name,
+        reason: retirement.reason
+      })),
+      additions: plan.additions.map(({ id, target }) => ({
+        id,
+        name: target.name,
+        amount: target.amount ?? null,
+        frequency: target.frequency,
+        nextOccurrence: target.nextOccurrence
+      }))
+    });
+  } catch (error) {
+    logger.error('RECURRING_REBUILD_PREVIEW', 'Unable to prepare recurring rebuild preview', error, {});
+    if (error.statusCode) return next(error);
+    return next(createError.firebaseError(
+      error.message || 'Unable to prepare recurring rebuild preview'
+    ));
+  }
+});
+
+/**
+ * POST /api/recurring-rebuild/apply
+ *
+ * Controlled recurringPatterns rebuild.
+ *
+ * Body:
+ * {
+ *   expectedFingerprint: string,
+ *   confirmation: "APPLY RECURRING REBUILD"
+ * }
+ *
+ * Safety:
+ * - re-reads the live collection
+ * - refuses if it drifted since preview
+ * - refuses if any unmatched pattern exists
+ * - backs up every recurringPatterns document in the same atomic batch
+ * - updates matched documents in place to preserve recurringPatternId links
+ * - adds only genuinely new patterns
+ * - archives confirmed stale patterns instead of hard-deleting IDs
+ */
+app.post("/api/recurring-rebuild/apply", async (req, res, next) => {
+  const userId = req.authUid;
+  const {
+    expectedFingerprint,
+    confirmation
+  } = req.body || {};
+
+  try {
+    if (!userId) {
+      return next(createError.unauthorized('Authentication is required'));
+    }
+
+    if (confirmation !== 'APPLY RECURRING REBUILD') {
+      return res.status(400).json({
+        success: false,
+        code: 'REBUILD_CONFIRMATION_REQUIRED',
+        message: 'Type APPLY RECURRING REBUILD exactly to confirm.'
+      });
+    }
+
+    if (!expectedFingerprint || typeof expectedFingerprint !== 'string') {
+      return res.status(400).json({
+        success: false,
+        code: 'REBUILD_FINGERPRINT_REQUIRED',
+        message: 'A fresh recurring rebuild preview is required before apply.'
+      });
+    }
+
+    const userRef = db.collection('users').doc(userId);
+    const recurringRef = userRef.collection('recurringPatterns');
+    const patternsSnap = await recurringRef.get();
+    const patterns = patternsSnap.docs.map(docSnap => ({
+      id: docSnap.id,
+      ...docSnap.data()
+    }));
+
+    const liveFingerprint = fingerprintRecurringPatterns(patterns);
+
+    if (liveFingerprint !== expectedFingerprint) {
+      return res.status(409).json({
+        success: false,
+        code: 'RECURRING_REBUILD_DRIFTED',
+        message: 'Recurring patterns changed after preview. Run the dry run again before applying.',
+        expectedFingerprint,
+        liveFingerprint
+      });
+    }
+
+    const referenceDate = new Date().toISOString().slice(0, 10);
+    const plan = buildRecurringRebuildPlan(patterns, referenceDate);
+
+    if (!plan.canApply) {
+      return res.status(409).json({
+        success: false,
+        code: 'RECURRING_REBUILD_NOT_SAFE',
+        message: 'The server-side rebuild plan has unresolved recurring patterns.',
+        summary: plan.summary,
+        unmatched: plan.unmatched.map(item => ({
+          id: item.id,
+          name: item.name
+        }))
+      });
+    }
+
+    // One Firestore batch is comfortably below the 500-write limit for this
+    // rebuild (~36 backup writes + ~42 pattern writes + metadata).
+    const batch = db.batch();
+    const timestamp = admin.firestore.FieldValue.serverTimestamp();
+    const backupId = `rebuild_${Date.now()}`;
+    const backupRef = userRef.collection('recurringPatternBackups').doc(backupId);
+    const backupPatternsRef = backupRef.collection('patterns');
+
+    batch.set(backupRef, {
+      id: backupId,
+      version: RECURRING_REBUILD_VERSION,
+      source: RECURRING_REBUILD_SOURCE,
+      createdAt: timestamp,
+      liveFingerprint,
+      referenceDate,
+      currentDocumentCount: patterns.length,
+      activeDocumentCount: plan.summary.current,
+      matchedCount: plan.summary.matched,
+      additionCount: plan.summary.add,
+      retirementCount: plan.summary.retire,
+      resultingActiveCount: plan.summary.resultingActive
+    });
+
+    for (const pattern of patterns) {
+      const { id, ...data } = pattern;
+      batch.set(backupPatternsRef.doc(id), {
+        originalId: id,
+        ...data
+      });
+    }
+
+    for (const match of plan.matched) {
+      const patternRef = recurringRef.doc(match.id);
+      batch.set(
+        patternRef,
+        buildRecurringPatternWrite(match.current, match.target, timestamp),
+        { merge: true }
+      );
+    }
+
+    for (const addition of plan.additions) {
+      const patternRef = recurringRef.doc(addition.id);
+      batch.set(
+        patternRef,
+        buildRecurringPatternWrite(null, addition.target, timestamp),
+        { merge: false }
+      );
+    }
+
+    for (const { item, retirement } of plan.retirements) {
+      const patternRef = recurringRef.doc(item.id);
+      batch.set(patternRef, {
+        status: 'ended',
+        archived: true,
+        retiredReason: retirement.reason,
+        retiredAt: timestamp,
+        rebuildVersion: RECURRING_REBUILD_VERSION,
+        updatedAt: timestamp
+      }, { merge: true });
+    }
+
+    await batch.commit();
+
+    const afterSnap = await recurringRef.get();
+    const activeAfter = afterSnap.docs
+      .map(docSnap => ({ id: docSnap.id, ...docSnap.data() }))
+      .filter(item => item.archived !== true);
+
+    logger.info('RECURRING_REBUILD_APPLY', 'Recurring rebuild applied', {
+      userId,
+      backupId,
+      previousCount: patterns.length,
+      activeAfter: activeAfter.length,
+      matched: plan.summary.matched,
+      added: plan.summary.add,
+      retired: plan.summary.retire
+    });
+
+    return res.json({
+      success: true,
+      backupId,
+      version: RECURRING_REBUILD_VERSION,
+      appliedFingerprint: liveFingerprint,
+      summary: {
+        previousDocuments: patterns.length,
+        activeBefore: plan.summary.current,
+        matchedUpdatedInPlace: plan.summary.matched,
+        added: plan.summary.add,
+        retiredArchived: plan.summary.retire,
+        activeAfter: activeAfter.length
+      }
+    });
+  } catch (error) {
+    logger.error('RECURRING_REBUILD_APPLY', 'Recurring rebuild apply failed', error, {});
+    if (error.statusCode) return next(error);
+    return next(createError.firebaseError(
+      error.message || 'Unable to apply recurring rebuild'
     ));
   }
 });
