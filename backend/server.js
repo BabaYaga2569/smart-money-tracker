@@ -2957,9 +2957,19 @@ app.post("/api/subscriptions/detect", async (req, res, next) => {
     logger.info('DETECT_SUBSCRIPTIONS', 'Starting detection for user', { userId });
     logDiagnostic.info('DETECT_SUBSCRIPTIONS', `Starting detection for user: ${userId}`);
     
-    // Get transactions from Firebase
+    // Recurring detection needs a representative recent history window, not
+    // an unbounded scan of the user's entire ledger.
+    const cutoff = new Date();
+    cutoff.setDate(cutoff.getDate() - 400);
+    const cutoffStr = cutoff.toISOString().slice(0, 10);
+
     const transactionsRef = db.collection('users').doc(userId).collection('transactions');
-    const transactionsSnap = await transactionsRef.get();
+    const transactionsSnap = await transactionsRef
+      .where('date', '>=', cutoffStr)
+      .orderBy('date', 'desc')
+      .limit(1000)
+      .get();
+
     const transactions = transactionsSnap.docs.map(doc => ({
       id: doc.id,
       ...doc.data()
