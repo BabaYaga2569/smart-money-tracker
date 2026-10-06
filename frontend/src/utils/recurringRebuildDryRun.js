@@ -78,6 +78,7 @@ const compactCurrent = (item) => ({
     item.accountInstitution ||
     null,
   linkedAccount: item.linkedAccount || item.accountId || null,
+  variableAmount: Boolean(item.variableAmount),
   customRecurrence: Boolean(item.customRecurrence),
   activeMonths: item.activeMonths || [],
 });
