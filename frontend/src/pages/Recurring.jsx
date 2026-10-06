@@ -999,6 +999,8 @@ const Recurring = () => {
               >
                 🗑️ Delete All
               </button>
+            </>
+          )}
           <button
             className="import-button"
             onClick={() => setShowDetection(true)}
