@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { doc, collection, getDocs, addDoc, updateDoc } from 'firebase/firestore';
+import { doc, collection, getDocs, addDoc, updateDoc, query, where, orderBy, limit } from 'firebase/firestore';
 import { db } from '../firebase';
 import { TRANSACTION_CATEGORIES, getCategoryIcon } from '../constants/categories';
 import { useAuth } from '../contexts/AuthContext';
@@ -250,14 +250,22 @@ const Categories = () => {
   const loadTransactions = async () => {
     try {
       const transactionsRef = collection(db, 'users', currentUser.uid, 'transactions');
-      const querySnapshot = await getDocs(transactionsRef);
-      const transactionsData = [];
+      const ninetyDaysAgo = new Date();
+      ninetyDaysAgo.setDate(ninetyDaysAgo.getDate() - 90);
 
-      querySnapshot.forEach((doc) => {
-        transactionsData.push({ id: doc.id, ...doc.data() });
-      });
+      const transactionsQuery = query(
+        transactionsRef,
+        where('date', '>=', ninetyDaysAgo.toISOString().split('T')[0]),
+        orderBy('date', 'desc'),
+        limit(500)
+      );
 
-      // Use real transactions from Firebase, or empty array if none exist
+      const querySnapshot = await getDocs(transactionsQuery);
+      const transactionsData = querySnapshot.docs.map((docSnap) => ({
+        id: docSnap.id,
+        ...docSnap.data(),
+      }));
+
       setTransactions(transactionsData);
     } catch (error) {
       console.error('Error loading transactions:', error);
@@ -267,7 +275,7 @@ const Categories = () => {
 
   const loadBudgets = async () => {
     try {
-      const budgetsRef = collection(db, 'users', 'currentUser.uid', 'budgets');
+      const budgetsRef = collection(db, 'users', currentUser.uid, 'budgets');
       const querySnapshot = await getDocs(budgetsRef);
       const budgetsData = {};
 
@@ -338,7 +346,7 @@ const Categories = () => {
       };
 
       // Save to Firebase
-      const budgetsRef = collection(db, 'users', 'currentUser.uid', 'budgets');
+      const budgetsRef = collection(db, 'users', currentUser.uid, 'budgets');
       const docRef = await addDoc(budgetsRef, budgetData);
 
       // Update local state with the document ID
@@ -391,7 +399,7 @@ const Categories = () => {
       };
 
       // Update in Firebase
-      const budgetDocRef = doc(db, 'users', 'currentUser.uid', 'budgets', existingBudget.id);
+      const budgetDocRef = doc(db, 'users', currentUser.uid, 'budgets', existingBudget.id);
       await updateDoc(budgetDocRef, budgetData);
 
       // Update local state with the document ID preserved
@@ -505,7 +513,7 @@ const Categories = () => {
           const categoryRef = doc(
             db,
             'users',
-            'currentUser.uid',
+            currentUser.uid,
             'categories',
             existingCategory.id
           );
@@ -514,7 +522,7 @@ const Categories = () => {
         }
       } else {
         // Add new category
-        const categoriesRef = collection(db, 'users', 'currentUser.uid', 'categories');
+        const categoriesRef = collection(db, 'users', currentUser.uid, 'categories');
         await addDoc(categoriesRef, categoryData);
         showNotification('Category added successfully', 'success');
       }
@@ -544,7 +552,7 @@ const Categories = () => {
 
   const loadCategoryRules = async (category) => {
     try {
-      const rulesRef = collection(db, 'users', 'currentUser.uid', 'categoryRules');
+      const rulesRef = collection(db, 'users', currentUser.uid, 'categoryRules');
       const querySnapshot = await getDocs(rulesRef);
       const rulesData = [];
 
@@ -579,7 +587,7 @@ const Categories = () => {
         updatedAt: Date.now(),
       };
 
-      const rulesRef = collection(db, 'users', 'currentUser.uid', 'categoryRules');
+      const rulesRef = collection(db, 'users', currentUser.uid, 'categoryRules');
       await addDoc(rulesRef, ruleData);
 
       showNotification('Rule added successfully', 'success');
