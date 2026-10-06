@@ -40,6 +40,18 @@ const formatBillDate = (value) => {
 
 const safeBillName = (bill) => String(bill?.name || 'Unnamed bill');
 
+const formatCurrency = (value) => {
+  const number = Number(value);
+  if (!Number.isFinite(number)) return '$0.00';
+
+  return new Intl.NumberFormat('en-US', {
+    style: 'currency',
+    currency: 'USD',
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2
+  }).format(number);
+};
+
 export default function Bills() {
   const { currentUser } = useAuth();
   
