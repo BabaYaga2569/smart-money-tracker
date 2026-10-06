@@ -15,6 +15,7 @@ import { formatDateForDisplay, formatDateForInput, getPacificTime } from '../uti
 import { getLocalMidnight, parseDueDateLocal, getRelativeDateString } from '../utils/dateHelpers';
 import { TRANSACTION_CATEGORIES, CATEGORY_ICONS, getCategoryIcon, migrateLegacyCategory } from '../constants/categories';
 import NotificationSystem from '../components/NotificationSystem';
+import BillDuplicateCleanupPanel from '../components/BillDuplicateCleanupPanel';
 import { getCanonicalDisplayBalance, getVisiblePlaidAccounts } from '../utils/accountVisibility';
 import "./Bills.css";
 
@@ -89,6 +90,10 @@ export default function Bills() {
   const [paidBills, setPaidBills] = useState([]);
   const [showLinker, setShowLinker] = useState(false);
   const [selectedBillForLink, setSelectedBillForLink] = useState(null);
+  const [duplicateCleanupPreview, setDuplicateCleanupPreview] = useState(null);
+  const [duplicateCleanupConfirmation, setDuplicateCleanupConfirmation] = useState('');
+  const [preparingDuplicateCleanup, setPreparingDuplicateCleanup] = useState(false);
+  const [applyingDuplicateCleanup, setApplyingDuplicateCleanup] = useState(false);
 
   // ✅ UPDATED: Load bills from financialEvents collection (one source of truth)
   const loadBills = async () => {
@@ -104,10 +109,12 @@ export default function Bills() {
       
       const billsSnapshot = await getDocs(q);
       
-      const allBills = billsSnapshot.docs.map(doc => ({
-        id: doc.id,
-        ...doc.data()
-      }));
+      const allBills = billsSnapshot.docs
+        .map(doc => ({
+          id: doc.id,
+          ...doc.data()
+        }))
+        .filter(bill => bill.hiddenFromBills !== true && bill.archivedDuplicate !== true);
       
       // Never hide unpaid bills because they are old. Overdue items remain visible
       // until they are explicitly paid, skipped, or otherwise resolved.
@@ -196,6 +203,103 @@ export default function Bills() {
     } catch (error) {
       console.error('Error loading paid bills:', error);
       setPaidBills([]);
+    }
+  };
+
+  const handlePrepareDuplicateCleanup = async () => {
+    if (!currentUser) return;
+
+    try {
+      setPreparingDuplicateCleanup(true);
+      setDuplicateCleanupPreview(null);
+      setDuplicateCleanupConfirmation('');
+
+      const apiUrl =
+        import.meta.env.VITE_API_URL ||
+        'https://smart-money-tracker-09ks.onrender.com';
+
+      const response = await fetch(
+        `${apiUrl}/api/bills/duplicate-cleanup/preview?userId=${currentUser.uid}&_t=${Date.now()}`,
+        { headers: { 'Content-Type': 'application/json' } }
+      );
+
+      const data = await response.json();
+
+      if (!response.ok || !data.success) {
+        throw new Error(data.message || 'Unable to prepare duplicate cleanup preview.');
+      }
+
+      setDuplicateCleanupPreview(data);
+
+      if (data.canApply) {
+        NotificationManager.showSuccess(
+          `Duplicate cleanup preview ready: ${data.summary.safeGroups} safe group(s), ${data.summary.duplicatesToArchive} duplicate bill(s) would be archived.`
+        );
+      } else {
+        NotificationManager.showWarning(
+          `Duplicate cleanup requires review: ${data.summary.reviewGroups} group(s) are not safe to auto-clean.`
+        );
+      }
+    } catch (error) {
+      console.error('Error preparing duplicate cleanup:', error);
+      NotificationManager.showError('Duplicate cleanup preview failed', error.message);
+    } finally {
+      setPreparingDuplicateCleanup(false);
+    }
+  };
+
+  const handleApplyDuplicateCleanup = async () => {
+    if (!currentUser || !duplicateCleanupPreview?.fingerprint) {
+      NotificationManager.showWarning('Run the duplicate cleanup preview first.');
+      return;
+    }
+
+    if (duplicateCleanupConfirmation !== 'ARCHIVE DUPLICATE BILLS') {
+      NotificationManager.showWarning('Type ARCHIVE DUPLICATE BILLS exactly before applying.');
+      return;
+    }
+
+    try {
+      setApplyingDuplicateCleanup(true);
+
+      const apiUrl =
+        import.meta.env.VITE_API_URL ||
+        'https://smart-money-tracker-09ks.onrender.com';
+
+      const response = await fetch(
+        `${apiUrl}/api/bills/duplicate-cleanup/apply?userId=${currentUser.uid}`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            expectedFingerprint: duplicateCleanupPreview.fingerprint,
+            confirmation: duplicateCleanupConfirmation
+          })
+        }
+      );
+
+      const data = await response.json();
+
+      if (!response.ok || !data.success) {
+        if (data.code === 'DUPLICATE_CLEANUP_DRIFTED') {
+          setDuplicateCleanupPreview(null);
+          setDuplicateCleanupConfirmation('');
+        }
+        throw new Error(data.message || 'Duplicate cleanup failed.');
+      }
+
+      await loadBills();
+      setDuplicateCleanupPreview(null);
+      setDuplicateCleanupConfirmation('');
+
+      NotificationManager.showSuccess(
+        `Duplicate cleanup complete. Archived ${data.archived} duplicate bill(s). Backup: ${data.backupId}.`
+      );
+    } catch (error) {
+      console.error('Error applying duplicate cleanup:', error);
+      NotificationManager.showError('Duplicate cleanup failed', error.message);
+    } finally {
+      setApplyingDuplicateCleanup(false);
     }
   };
 
@@ -1411,6 +1515,22 @@ const refreshPlaidTransactions = async () => {
             )}
           </details>
         )}
+
+        <BillDuplicateCleanupPanel
+          preview={duplicateCleanupPreview}
+          confirmation={duplicateCleanupConfirmation}
+          preparing={preparingDuplicateCleanup}
+          applying={applyingDuplicateCleanup}
+          hasDuplicates={integrityAudit.exactDuplicates.length > 0}
+          onPrepare={handlePrepareDuplicateCleanup}
+          onCancel={() => {
+            setDuplicateCleanupPreview(null);
+            setDuplicateCleanupConfirmation('');
+          }}
+          onConfirmationChange={setDuplicateCleanupConfirmation}
+          onApply={handleApplyDuplicateCleanup}
+          formatCurrency={formatCurrency}
+        />
       </div>
 
       <div className="bills-list-section">
