@@ -311,20 +311,8 @@ nextPayday = result.date;
 // ✅ FIX ISSUE #2: Use getDaysUntilDateInPacific instead of result.daysUntil
 daysUntilPayday = getDaysUntilDateInPacific(nextPayday);
 
-// ✅ Update Firebase payCycle cache with fresh calculation
-try {
-  const payCycleDocRef = doc(db, 'users', currentUser.uid, 'financial', 'payCycle');
-  await setDoc(payCycleDocRef, {
-    date: nextPayday,
-    daysUntil: daysUntilPayday,
-    source: result.source,
-    amount: result.amount,
-    lastCalculated: new Date().toISOString()
-  }, { merge: true });
-  console.log('✅ Updated payCycle cache with fresh date:', nextPayday);
-} catch (error) {
-  console.error('Error updating payCycle cache:', error);
-}
+// Spendability is read-only. A stale/missing pay-cycle cache may be
+// recalculated in memory, but this view does not persist the result.
 
 // 📅 PAYDAY CALCULATION DEBUG
 console.log('📅 PAYDAY CALCULATION DEBUG:', {
@@ -537,33 +525,8 @@ console.log('🔍 PAYDAY CALCULATION DEBUG:', {
         console.error('❌ Spendability: Error loading bills from financialEvents:', error);
       }
 
-      // Run auto-detection for bill payments
-      // ✅ OPTIMIZATION: Only run auto-detection if transactions have changed since last run
-      try {
-        const lastAutoDetection = sessionStorage.getItem(`lastAutoDetect_${currentUser.uid}`);
-        const transactionHash = transactions.map(t => t.id).join(',');
-
-        if (lastAutoDetection !== transactionHash) {
-          const autoDetectionResult = await runAutoDetection(currentUser.uid, transactions, allBills);
-          
-          if (autoDetectionResult.success && autoDetectionResult.matchCount > 0) {
-            // Show notification to user
-            const message = `✅ Auto-detected ${autoDetectionResult.paidBills.length} paid bill(s)!`;
-            setNotification({ message, type: 'success' });
-            setTimeout(() => setNotification({ message: '', type: '' }), 4000);
-          }
-          
-          // Store transaction hash to prevent redundant auto-detection
-          sessionStorage.setItem(`lastAutoDetect_${currentUser.uid}`, transactionHash);
-        } else {
-          if (import.meta.env.DEV) {
-            console.log('[Spendability] Skipping auto-detection - transactions unchanged');
-          }
-        }
-      } catch (error) {
-        console.error('Spendability: Error running auto-detection:', error);
-        // Don't fail the whole page if auto-detection fails
-      }
+      // Canonical bill paid/unpaid state comes from the backend Bill Engine.
+      // Spendability does not run its own transaction matcher.
 
       // Add default recurrence if missing
       const billsWithRecurrence = allBills.map(bill => ({
@@ -626,78 +589,19 @@ console.log('🔍 PAYDAY CALCULATION DEBUG:', {
           return new Date(a.nextDueDate) - new Date(b.nextDueDate);
         });
       
-      // Filter out bills that have been paid (have matching transactions)
-      // Helper function to filter unpaid bills
-      const filterUnpaidBills = (bills) => {
-        return bills.filter(bill => {
-          // Try to find a matching transaction for this bill
-          let matchingTransaction = null;
-          
-          for (const transaction of transactions) {
-            const match = matchTransactionToBill(transaction, bill);
-            if (match && match.confidence >= 0.67) {
-              // Found a match with at least 2 of 3 criteria
-              matchingTransaction = match;
-              break;
-            }
-          }
-          
-          if (matchingTransaction) {
-            const { matches, details, confidence } = matchingTransaction;
-            console.log(`💳 [Spendability] Bill "${bill.name}" ($${bill.amount}) has matching transaction - excluding from due bills`);
-            console.log(`   ✅ Transaction: "${details.txName}" ($${details.txAmount}) on ${details.txDate}`);
-            console.log(`   📊 Confidence: ${Math.round(confidence * 100)}% | Name: ${matches.name ? '✓' : '✗'} | Amount: ${matches.amount ? '✓' : '✗'} | Date: ${matches.date ? '✓' : '✗'}`);
-            return false; // Exclude this bill (it's paid)
-          }
-          
-          return true; // Include this bill (still unpaid)
-        });
-      };
-      
-      // Apply filtering to both before and after payday bills
-      const unpaidBillsBeforePayday = filterUnpaidBills(billsDueBeforePayday);
-      const unpaidBillsAfterPayday = filterUnpaidBills(billsDueAfterPayday);
-      
-      // Calculate total of UNPAID bills only
-      const totalUnpaidBills = (unpaidBillsBeforePayday || []).reduce((sum, bill) => {
-        const amount = Number(bill.amount ?? bill.cost) || 0;
-        if (amount === 0 && bill.isSubscription) {
-          console.warn(
-            `Spendability: Subscription bill ${bill.name} has zero/invalid amount`,
-            'amount:', bill.amount,
-            'type:', typeof bill.amount,
-            'cost:', bill.cost,
-            'costType:', typeof bill.cost
-          );
-        }
-        return sum + amount;
+      // financialEvents has already been filtered to canonical unpaid,
+      // non-skipped bill occurrences. Do not second-guess that state by
+      // re-matching bank transactions in the browser.
+      const unpaidBillsBeforePayday = billsDueBeforePayday;
+      const unpaidBillsAfterPayday = billsDueAfterPayday;
+
+      const totalUnpaidBills = unpaidBillsBeforePayday.reduce((sum, bill) => {
+        return sum + (Number(bill.amount ?? bill.cost) || 0);
       }, 0);
-      
-      // Keep old variable for backward compatibility but use unpaid bills total
+
       const totalBillsDue = totalUnpaidBills;
-      
-      // Log filtering results for transparency
-      const paidBillsCount = billsDueBeforePayday.length - unpaidBillsBeforePayday.length;
-      if (paidBillsCount > 0 && import.meta.env.DEV) {
-        console.log(`💰 [Spendability] Filtered out ${paidBillsCount} paid bill(s) from display`);
-        console.log(`   Total Bills (All): $${billsDueBeforePayday.reduce((sum, b) => sum + Number((b.amount ?? b.cost) || 0), 0).toFixed(2)}`);
-        console.log(`   Total Bills (Unpaid Only): $${totalUnpaidBills.toFixed(2)}`);
-      }
-      
-      // Legacy calculation - keeping for backward compatibility but now points to filtered total
-      const totalBillsDueLegacy = (billsDueBeforePayday || []).reduce((sum, bill) => {
-        const amount = Number(bill.amount ?? bill.cost) || 0;
-        if (amount === 0 && bill.isSubscription) {
-          console.warn(
-            `Spendability: Subscription bill ${bill.name} has zero/invalid amount`,
-            'amount:', bill.amount,
-            'type:', typeof bill.amount,
-            'cost:', bill.cost,
-            'costType:', typeof bill.cost
-          );
-        }
-        return sum + amount;
-      }, 0);
+      const paidBillsCount = 0;
+      const totalBillsDueLegacy = totalUnpaidBills;
 
       const preferences = settingsData.preferences || {};
       const weeklyEssentials = preferences.weeklyEssentials || 0;
