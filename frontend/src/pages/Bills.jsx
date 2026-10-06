@@ -15,6 +15,7 @@ import { formatDateForDisplay, formatDateForInput, getPacificTime } from '../uti
 import { getLocalMidnight, parseDueDateLocal, getRelativeDateString } from '../utils/dateHelpers';
 import { TRANSACTION_CATEGORIES, CATEGORY_ICONS, getCategoryIcon, migrateLegacyCategory } from '../constants/categories';
 import NotificationSystem from '../components/NotificationSystem';
+import BillDuplicateCleanupPanel from '../components/BillDuplicateCleanupPanel';
 import { getCanonicalDisplayBalance, getVisiblePlaidAccounts } from '../utils/accountVisibility';
 import "./Bills.css";
 
@@ -1514,6 +1515,22 @@ const refreshPlaidTransactions = async () => {
             )}
           </details>
         )}
+
+        <BillDuplicateCleanupPanel
+          preview={duplicateCleanupPreview}
+          confirmation={duplicateCleanupConfirmation}
+          preparing={preparingDuplicateCleanup}
+          applying={applyingDuplicateCleanup}
+          hasDuplicates={integrityAudit.exactDuplicates.length > 0}
+          onPrepare={handlePrepareDuplicateCleanup}
+          onCancel={() => {
+            setDuplicateCleanupPreview(null);
+            setDuplicateCleanupConfirmation('');
+          }}
+          onConfirmationChange={setDuplicateCleanupConfirmation}
+          onApply={handleApplyDuplicateCleanup}
+          formatCurrency={formatCurrency}
+        />
       </div>
 
       <div className="bills-list-section">
