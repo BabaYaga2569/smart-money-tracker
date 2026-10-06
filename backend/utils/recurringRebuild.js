@@ -241,14 +241,36 @@ const nextScheduledOccurrence = (target, referenceDate, existing = null) => {
     return target.nextOccurrence;
   }
 
-  if (target.scheduleRule?.kind === 'preserveCurrent') {
-    return dateOnly(existing?.nextOccurrence || existing?.nextDueDate || existing?.dueDate);
-  }
-
   const ref = parseYmd(referenceDate);
   const year = ref.getUTCFullYear();
   const month = ref.getUTCMonth();
   const day = ref.getUTCDate();
+
+  if (target.scheduleRule?.kind === 'preserveCurrent') {
+    const existingDate = dateOnly(
+      existing?.nextOccurrence ||
+      existing?.nextDueDate ||
+      existing?.dueDate
+    );
+
+    if (!existingDate) return null;
+
+    const existingParsed = parseYmd(existingDate);
+    const preferredDay = existingParsed.getUTCDate();
+
+    for (let offset = 0; offset < 36; offset += 1) {
+      const candidateMonth = month + offset;
+      const cy = year + Math.floor(candidateMonth / 12);
+      const cm = ((candidateMonth % 12) + 12) % 12;
+      const cd = Math.min(preferredDay, lastDayUtc(cy, cm));
+
+      if (offset === 0 && cd < day) continue;
+
+      return formatYmd(new Date(Date.UTC(cy, cm, cd)));
+    }
+
+    return null;
+  }
 
   if (target.scheduleRule?.kind === 'quarterEndLastDay') {
     const quarterMonths = [2, 5, 8, 11];
