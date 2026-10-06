@@ -56,12 +56,20 @@ const PrivateRoute = ({ children }) => {
 };
 
 // Route-level fallback for errors that make it past stale-chunk recovery.
-const RouteErrorFallback = (
+const RouteErrorFallback = ({ error }) => (
   <div style={{ padding: '40px', maxWidth: '600px', margin: '0 auto', color: 'white', textAlign: 'center' }}>
     <h2>⚠️ Page Load Failed</h2>
     <p style={{ marginBottom: '20px' }}>
       Smart Money Tracker could not load this page. Your financial data was not changed.
     </p>
+    {error?.message && (
+      <details style={{ margin: '18px auto', textAlign: 'left', maxWidth: '520px', color: '#bbb' }}>
+        <summary style={{ cursor: 'pointer', textAlign: 'center' }}>Technical details</summary>
+        <pre style={{ whiteSpace: 'pre-wrap', overflowWrap: 'anywhere', fontSize: '12px' }}>
+          {error.message}
+        </pre>
+      </details>
+    )}
     <div style={{ display: 'flex', gap: '12px', justifyContent: 'center', flexWrap: 'wrap' }}>
       <button
         onClick={() => window.location.reload()}
