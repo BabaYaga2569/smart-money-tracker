@@ -6,7 +6,6 @@ import { RecurringBillManager } from '../utils/RecurringBillManager';
 import { projectCashFlow, nextOwnPaydays, spousePaydaysBetween, addDays } from '../utils/CashFlowProjection';
 import { formatDateForDisplay, formatDateForInput, getDaysUntilDateInPacific, getManualPacificDaysUntilPayday } from '../utils/DateUtils';
 import { getPacificTime } from '../utils/timezoneHelpers';
-import { autoMigrateBills } from '../utils/FirebaseMigration';
 import { runAutoDetection } from '../utils/AutoBillDetection';
 import { matchTransactionToBill } from '../utils/BillPaymentMatcher';
 import { SettingsSchemaManager } from '../utils/SettingsSchemaManager';
@@ -52,75 +51,6 @@ const SpendabilityV2 = () => {
   useEffect(() => {
     fetchFinancialData();
   }, [refreshTrigger]); // Re-fetch when refresh is triggered
-  const autoUpdatePayday = async (settingsData) => {
-  const today = getPacificTime();
-  today.setHours(0, 0, 0, 0);
-  const lastPayDateStr = settingsData?.lastPayDate || settingsData?.paySchedules?.yours?.lastPaydate;
-  
-  if (!lastPayDateStr) return false;
-  
-  const lastPayDate = new Date(lastPayDateStr);
-  const daysSinceLastPay = Math.floor((today - lastPayDate) / (1000 * 60 * 60 * 24));
-  
-  if (daysSinceLastPay >= 14) {
-    const payPeriods = Math.floor(daysSinceLastPay / 14);
-    const newLastPayDate = new Date(lastPayDate);
-    newLastPayDate.setDate(lastPayDate.getDate() + (payPeriods * 14));
-    
-    const newLastPayDateStr = formatDateForInput(newLastPayDate);
-    
-    console.log(`✅ AUTO-ADVANCING PAYDAY: ${lastPayDateStr} → ${newLastPayDateStr} (${payPeriods} periods, ${daysSinceLastPay} days)`);
-    
-    const settingsDocRef = doc(db, 'users', currentUser.uid, 'settings', 'personal');
-    
-    // ✅ FIX: Update BOTH root level AND nested structure
-    await updateDoc(settingsDocRef, {
-      lastPayDate: newLastPayDateStr,
-      'paySchedules.yours.lastPaydate': newLastPayDateStr
-    });
-    
-    // ✅ Clear the payCycle cache so it recalculates with the new date
-    try {
-      const settingsDocRef = doc(db, 'users', currentUser.uid, 'settings', 'personal');
-      
-      // Update BOTH root level AND nested structure
-      await updateDoc(settingsDocRef, {
-        lastPayDate: newLastPayDateStr,
-        'paySchedules.yours.lastPaydate': newLastPayDateStr,
-        updatedAt: serverTimestamp()
-      });
-      
-      console.log('✅ Updated lastPayDate in both root and nested fields');
-      
-      // Clear stale payCycle cache
-      try {
-        const payCycleDocRef = doc(db, 'users', currentUser.uid, 'financial', 'payCycle');
-        await deleteDoc(payCycleDocRef);
-        console.log('✅ Cleared stale payCycle cache');
-      } catch (error) {
-        console.log('Note: payCycle cache may not exist yet:', error.message);
-      }
-      
-      // Show notification to user
-      showNotification(
-        `📅 Payday dates updated! Your last pay date was advanced from ${lastPayDateStr} to ${newLastPayDateStr}.`,
-        'success'
-      );
-      
-      return true;
-    } catch (error) {
-      console.error('❌ Error updating payday dates:', error);
-      showNotification(
-        '❌ Failed to update payday dates. Please try again or update manually in Settings.',
-        'error'
-      );
-      return false;
-    }
-  }
- 
-  return false;
-};
-
   // Helper function to extract balance data from account object
   // Prefers available_balance (what you can spend), falls back to balance
   const extractBalances = (account) => {
@@ -138,13 +68,8 @@ const SpendabilityV2 = () => {
       setLoading(true);
       setError(null);
 
-      // Auto-migrate bills to unified structure (runs once per user)
-      // ✅ OPTIMIZATION: Cache migration runs in sessionStorage to prevent running on every page load
-      const migrationKey = `billsMigrated_${currentUser.uid}`;
-      if (!sessionStorage.getItem(migrationKey)) {
-        await autoMigrateBills(currentUser.uid);
-        sessionStorage.setItem(migrationKey, 'true');
-      }
+      // Safety freeze: Spendability is read-only during page load.
+      // Data migrations must run through an explicit migration path, never from a view.
 
       // ✅ OPTIMIZATION: Load settings, payCycle, and backend API in parallel
       const settingsDocRef = doc(db, 'users', currentUser.uid, 'settings', 'personal');
@@ -171,9 +96,9 @@ const SpendabilityV2 = () => {
         console.log('🔄 Spendability: Migrating settings from v', settingsData.schemaVersion || 1, 'to v', SettingsSchemaManager.CURRENT_SCHEMA_VERSION);
         settingsData = SettingsSchemaManager.migrateSettings(settingsData);
         
-        // Save migrated version back to Firebase
-        await setDoc(settingsDocRef, settingsData);
-        console.log('✅ Spendability: Migrated settings saved');
+        // Use the migrated shape in memory only. Persisting schema changes from a
+        // read-only view is intentionally disabled during the safety freeze.
+        console.log('✅ Spendability: Using migrated settings in memory');
       }
       
       const validation = SettingsSchemaManager.validateSettings(settingsData);
@@ -186,15 +111,8 @@ const SpendabilityV2 = () => {
       
       let payCycleData = payCycleDocSnap.exists() ? payCycleDocSnap.data() : null;
 	  let paydayCalcResult = null;
-      // Auto-update payday if needed
-      const wasUpdated = await autoUpdatePayday(settingsData);
-      if (wasUpdated) {
-        const refreshedDoc = await getDoc(settingsDocRef);
-        settingsData = refreshedDoc.data();
-        // ✅ FIX: Clear cached payCycle data to force recalculation with updated lastPayDate
-        payCycleData = null;
-        console.log('✅ Cleared payCycle cache after auto-update to force recalculation');
-      }
+      // Safety freeze: payday state is not advanced or persisted simply by
+      // opening Spendability. The existing stored schedule is used as-is.
 
   // ✅ FIX: Load FRESH balances from backend API like Accounts page does
   let allPlaidAccounts = [];
