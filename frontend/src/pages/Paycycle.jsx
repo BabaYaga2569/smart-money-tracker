@@ -407,10 +407,10 @@ const PayCycle = () => {
     try {
       if (editingIncome) {
         // Update existing income source
-        await updateDoc(doc(db, 'incomeSources', editingIncome.id), incomeData);
+        await updateDoc(doc(db, 'users', currentUser.uid, 'incomeSources', editingIncome.id), incomeData);
       } else {
         // Add new income source
-        const newDoc = doc(collection(db, 'incomeSources'));
+        const newDoc = doc(collection(db, 'users', currentUser.uid, 'incomeSources'));
         await setDoc(newDoc, {
           ...incomeData,
           id: newDoc.id,
