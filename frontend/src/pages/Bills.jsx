@@ -22,6 +22,24 @@ const generateBillId = () => {
   return `bill_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
 };
 
+const formatBillDate = (value) => {
+  if (!value) return 'No date';
+
+  try {
+    const normalized =
+      typeof value?.toDate === 'function'
+        ? value.toDate()
+        : value;
+
+    return formatDateForDisplay(normalized);
+  } catch (error) {
+    console.warn('[Bills] Unable to format date:', value, error);
+    return String(value);
+  }
+};
+
+const safeBillName = (bill) => String(bill?.name || 'Unnamed bill');
+
 export default function Bills() {
   const { currentUser } = useAuth();
   
@@ -477,7 +495,7 @@ const refreshPlaidTransactions = async () => {
 
   const filteredBills = (() => {
     const filtered = processedBills.filter(bill => {
-      const matchesSearch = bill.name.toLowerCase().includes(searchTerm.toLowerCase());
+      const matchesSearch = safeBillName(bill).toLowerCase().includes(String(searchTerm || '').toLowerCase());
       const matchesCategory = filterCategory === 'all' || bill.category === filterCategory;
       
       let matchesStatus = false;
@@ -1190,7 +1208,7 @@ const refreshPlaidTransactions = async () => {
               {metrics.nextBillDue ? formatCurrency(metrics.nextBillDue.amount) : '--'}
             </div>
             <div className="overview-label">
-              {metrics.nextBillDue ? `${metrics.nextBillDue.name} on ${formatDate(metrics.nextBillDue.nextDueDate)}` : 'No upcoming bills'}
+              {metrics.nextBillDue ? `${metrics.nextBillDue.name} on ${formatBillDate(metrics.nextBillDue.nextDueDate)}` : 'No upcoming bills'}
             </div>
           </div>
         </div>
@@ -1368,7 +1386,7 @@ const refreshPlaidTransactions = async () => {
                       marginBottom: '4px',
                       color: '#fff'
                     }}>
-                      {formatDate(bill.nextDueDate || bill.dueDate)}
+                      {formatBillDate(bill.nextDueDate || bill.dueDate)}
                     </div>
                     
                     {/* Show relative time below */}
@@ -1495,7 +1513,7 @@ const refreshPlaidTransactions = async () => {
                         {bill.lastPayment.merchantName || 'Transaction'} • {formatCurrency(bill.lastPayment.amount)}
                       </div>
                       <div style={{ opacity: 0.7, fontSize: '10px' }}>
-                        {formatDate(bill.lastPayment.paidDate)}
+                        {formatBillDate(bill.lastPayment.paidDate)}
                       </div>
                     </div>
                   )}
@@ -1512,7 +1530,7 @@ const refreshPlaidTransactions = async () => {
                       fontWeight: 'bold',
                       textAlign: 'center'
                     }}>
-                      ✅ PAID {formatDate(bill.lastPaidDate)}
+                      ✅ PAID {formatBillDate(bill.lastPaidDate)}
                       
                       {/* Undo Payment Button */}
                       <button
@@ -1618,7 +1636,7 @@ const refreshPlaidTransactions = async () => {
                         <div className="bill-meta">
                           <span className="bill-category">{bill.category}</span>
                           <span className="bill-frequency">{bill.recurrence}</span>
-                          <span>Paid: {formatDate(bill.paidDate)}</span>
+                          <span>Paid: {formatBillDate(bill.paidDate)}</span>
                         </div>
                       </div>
                     </div>
@@ -1626,7 +1644,7 @@ const refreshPlaidTransactions = async () => {
                     <div className="bill-amount-section">
                       <div className="bill-amount">{formatCurrency(bill.amount)}</div>
                       <div className="bill-due-date">
-                        Original Due: {formatDate(bill.dueDate || bill.nextDueDate)}
+                        Original Due: {formatBillDate(bill.dueDate || bill.nextDueDate)}
                       </div>
                       <div style={{ 
                         marginTop: '8px', 
@@ -1734,7 +1752,7 @@ const refreshPlaidTransactions = async () => {
                     <div className="bill-amount-section">
                       <div className="bill-amount">{formatCurrency(bill.cost || bill.amount || 0)}</div>
                       <div className="bill-due-date">
-                        Next: {formatDate(bill.nextRenewal || bill.nextOccurrence)}
+                        Next: {formatBillDate(bill.nextRenewal || bill.nextOccurrence)}
                       </div>
                       {bill.paymentMethod && (
                         <div style={{ fontSize: '11px', color: '#888', marginTop: '4px' }}>
