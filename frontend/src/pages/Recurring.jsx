@@ -1480,6 +1480,7 @@ const Recurring = () => {
                   ['Update', rebuildDryRun.summary.update],
                   ['Add', rebuildDryRun.summary.add],
                   ['Unmatched', rebuildDryRun.summary.unmatchedExisting],
+                  ['Retire', rebuildDryRun.summary.confirmedRetire],
                   ['Review', rebuildDryRun.summary.needsReview],
                 ].map(([label, value]) => (
                   <div key={label} style={{ padding: '12px', border: '1px solid #ddd', borderRadius: '8px', textAlign: 'center' }}>
@@ -1560,6 +1561,22 @@ const Recurring = () => {
                   </tbody>
                 </table>
               </div>
+
+              {rebuildDryRun.retireCandidates.length > 0 && (
+                <div style={{ marginTop: '20px' }}>
+                  <h4>✅ Confirmed retirements</h4>
+                  <p style={{ fontSize: '13px' }}>
+                    You confirmed these recurring patterns are no longer active. The dry run still does not delete anything.
+                  </p>
+                  <ul>
+                    {rebuildDryRun.retireCandidates.map(item => (
+                      <li key={item.id}>
+                        {item.name} — {'$' + Number(item.amount || 0).toFixed(2)} — {item.frequency}
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )}
 
               {rebuildDryRun.unmatchedExisting.length > 0 && (
                 <div style={{ marginTop: '20px' }}>

@@ -19,6 +19,16 @@ const monthly = (name, amount, day, institutionName, extra = {}) => ({
   ...extra,
 });
 
+const preserveSchedule = (name, amount, extra = {}) => ({
+  name,
+  amount,
+  type: 'expense',
+  frequency: 'monthly',
+  status: 'active',
+  scheduleRule: { kind: 'preserveCurrent' },
+  ...extra,
+});
+
 export const RECURRING_REBUILD_PROPOSAL = [
   monthly('Charger Payment', 571.32, 1, 'Bank of America'),
   monthly('Affirm Smoker', 55.25, 3, null),
@@ -29,12 +39,13 @@ export const RECURRING_REBUILD_PROPOSAL = [
   monthly('Geico SXS', 31.42, 8, 'Bank of America'),
   monthly('LAS VEGAS VALLEY Water Bill', 26.30, 8, 'SoFi', { aliases: ['Valley', 'Las Vegas Valley Water District'] }),
   monthly('Barclay Card', 30.00, 9, 'Capital One', { aliases: ['Barclays'] }),
-  monthly('Geico For all cars kids included', 496.94, 10, null, { aliases: ['Geico Charger Durango', 'Geico Charger Durango and Challenger', 'Geico Charger, Durango, and Challenger'] }),
+  monthly('Geico For all cars kids included', 496.94, 10, null, { aliases: ['Geico Charger Durango', 'Geico Charger Durango Challenger', 'Geico Charger Durango and Challenger', 'Geico Charger, Durango, and Challenger'] }),
   monthly('Walmart Card', null, 10, null, { variableAmount: true, amountNote: 'Amount is set month-to-month based on actual card usage.' }),
-  monthly('Affirm Vevor Meat Slicer', 42.96, 10, null),
+  monthly('Affirm Vevor Meat Slicer', 35.83, 10, null, { aliases: ['VEVOR'] }),
   monthly('Clean Freak Car Wash Subscription', 27.00, 11, null, { aliases: ['Clean Freak Car Wash'] }),
   monthly('CVS Membership', 5.00, 12, null, { aliases: ['CVS Pharmacy', 'CVS ExtraCare'] }),
-  monthly('Rent - Raylene (15th)', 350.00, 15, 'Capital One', { aliases: ['Zelle to Raylene'] }),
+  monthly('Affirm Tancis Shopping', 27.32, 14, null, { aliases: ['Walmart Affirm', 'Walmart Affirm Virtual Card'] }),
+  monthly('Rent - Raylene (15th)', 350.00, 15, 'Capital One', { aliases: ['Zelle to Raylene', 'Rent (mid-month)', 'Rent mid month'] }),
   monthly('Side X Side America 1st Credit Union', 295.36, 15, 'Bank of America', { aliases: ['AMERICA FIRST CU LOAN Bill Payment', 'America First Credit Union loan payment'] }),
   monthly('Dodge Ram Tracker', 8.95, 15, null),
   monthly('CHRYSLER CAPITAL Durango Payment', 618.00, 15, 'USAA', { aliases: ['Chrysler Capital'] }),
@@ -56,6 +67,7 @@ export const RECURRING_REBUILD_PROPOSAL = [
   monthly('T-Mobile Cell Phone Bill', 485.26, 21, null, { aliases: ['T-Mobile'] }),
   monthly('Family Apple Music / Apple Pay', 19.99, 21, null, { aliases: ['Family Apple Music', 'Apple Music'] }),
   monthly('Optimum Cell Phone', 15.64, 25, 'Bank of America', { aliases: ['Optimum', 'Optimum Mobile'] }),
+  preserveSchedule('Plaid Technologies Inc', 6.26, { aliases: ['Plaid Technologies', 'Plaid'], scheduleNote: 'Keep the existing recurring schedule; only the subscription identity is confirmed.' }),
   monthly('NV Energy', 177.00, 26, 'Bank of America'),
   monthly('GitHub Subscription', 10.00, 26, null, { aliases: ['GitHub'] }),
   monthly('Apple iCloud Plus / Apple Pay', 10.99, 28, null, { aliases: ['Apple iCloud', 'iCloud'] }),
@@ -65,7 +77,7 @@ export const RECURRING_REBUILD_PROPOSAL = [
   monthly('Google One Storage', 19.99, 30, null, { aliases: ['Google One'] }),
   monthly('Bankruptcy Payment', 1390.99, 30, null),
   monthly('Rent - Raylene (30th)', 350.00, 30, 'Capital One', {
-    aliases: ['Zelle to Raylene'],
+    aliases: ['Zelle to Raylene', 'Rent (end of month)', 'Rent end of month'],
     scheduleNote: 'Second partial rent payment; fixed on the 30th.'
   }),
   {
@@ -91,6 +103,9 @@ export const RECURRING_REBUILD_REVIEW = [];
 
 export const RECURRING_REBUILD_EXCLUSIONS = [
   { sourceName: 'Tanci Pay Day', reason: 'Income, not a bill.' },
+  { sourceName: 'Optimum Internet', reason: 'User confirmed internet service is no longer active.' },
+  { sourceName: 'AfterPay', reason: 'User confirmed this recurring expense no longer exists.' },
+  { sourceName: 'Adobe', reason: 'User confirmed this recurring expense no longer exists.' },
   { sourceName: 'Trans to Cap1 Rent', reason: 'Internal transfer; the actual rent obligation is represented separately.' },
   { sourceName: 'Food', reason: 'Cash-flow / food spending buffer, not a bill due on one date.' },
 ];
