@@ -10,18 +10,12 @@ import { BillAnimationManager } from '../utils/BillAnimationManager';
 import { PlaidIntegrationManager } from '../utils/PlaidIntegrationManager';
 import PlaidConnectionManager from '../utils/PlaidConnectionManager';
 import PlaidErrorModal from '../components/PlaidErrorModal';
-import BillCSVImportModal from '../components/BillCSVImportModal';
 import PaymentHistoryModal from '../components/PaymentHistoryModal';
-import DuplicatePreviewModal from '../components/DuplicatePreviewModal';
 import BillTransactionLinker from '../components/BillTransactionLinker';
 import { formatDateForDisplay, formatDateForInput, getPacificTime } from '../utils/DateUtils';
 import { getLocalMidnight, parseDueDateLocal, getRelativeDateString } from '../utils/dateHelpers';
 import { TRANSACTION_CATEGORIES, CATEGORY_ICONS, getCategoryIcon, migrateLegacyCategory } from '../constants/categories';
 import NotificationSystem from '../components/NotificationSystem';
-import { BillDeduplicationManager } from '../utils/BillDeduplicationManager';
-import { cleanupDuplicateBills, analyzeForCleanup } from '../utils/billCleanupMigration';
-import { detectAndAutoAddRecurringBills } from '../components/SubscriptionDetector';
-import { generateAllBills, updateTemplatesDates } from '../utils/billGenerator';
 import { getDateOnly, getMonthOnly } from '../utils/dateNormalization';
 import { getCanonicalDisplayBalance, getVisiblePlaidAccounts } from '../utils/accountVisibility';
 import "./Bills.css";
@@ -46,36 +40,20 @@ export default function Bills() {
   const [plaidStatus, setPlaidStatus] = useState({ isConnected: false, hasError: false });
   const [showErrorModal, setShowErrorModal] = useState(false);
   const [showModal, setShowModal] = useState(false);
-  const [showBulkDeleteModal, setShowBulkDeleteModal] = useState(false);
-  const [showCSVImport, setShowCSVImport] = useState(false);
-  const [showImportHistory, setShowImportHistory] = useState(false);
   const [showPaymentHistory, setShowPaymentHistory] = useState(false);
   const [showHelpModal, setShowHelpModal] = useState(false);
-  const [deletedBills, setDeletedBills] = useState([]);
   const [editingBill, setEditingBill] = useState(null);
-  const [deduplicating, setDeduplicating] = useState(false);
-  const [showDuplicatePreview, setShowDuplicatePreview] = useState(false);
-  const [duplicateReport, setDuplicateReport] = useState(null);
-  const [importHistory, setImportHistory] = useState([]);
   const [refreshingTransactions, setRefreshingTransactions] = useState(false);
   const [paidThisMonth, setPaidThisMonth] = useState(0);
   const [paidBillsCount, setPaidBillsCount] = useState(0);
   const [recurringBills, setRecurringBills] = useState([]);
   const [showRecurringBills, setShowRecurringBills] = useState(false);
-  const [generatingBills, setGeneratingBills] = useState(false);
   const [showPaidBills, setShowPaidBills] = useState(false);
   const [paidBills, setPaidBills] = useState([]);
   const [userSettings, setUserSettings] = useState(null);
   const [settingsLoaded, setSettingsLoaded] = useState(false);
-  const [autoGenerationLock, setAutoGenerationLock] = useState(new Set());
   const [showLinker, setShowLinker] = useState(false);
   const [selectedBillForLink, setSelectedBillForLink] = useState(null);
-
-  // Helper function to generate lock key for template
-  const getLockKey = (template) => {
-    const dueDate = template.nextRenewal || template.nextOccurrence;
-    return `${template.id}-${dueDate}`;
-  };
 
   // ✅ UPDATED: Load bills from financialEvents collection (one source of truth)
   const loadBills = async () => {
@@ -118,8 +96,7 @@ export default function Bills() {
         const settingsDocRef = doc(db, 'users', currentUser.uid, 'settings', 'personal');
         const settingsDoc = await getDoc(settingsDocRef);
         if (settingsDoc.exists()) {
-          setImportHistory(settingsDoc.data().importHistory || []);
-        }
+            }
       } catch (err) {
         console.log('No import history found');
       }
@@ -1045,17 +1022,6 @@ const refreshPlaidTransactions = async () => {
     <div className="bills-container">
       <NotificationSystem />
       
-      {showDuplicatePreview && (
-        <DuplicatePreviewModal
-          report={duplicateReport}
-          onConfirm={handleConfirmDeduplication}
-          onCancel={() => {
-            setShowDuplicatePreview(false);
-            setDuplicateReport(null);
-          }}
-        />
-      )}
-      
       {!plaidStatus.isConnected && !hasPlaidAccounts && !plaidStatus.hasError && (
         <div style={{
           background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
@@ -1156,53 +1122,6 @@ const refreshPlaidTransactions = async () => {
             <p>Complete bill lifecycle management and automation</p>
           </div>
           <div style={{ display: 'flex', gap: '12px' }}>
-            <button 
-              onClick={async () => {
-                const result = await detectAndAutoAddRecurringBills(currentUser.uid, db);
-                if (result.success) {
-                  NotificationManager.showSuccess(
-                    result.addedCount > 0 
-                      ? `Auto-detected and added ${result.addedCount} recurring bill${result.addedCount > 1 ? 's' : ''}!`
-                      : `Found ${result.totalDetected} recurring bills but all already exist.`
-                  );
-                } else {
-                  NotificationManager.showError('Detection failed', result.error);
-                }
-              }}
-              style={{
-                background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
-                color: '#fff',
-                border: 'none',
-                borderRadius: '8px',
-                padding: '12px 20px',
-                fontWeight: '600',
-                cursor: 'pointer',
-                transition: 'all 0.2s ease'
-              }}
-              title="Manually run recurring bill detection"
-            >
-              🤖 Detect Recurring Bills
-            </button>
-            <button 
-              onClick={handleGenerateAllBills}
-              disabled={generatingBills}
-              style={{
-                background: generatingBills 
-                  ? 'linear-gradient(135deg, #999 0%, #666 100%)'
-                  : 'linear-gradient(135deg, #11998e 0%, #38ef7d 100%)',
-                color: '#fff',
-                border: 'none',
-                borderRadius: '8px',
-                padding: '12px 20px',
-                fontWeight: '600',
-                cursor: generatingBills ? 'not-allowed' : 'pointer',
-                transition: 'all 0.2s ease',
-                opacity: generatingBills ? 0.6 : 1
-              }}
-              title="Generate bill instances from all recurring templates"
-            >
-              {generatingBills ? '⏳ Generating...' : '🔄 Generate All Bills'}
-            </button>
             <button 
               onClick={() => setShowHelpModal(true)}
               style={{
@@ -1426,105 +1345,6 @@ const refreshPlaidTransactions = async () => {
         </div>
         
         <div className="action-buttons">
-          {deletedBills.length > 0 && (
-            <button 
-              className="undo-button"
-              onClick={handleUndoBulkDelete}
-              disabled={loading}
-              title="Restore deleted bills"
-            >
-              ↩️ Undo Delete
-            </button>
-          )}
-          {processedBills.length > 0 && (
-            <button 
-              className="delete-all-button"
-              onClick={() => setShowBulkDeleteModal(true)}
-              disabled={loading}
-              title="Delete all bills"
-            >
-              🗑️ Delete All Bills
-            </button>
-          )}
-          {processedBills.length > 0 && (
-            <button 
-              className="force-delete-button"
-              onClick={() => {
-                const billName = window.prompt(
-                  '🔥 FORCE DELETE UTILITY\n\n' +
-                  'Enter the EXACT bill name to force delete ALL matching instances from Firebase:\n\n' +
-                  'Examples:\n' +
-                  '  • "NV Energy"\n' +
-                  '  • "Netflix"\n' +
-                  '  • "Rent"\n\n' +
-                  'This bypasses all caches and directly removes bills from the database.\n\n' +
-                  'Bill name:'
-                );
-                if (billName && billName.trim()) {
-                  handleForceDeleteByName(billName.trim());
-                }
-              }}
-              disabled={loading}
-              title="🔥 Force delete all bills with a specific name - bypasses cache, directly queries Firebase"
-              style={{
-                background: 'linear-gradient(135deg, #dc2626 0%, #991b1b 100%)',
-                color: '#fff',
-                border: 'none',
-                borderRadius: '8px',
-                padding: '12px 20px',
-                fontWeight: '600',
-                cursor: loading ? 'not-allowed' : 'pointer',
-                transition: 'all 0.2s ease',
-                whiteSpace: 'nowrap',
-                opacity: loading ? 0.6 : 1,
-                boxShadow: '0 4px 12px rgba(220, 38, 38, 0.4)'
-              }}
-            >
-              🔥 Force Delete by Name
-            </button>
-          )}
-          {processedBills.length > 0 && (
-            <button 
-              className="deduplicate-button"
-              onClick={handleDeduplicateBills}
-              disabled={loading || deduplicating}
-              title="Cleanup duplicate bills - keeps only the next upcoming unpaid bill per group"
-              style={{
-                background: '#17a2b8',
-                color: '#fff',
-                border: 'none',
-                borderRadius: '8px',
-                padding: '12px 20px',
-                fontWeight: '600',
-                cursor: (loading || deduplicating) ? 'not-allowed' : 'pointer',
-                transition: 'all 0.2s ease',
-                whiteSpace: 'nowrap',
-                opacity: (loading || deduplicating) ? 0.6 : 1
-              }}
-            >
-              {deduplicating ? '🔄 Cleaning up...' : '🧹 Cleanup Duplicates'}
-            </button>
-          )}
-          <button 
-            className="import-button"
-            onClick={() => setShowCSVImport(true)}
-            disabled={loading}
-            title="Import bills from CSV"
-            style={{
-              background: '#007bff',
-              color: '#fff',
-              border: 'none',
-              borderRadius: '8px',
-              padding: '12px 20px',
-              fontWeight: '600',
-              cursor: loading ? 'not-allowed' : 'pointer',
-              transition: 'all 0.2s ease',
-              whiteSpace: 'nowrap',
-              opacity: loading ? 0.6 : 1
-            }}
-          >
-                        📊 Import from CSV
-          </button>
           <button 
             className="export-button"
             onClick={handleExportToCSV}
@@ -1545,51 +1365,6 @@ const refreshPlaidTransactions = async () => {
           >
             📊 Export to CSV
           </button>
-          {importHistory.length > 0 && (
-            <>
-              <button 
-                className="import-history-button"
-                onClick={() => setShowImportHistory(true)}
-                disabled={loading}
-                title="View import history"
-                style={{
-                  background: '#6c757d',
-                  color: '#fff',
-                  border: 'none',
-                  borderRadius: '8px',
-                  padding: '12px 20px',
-                  fontWeight: '600',
-                  cursor: loading ? 'not-allowed' : 'pointer',
-                  transition: 'all 0.2s ease',
-                  whiteSpace: 'nowrap',
-                  opacity: loading ? 0.6 : 1
-                }}
-              >
-                📜 Import History ({importHistory.length})
-              </button>
-              <button 
-                className="undo-import-button"
-                onClick={handleUndoLastImport}
-                disabled={loading}
-                title="Undo last import"
-                style={{
-                  background: '#ff9800',
-                  color: '#000',
-                  border: 'none',
-                  borderRadius: '8px',
-                  padding: '12px 20px',
-                  fontWeight: '600',
-                  cursor: loading ? 'not-allowed' : 'pointer',
-                  transition: 'all 0.2s ease',
-                  whiteSpace: 'nowrap',
-                  opacity: loading ? 0.6 : 1,
-                  animation: 'pulse 2s ease-in-out infinite'
-                }}
-              >
-                ↩️ Undo Last Import
-              </button>
-            </>
-          )}
         </div>
       </div>
 
@@ -2281,174 +2056,6 @@ const refreshPlaidTransactions = async () => {
       )}
 
       {/* Import History Modal */}
-      {showImportHistory && (
-        <div 
-          className="modal-overlay"
-          onClick={() => setShowImportHistory(false)}
-          style={{
-            position: 'fixed',
-            top: 0,
-            left: 0,
-            right: 0,
-            bottom: 0,
-            background: 'rgba(0, 0, 0, 0.8)',
-            display: 'flex',
-            justifyContent: 'center',
-            alignItems: 'center',
-            zIndex: 1000
-          }}
-        >
-          <div 
-            className="modal-content"
-            onClick={(e) => e.stopPropagation()}
-            style={{
-              background: '#1a1a1a',
-              border: '2px solid #333',
-              borderRadius: '12px',
-              padding: '24px',
-              maxWidth: '600px',
-              width: '90%',
-              maxHeight: '80vh',
-              overflowY: 'auto'
-            }}
-          >
-            <h3 style={{ marginTop: 0, marginBottom: '20px', color: '#fff' }}>
-              Import History
-            </h3>
-            
-            {importHistory.length > 0 ? (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-                {importHistory.map((entry, index) => (
-                  <div 
-                    key={entry.id}
-                    style={{
-                      padding: '16px',
-                      background: '#2a2a2a',
-                      border: '1px solid #444',
-                      borderRadius: '8px'
-                    }}
-                  >
-                    <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '8px' }}>
-                      <span style={{ fontWeight: '600', color: '#fff' }}>
-                        Import #{importHistory.length - index}
-                      </span>
-                      <span style={{ fontSize: '12px', color: '#888' }}>
-                        {new Date(entry.timestamp).toLocaleString()}
-                      </span>
-                    </div>
-                    <div style={{ fontSize: '14px', color: '#ccc' }}>
-                      <div>📋 {entry.billCount} bills imported</div>
-                      {entry.errorsCount > 0 && (
-                        <div style={{ color: '#ff073a' }}>
-                          ⚠️ {entry.errorsCount} errors
-                        </div>
-                      )}
-                      {entry.warningsCount > 0 && (
-                        <div style={{ color: '#ffdd00' }}>
-                          ⚠️ {entry.warningsCount} warnings
-                        </div>
-                      )}
-                    </div>
-                  </div>
-                ))}
-              </div>
-            ) : (
-              <p style={{ color: '#888' }}>No import history available</p>
-            )}
-            
-            <div style={{ marginTop: '20px', display: 'flex', justifyContent: 'flex-end' }}>
-              <button
-                onClick={() => setShowImportHistory(false)}
-                style={{
-                  padding: '10px 20px',
-                  background: '#444',
-                  color: '#fff',
-                  border: 'none',
-                  borderRadius: '6px',
-                  fontSize: '14px',
-                  fontWeight: '600',
-                  cursor: 'pointer'
-                }}
-              >
-                Close
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Bulk Delete Confirmation Modal */}
-      {showBulkDeleteModal && (
-        <div 
-          className="modal-overlay"
-          onClick={() => setShowBulkDeleteModal(false)}
-          style={{
-            position: 'fixed',
-            top: 0,
-            left: 0,
-            right: 0,
-            bottom: 0,
-            background: 'rgba(0, 0, 0, 0.8)',
-            display: 'flex',
-            justifyContent: 'center',
-            alignItems: 'center',
-            zIndex: 1000
-          }}
-        >
-          <div 
-            className="modal-content"
-            onClick={(e) => e.stopPropagation()}
-            style={{
-              background: '#1a1a1a',
-              border: '2px solid #ff073a',
-              borderRadius: '12px',
-              padding: '24px',
-              maxWidth: '400px',
-              width: '90%'
-            }}
-          >
-            <h3 style={{ marginTop: 0, marginBottom: '16px', color: '#ff073a' }}>
-              ⚠️ Delete All Bills?
-            </h3>
-            <p style={{ color: '#ccc', marginBottom: '20px' }}>
-              Are you sure you want to delete all {processedBills.length} bills? This action can be undone using the "Undo Delete" button.
-            </p>
-            <div style={{ display: 'flex', gap: '12px', justifyContent: 'flex-end' }}>
-              <button
-                onClick={() => setShowBulkDeleteModal(false)}
-                style={{
-                  padding: '10px 20px',
-                  background: '#444',
-                  color: '#fff',
-                  border: 'none',
-                  borderRadius: '6px',
-                  fontSize: '14px',
-                  fontWeight: '600',
-                  cursor: 'pointer'
-                }}
-              >
-                Cancel
-              </button>
-              <button
-                onClick={handleBulkDelete}
-                style={{
-                  padding: '10px 20px',
-                  background: '#ff073a',
-                  color: '#fff',
-                  border: 'none',
-                  borderRadius: '6px',
-                  fontSize: '14px',
-                  fontWeight: '700',
-                  cursor: 'pointer'
-                }}
-              >
-                Delete All
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
       {/* Help Modal */}
       {showHelpModal && (
         <div 
@@ -2539,15 +2146,6 @@ const refreshPlaidTransactions = async () => {
             </div>
           </div>
         </div>
-      )}
-
-      {/* CSV Import Modal */}
-      {showCSVImport && (
-        <BillCSVImportModal
-          onClose={() => setShowCSVImport(false)}
-          onImport={handleCSVImport}
-          existingBills={processedBills}
-        />
       )}
 
       {/* Payment History Modal */}
