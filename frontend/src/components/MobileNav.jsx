@@ -1,32 +1,41 @@
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import { auth } from '../firebase';
+import { getPendingCount } from '../utils/detectionStorage';
+import { APP_NAV_ITEMS } from '../config/navigation';
 import './MobileNav.css';
 
 export default function MobileNav({ isOpen, onToggle, onClose }) {
   const location = useLocation();
   const navigate = useNavigate();
   const { currentUser } = useAuth();
+  const [detectionCount, setDetectionCount] = useState(0);
 
-  const menuItems = [
-    { name: "Dashboard", path: "/" },
-    { name: "Accounts", path: "/accounts" },
-    { name: "Transactions", path: "/transactions" },
-    { name: "Spendability", path: "/spendability" },
-    { name: "Bills", path: "/bills" },
-    { name: "💳 Payment History", path: "/payment-history" },
-    { name: "Recurring", path: "/recurring" },
-    { name: "🩺 Bill Doctor", path: "/bill-doctor" },
-    { name: "🧠 Debt Optimizer", path: "/debt-optimizer" },
-    { name: "Subscriptions", path: "/subscriptions" },
-    { name: "Goals", path: "/goals" },
-    { name: "Categories", path: "/categories" },
-    { name: "Cash Flow", path: "/cashflow" },
-    { name: "Pay Cycle", path: "/paycycle" },
-    { name: "📊 Reports", path: "/reports" },
-    { name: "Settings", path: "/settings" }
-  ];
+  useEffect(() => {
+    const refresh = () => setDetectionCount(getPendingCount());
+    refresh();
+    window.addEventListener('detectionUpdate', refresh);
+    window.addEventListener('detectionDismissed', refresh);
+    window.addEventListener('detectionRemoved', refresh);
+    window.addEventListener('detectionsCleared', refresh);
+    window.addEventListener('detectionsReset', refresh);
+    return () => {
+      window.removeEventListener('detectionUpdate', refresh);
+      window.removeEventListener('detectionDismissed', refresh);
+      window.removeEventListener('detectionRemoved', refresh);
+      window.removeEventListener('detectionsCleared', refresh);
+      window.removeEventListener('detectionsReset', refresh);
+    };
+  }, []);
+
+  const menuItems = APP_NAV_ITEMS.map(item => ({
+    ...item,
+    badge: item.badgeKey === 'subscriptions' ? detectionCount : 0
+  }));
+
+  /* legacy mobile menu list removed; shared config above keeps parity */
+
 
   const handleLogout = async () => {
     try {
@@ -78,7 +87,10 @@ export default function MobileNav({ isOpen, onToggle, onClose }) {
                   className={location.pathname === item.path ? "active" : ""}
                   onClick={handleNavClick}
                 >
-                  {item.name}
+                  <span>{item.name}</span>
+                  {item.badge > 0 && (
+                    <span className="mobile-nav-badge">{item.badge}</span>
+                  )}
                 </Link>
               </li>
             ))}

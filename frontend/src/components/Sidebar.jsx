@@ -4,6 +4,7 @@ import { useAuth } from '../contexts/AuthContext';
 import { auth } from '../firebase';
 import { Link, useLocation } from "react-router-dom";
 import { getPendingCount } from '../utils/detectionStorage';
+import { APP_NAV_ITEMS } from '../config/navigation';
 import './Sidebar.css';
 
 const Sidebar = () => {
@@ -40,26 +41,10 @@ const Sidebar = () => {
     setDetectionCount(count);
   };
 
-  const menuItems = [
-    { name: "Dashboard", path: "/" },
-    { name: "Accounts", path:  "/accounts" },
-    { name: "Transactions", path: "/transactions" },
-    { name:  "Spendability", path:  "/spendability" },
-    { name: "Bills", path:  "/bills" },
-    { name: "💳 Payment History", path: "/payment-history" },
-    { name: "⚙️ Payment Rules", path: "/payment-rules" },  // ← NEW
-    { name: "Recurring", path: "/recurring" },
-    { name: "🩺 Bill Doctor", path: "/bill-doctor" },
-    { name: "Credit Cards", path: "/creditcards" },
-    { name: "🧠 Debt Optimizer", path: "/debt-optimizer" },
-    { name: "Subscriptions", path: "/subscriptions", badge: detectionCount },
-    { name: "Goals", path: "/goals" },
-    { name:  "Categories", path: "/categories" },
-    { name: "Cash Flow", path: "/cashflow" },
-    { name: "Pay Cycle", path: "/paycycle" },
-    { name:  "📊 Reports", path:  "/reports" },
-    { name: "Settings", path: "/settings" }
-  ];
+  const menuItems = APP_NAV_ITEMS.map(item => ({
+    ...item,
+    badge: item.badgeKey === 'subscriptions' ? detectionCount : 0
+  }));
 
   const handleLogout = async () => {
     try {
