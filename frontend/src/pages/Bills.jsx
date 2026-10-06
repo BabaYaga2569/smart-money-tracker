@@ -101,35 +101,17 @@ export default function Bills() {
         ...doc.data()
       }));
       
-      // Filter to only show recent/upcoming bills
-      // Only include bills where:
-      // - Due date is within the last 7 days (recently overdue) OR
-      // - Due date is in the future (upcoming)
-      const now = getLocalMidnight();
-      const sevenDaysAgo = new Date(now);
-      sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
-      
-      const filteredBills = allBills.filter(bill => {
-        const dueDateStr = bill.nextDueDate || bill.dueDate;
-        if (!dueDateStr) return true; // Keep bills without due date for safety
-        
-        const dueDate = parseDueDateLocal(dueDateStr);
-        if (!dueDate) return true; // Keep bills if date parsing fails
-        
-        // Keep if due date is within last 7 days OR in the future
-        return dueDate >= sevenDaysAgo;
-      });
-      
-      // Process bills with status
-      const processed = filteredBills.map(bill => ({
+      // Never hide unpaid bills because they are old. Overdue items remain visible
+      // until they are explicitly paid, skipped, or otherwise resolved.
+      const processed = allBills.map(bill => ({
         ...bill,
         status: determineBillStatus(bill)
       }));
       
       console.log('✅ Loaded bills from financialEvents:', {
         total: allBills.length,
-        filtered: filteredBills.length,
-        hidden: allBills.length - filteredBills.length,
+        visible: allBills.length,
+        hidden: 0,
         unpaid: processed.filter(b => !b.isPaid).length,
         paid: processed.filter(b => b.isPaid).length
       });
