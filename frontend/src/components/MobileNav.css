@@ -120,7 +120,10 @@
 }
 
 .mobile-sidebar-nav ul li a {
-  display: block;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
   padding: 16px 24px;
   text-decoration: none;
   color: #ccc;
@@ -186,5 +189,33 @@
 
   .mobile-backdrop {
     display: block;
+  }
+}
+
+
+.mobile-nav-badge {
+  min-width: 22px;
+  height: 22px;
+  padding: 0 7px;
+  border-radius: 999px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: #dc2626;
+  color: #fff;
+  font-size: 12px;
+  font-weight: 700;
+  flex-shrink: 0;
+}
+
+/* iPad/tablet widths use the same mobile navigation breakpoint as AppLayout. */
+@media (min-width: 768px) and (max-width: 1024px) {
+  .mobile-sidebar {
+    width: min(360px, 82vw);
+    left: min(-360px, -82vw);
+  }
+
+  .mobile-sidebar-nav ul li a {
+    padding: 14px 24px;
   }
 }
