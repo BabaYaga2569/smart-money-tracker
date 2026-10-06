@@ -1,5 +1,5 @@
 import React, { useMemo, useState, useEffect } from "react";
-import { collection, doc, orderBy, query, updateDoc, getDoc, addDoc, where, getDocs, setDoc, deleteDoc, serverTimestamp, arrayUnion } from "firebase/firestore";
+import { collection, doc, orderBy, query, updateDoc, getDoc, where, getDocs, setDoc, deleteDoc, serverTimestamp, arrayUnion } from "firebase/firestore";
 import { db } from "../firebase";
 import { useAuth } from "../contexts/AuthContext";
 import { RecurringBillManager } from '../utils/RecurringBillManager';
@@ -7,7 +7,6 @@ import { RecurringManager } from '../utils/RecurringManager';
 import { BillSortingManager } from '../utils/BillSortingManager';
 import { NotificationManager } from '../utils/NotificationManager';
 import { BillAnimationManager } from '../utils/BillAnimationManager';
-import { PlaidIntegrationManager } from '../utils/PlaidIntegrationManager';
 import PlaidConnectionManager from '../utils/PlaidConnectionManager';
 import PlaidErrorModal from '../components/PlaidErrorModal';
 import PaymentHistoryModal from '../components/PaymentHistoryModal';
@@ -16,7 +15,6 @@ import { formatDateForDisplay, formatDateForInput, getPacificTime } from '../uti
 import { getLocalMidnight, parseDueDateLocal, getRelativeDateString } from '../utils/dateHelpers';
 import { TRANSACTION_CATEGORIES, CATEGORY_ICONS, getCategoryIcon, migrateLegacyCategory } from '../constants/categories';
 import NotificationSystem from '../components/NotificationSystem';
-import { getDateOnly, getMonthOnly } from '../utils/dateNormalization';
 import { getCanonicalDisplayBalance, getVisiblePlaidAccounts } from '../utils/accountVisibility';
 import "./Bills.css";
 
@@ -50,8 +48,6 @@ export default function Bills() {
   const [showRecurringBills, setShowRecurringBills] = useState(false);
   const [showPaidBills, setShowPaidBills] = useState(false);
   const [paidBills, setPaidBills] = useState([]);
-  const [userSettings, setUserSettings] = useState(null);
-  const [settingsLoaded, setSettingsLoaded] = useState(false);
   const [showLinker, setShowLinker] = useState(false);
   const [selectedBillForLink, setSelectedBillForLink] = useState(null);
 
@@ -161,32 +157,6 @@ export default function Bills() {
     } catch (error) {
       console.error('Error loading paid bills:', error);
       setPaidBills([]);
-    }
-  };
-
-  // Load user settings
-  const loadUserSettings = async () => {
-    if (!currentUser) return;
-    try {
-      const settingsDocRef = doc(db, 'users', currentUser.uid, 'settings', 'personal');
-      const settingsDoc = await getDoc(settingsDocRef);
-      if (settingsDoc.exists()) {
-        const settings = settingsDoc.data();
-        setUserSettings(settings);
-        console.log('✅ Loaded user settings:', {
-          autoDetectBills: settings.autoDetectBills,
-          disableAutoGeneration: settings.disableAutoGeneration,
-          ignoredMerchants: settings.ignoredMerchants || []
-        });
-      } else {
-        // If no settings exist, set empty object so we know settings are loaded
-        setUserSettings({});
-      }
-      setSettingsLoaded(true);
-    } catch (error) {
-      console.error('Error loading user settings:', error);
-      // Even on error, mark as loaded to prevent infinite waiting
-      setSettingsLoaded(true);
     }
   };
 
@@ -319,7 +289,6 @@ const refreshPlaidTransactions = async () => {
     if (currentUser) {
       // Load settings FIRST before anything else
       const loadData = async () => {
-        await loadUserSettings();
         loadBills();
         loadAccounts();
         loadPaidThisMonth();
@@ -657,55 +626,6 @@ const refreshPlaidTransactions = async () => {
     await loadPaidThisMonth();
 
     return result;
-  };
-
-  const updateAccountBalance = async (accountKey, amount) => {
-    try {
-      const settingsDocRef = doc(db, 'users', currentUser.uid, 'settings', 'personal');
-      const currentDoc = await getDoc(settingsDocRef);
-      const currentData = currentDoc.exists() ? currentDoc.data() : {};
-      
-      const bankAccounts = currentData.bankAccounts || {};
-      const currentBalance = parseFloat(bankAccounts[accountKey]?.balance || 0);
-      const newBalance = currentBalance + amount;
-      
-      const updatedAccounts = {
-        ...bankAccounts,
-        [accountKey]: {
-          ...bankAccounts[accountKey],
-          balance: newBalance.toString()
-        }
-      };
-      
-      await updateDoc(settingsDocRef, {
-        ...currentData,
-        bankAccounts: updatedAccounts
-      });
-    } catch (error) {
-      console.error('Error updating account balance:', error);
-      throw error;
-    }
-  };
-
-  const testPlaidAutoPayment = async () => {
-    const unpaidBills = processedBills.filter(bill => bill.status !== 'paid');
-    
-    if (unpaidBills.length === 0) {
-      NotificationManager.showNotification({
-        type: 'warning',
-        message: 'No unpaid bills available for auto-payment simulation',
-        duration: 3000
-      });
-      return;
-    }
-
-    const testBill = unpaidBills[0];
-    
-    await PlaidIntegrationManager.simulateTransaction({
-      amount: parseFloat(testBill.amount),
-      merchantName: testBill.name,
-      date: new Date().toISOString().split('T')[0]
-    });
   };
 
   const showNotification = (message, type) => {
@@ -1209,24 +1129,6 @@ const refreshPlaidTransactions = async () => {
               🔄 Re-match Transactions
             </button>
             
-            {typeof window !== 'undefined' && window.location.hostname === 'localhost' && (
-              <button 
-                className="test-plaid-btn"
-                onClick={() => testPlaidAutoPayment()}
-                style={{ 
-                  marginLeft: '10px', 
-                  background: '#ff6b00', 
-                  color: '#fff',
-                  border: 'none',
-                  borderRadius: '6px',
-                  padding: '12px 16px',
-                  fontSize: '12px',
-                  cursor: 'pointer'
-                }}
-              >
-                🧪 Test Auto-Payment
-              </button>
-            )}
           </div>
         </div>
       </div>
