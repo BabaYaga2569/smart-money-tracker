@@ -1,13 +1,11 @@
 import React, { useState, useEffect } from 'react';
-import { doc, getDoc, updateDoc, collection, addDoc, getDocs, serverTimestamp, arrayUnion, setDoc, deleteDoc, query, where, orderBy, limit } from 'firebase/firestore';
+import { doc, getDoc, collection, getDocs, query, where, orderBy, limit } from 'firebase/firestore';
 import { db } from '../firebase';
 import { PayCycleCalculator } from '../utils/PayCycleCalculator';
 import { RecurringBillManager } from '../utils/RecurringBillManager';
 import { projectCashFlow, nextOwnPaydays, spousePaydaysBetween, addDays } from '../utils/CashFlowProjection';
 import { formatDateForDisplay, formatDateForInput, getDaysUntilDateInPacific, getManualPacificDaysUntilPayday } from '../utils/DateUtils';
 import { getPacificTime } from '../utils/timezoneHelpers';
-import { runAutoDetection } from '../utils/AutoBillDetection';
-import { matchTransactionToBill } from '../utils/BillPaymentMatcher';
 import { SettingsSchemaManager } from '../utils/SettingsSchemaManager';
 import { getVisiblePlaidAccounts, isDepositoryAccount } from '../utils/accountVisibility';
 import './Spendability.css';
@@ -21,7 +19,6 @@ const SpendabilityV2 = () => {
   const [spendAmount, setSpendAmount] = useState('');
   const [canSpend, setCanSpend] = useState(null);
   const [notification, setNotification] = useState({ message: '', type: '' });
-  const [payingBill, setPayingBill] = useState(null);
   const [refreshTrigger, setRefreshTrigger] = useState(0); // Force refresh mechanism
   
   const [financialData, setFinancialData] = useState({
@@ -311,20 +308,8 @@ nextPayday = result.date;
 // ✅ FIX ISSUE #2: Use getDaysUntilDateInPacific instead of result.daysUntil
 daysUntilPayday = getDaysUntilDateInPacific(nextPayday);
 
-// ✅ Update Firebase payCycle cache with fresh calculation
-try {
-  const payCycleDocRef = doc(db, 'users', currentUser.uid, 'financial', 'payCycle');
-  await setDoc(payCycleDocRef, {
-    date: nextPayday,
-    daysUntil: daysUntilPayday,
-    source: result.source,
-    amount: result.amount,
-    lastCalculated: new Date().toISOString()
-  }, { merge: true });
-  console.log('✅ Updated payCycle cache with fresh date:', nextPayday);
-} catch (error) {
-  console.error('Error updating payCycle cache:', error);
-}
+// Spendability is read-only. A stale/missing pay-cycle cache may be
+// recalculated in memory, but this view does not persist the result.
 
 // 📅 PAYDAY CALCULATION DEBUG
 console.log('📅 PAYDAY CALCULATION DEBUG:', {
@@ -537,33 +522,8 @@ console.log('🔍 PAYDAY CALCULATION DEBUG:', {
         console.error('❌ Spendability: Error loading bills from financialEvents:', error);
       }
 
-      // Run auto-detection for bill payments
-      // ✅ OPTIMIZATION: Only run auto-detection if transactions have changed since last run
-      try {
-        const lastAutoDetection = sessionStorage.getItem(`lastAutoDetect_${currentUser.uid}`);
-        const transactionHash = transactions.map(t => t.id).join(',');
-
-        if (lastAutoDetection !== transactionHash) {
-          const autoDetectionResult = await runAutoDetection(currentUser.uid, transactions, allBills);
-          
-          if (autoDetectionResult.success && autoDetectionResult.matchCount > 0) {
-            // Show notification to user
-            const message = `✅ Auto-detected ${autoDetectionResult.paidBills.length} paid bill(s)!`;
-            setNotification({ message, type: 'success' });
-            setTimeout(() => setNotification({ message: '', type: '' }), 4000);
-          }
-          
-          // Store transaction hash to prevent redundant auto-detection
-          sessionStorage.setItem(`lastAutoDetect_${currentUser.uid}`, transactionHash);
-        } else {
-          if (import.meta.env.DEV) {
-            console.log('[Spendability] Skipping auto-detection - transactions unchanged');
-          }
-        }
-      } catch (error) {
-        console.error('Spendability: Error running auto-detection:', error);
-        // Don't fail the whole page if auto-detection fails
-      }
+      // Canonical bill paid/unpaid state comes from the backend Bill Engine.
+      // Spendability does not run its own transaction matcher.
 
       // Add default recurrence if missing
       const billsWithRecurrence = allBills.map(bill => ({
@@ -626,78 +586,19 @@ console.log('🔍 PAYDAY CALCULATION DEBUG:', {
           return new Date(a.nextDueDate) - new Date(b.nextDueDate);
         });
       
-      // Filter out bills that have been paid (have matching transactions)
-      // Helper function to filter unpaid bills
-      const filterUnpaidBills = (bills) => {
-        return bills.filter(bill => {
-          // Try to find a matching transaction for this bill
-          let matchingTransaction = null;
-          
-          for (const transaction of transactions) {
-            const match = matchTransactionToBill(transaction, bill);
-            if (match && match.confidence >= 0.67) {
-              // Found a match with at least 2 of 3 criteria
-              matchingTransaction = match;
-              break;
-            }
-          }
-          
-          if (matchingTransaction) {
-            const { matches, details, confidence } = matchingTransaction;
-            console.log(`💳 [Spendability] Bill "${bill.name}" ($${bill.amount}) has matching transaction - excluding from due bills`);
-            console.log(`   ✅ Transaction: "${details.txName}" ($${details.txAmount}) on ${details.txDate}`);
-            console.log(`   📊 Confidence: ${Math.round(confidence * 100)}% | Name: ${matches.name ? '✓' : '✗'} | Amount: ${matches.amount ? '✓' : '✗'} | Date: ${matches.date ? '✓' : '✗'}`);
-            return false; // Exclude this bill (it's paid)
-          }
-          
-          return true; // Include this bill (still unpaid)
-        });
-      };
-      
-      // Apply filtering to both before and after payday bills
-      const unpaidBillsBeforePayday = filterUnpaidBills(billsDueBeforePayday);
-      const unpaidBillsAfterPayday = filterUnpaidBills(billsDueAfterPayday);
-      
-      // Calculate total of UNPAID bills only
-      const totalUnpaidBills = (unpaidBillsBeforePayday || []).reduce((sum, bill) => {
-        const amount = Number(bill.amount ?? bill.cost) || 0;
-        if (amount === 0 && bill.isSubscription) {
-          console.warn(
-            `Spendability: Subscription bill ${bill.name} has zero/invalid amount`,
-            'amount:', bill.amount,
-            'type:', typeof bill.amount,
-            'cost:', bill.cost,
-            'costType:', typeof bill.cost
-          );
-        }
-        return sum + amount;
+      // financialEvents has already been filtered to canonical unpaid,
+      // non-skipped bill occurrences. Do not second-guess that state by
+      // re-matching bank transactions in the browser.
+      const unpaidBillsBeforePayday = billsDueBeforePayday;
+      const unpaidBillsAfterPayday = billsDueAfterPayday;
+
+      const totalUnpaidBills = unpaidBillsBeforePayday.reduce((sum, bill) => {
+        return sum + (Number(bill.amount ?? bill.cost) || 0);
       }, 0);
-      
-      // Keep old variable for backward compatibility but use unpaid bills total
+
       const totalBillsDue = totalUnpaidBills;
-      
-      // Log filtering results for transparency
-      const paidBillsCount = billsDueBeforePayday.length - unpaidBillsBeforePayday.length;
-      if (paidBillsCount > 0 && import.meta.env.DEV) {
-        console.log(`💰 [Spendability] Filtered out ${paidBillsCount} paid bill(s) from display`);
-        console.log(`   Total Bills (All): $${billsDueBeforePayday.reduce((sum, b) => sum + Number((b.amount ?? b.cost) || 0), 0).toFixed(2)}`);
-        console.log(`   Total Bills (Unpaid Only): $${totalUnpaidBills.toFixed(2)}`);
-      }
-      
-      // Legacy calculation - keeping for backward compatibility but now points to filtered total
-      const totalBillsDueLegacy = (billsDueBeforePayday || []).reduce((sum, bill) => {
-        const amount = Number(bill.amount ?? bill.cost) || 0;
-        if (amount === 0 && bill.isSubscription) {
-          console.warn(
-            `Spendability: Subscription bill ${bill.name} has zero/invalid amount`,
-            'amount:', bill.amount,
-            'type:', typeof bill.amount,
-            'cost:', bill.cost,
-            'costType:', typeof bill.cost
-          );
-        }
-        return sum + amount;
-      }, 0);
+      const paidBillsCount = 0;
+      const totalBillsDueLegacy = totalUnpaidBills;
 
       const preferences = settingsData.preferences || {};
       const weeklyEssentials = preferences.weeklyEssentials || 0;
@@ -990,168 +891,6 @@ console.log('🔍 PAYDAY CALCULATION DEBUG:', {
     setTimeout(() => setNotification({ message: '', type: '' }), 4000);
   };
 
-  const handleMarkBillAsPaid = async (bill) => {
-    // Check if bill has already been paid for current cycle
-    if (RecurringBillManager.isBillPaidForCurrentCycle(bill)) {
-      showNotification(`${bill.name} has already been paid for this billing cycle.`, 'warning');
-      return;
-    }
-
-    if (!window.confirm(`Mark ${bill.name} bill ($${bill.amount ?? bill.cost}) as paid?`)) {
-      return;
-    }
-
-    try {
-      setPayingBill(bill.name);
-      
-      // Create transaction for the bill payment
-      const transaction = {
-        amount: -Math.abs(parseFloat(bill.amount ?? bill.cost)),
-        description: `${bill.name} Payment`,
-        category: 'Bills & Utilities',
-        account: 'bofa', // Default to main account - could be made configurable
-        date: formatDateForInput(getPacificTime()),
-        timestamp: Date.now(),
-        type: 'expense'
-      };
-
-      // Add transaction to Firebase
-      const transactionsRef = collection(db, 'users', currentUser.uid, 'transactions');
-      await addDoc(transactionsRef, transaction);
-
-      // Update account balance
-      await updateAccountBalance('bofa', transaction.amount);
-
-      // Update bill status in Firebase and get updated bill data
-      const updatedBill = await updateBillAsPaid(bill);
-
-      // TODO: Known Issue - Bill doesn't visually disappear immediately after payment
-      // Root cause: setRefreshTrigger() reloads all data but doesn't force immediate UI update
-      // Will be fixed in comprehensive Spendability refactor
-      // Workaround: User can reload page to see updated state
-      // Trigger full refresh to update UI
-      setRefreshTrigger(prev => prev + 1);
-
-      // Show enhanced notification with next due date
-      const nextDueDateStr = updatedBill && updatedBill.nextDueDate 
-        ? formatDate(updatedBill.nextDueDate)
-        : 'next billing cycle';
-      
-      showNotification(
-        `${bill.name} bill marked as paid! Next due: ${nextDueDateStr}. Transaction added and balance updated.`, 
-        'success'
-      );
-    } catch (error) {
-      console.error('Error marking bill as paid:', error);
-      showNotification('Error processing bill payment', 'error');
-    } finally {
-      setPayingBill(null);
-    }
-  };
-
-  const updateAccountBalance = async (accountKey, amount) => {
-    try {
-      const settingsDocRef = doc(db, 'users', currentUser.uid, 'settings', 'personal');
-      const currentDoc = await getDoc(settingsDocRef);
-      const currentData = currentDoc.exists() ? currentDoc.data() : {};
-      
-      const bankAccounts = currentData.bankAccounts || {};
-      const currentBalance = parseFloat(bankAccounts[accountKey]?.balance || 0);
-      const newBalance = currentBalance + amount;
-      
-      const updatedAccounts = {
-        ...bankAccounts,
-        [accountKey]: {
-          ...bankAccounts[accountKey],
-          balance: newBalance.toString()
-        }
-      };
-      
-      await updateDoc(settingsDocRef, {
-        ...currentData,
-        bankAccounts: updatedAccounts
-      });
-    } catch (error) {
-      console.error('Error updating account balance:', error);
-      throw error;
-    }
-  };
-
-  const updateBillAsPaid = async (bill) => {
-    try {
-      // ✅ FIX: Update bill in financialEvents collection
-      const billRef = doc(db, 'users', currentUser.uid, 'financialEvents', bill.id);
-      
-      await updateDoc(billRef, {
-        isPaid: true,
-        status: 'paid',
-        lastPaidDate: serverTimestamp(),
-        updatedAt: serverTimestamp(),
-        paymentHistory: arrayUnion({
-          paidDate: new Date().toISOString(),
-          amount: bill.amount,
-          transactionId: null,
-          paymentMethod: 'manual',
-          source: 'manual'
-        })
-      });
-      
-      // Generate next month's bill if recurring or subscription
-      if (bill.recurrence === 'monthly' || bill.isSubscription) {
-        const currentDueDate = new Date(bill.dueDate);
-        const nextDueDate = new Date(currentDueDate);
-        nextDueDate.setMonth(nextDueDate.getMonth() + 1);
-        
-        const nextBillId = `bill_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
-        const nextBillInstance = {
-          id: nextBillId,
-          type: 'bill',
-          name: bill.name,
-          amount: bill.amount,
-          dueDate: formatDateForInput(nextDueDate),
-          originalDueDate: bill.originalDueDate || bill.dueDate,
-          isPaid: false,
-          status: 'pending',
-          category: bill.category,
-          recurrence: bill.recurrence,
-          paymentHistory: [],
-          linkedTransactionIds: [],
-          merchantNames: bill.merchantNames || [],
-          createdAt: serverTimestamp(),
-          updatedAt: serverTimestamp()
-        };
-        
-        // Only add optional fields if they exist
-        if (bill.isSubscription) {
-          nextBillInstance.isSubscription = bill.isSubscription;
-        }
-        if (bill.subscriptionId) {
-          nextBillInstance.subscriptionId = bill.subscriptionId;
-        }
-        if (bill.recurringTemplateId) {
-          nextBillInstance.recurringTemplateId = bill.recurringTemplateId;
-        }
-        
-        await setDoc(
-          doc(db, 'users', currentUser.uid, 'financialEvents', nextBillId),
-          nextBillInstance
-        );
-        
-        console.log(`✅ Generated next bill for ${bill.name} due ${formatDateForInput(nextDueDate)}`);
-        
-        return {
-          ...bill,
-          nextDueDate: formatDateForInput(nextDueDate)
-        };
-      }
-      
-      return bill;
-    } catch (error) {
-      console.error('Error updating bill status:', error);
-      throw error;
-    }
-  };
-
   if (loading) {
     return (
       <div className="spendability-container">
@@ -1389,20 +1128,6 @@ console.log('🔍 PAYDAY CALCULATION DEBUG:', {
                       </div>
                     )}
                   </div>
-                  <div className="bill-actions">
-                    <button 
-                      className="mark-paid-btn"
-                      onClick={() => handleMarkBillAsPaid(bill)}
-                      disabled={payingBill === bill.name || RecurringBillManager.isBillPaidForCurrentCycle(bill)}
-                    >
-                      {payingBill === bill.name 
-                        ? 'Processing...' 
-                        : RecurringBillManager.isBillPaidForCurrentCycle(bill) 
-                        ? 'Already Paid' 
-                        : 'Mark as Paid'
-                      }
-                    </button>
-                  </div>
                 </div>
               ))
             ) : (
@@ -1451,20 +1176,6 @@ console.log('🔍 PAYDAY CALCULATION DEBUG:', {
                       <span className="bill-name">{bill.name}</span>
                       <span className="bill-due-date">Due: {formatDate(bill.nextDueDate)}</span>
                       <span className="bill-amount">{formatCurrency(bill.amount ?? bill.cost)}</span>
-                    </div>
-                    <div className="bill-actions">
-                      <button 
-                        className="mark-paid-btn"
-                        onClick={() => handleMarkBillAsPaid(bill)}
-                        disabled={payingBill === bill.name || RecurringBillManager.isBillPaidForCurrentCycle(bill)}
-                      >
-                        {payingBill === bill.name 
-                          ? 'Processing...' 
-                          : RecurringBillManager.isBillPaidForCurrentCycle(bill) 
-                          ? 'Already Paid' 
-                          : 'Mark as Paid'
-                        }
-                      </button>
                     </div>
                   </div>
                 ))}
