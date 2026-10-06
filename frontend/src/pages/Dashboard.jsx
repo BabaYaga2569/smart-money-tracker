@@ -135,10 +135,26 @@ const Dashboard = () => {
         // Load current month transaction count
         const transactionCount = await loadCurrentMonthTransactionCount();
 
-       // Calculate bills data from Firebase
-const bills = data.bills || [];
-const billsDueSoon = bills.filter(b => b.status !== 'paid').length;
-const recurringCount = bills.filter(b => b.recurrence && b.recurrence !== 'one-time').length;
+       // Load canonical bill occurrences and recurring templates.
+       // Dashboard must read the same sources as Bills/Recurring instead of
+       // the legacy settings.bills array.
+const billsRef = collection(db, 'users', currentUser.uid, 'financialEvents');
+const recurringPatternsRef = collection(db, 'users', currentUser.uid, 'recurringPatterns');
+
+const [billsSnapshot, recurringPatternsSnapshot] = await Promise.all([
+  getDocs(query(
+    billsRef,
+    where('type', '==', 'bill'),
+    where('isPaid', '==', false)
+  )),
+  getDocs(recurringPatternsRef)
+]);
+
+const bills = billsSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+const recurringPatterns = recurringPatternsSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+
+const billsDueSoon = bills.length;
+const recurringCount = recurringPatterns.filter(pattern => pattern.status === 'active').length;
 
 // Load goals count
 const goalsRef = collection(db, 'users', currentUser.uid, 'goals');
