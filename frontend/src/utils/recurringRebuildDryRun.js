@@ -59,6 +59,7 @@ const scheduleLabel = (proposal) => {
   const rule = proposal.scheduleRule || {};
   if (rule.kind === 'dayOfMonth') return `Monthly on day ${rule.day}`;
   if (rule.kind === 'quarterEndLastDay') return 'Quarterly on Mar/Jun/Sep/Dec month-end';
+  if (rule.kind === 'preserveCurrent') return 'Keep existing schedule';
   return proposal.frequency || 'monthly';
 };
 
@@ -281,7 +282,21 @@ export function buildRecurringRebuildDryRun(currentPatterns, proposal, reviewIte
   const preserve = unmatchedCurrent.filter(item => item.type !== 'expense');
   const unmatchedExpense = unmatchedCurrent.filter(item => item.type === 'expense');
 
-  const unmatchedReviews = unmatchedExpense.map(item => ({
+  const confirmedRetireNames = new Set(
+    (exclusions || [])
+      .filter(item => /no longer|no longer active|no longer exists/i.test(item.reason || ''))
+      .map(item => normalizeName(item.sourceName))
+  );
+
+  const retireCandidates = unmatchedExpense.filter(item =>
+    confirmedRetireNames.has(normalizeName(item.name))
+  );
+
+  const unresolvedExpense = unmatchedExpense.filter(item =>
+    !confirmedRetireNames.has(normalizeName(item.name))
+  );
+
+  const unmatchedReviews = unresolvedExpense.map(item => ({
     sourceName: item.name,
     amount: item.amount,
     reason: 'Existing expense pattern could not be matched confidently to the TEMPLATE proposal.',
@@ -302,12 +317,14 @@ export function buildRecurringRebuildDryRun(currentPatterns, proposal, reviewIte
       keep: results.filter(item => item.action === 'keep').length,
       update: results.filter(item => item.action === 'update').length,
       add: results.filter(item => item.action === 'add').length,
-      unmatchedExisting: unmatchedExpense.length,
+      unmatchedExisting: unresolvedExpense.length,
+      confirmedRetire: retireCandidates.length,
       preserveNonExpense: preserve.length,
       needsReview: allReviewItems.length,
     },
     results,
-    unmatchedExisting: unmatchedExpense,
+    unmatchedExisting: unresolvedExpense,
+    retireCandidates,
     preserveNonExpense: preserve,
     reviewItems: allReviewItems,
     exclusions,
