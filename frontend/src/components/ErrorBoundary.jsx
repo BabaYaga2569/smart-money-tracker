@@ -78,6 +78,12 @@ class ErrorBoundary extends React.Component {
     if (this.state.hasError) {
       // Custom fallback UI
       if (this.props.fallback) {
+        if (React.isValidElement(this.props.fallback)) {
+          return React.cloneElement(this.props.fallback, {
+            error: this.state.error,
+            errorInfo: this.state.errorInfo
+          });
+        }
         return this.props.fallback;
       }
 
