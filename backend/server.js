@@ -1870,76 +1870,40 @@ app.post("/api/plaid/sync_transactions", async (req, res, next) => {
   }
 });
 
-// Automatic bill clearing endpoint - matches transactions to bills and clears them
+// Automatic bill clearing endpoint - re-runs the same canonical backend
+// pipeline used after Plaid sync and webhooks.
 app.post("/api/bills/auto_clear", async (req, res, next) => {
   const endpoint = "/api/bills/auto_clear";
   logDiagnostic.request(endpoint, req.body);
-  
+
   try {
-    const { userId } = req.body;
-    
+    const { userId } = req.body || {};
+
     if (!userId) {
-      logger.error('AUTO_BILL_CLEAR', 'Missing userId in request', null, {});
-      logDiagnostic.error('AUTO_BILL_CLEAR', 'Missing userId in request');
       throw createError.badRequest('userId is required', 'MISSING_USER_ID');
     }
-    
-    // Validate userId
+
     validators.validateUserId(userId);
-    
-    logger.info('AUTO_BILL_CLEAR', 'Starting automatic bill clearing', { userId });
-    logDiagnostic.info('AUTO_BILL_CLEAR', `Starting automatic bill clearing for user ${userId}`);
-    
-    // Load unpaid bills from financialEvents
-    const billsSnapshot = await db.collection('users').doc(userId)
-      .collection('financialEvents')
-      .where('type', '==', 'bill')
-      .where('isPaid', '==', false)
-      .get();
-    
-    const unpaidBills = billsSnapshot.docs.map(doc => ({
-      id: doc.id,
-      ...doc.data()
-    }));
-    
-    // Load recent transactions (last 60 days for better matching)
-    const sixtyDaysAgo = new Date();
-    sixtyDaysAgo.setDate(sixtyDaysAgo.getDate() - 60);
-    const startDate = sixtyDaysAgo.toISOString().split('T')[0];
-    
-    const txSnapshot = await db.collection('users').doc(userId)
-      .collection('transactions')
-      .where('date', '>=', startDate)
-      .get();
-    
-    const transactions = txSnapshot.docs.map(doc => ({
-      id: doc.id,
-      ...doc.data()
-    }));
-    
-    console.log(`[AUTO_BILL_CLEAR] Found ${unpaidBills.length} unpaid bills and ${transactions.length} recent transactions`);
-    logDiagnostic.info('AUTO_BILL_CLEAR', `Found ${unpaidBills.length} unpaid bills and ${transactions.length} transactions`);
-    
-    // Run matching algorithm
-    const results = await runBillMatching(db, userId, transactions, unpaidBills);
-    
+
+    const results = await runCanonicalBillEngine({ db, userId, log: logger });
+
     if (results.success) {
-      logger.info('AUTO_BILL_CLEAR', 'Bill clearing completed', { 
-        cleared: results.cleared, 
-        advanced: results.advanced, 
-        generated: results.generated 
+      logDiagnostic.info('BILL_ENGINE', 'Manual canonical bill re-match completed', {
+        cleared: results.cleared,
+        advanced: results.advanced,
+        generated: results.generated,
+        bills_scanned: results.billsScanned,
+        transactions_scanned: results.transactionsScanned
       });
-      logDiagnostic.info('AUTO_BILL_CLEAR', `Cleared ${results.cleared} bills, advanced ${results.advanced} patterns, generated ${results.generated} bills`);
     } else {
-      logger.error('AUTO_BILL_CLEAR', 'Bill clearing failed', new Error(results.error), {});
-      logDiagnostic.error('AUTO_BILL_CLEAR', 'Bill clearing failed', { error: results.error });
+      logger.error('BILL_ENGINE', 'Manual canonical bill re-match failed', new Error(results.error), {});
     }
-    
+
     logDiagnostic.response(endpoint, 200, results);
     res.json(results);
   } catch (error) {
-    logger.error('AUTO_BILL_CLEAR', 'Failed to run automatic bill clearing', error, {});
-    logDiagnostic.error('AUTO_BILL_CLEAR', 'Failed to run automatic bill clearing', error);
+    logger.error('BILL_ENGINE', 'Failed to re-run canonical bill engine', error, {});
+    logDiagnostic.error('BILL_ENGINE', 'Failed to re-run canonical bill engine', error);
     next(error.statusCode ? error : createError.internal(error.message || 'Failed to clear bills'));
   }
 });
