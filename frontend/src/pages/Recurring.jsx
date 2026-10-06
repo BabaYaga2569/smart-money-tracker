@@ -148,8 +148,9 @@ const Recurring = () => {
       await Promise.all([loadRecurringItems(), loadAccounts()]);
     } catch (error) {
       console.error('Error loading recurring data:', error);
-      // Load sample data for demo
-      loadSampleData();
+      // Never substitute demo financial records for failed production data.
+      setRecurringItems([]);
+      setError('Unable to load recurring items. Please try again.');
     } finally {
       setLoading(false);
     }
