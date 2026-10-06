@@ -792,71 +792,78 @@ const Recurring = () => {
     try {
       setSaving(true);
 
-      // ✅ FIX: Load existing items from recurringPatterns collection
-      const recurringPatternsRef = collection(db, 'users', currentUser.uid, 'recurringPatterns');
+      const recurringPatternsRef = collection(
+        db,
+        'users',
+        currentUser.uid,
+        'recurringPatterns'
+      );
       const recurringPatternsSnap = await getDocs(recurringPatternsRef);
-      
+
       const existingItems = recurringPatternsSnap.docs.map(doc => ({
         id: doc.id,
         ...doc.data()
       }));
 
-      // Process conflicts - merge items where resolution is 'merge'
       const mergeUpdates = [];
       conflicts.forEach((conflict) => {
-        if (conflict.resolution === 'merge') {
-          const existingItem = existingItems.find((item) => item.id === conflict.existing.id);
-          if (existingItem) {
-            // Update existing item with new data, keeping original creation date
-            const mergedItem = {
-              ...existingItem,
-              ...conflict.incoming,
-              id: conflict.existing.id, // Keep existing ID
-              createdAt: existingItem.createdAt, // Keep original creation date
-              updatedAt: new Date().toISOString(),
-              dataSource: 'csv_import_merged',
-              mergedFrom: conflict.incoming.id,
-            };
-            mergeUpdates.push(mergedItem);
-          }
-        }
+        if (conflict.resolution !== 'merge') return;
+
+        const existingItem = existingItems.find(
+          (item) => item.id === conflict.existing.id
+        );
+        if (!existingItem) return;
+
+        mergeUpdates.push({
+          ...existingItem,
+          ...conflict.incoming,
+          id: conflict.existing.id,
+          createdAt: existingItem.createdAt,
+          updatedAt: new Date().toISOString(),
+          dataSource: 'csv_import_merged',
+          mergedFrom: conflict.incoming.id
+        });
       });
 
-      // Add new items (excluding those that were merged or skipped)
       const itemsToAdd = importedItems.filter((item) => {
         const conflict = conflicts.find((c) => c.incoming.id === item.id);
-        return !conflict || (conflict.resolution !== 'merge' && conflict.resolution !== 'skip');
+        return !conflict ||
+          (conflict.resolution !== 'merge' && conflict.resolution !== 'skip');
       });
 
-      // ✅ FIX: Save all items to recurringPatterns collection
-      const savePromises = [];
-      
-      // Save merged items
-      mergeUpdates.forEach(item => {
-        savePromises.push(
-          setDoc(doc(db, 'users', currentUser.uid, 'recurringPatterns', item.id), item)
-        );
-      });
-      
-      // Save new items
-      itemsToAdd.forEach(item => {
-        savePromises.push(
-          setDoc(doc(db, 'users', currentUser.uid, 'recurringPatterns', item.id), item)
-        );
-      });
-      
+      const savePromises = [
+        ...mergeUpdates.map(item =>
+          setDoc(
+            doc(db, 'users', currentUser.uid, 'recurringPatterns', item.id),
+            item
+          )
+        ),
+        ...itemsToAdd.map(item =>
+          setDoc(
+            doc(db, 'users', currentUser.uid, 'recurringPatterns', item.id),
+            item
+          )
+        )
+      ];
+
       await Promise.all(savePromises);
 
-      // Save custom mapping to settings if provided
       if (updatedCustomMapping && Object.keys(updatedCustomMapping).length > 0) {
-        const settingsDocRef = doc(db, 'users', currentUser.uid, 'settings', 'personal');
-        await setDoc(settingsDocRef, {
-          institutionMapping: updatedCustomMapping
-        }, { merge: true });
+        const settingsDocRef = doc(
+          db,
+          'users',
+          currentUser.uid,
+          'settings',
+          'personal'
+        );
+        await setDoc(
+          settingsDocRef,
+          { institutionMapping: updatedCustomMapping },
+          { merge: true }
+        );
         setCustomMapping(updatedCustomMapping);
       }
 
-      // ✅ FIX: Reload from recurringPatterns collection
       await loadRecurringItems();
       setShowCSVImport(false);
 
@@ -868,56 +875,6 @@ const Recurring = () => {
       }
 
       showNotification(message, 'success');
-
-      // CSV import updates recurring templates only. Bill occurrences are not
-      // generated from the browser as a side effect of importing templates.
-    } catch (error) {
-            console.error(
-              `[CSV Import] Error generating bills from template ${template.name}:`,
-              error
-            );
-          }
-        });
-
-        if (newBills.length > 0) {
-          // Add new bills to existing bills
-          let updatedBills = [...bills, ...newBills];
-
-          // DEDUPLICATION: Remove any duplicates that might have been created during CSV import
-          const deduplicationResult = BillDeduplicationManager.removeDuplicates(updatedBills);
-          if (deduplicationResult.stats.duplicates > 0) {
-            console.log(
-              '[CSV Import] Removed duplicates during bill generation:',
-              deduplicationResult.stats.duplicates
-            );
-            BillDeduplicationManager.logDeduplication(deduplicationResult, 'csv-import');
-            updatedBills = deduplicationResult.cleanedBills;
-          }
-
-          // Update Firebase with the new bills
-          await updateDoc(settingsDocRef, {
-            ...currentData,
-            recurringItems: updatedItems,
-            bills: updatedBills,
-          });
-
-          const finalBillCount = updatedBills.length - bills.length;
-          console.log(`[CSV Import] Successfully generated ${finalBillCount} bill instances`);
-
-          // Update notification to include bill generation info
-          const finalMessage =
-            message + `. Auto-generated ${finalBillCount} bill instance(s) for Bills Management.`;
-          showNotification(finalMessage, 'success');
-        } else {
-          console.log(
-            '[CSV Import] No new bills to generate (templates already have bills or no active expense templates)'
-          );
-        }
-      } catch (billError) {
-        console.error('[CSV Import] Error auto-generating bills:', billError);
-        // Don't fail the entire import if bill generation fails, just log it
-        showNotification(message + ' (Note: Bill generation encountered an issue)', 'warning');
-      }
     } catch (error) {
       console.error('Error importing CSV data:', error);
       showNotification('Error importing CSV data', 'error');
