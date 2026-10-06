@@ -11,6 +11,7 @@ import logger from './utils/logger.js';
 import { atomicTransaction, createOperation } from './utils/atomicTransaction.js';
 import { validateAccount as validateAccountConsistency, validateTransaction as validateTransactionConsistency, validateBalanceConsistency, checkDuplicateTransaction } from './utils/consistencyValidators.js';
 import { runBillMatching } from './utils/BillMatchingService.js';
+import { runCanonicalBillEngine } from './utils/billEngine.js';
 import { findPlaidItemDocument, syncPlaidItemTransactions } from './utils/plaidSyncEngine.js';
 import {
   ACCOUNT_VISIBILITY_SCHEMA_VERSION,
@@ -1778,42 +1779,23 @@ app.post("/api/plaid/sync_transactions", async (req, res, next) => {
       failedItemCount: failedItems.length
     }, { merge: true });
 
-    if (totals.added > 0 || totals.updated > 0) {
-      setImmediate(async () => {
-        try {
-          const billsSnapshot = await db.collection('users').doc(userId)
-            .collection('financialEvents')
-            .where('type', '==', 'bill')
-            .where('isPaid', '==', false)
-            .get();
-
-          const unpaidBills = billsSnapshot.docs.map(doc => ({
-            id: doc.id,
-            ...doc.data()
-          }));
-
-          const sixtyDaysAgo = new Date();
-          sixtyDaysAgo.setDate(sixtyDaysAgo.getDate() - 60);
-          const startDate = sixtyDaysAgo.toISOString().split('T')[0];
-
-          const txSnapshot = await db.collection('users').doc(userId)
-            .collection('transactions')
-            .where('date', '>=', startDate)
-            .get();
-
-          const transactions = txSnapshot.docs.map(doc => ({
-            id: doc.id,
-            ...doc.data()
-          }));
-
-          const results = await runBillMatching(db, userId, transactions, unpaidBills);
-          if (!results.success) {
-            logger.error('AUTO_BILL_CLEAR', 'Bill clearing failed after Plaid sync', new Error(results.error), {});
-          }
-        } catch (clearingError) {
-          logger.error('AUTO_BILL_CLEAR', 'Automatic bill clearing failed after Plaid sync', clearingError, {});
+    if (totals.added > 0 || totals.updated > 0 || totals.pendingReplaced > 0) {
+      try {
+        const billResults = await runCanonicalBillEngine({ db, userId, log: logger });
+        if (!billResults.success) {
+          logger.error('BILL_ENGINE', 'Canonical bill engine failed after manual Plaid sync', new Error(billResults.error), {});
+        } else {
+          logDiagnostic.info('BILL_ENGINE', 'Canonical bill engine complete after manual Plaid sync', {
+            cleared: billResults.cleared,
+            advanced: billResults.advanced,
+            generated: billResults.generated,
+            bills_scanned: billResults.billsScanned,
+            transactions_scanned: billResults.transactionsScanned
+          });
         }
-      });
+      } catch (clearingError) {
+        logger.error('BILL_ENGINE', 'Canonical bill engine crashed after manual Plaid sync', clearingError, {});
+      }
     }
 
     const responseBody = {
@@ -2203,6 +2185,18 @@ app.post("/api/plaid/webhook", async (req, res) => {
             lastSyncTrigger: 'webhook'
           }, { merge: true });
 
+        let billEngineResult = null;
+        if (result.added > 0 || result.updated > 0 || result.pendingReplaced > 0) {
+          try {
+            billEngineResult = await runCanonicalBillEngine({ db, userId, log: logger });
+            if (!billEngineResult.success) {
+              logger.error('BILL_ENGINE', 'Canonical bill engine failed after Plaid webhook sync', new Error(billEngineResult.error), {});
+            }
+          } catch (billEngineError) {
+            logger.error('BILL_ENGINE', 'Canonical bill engine crashed after Plaid webhook sync', billEngineError, {});
+          }
+        }
+
         logDiagnostic.info('WEBHOOK', 'Transaction webhook reconciled', {
           webhook_code,
           added: result.added,
@@ -2210,7 +2204,10 @@ app.post("/api/plaid/webhook", async (req, res) => {
           pending: result.pending,
           pending_replaced: result.pendingReplaced,
           removed: result.removed,
-          cursor_advanced: result.cursorAdvanced
+          cursor_advanced: result.cursorAdvanced,
+          bills_cleared: billEngineResult?.cleared || 0,
+          patterns_advanced: billEngineResult?.advanced || 0,
+          next_bills_generated: billEngineResult?.generated || 0
         });
       }
     }
