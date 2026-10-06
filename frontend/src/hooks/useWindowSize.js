@@ -5,8 +5,8 @@ export function useWindowSize() {
     width: window.innerWidth,
     height: window.innerHeight,
     isMobile: window.innerWidth < 768,
-    isTablet: window.innerWidth >= 768 && window.innerWidth < 1024,
-    isDesktop: window.innerWidth >= 1024
+    isTablet: window.innerWidth >= 768 && window.innerWidth <= 1024,
+    isDesktop: window.innerWidth > 1024
   });
 
   useEffect(() => {
@@ -16,8 +16,8 @@ export function useWindowSize() {
         width,
         height: window.innerHeight,
         isMobile: width < 768,
-        isTablet: width >= 768 && width < 1024,
-        isDesktop: width >= 1024
+        isTablet: width >= 768 && width <= 1024,
+        isDesktop: width > 1024
       });
     };
 
