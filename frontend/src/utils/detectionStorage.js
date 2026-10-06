@@ -165,7 +165,7 @@ export const updateLastRun = () => {
 /**
  * Check if we should run detection based on timing rules
  * Rules:
- * - Don't run more than once per hour
+ * - Don't run more than once per 24 hours
  * - Don't run within 24h of dismissal
  */
 export const shouldRunDetection = () => {
@@ -174,7 +174,6 @@ export const shouldRunDetection = () => {
     const lastDismissStr = localStorage.getItem(STORAGE_KEYS.LAST_DISMISS);
     
     const now = Date.now();
-    const ONE_HOUR = 60 * 60 * 1000;
     const TWENTY_FOUR_HOURS = 24 * 60 * 60 * 1000;
     
     // Check if dismissed recently (within 24h)
@@ -186,11 +185,11 @@ export const shouldRunDetection = () => {
       }
     }
     
-    // Check if run recently (within 1h)
+    // Background recurring detection is intentionally low-frequency.
     if (lastRunStr) {
       const lastRun = parseInt(lastRunStr);
-      if (now - lastRun < ONE_HOUR) {
-        console.log('[Detection] Skipping - ran within 1h');
+      if (now - lastRun < TWENTY_FOUR_HOURS) {
+        console.log('[Detection] Skipping - ran within 24h');
         return false;
       }
     }
