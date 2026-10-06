@@ -20,6 +20,8 @@ import './Recurring.css';
 import { useAuth } from '../contexts/AuthContext';
 import { ensureSettingsDocument } from '../utils/settingsUtils';
 import { getCanonicalDisplayBalance, getVisiblePlaidAccounts } from '../utils/accountVisibility';
+import { RECURRING_REBUILD_PROPOSAL, RECURRING_REBUILD_REVIEW, RECURRING_REBUILD_EXCLUSIONS, RECURRING_REBUILD_SOURCE } from '../data/recurringRebuildProposal';
+import { buildRecurringRebuildDryRun } from '../utils/recurringRebuildDryRun';
 
 // ✅ OPTIMIZATION: Cache TTL for Plaid API responses
 const PLAID_CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutes
@@ -38,6 +40,7 @@ const Recurring = () => {
   const [selectedItem, setSelectedItem] = useState(null);
   const [showCSVImport, setShowCSVImport] = useState(false);
   const [showDetection, setShowDetection] = useState(false);
+  const [showRebuildDryRun, setShowRebuildDryRun] = useState(false);
 
   // Filters and search
   const [filterType, setFilterType] = useState('all');
@@ -445,6 +448,16 @@ const Recurring = () => {
   };
 
   const metrics = calculateMetrics();
+
+  const rebuildDryRun = useMemo(
+    () => buildRecurringRebuildDryRun(
+      recurringItems,
+      RECURRING_REBUILD_PROPOSAL,
+      RECURRING_REBUILD_REVIEW,
+      RECURRING_REBUILD_EXCLUSIONS
+    ),
+    [recurringItems]
+  );
 
   // Filter items based on search and filters, then apply smart sorting
   // ✅ OPTIMIZATION: Use useMemo to prevent recalculation on every render
@@ -1003,6 +1016,14 @@ const Recurring = () => {
           )}
           <button
             className="import-button"
+            onClick={() => setShowRebuildDryRun(true)}
+            disabled={saving}
+            title="Read-only comparison of live recurringPatterns against the vetted TEMPLATE rebuild proposal"
+          >
+            🩺 Rebuild Dry Run
+          </button>
+          <button
+            className="import-button"
             onClick={() => setShowDetection(true)}
             disabled={saving}
           >
@@ -1414,6 +1435,160 @@ const Recurring = () => {
                 ) : (
                   <p>No history available</p>
                 )}
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* TEMPLATE -> recurringPatterns dry-run. Intentionally read-only. */}
+      {showRebuildDryRun && (
+        <div className="modal-overlay" onClick={() => setShowRebuildDryRun(false)}>
+          <div
+            className="modal"
+            onClick={(e) => e.stopPropagation()}
+            style={{ maxWidth: '1100px', width: '94vw', maxHeight: '88vh', overflowY: 'auto' }}
+          >
+            <div className="modal-header">
+              <div>
+                <h3>🩺 Recurring Rebuild Dry Run</h3>
+                <div style={{ fontSize: '13px', opacity: 0.75 }}>
+                  Source: {RECURRING_REBUILD_SOURCE.spreadsheet} → {RECURRING_REBUILD_SOURCE.sheet}
+                  {' '}({RECURRING_REBUILD_SOURCE.capturedAt})
+                </div>
+              </div>
+              <button className="close-btn" onClick={() => setShowRebuildDryRun(false)}>×</button>
+            </div>
+
+            <div className="modal-body">
+              <div style={{
+                padding: '12px 14px',
+                borderRadius: '8px',
+                marginBottom: '16px',
+                background: '#fff3cd',
+                color: '#664d03',
+                border: '1px solid #ffecb5'
+              }}>
+                <strong>Read-only preview.</strong> This screen cannot create, update, or delete Firestore records.
+              </div>
+
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(130px,1fr))', gap: '10px', marginBottom: '18px' }}>
+                {[
+                  ['Current', rebuildDryRun.summary.currentPatterns],
+                  ['Proposed', rebuildDryRun.summary.proposedBills],
+                  ['Keep', rebuildDryRun.summary.keep],
+                  ['Update', rebuildDryRun.summary.update],
+                  ['Add', rebuildDryRun.summary.add],
+                  ['Remove?', rebuildDryRun.summary.removeCandidates],
+                  ['Review', rebuildDryRun.summary.needsReview],
+                ].map(([label, value]) => (
+                  <div key={label} style={{ padding: '12px', border: '1px solid #ddd', borderRadius: '8px', textAlign: 'center' }}>
+                    <div style={{ fontSize: '22px', fontWeight: 700 }}>{value}</div>
+                    <div style={{ fontSize: '12px', opacity: 0.7 }}>{label}</div>
+                  </div>
+                ))}
+              </div>
+
+              {rebuildDryRun.engineRequirements.length > 0 && (
+                <div style={{ marginBottom: '18px' }}>
+                  <h4>⚠️ Engine support required before apply</h4>
+                  <ul>
+                    {rebuildDryRun.engineRequirements.map(requirement => (
+                      <li key={requirement}>
+                        {requirement === 'active-months' && 'Seasonal active-month support: Rams must skip September and October.'}
+                        {requirement === 'last-day-of-month' && 'True last-day-of-month support for the month-end rent occurrence.'}
+                        {requirement === 'quarter-end-last-day' && 'Quarter-end last-day support for Republic Services.'}
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+
+              {rebuildDryRun.reviewItems.length > 0 && (
+                <div style={{ marginBottom: '18px' }}>
+                  <h4>🟨 Needs your review</h4>
+                  {rebuildDryRun.reviewItems.map(item => (
+                    <div key={item.sourceName} style={{ padding: '10px 0', borderBottom: '1px solid #eee' }}>
+                      <strong>{item.sourceName}</strong>
+                      {item.amount ? ' — $' + item.amount.toFixed(2) : ''}
+                      <div>{item.reason}</div>
+                      <div style={{ fontSize: '13px', opacity: 0.75 }}>{item.suggestedAction}</div>
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              <h4>Proposed comparison</h4>
+              <div style={{ overflowX: 'auto' }}>
+                <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '13px' }}>
+                  <thead>
+                    <tr>
+                      <th style={{ textAlign: 'left', padding: '8px', borderBottom: '1px solid #ccc' }}>Action</th>
+                      <th style={{ textAlign: 'left', padding: '8px', borderBottom: '1px solid #ccc' }}>Bill</th>
+                      <th style={{ textAlign: 'right', padding: '8px', borderBottom: '1px solid #ccc' }}>Amount</th>
+                      <th style={{ textAlign: 'left', padding: '8px', borderBottom: '1px solid #ccc' }}>Schedule</th>
+                      <th style={{ textAlign: 'left', padding: '8px', borderBottom: '1px solid #ccc' }}>Changes</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {rebuildDryRun.results.map((row, index) => (
+                      <tr key={row.proposed.name + '-' + index}>
+                        <td style={{ padding: '8px', borderBottom: '1px solid #eee', fontWeight: 700, textTransform: 'uppercase' }}>
+                          {row.action}
+                        </td>
+                        <td style={{ padding: '8px', borderBottom: '1px solid #eee' }}>
+                          {row.proposed.name}
+                          {row.current && row.current.name !== row.proposed.name && (
+                            <div style={{ fontSize: '11px', opacity: 0.65 }}>Current: {row.current.name}</div>
+                          )}
+                        </td>
+                        <td style={{ padding: '8px', borderBottom: '1px solid #eee', textAlign: 'right' }}>
+                          {'$' + Number(row.proposed.amount || 0).toFixed(2)}
+                        </td>
+                        <td style={{ padding: '8px', borderBottom: '1px solid #eee' }}>
+                          {row.proposed.scheduleLabel}
+                          {row.proposed.scheduleNote && (
+                            <div style={{ fontSize: '11px', opacity: 0.65 }}>{row.proposed.scheduleNote}</div>
+                          )}
+                        </td>
+                        <td style={{ padding: '8px', borderBottom: '1px solid #eee' }}>
+                          {row.changes.length ? row.changes.join(' • ') : 'No change'}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+
+              {rebuildDryRun.removeCandidates.length > 0 && (
+                <div style={{ marginTop: '20px' }}>
+                  <h4>🟥 Existing expense patterns not found in the TEMPLATE proposal</h4>
+                  <p style={{ fontSize: '13px' }}>
+                    These are candidates for retirement only. This dry run does not delete them.
+                  </p>
+                  <ul>
+                    {rebuildDryRun.removeCandidates.map(item => (
+                      <li key={item.id}>
+                        {item.name} — {'$' + Number(item.amount || 0).toFixed(2)} — {item.frequency}
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+
+              {rebuildDryRun.preserveNonExpense.length > 0 && (
+                <div style={{ marginTop: '20px' }}>
+                  <h4>ℹ️ Non-expense recurring patterns preserved</h4>
+                  <p style={{ fontSize: '13px' }}>
+                    Income and other non-expense patterns are outside this bill rebuild.
+                  </p>
+                </div>
+              )}
+
+              <div className="modal-actions" style={{ display: 'flex', justifyContent: 'flex-end', marginTop: '20px' }}>
+                <button className="cancel-btn" onClick={() => setShowRebuildDryRun(false)}>
+                  Close Dry Run
+                </button>
               </div>
             </div>
           </div>
