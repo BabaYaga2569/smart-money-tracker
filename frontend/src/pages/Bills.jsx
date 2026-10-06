@@ -40,6 +40,15 @@ const formatBillDate = (value) => {
 
 const safeBillName = (bill) => String(bill?.name || 'Unnamed bill');
 
+const normalizeBillAuditName = (value) =>
+  String(value || '')
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, ' ')
+    .trim();
+
+const billDateOnly = (bill) =>
+  String(bill?.dueDate || bill?.nextDueDate || bill?.nextOccurrence || '').slice(0, 10);
+
 const formatCurrency = (value) => {
   const number = Number(value);
   if (!Number.isFinite(number)) return '$0.00';
@@ -504,6 +513,52 @@ const refreshPlaidTransactions = async () => {
   };
 
   const metrics = calculateMetrics();
+
+  const integrityAudit = useMemo(() => {
+    const exactGroups = new Map();
+    const recurringGroups = new Map();
+
+    processedBills.forEach((bill) => {
+      const dueDate = billDateOnly(bill);
+      const amount = Number(bill?.amount);
+      const amountKey = Number.isFinite(amount) ? Math.abs(amount).toFixed(2) : 'na';
+      const nameKey = normalizeBillAuditName(bill?.name);
+
+      if (nameKey && dueDate) {
+        const exactKey = `${nameKey}|${amountKey}|${dueDate}`;
+        const group = exactGroups.get(exactKey) || [];
+        group.push(bill);
+        exactGroups.set(exactKey, group);
+      }
+
+      if (bill?.recurringPatternId && dueDate) {
+        const recurringKey = `${bill.recurringPatternId}|${dueDate}`;
+        const group = recurringGroups.get(recurringKey) || [];
+        group.push(bill);
+        recurringGroups.set(recurringKey, group);
+      }
+    });
+
+    const exactDuplicates = [...exactGroups.values()].filter(group => group.length > 1);
+    const recurringConflicts = [...recurringGroups.values()].filter(group => group.length > 1);
+
+    const now = new Date();
+    const currentMonthStart = new Date(now.getFullYear(), now.getMonth(), 1);
+    const staleOverdue = processedBills.filter((bill) => {
+      const parsed = parseDueDateLocal(billDateOnly(bill));
+      return parsed && parsed < currentMonthStart && bill.status === 'overdue';
+    });
+
+    return {
+      exactDuplicates,
+      recurringConflicts,
+      staleOverdue,
+      hasIssues:
+        exactDuplicates.length > 0 ||
+        recurringConflicts.length > 0 ||
+        staleOverdue.length > 0
+    };
+  }, [processedBills]);
 
   const filteredBills = (() => {
     const filtered = processedBills.filter(bill => {
@@ -1298,6 +1353,64 @@ const refreshPlaidTransactions = async () => {
             📊 Export to CSV
           </button>
         </div>
+      </div>
+
+      <div className={`bill-integrity-audit ${integrityAudit.hasIssues ? 'has-issues' : ''}`}>
+        <div className="bill-integrity-header">
+          <div>
+            <h3>🩺 Bill Integrity Audit</h3>
+            <div style={{ color: '#bbb', fontSize: '12px', marginTop: '4px' }}>
+              Read-only check of the {processedBills.length} unpaid bills already loaded on this page.
+            </div>
+          </div>
+          <div className="bill-integrity-summary">
+            <span className={`bill-integrity-pill ${integrityAudit.exactDuplicates.length ? 'danger' : ''}`}>
+              Exact duplicate groups: {integrityAudit.exactDuplicates.length}
+            </span>
+            <span className={`bill-integrity-pill ${integrityAudit.recurringConflicts.length ? 'danger' : ''}`}>
+              Pattern/date conflicts: {integrityAudit.recurringConflicts.length}
+            </span>
+            <span className={`bill-integrity-pill ${integrityAudit.staleOverdue.length ? 'warning' : ''}`}>
+              Prior-month unpaid: {integrityAudit.staleOverdue.length}
+            </span>
+          </div>
+        </div>
+
+        {integrityAudit.hasIssues && (
+          <details className="bill-integrity-details">
+            <summary style={{ cursor: 'pointer', fontWeight: 700 }}>
+              Review integrity findings
+            </summary>
+
+            {integrityAudit.exactDuplicates.map((group, index) => (
+              <div className="bill-integrity-group" key={`exact-${index}`}>
+                <strong>Exact duplicate:</strong>{' '}
+                {safeBillName(group[0])} · {formatCurrency(group[0]?.amount)} · {billDateOnly(group[0])}
+                <div style={{ marginTop: '4px', color: '#aaa' }}>
+                  {group.length} unpaid documents: {group.map(item => item.id).join(', ')}
+                </div>
+              </div>
+            ))}
+
+            {integrityAudit.recurringConflicts.map((group, index) => (
+              <div className="bill-integrity-group" key={`pattern-${index}`}>
+                <strong>Recurring pattern/date conflict:</strong>{' '}
+                {safeBillName(group[0])} · {billDateOnly(group[0])}
+                <div style={{ marginTop: '4px', color: '#aaa' }}>
+                  Pattern {group[0]?.recurringPatternId} has {group.length} unpaid occurrences for the same due date.
+                </div>
+              </div>
+            ))}
+
+            {integrityAudit.staleOverdue.length > 0 && (
+              <div className="bill-integrity-group">
+                <strong>Prior-month unpaid bills:</strong>{' '}
+                {integrityAudit.staleOverdue.length}. These are not automatically considered wrong;
+                they are flagged for review because they predate the current month.
+              </div>
+            )}
+          </details>
+        )}
       </div>
 
       <div className="bills-list-section">
