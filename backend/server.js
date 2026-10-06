@@ -10,7 +10,7 @@ import performanceTracker from './middleware/performanceTracker.js';
 import logger from './utils/logger.js';
 import { atomicTransaction, createOperation } from './utils/atomicTransaction.js';
 import { validateAccount as validateAccountConsistency, validateTransaction as validateTransactionConsistency, validateBalanceConsistency, checkDuplicateTransaction } from './utils/consistencyValidators.js';
-import { runBillMatching } from './utils/BillMatchingService.js';
+import { runBillMatching, applyManualBillPayment, unmarkManualBillPayment } from './utils/BillMatchingService.js';
 import { runCanonicalBillEngine } from './utils/billEngine.js';
 import { findPlaidItemDocument, syncPlaidItemTransactions } from './utils/plaidSyncEngine.js';
 import {
@@ -1867,6 +1867,90 @@ app.post("/api/plaid/sync_transactions", async (req, res, next) => {
     if (syncLockAcquired && userId) {
       activePlaidSyncUsers.delete(userId);
     }
+  }
+});
+
+// Manual bill payment endpoint - uses the same atomic lifecycle as Plaid matches.
+app.post("/api/bills/:billId/pay", async (req, res, next) => {
+  const endpoint = "/api/bills/:billId/pay";
+  logDiagnostic.request(endpoint, {
+    billId: req.params.billId,
+    userId: req.body?.userId,
+    paidDate: req.body?.paidDate
+  });
+
+  try {
+    const { userId, paidDate, amount, paymentMethod } = req.body || {};
+    const { billId } = req.params;
+
+    if (!userId) {
+      throw createError.badRequest('userId is required', 'MISSING_USER_ID');
+    }
+    if (!billId) {
+      throw createError.badRequest('billId is required', 'MISSING_BILL_ID');
+    }
+
+    validators.validateUserId(userId);
+
+    const result = await applyManualBillPayment(db, userId, billId, {
+      paidDate,
+      amount,
+      paymentMethod,
+      markedBy: req.authUid || 'user'
+    });
+
+    if (!result.success) {
+      const status = result.reason === 'BILL_NOT_FOUND' ? 404 : 409;
+      return res.status(status).json(result);
+    }
+
+    logDiagnostic.response(endpoint, 200, result);
+    res.json(result);
+  } catch (error) {
+    logger.error('BILL_PAYMENT', 'Manual bill payment failed', error, {
+      billId: req.params.billId
+    });
+    next(error.statusCode ? error : createError.internal(error.message || 'Failed to mark bill paid'));
+  }
+});
+
+// Manual unmark is intentionally restricted to payments created by the
+// canonical manual-payment lifecycle. Auto/Plaid payments require transaction
+// correction instead of silently undoing bank truth.
+app.post("/api/bills/:billId/unpay", async (req, res, next) => {
+  const endpoint = "/api/bills/:billId/unpay";
+  logDiagnostic.request(endpoint, {
+    billId: req.params.billId,
+    userId: req.body?.userId
+  });
+
+  try {
+    const { userId } = req.body || {};
+    const { billId } = req.params;
+
+    if (!userId) {
+      throw createError.badRequest('userId is required', 'MISSING_USER_ID');
+    }
+    if (!billId) {
+      throw createError.badRequest('billId is required', 'MISSING_BILL_ID');
+    }
+
+    validators.validateUserId(userId);
+
+    const result = await unmarkManualBillPayment(db, userId, billId);
+
+    if (!result.success) {
+      const status = result.reason === 'BILL_NOT_FOUND' ? 404 : 409;
+      return res.status(status).json(result);
+    }
+
+    logDiagnostic.response(endpoint, 200, result);
+    res.json(result);
+  } catch (error) {
+    logger.error('BILL_PAYMENT', 'Manual bill unmark failed', error, {
+      billId: req.params.billId
+    });
+    next(error.statusCode ? error : createError.internal(error.message || 'Failed to unmark bill paid'));
   }
 });
 
