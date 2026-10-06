@@ -41,6 +41,10 @@ const Recurring = () => {
   const [showCSVImport, setShowCSVImport] = useState(false);
   const [showDetection, setShowDetection] = useState(false);
   const [showRebuildDryRun, setShowRebuildDryRun] = useState(false);
+  const [serverRebuildPreview, setServerRebuildPreview] = useState(null);
+  const [rebuildConfirmation, setRebuildConfirmation] = useState('');
+  const [preparingRebuild, setPreparingRebuild] = useState(false);
+  const [applyingRebuild, setApplyingRebuild] = useState(false);
 
   // Filters and search
   const [filterType, setFilterType] = useState('all');
@@ -105,10 +109,12 @@ const Recurring = () => {
       const recurringPatternsRef = collection(db, 'users', currentUser.uid, 'recurringPatterns');
       const recurringPatternsSnap = await getDocs(recurringPatternsRef);
       
-      const items = recurringPatternsSnap.docs.map(doc => ({
-        id: doc.id,
-        ...doc.data()
-      }));
+      const items = recurringPatternsSnap.docs
+        .map(doc => ({
+          id: doc.id,
+          ...doc.data()
+        }))
+        .filter(item => item.archived !== true);
       
       setRecurringItems(items);
       
@@ -836,6 +842,129 @@ const Recurring = () => {
       showNotification('Error importing CSV data', 'error');
     } finally {
       setSaving(false);
+    }
+  };
+
+  const handlePrepareRecurringRebuild = async () => {
+    try {
+      if (
+        rebuildDryRun.summary.unmatchedExisting > 0 ||
+        rebuildDryRun.summary.needsReview > 0 ||
+        rebuildDryRun.engineRequirements.length > 0
+      ) {
+        showNotification(
+          'Rebuild is not ready. Resolve unmatched/review items first.',
+          'error'
+        );
+        return;
+      }
+
+      setPreparingRebuild(true);
+      setServerRebuildPreview(null);
+      setRebuildConfirmation('');
+
+      const apiUrl =
+        import.meta.env.VITE_API_URL ||
+        'https://smart-money-tracker-09ks.onrender.com';
+
+      const response = await fetch(
+        `${apiUrl}/api/recurring-rebuild/preview?userId=${currentUser.uid}&_t=${Date.now()}`,
+        {
+          headers: {
+            'Content-Type': 'application/json',
+          },
+        }
+      );
+
+      const data = await response.json();
+
+      if (!response.ok || !data.success) {
+        throw new Error(
+          data.message ||
+          'Unable to prepare the server-side recurring rebuild preview.'
+        );
+      }
+
+      setServerRebuildPreview(data);
+
+      if (!data.canApply) {
+        showNotification(
+          'Server-side verification found unresolved recurring patterns. Nothing was changed.',
+          'error'
+        );
+      } else {
+        showNotification(
+          'Server verification passed. Review the backup/apply summary before confirming.',
+          'success'
+        );
+      }
+    } catch (error) {
+      console.error('Error preparing recurring rebuild:', error);
+      showNotification(error.message || 'Unable to prepare recurring rebuild.', 'error');
+    } finally {
+      setPreparingRebuild(false);
+    }
+  };
+
+  const handleApplyRecurringRebuild = async () => {
+    if (!serverRebuildPreview?.fingerprint) {
+      showNotification('Run Prepare Safe Apply first.', 'error');
+      return;
+    }
+
+    if (rebuildConfirmation !== 'APPLY RECURRING REBUILD') {
+      showNotification(
+        'Type APPLY RECURRING REBUILD exactly before applying.',
+        'error'
+      );
+      return;
+    }
+
+    try {
+      setApplyingRebuild(true);
+
+      const apiUrl =
+        import.meta.env.VITE_API_URL ||
+        'https://smart-money-tracker-09ks.onrender.com';
+
+      const response = await fetch(
+        `${apiUrl}/api/recurring-rebuild/apply?userId=${currentUser.uid}`,
+        {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            expectedFingerprint: serverRebuildPreview.fingerprint,
+            confirmation: rebuildConfirmation,
+          }),
+        }
+      );
+
+      const data = await response.json();
+
+      if (!response.ok || !data.success) {
+        if (data.code === 'RECURRING_REBUILD_DRIFTED') {
+          setServerRebuildPreview(null);
+          setRebuildConfirmation('');
+        }
+        throw new Error(data.message || 'Recurring rebuild apply failed.');
+      }
+
+      await loadRecurringItems();
+      setServerRebuildPreview(null);
+      setRebuildConfirmation('');
+      setShowRebuildDryRun(false);
+
+      showNotification(
+        `Recurring rebuild applied safely. Backup: ${data.backupId}. Active patterns: ${data.summary.activeAfter}.`,
+        'success'
+      );
+    } catch (error) {
+      console.error('Error applying recurring rebuild:', error);
+      showNotification(error.message || 'Recurring rebuild apply failed.', 'error');
+    } finally {
+      setApplyingRebuild(false);
     }
   };
 
@@ -1603,8 +1732,139 @@ const Recurring = () => {
                 </div>
               )}
 
+              <div
+                style={{
+                  marginTop: '22px',
+                  padding: '14px',
+                  border: '1px solid #444',
+                  borderRadius: '8px'
+                }}
+              >
+                <h4>🛡️ Safe Apply Gate</h4>
+                <p style={{ fontSize: '13px', marginBottom: '12px' }}>
+                  The server re-reads recurringPatterns before apply. It will refuse the write if
+                  anything changed since this verification. The existing collection is backed up
+                  in the same atomic Firestore batch before matched patterns are updated, new
+                  patterns are added, and confirmed stale patterns are archived.
+                </p>
+
+                {!serverRebuildPreview && (
+                  <button
+                    className="import-button"
+                    onClick={handlePrepareRecurringRebuild}
+                    disabled={
+                      preparingRebuild ||
+                      rebuildDryRun.summary.unmatchedExisting > 0 ||
+                      rebuildDryRun.summary.needsReview > 0 ||
+                      rebuildDryRun.engineRequirements.length > 0
+                    }
+                  >
+                    {preparingRebuild ? 'Verifying...' : '🛡️ Prepare Safe Apply'}
+                  </button>
+                )}
+
+                {serverRebuildPreview && (
+                  <div>
+                    <div
+                      style={{
+                        display: 'grid',
+                        gridTemplateColumns: 'repeat(auto-fit,minmax(120px,1fr))',
+                        gap: '8px',
+                        marginBottom: '14px'
+                      }}
+                    >
+                      {[
+                        ['Matched', serverRebuildPreview.summary.matched],
+                        ['Add', serverRebuildPreview.summary.add],
+                        ['Retire', serverRebuildPreview.summary.retire],
+                        ['Unmatched', serverRebuildPreview.summary.unmatched],
+                        ['Active After', serverRebuildPreview.summary.resultingActive],
+                      ].map(([label, value]) => (
+                        <div
+                          key={label}
+                          style={{
+                            padding: '10px',
+                            border: '1px solid #555',
+                            borderRadius: '6px',
+                            textAlign: 'center'
+                          }}
+                        >
+                          <div style={{ fontSize: '20px', fontWeight: 700 }}>{value}</div>
+                          <div style={{ fontSize: '11px', opacity: 0.7 }}>{label}</div>
+                        </div>
+                      ))}
+                    </div>
+
+                    <div style={{ fontSize: '12px', marginBottom: '10px', opacity: 0.8 }}>
+                      Server fingerprint: {serverRebuildPreview.fingerprint.slice(0, 16)}…
+                    </div>
+
+                    {serverRebuildPreview.canApply ? (
+                      <div
+                        style={{
+                          padding: '12px',
+                          border: '1px solid #b02a37',
+                          borderRadius: '8px',
+                          background: 'rgba(176,42,55,0.12)'
+                        }}
+                      >
+                        <strong>Final confirmation</strong>
+                        <p style={{ fontSize: '13px', margin: '8px 0' }}>
+                          This will modify the live recurringPatterns collection. Type
+                          <strong> APPLY RECURRING REBUILD </strong>
+                          exactly to enable the final button.
+                        </p>
+                        <input
+                          type="text"
+                          value={rebuildConfirmation}
+                          onChange={(e) => setRebuildConfirmation(e.target.value)}
+                          placeholder="APPLY RECURRING REBUILD"
+                          style={{ width: '100%', padding: '10px', marginBottom: '10px' }}
+                          disabled={applyingRebuild}
+                        />
+                        <div style={{ display: 'flex', gap: '10px', justifyContent: 'flex-end' }}>
+                          <button
+                            className="cancel-btn"
+                            onClick={() => {
+                              setServerRebuildPreview(null);
+                              setRebuildConfirmation('');
+                            }}
+                            disabled={applyingRebuild}
+                          >
+                            Cancel Apply
+                          </button>
+                          <button
+                            className="delete-btn"
+                            onClick={handleApplyRecurringRebuild}
+                            disabled={
+                              applyingRebuild ||
+                              rebuildConfirmation !== 'APPLY RECURRING REBUILD'
+                            }
+                            style={{ backgroundColor: '#b02a37' }}
+                          >
+                            {applyingRebuild ? 'Backing Up & Applying...' : 'Backup & Apply Live Rebuild'}
+                          </button>
+                        </div>
+                      </div>
+                    ) : (
+                      <div style={{ color: '#ff9800' }}>
+                        Server verification did not pass. Nothing can be applied.
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+
               <div className="modal-actions" style={{ display: 'flex', justifyContent: 'flex-end', marginTop: '20px' }}>
-                <button className="cancel-btn" onClick={() => setShowRebuildDryRun(false)}>
+                <button
+                  className="cancel-btn"
+                  onClick={() => {
+                    setServerRebuildPreview(null);
+                    setRebuildConfirmation('');
+                    setShowRebuildDryRun(false);
+                  }}
+                  disabled={applyingRebuild}
+                >
                   Close Dry Run
                 </button>
               </div>
