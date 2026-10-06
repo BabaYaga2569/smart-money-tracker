@@ -13,13 +13,11 @@ import {
 } from 'firebase/firestore';
 import { db } from '../firebase';
 import { RecurringManager } from '../utils/RecurringManager';
-import { RecurringBillManager } from '../utils/RecurringBillManager';
 import { formatDateForInput } from '../utils/DateUtils';
 import { TRANSACTION_CATEGORIES, getCategoryIcon } from '../constants/categories';
 import CSVImportModal from '../components/CSVImportModal';
 import RecurringDetectionReview from '../components/RecurringDetectionReview';
 import { BillSortingManager } from '../utils/BillSortingManager';
-import { BillDeduplicationManager } from '../utils/BillDeduplicationManager';
 import { format, addMonths } from 'date-fns';
 import { getDateOnly } from '../utils/dateNormalization';
 import './Recurring.css';
@@ -112,7 +110,6 @@ const Recurring = () => {
   // Single item delete with options
   const [itemToDelete, setItemToDelete] = useState(null);
   const [showDeleteModal, setShowDeleteModal] = useState(false);
-  const [deleteGeneratedBills, setDeleteGeneratedBills] = useState(false);
 
   // Cleanup menu
   const [showCleanupMenu, setShowCleanupMenu] = useState(false);
@@ -872,42 +869,9 @@ const Recurring = () => {
 
       showNotification(message, 'success');
 
-      // AUTO-GENERATE BILLS: Automatically generate bill instances from newly imported recurring templates
-      console.log('[CSV Import] Auto-generating bills from imported recurring templates...');
-      try {
-        const bills = currentData.bills || [];
-        const generateBillId = () =>
-          `bill_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
-
-        // Generate bills only from newly imported active expense templates
-        const newActiveExpenses = itemsToAdd.filter(
-          (item) => item.status === 'active' && item.type === 'expense'
-        );
-        let newBills = [];
-
-        newActiveExpenses.forEach((template) => {
-          try {
-            // Generate 3 months of bills from each template
-            const generatedBills = RecurringBillManager.generateBillsFromTemplate(
-              template,
-              3,
-              generateBillId
-            );
-
-            // Filter out bills that already exist (same template ID and due date)
-            const uniqueBills = generatedBills.filter((newBill) => {
-              return !bills.some(
-                (existingBill) =>
-                  existingBill.recurringTemplateId === newBill.recurringTemplateId &&
-                  existingBill.dueDate === newBill.dueDate
-              );
-            });
-
-            newBills = [...newBills, ...uniqueBills];
-            console.log(
-              `[CSV Import] Generated ${uniqueBills.length} bills from template: ${template.name}`
-            );
-          } catch (error) {
+      // CSV import updates recurring templates only. Bill occurrences are not
+      // generated from the browser as a side effect of importing templates.
+    } catch (error) {
             console.error(
               `[CSV Import] Error generating bills from template ${template.name}:`,
               error
@@ -1135,95 +1099,6 @@ const Recurring = () => {
               >
                 🗑️ Delete All
               </button>
-              <div style={{ position: 'relative' }}>
-                <button
-                  className="cleanup-menu-button"
-                  onClick={() => setShowCleanupMenu(!showCleanupMenu)}
-                  disabled={saving}
-                  title="Cleanup & Maintenance"
-                  style={{
-                    background: '#6c757d',
-                    color: '#fff',
-                    border: 'none',
-                    borderRadius: '8px',
-                    padding: '12px 20px',
-                    fontWeight: '600',
-                    cursor: 'pointer',
-                    transition: 'all 0.2s ease',
-                    whiteSpace: 'nowrap',
-                  }}
-                >
-                  🔧 Cleanup
-                </button>
-                {showCleanupMenu && (
-                  <div
-                    className="cleanup-dropdown"
-                    style={{
-                      position: 'absolute',
-                      top: '100%',
-                      right: '0',
-                      marginTop: '8px',
-                      background: '#1a1a1a',
-                      border: '2px solid #333',
-                      borderRadius: '8px',
-                      padding: '8px',
-                      minWidth: '250px',
-                      zIndex: 1000,
-                      boxShadow: '0 4px 12px rgba(0,0,0,0.3)',
-                    }}
-                  >
-                    <button
-                      onClick={handleGenerateBillsFromTemplates}
-                      disabled={saving}
-                      style={{
-                        width: '100%',
-                        background: 'transparent',
-                        color: '#fff',
-                        border: 'none',
-                        padding: '12px 16px',
-                        textAlign: 'left',
-                        cursor: 'pointer',
-                        borderRadius: '4px',
-                        transition: 'background 0.2s',
-                        fontSize: '14px',
-                        borderBottom: '1px solid #333',
-                      }}
-                      onMouseEnter={(e) => (e.target.style.background = '#2a2a2a')}
-                      onMouseLeave={(e) => (e.target.style.background = 'transparent')}
-                    >
-                      ➕ Generate Bills from Templates
-                      <div style={{ fontSize: '12px', color: '#888', marginTop: '4px' }}>
-                        Create bill instances for next 3 months
-                      </div>
-                    </button>
-                    <button
-                      onClick={handleDeleteAllGeneratedBills}
-                      disabled={saving}
-                      style={{
-                        width: '100%',
-                        background: 'transparent',
-                        color: '#fff',
-                        border: 'none',
-                        padding: '12px 16px',
-                        textAlign: 'left',
-                        cursor: 'pointer',
-                        borderRadius: '4px',
-                        transition: 'background 0.2s',
-                        fontSize: '14px',
-                      }}
-                      onMouseEnter={(e) => (e.target.style.background = '#2a2a2a')}
-                      onMouseLeave={(e) => (e.target.style.background = 'transparent')}
-                    >
-                      🗑️ Delete All Generated Bills
-                      <div style={{ fontSize: '12px', color: '#888', marginTop: '4px' }}>
-                        Remove bills auto-created from templates
-                      </div>
-                    </button>
-                  </div>
-                )}
-              </div>
-            </>
-          )}
           <button
             className="import-button"
             onClick={() => setShowDetection(true)}
@@ -1316,16 +1191,6 @@ const Recurring = () => {
                 </div>
 
                 <div className="item-actions">
-                  {item.type === 'expense' && item.status === 'active' && (
-                    <button
-                      className="action-btn pay"
-                      onClick={() => handleMarkRecurringBillAsPaid(item)}
-                      disabled={saving}
-                      title="Mark as Paid"
-                    >
-                      💰 Pay
-                    </button>
-                  )}
                   <button
                     className="action-btn edit"
                     onClick={() => handleEditItem(item)}
@@ -1694,45 +1559,6 @@ const Recurring = () => {
               </p>
 
               <div
-                style={{
-                  marginBottom: '20px',
-                  padding: '12px',
-                  background: 'rgba(138, 43, 226, 0.1)',
-                  borderRadius: '8px',
-                  border: '1px solid rgba(138, 43, 226, 0.3)',
-                }}
-              >
-                <label
-                  style={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    cursor: 'pointer',
-                    fontSize: '14px',
-                  }}
-                >
-                  <input
-                    type="checkbox"
-                    checked={deleteGeneratedBills}
-                    onChange={(e) => setDeleteGeneratedBills(e.target.checked)}
-                    style={{
-                      marginRight: '10px',
-                      width: '18px',
-                      height: '18px',
-                      cursor: 'pointer',
-                    }}
-                  />
-                  <span>
-                    <strong>Also delete bills generated from this template</strong>
-                    <br />
-                    <small style={{ color: '#ba68c8', marginTop: '4px', display: 'block' }}>
-                      This will remove any bills in the Bills page that were auto-generated from
-                      this recurring template
-                    </small>
-                  </span>
-                </label>
-              </div>
-
-              <div
                 className="modal-actions"
                 style={{ display: 'flex', gap: '10px', justifyContent: 'flex-end' }}
               >
@@ -1746,7 +1572,7 @@ const Recurring = () => {
                 <button
                   onClick={() => {
                     setShowDeleteModal(false);
-                    handleDeleteItem(itemToDelete, deleteGeneratedBills);
+                    handleDeleteItem(itemToDelete);
                   }}
                   className="delete-btn"
                   disabled={saving}
