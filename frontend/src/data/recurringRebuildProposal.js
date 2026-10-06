@@ -33,7 +33,7 @@ export const RECURRING_REBUILD_PROPOSAL = [
   monthly('Charger Payment', 571.32, 1, 'Bank of America'),
   monthly('Affirm Smoker', 55.25, 3, null, { aliases: ['tractor supply', 'Tractor Supply'], installmentPlan: true, remainingPayments: 8, remainingBalance: 418.01, nextOccurrence: '2026-11-03', endDate: '2027-06-03', finalPaymentAmount: 31.26, scheduleNote: 'Affirm installment plan; final scheduled payment Jun 3, 2027.' }),
   monthly('Dodge Challenger Tracker', 8.95, 3, null, { aliases: ['Challenger Tracker'] }),
-  monthly('Starlink Internet', 35.00, 4, null, { aliases: ['Starlink'] }),
+  monthly('Starlink Internet', 55.00, 4, 'SoFi', { aliases: ['Starlink'], amountNote: 'Current rate is $55/month; prior $35 rate was a three-month promotion.' }),
   monthly('Pierce Prime Platinum Movies', 37.45, 6, null, { aliases: ['Pierceprime', 'Pierce Prime'] }),
   monthly('Affirm Dog Water Bowl and Vacuum', 21.21, 7, 'Capital One', { aliases: ['Amazon'], installmentPlan: true, remainingPayments: 2, remainingBalance: 42.39, nextOccurrence: '2026-10-07', endDate: '2026-11-07', finalPaymentAmount: 21.18, scheduleNote: 'Affirm installment plan; final scheduled payment Nov 7, 2026.' }),
   monthly('Geico SXS', 31.42, 8, 'Bank of America'),
