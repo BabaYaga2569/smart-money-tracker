@@ -794,71 +794,45 @@ console.log(`✅ Normalized template date for ${template.name}:  ${templateDate}
   };
 
   const handleUnmarkAsPaid = async (bill) => {
-    try {
-      const loadingNotificationId = NotificationManager.showLoading(
-        `Unmarking ${bill.name} as paid...`
-      );
+    const loadingNotificationId = NotificationManager.showLoading(
+      `Unmarking ${bill.name} as paid...`
+    );
 
-      const settingsDocRef = doc(db, 'users', currentUser.uid, 'settings', 'personal');
-      const currentDoc = await getDoc(settingsDocRef);
-      
-      if (!currentDoc.exists()) {
-        NotificationManager.removeNotification(loadingNotificationId);
-        throw new Error('Settings document not found');
-      }
-      
-      const currentData = currentDoc.data();
-      const bills = currentData.bills || [];
-      
-      let billFound = false;
-      
-      const updatedBills = bills.map(b => {
-        if (b.id === bill.id) {
-          billFound = true;
-          const updatedBill = { ...b };
-          
-          // CRITICAL FIX: Restore to the cycle that was actually paid
-          // lastPayment.dueDate contains the original cycle, not the advanced one
-          if (updatedBill.lastPayment && updatedBill.lastPayment.dueDate) {
-            updatedBill.nextDueDate = updatedBill.lastPayment.dueDate;
-            updatedBill.dueDate = updatedBill.lastPayment.dueDate;
-          }
-          
-          // Remove payment data
-          delete updatedBill.lastPaidDate;
-          delete updatedBill.lastPayment;
-          delete updatedBill.isPaid;
-          delete updatedBill.status;
-          
-          if (updatedBill.paymentHistory && updatedBill.paymentHistory.length > 0) {
-            updatedBill.paymentHistory = updatedBill.paymentHistory.slice(0, -1);
-          }
-          
-          return updatedBill;
-        }
-        return b;
+    try {
+      const apiUrl = import.meta.env.VITE_API_URL || 'https://smart-money-tracker-09ks.onrender.com';
+      const response = await fetch(`${apiUrl}/api/bills/${bill.id}/unpay`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({ userId: currentUser.uid })
       });
-      
-      if (!billFound) {
-        NotificationManager.removeNotification(loadingNotificationId);
-        throw new Error(`Bill "${bill.name}" not found in database`);
+
+      const result = await response.json();
+      if (!response.ok || !result.success) {
+        const reason = result.reason || result.error || 'Unable to unmark this payment safely';
+        throw new Error(reason);
       }
-      
-      await updateDoc(settingsDocRef, {
-        ...currentData,
-        bills: updatedBills
-      });
-      
-      NotificationManager.removeNotification(loadingNotificationId);
-      
+
       await loadBills();
-      
-      NotificationManager.showSuccess(`${bill.name} unmarked as paid`);
+      await loadPaidThisMonth();
+      if (showPaidBills) {
+        await loadPaidBills();
+      }
+
+      NotificationManager.removeNotification(loadingNotificationId);
+
+      if (result.idempotent) {
+        NotificationManager.showInfo(`${bill.name} is already unpaid`);
+      } else {
+        NotificationManager.showSuccess(`${bill.name} unmarked as paid`);
+      }
     } catch (error) {
       console.error('Error unmarking bill as paid:', error);
+      NotificationManager.removeNotification(loadingNotificationId);
       NotificationManager.showError(
-        'Error unmarking bill',
-        error.message || 'An unexpected error occurred. Please try again.'
+        'Unable to safely unmark payment',
+        error.message || 'The recurring chain may have moved forward.'
       );
     }
   };
@@ -880,68 +854,31 @@ console.log(`✅ Normalized template date for ${template.name}:  ${templateDate}
   const processBillPaymentInternal = async (bill, paymentData = {}) => {
     const paidDate = paymentData.paidDate || getPacificTime();
     const paidDateStr = formatDateForInput(paidDate);
-    
-    // ✅ FIX: Do NOT create fake transaction entries when manually marking bills as paid
-    // Only record payment in bill_payments and paidBills collections
-    // Real transactions come from Plaid and are matched automatically
-    
-    // If this payment was auto-matched from Plaid, the transaction already exists
-    // If manually marked as paid, we only track it in bill_payments, not transactions
+    const apiUrl = import.meta.env.VITE_API_URL || 'https://smart-money-tracker-09ks.onrender.com';
 
-    // Calculate if payment is overdue
-    const now = new Date(paidDate);
-    const dueDate = new Date(bill.nextDueDate || bill.dueDate);
-    const daysPastDue = Math.max(0, Math.floor((now - dueDate) / (1000 * 60 * 60 * 24)));
-    
-    // Enhanced payment recording with metadata
-    const paidDateISO = new Date(paidDate).toISOString();
-    const paymentYear = new Date(paidDate).getFullYear();
-    const paymentQuarter = `Q${Math.ceil((new Date(paidDate).getMonth() + 1) / 3)}`;
-    
-    const paymentsRef = collection(db, 'users', currentUser.uid, 'bill_payments');
-    await addDoc(paymentsRef, {
-      billId: bill.id,
-      billName: bill.name,
-      amount: Math.abs(parseFloat(bill.amount)),
-      category: bill.category || 'Bills & Utilities',
-      dueDate: bill.nextDueDate || bill.dueDate,
-      paidDate: paidDateStr,
-      paymentMonth: paidDateStr.slice(0, 7),
-      year: paymentYear,
-      quarter: paymentQuarter,
-      paymentMethod: paymentData.method || paymentData.source || 'Manual',
-      recurringTemplateId: bill.recurringTemplateId || null,
-      tags: [bill.category?.toLowerCase() || 'bills', bill.recurrence || 'one-time'],
-      linkedTransactionId: paymentData.transactionId || null,
-      isOverdue: daysPastDue > 0,
-      daysPastDue: daysPastDue,
-      createdAt: serverTimestamp()
-    });
-    
-    // Archive to paidBills collection for historical reference
-    const paidBillsRef = collection(db, 'users', currentUser.uid, 'paidBills');
-    await addDoc(paidBillsRef, {
-      ...bill,
-      isPaid: true,
-      paidDate: paidDateISO,
-      paymentMonth: paidDateStr.slice(0, 7),
-      year: paymentYear,
-      quarter: paymentQuarter,
-      paymentMethod: paymentData.method || paymentData.source || 'Manual',
-      archivedAt: serverTimestamp()
+    const response = await fetch(`${apiUrl}/api/bills/${bill.id}/pay`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        userId: currentUser.uid,
+        paidDate: paidDateStr,
+        amount: Math.abs(parseFloat(bill.amount)),
+        paymentMethod: paymentData.method || paymentData.source || 'Manual'
+      })
     });
 
-    await updateBillAsPaid(bill, paidDate, {
-      method: paymentData.method || 'manual',
-      source: paymentData.source || 'manual',
-      transactionId: paymentData.transactionId,
-      accountId: paymentData.accountId,
-      merchantName: paymentData.merchantName || bill.name,
-      amount: Math.abs(parseFloat(bill.amount))
-    });
-    
-    // Reload paid this month after recording payment
+    const result = await response.json();
+    if (!response.ok || !result.success) {
+      const reason = result.reason || result.error || 'Unable to mark bill paid safely';
+      throw new Error(reason);
+    }
+
+    await loadBills();
     await loadPaidThisMonth();
+
+    return result;
   };
 
   const updateAccountBalance = async (accountKey, amount) => {
@@ -968,77 +905,6 @@ console.log(`✅ Normalized template date for ${template.name}:  ${templateDate}
       });
     } catch (error) {
       console.error('Error updating account balance:', error);
-      throw error;
-    }
-  };
-
-  const updateBillAsPaid = async (bill, paidDate = null, paymentOptions = {}) => {
-    try {
-      const billRef = doc(db, 'users', currentUser.uid, 'financialEvents', bill.id);
-      
-      // ✅ UPDATED: Mark bill as PAID in financialEvents (do NOT delete)
-      // Update the financialEvent document to mark as paid with audit trail
-      await updateDoc(billRef, {
-        isPaid: true,
-        status: 'paid',
-        paidDate: paidDate || getPacificTime(),
-        paidAmount: Math.abs(parseFloat(bill.amount)),
-        linkedTransactionId: paymentOptions.transactionId || null,
-        // Audit trail fields
-        markedBy: paymentOptions.markedBy || 'user',
-        markedAt: serverTimestamp(),
-        markedVia: paymentOptions.markedVia || 'mark-as-paid-button',
-        canBeUnmarked: true,
-        updatedAt: serverTimestamp()
-      });
-      console.log(`✅ Bill marked as paid in financialEvents: ${bill.name}`);
-      
-      // If bill was generated from recurring pattern, advance pattern's nextOccurrence
-      // and auto-generate the NEXT month's bill instance
-      if (bill.recurringPatternId) {
-        const patternRef = doc(db, 'users', currentUser.uid, 'recurringPatterns', bill.recurringPatternId);
-        const patternDoc = await getDoc(patternRef);
-        
-        if (patternDoc.exists()) {
-          const pattern = patternDoc.data();
-          const billDueDate = bill.dueDate || bill.nextDueDate;
-          const templateNextOccurrence = pattern.nextOccurrence;
-          
-          // Only advance if this bill's due date matches the pattern's current nextOccurrence
-          if (billDueDate === templateNextOccurrence) {
-            // Advance recurring pattern to next occurrence
-            const nextOccurrence = RecurringManager.calculateNextOccurrenceAfterPayment(
-              templateNextOccurrence,
-              pattern.frequency
-            );
-            
-            console.log(`[Bill Payment] Advancing recurring pattern "${pattern.name}" from ${templateNextOccurrence} to ${nextOccurrence.toISOString().split('T')[0]}`);
-            
-            // Update the recurring pattern
-            await updateDoc(patternRef, {
-              nextOccurrence: nextOccurrence.toISOString().split('T')[0],
-              lastPaidDate: paidDate || getPacificTime(),
-              updatedAt: serverTimestamp()
-            });
-            
-            // Auto-generate next month's bill instance
-            const updatedPattern = {
-              ...pattern,
-              id: bill.recurringPatternId,
-              nextOccurrence: nextOccurrence.toISOString().split('T')[0]
-            };
-            
-            console.log(`🔄 Auto-generating next month's bill for ${bill.name}`);
-            await autoGenerateBillFromTemplate(updatedPattern);
-          } else {
-            console.log(`⚠️ Due date mismatch: bill=${billDueDate}, pattern=${templateNextOccurrence}`);
-          }
-        } else {
-          console.log(`⚠️ Recurring pattern not found: ${bill.recurringPatternId}`);
-        }
-      }
-    } catch (error) {
-      console.error('❌ Error updating bill status:', error);
       throw error;
     }
   };
