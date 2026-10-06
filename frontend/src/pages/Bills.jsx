@@ -89,6 +89,10 @@ export default function Bills() {
   const [paidBills, setPaidBills] = useState([]);
   const [showLinker, setShowLinker] = useState(false);
   const [selectedBillForLink, setSelectedBillForLink] = useState(null);
+  const [duplicateCleanupPreview, setDuplicateCleanupPreview] = useState(null);
+  const [duplicateCleanupConfirmation, setDuplicateCleanupConfirmation] = useState('');
+  const [preparingDuplicateCleanup, setPreparingDuplicateCleanup] = useState(false);
+  const [applyingDuplicateCleanup, setApplyingDuplicateCleanup] = useState(false);
 
   // ✅ UPDATED: Load bills from financialEvents collection (one source of truth)
   const loadBills = async () => {
@@ -104,10 +108,12 @@ export default function Bills() {
       
       const billsSnapshot = await getDocs(q);
       
-      const allBills = billsSnapshot.docs.map(doc => ({
-        id: doc.id,
-        ...doc.data()
-      }));
+      const allBills = billsSnapshot.docs
+        .map(doc => ({
+          id: doc.id,
+          ...doc.data()
+        }))
+        .filter(bill => bill.hiddenFromBills !== true && bill.archivedDuplicate !== true);
       
       // Never hide unpaid bills because they are old. Overdue items remain visible
       // until they are explicitly paid, skipped, or otherwise resolved.
