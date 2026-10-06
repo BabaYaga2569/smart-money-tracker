@@ -673,94 +673,26 @@ const Recurring = () => {
     }
   };
 
-  const handleDeleteItem = async (item, alsoDeleteGeneratedBills = false) => {
+  const handleDeleteItem = async (item) => {
     try {
       setSaving(true);
 
-      console.log(`🗑️ Deleting recurring item: ${item.name}`);
-
-      // CASCADE DELETION: Multi-field query for bills linked to this template
-      let deletedCount = 0;
-      let preservedCount = 0;
-
-      if (item.id) {
-        const billsCollection = collection(db, 'users', currentUser.uid, 'financialEvents');
-        
-        // Query by ALL possible field names that may link bills to templates
-        // - recurringPatternId: current standard (new migrations)
-        // - recurringTemplateId: older standard (widely used)
-        // - sourcePatternId, templateId: alternative/legacy fields (backward compatibility)
-        const queries = [
-          query(billsCollection, where('type', '==', 'bill'), where('recurringPatternId', '==', item.id)),
-          query(billsCollection, where('type', '==', 'bill'), where('sourcePatternId', '==', item.id)),
-          query(billsCollection, where('type', '==', 'bill'), where('templateId', '==', item.id)),
-          query(billsCollection, where('type', '==', 'bill'), where('recurringTemplateId', '==', item.id)),
-        ];
-        
-        // Execute all queries in parallel and collect unique bills to delete
-        // Map stores document references and data to enable deduplication while preserving info for deletion
-        const billsToProcess = new Map();
-        
-        const queryPromises = queries.map(q => getDocs(q));
-        const snapshots = await Promise.all(queryPromises);
-        
-        snapshots.forEach(snapshot => {
-          snapshot.docs.forEach(doc => {
-            if (!billsToProcess.has(doc.id)) {
-              billsToProcess.set(doc.id, { ref: doc.ref, data: doc.data() });
-            }
-          });
-        });
-
-        console.log(`🗑️ Found ${billsToProcess.size} related bills to delete`);
-
-        // Delete unpaid bills in batch, preserve paid ones for history
-        const deletePromises = [];
-        for (const [, { ref, data: billData }] of billsToProcess.entries()) {
-          const isPaid = billData.isPaid || billData.status === 'paid';
-
-          if (isPaid) {
-            preservedCount++;
-            console.log(`  ✓ Preserving paid bill: ${billData.name} (${billData.dueDate})`);
-            // Keep paid bills for history
-          } else {
-            deletedCount++;
-            console.log(`  🗑️ Deleting unpaid bill: ${billData.name} (${billData.dueDate})`);
-            // Delete unpaid bill
-            deletePromises.push(deleteDoc(ref));
-          }
-        }
-
-        // Execute all deletions in parallel
-        await Promise.all(deletePromises);
-
-        console.log(`✅ Successfully deleted recurring item and ${deletedCount} related bills`);
-      }
-
-      // ✅ FIX: Delete from recurringPatterns collection
-      const recurringPatternRef = doc(db, 'users', currentUser.uid, 'recurringPatterns', item.id);
+      const recurringPatternRef = doc(
+        db,
+        'users',
+        currentUser.uid,
+        'recurringPatterns',
+        item.id
+      );
       await deleteDoc(recurringPatternRef);
-      
-      console.log(`✅ Deleted recurring pattern: ${item.name} from recurringPatterns collection`);
 
-      // ✅ FIX: Reload from recurringPatterns collection
+      // Intentionally preserve existing bill occurrences and payment history.
+      // Removing a template must not erase or rewrite financial history.
       await loadRecurringItems();
-
-      // Show notification with cascade deletion stats
-      let message = `Deleted "${item.name}"`;
-      if (deletedCount > 0) {
-        message += ` and ${deletedCount} related bill${deletedCount !== 1 ? 's' : ''}`;
-      } else if (billsToProcess.size === 0) {
-        message += ` (no related bills found)`;
-      }
-      if (preservedCount > 0) {
-        message += ` (${preservedCount} paid bill${preservedCount !== 1 ? 's' : ''} preserved)`;
-      }
-
-      showNotification(message, 'success');
+      showNotification(`Deleted recurring template "${item.name}"`, 'success');
     } catch (error) {
-      console.error('❌ Error deleting recurring item:', error);
-      showNotification('Error deleting item: ' + error.message, 'error');
+      console.error('Error deleting recurring template:', error);
+      showNotification('Error deleting recurring template', 'error');
     } finally {
       setSaving(false);
     }
@@ -823,324 +755,37 @@ const Recurring = () => {
     }
   };
 
-  const handleDeleteAllGeneratedBills = async () => {
-    if (
-      !window.confirm('Delete all bills generated from recurring templates? This cannot be undone.')
-    ) {
-      return;
-    }
-
-    try {
-      setSaving(true);
-      setShowCleanupMenu(false);
-
-      const settingsDocRef = doc(db, 'users', currentUser.uid, 'settings', 'personal');
-      const currentDoc = await getDoc(settingsDocRef);
-      const currentData = currentDoc.exists() ? currentDoc.data() : {};
-
-      const bills = currentData.bills || [];
-      const recurringTemplateIds = new Set(recurringItems.map((item) => item.id));
-
-      // Filter out bills that have a recurringTemplateId matching any current recurring item
-      const initialCount = bills.length;
-      const updatedBills = bills.filter(
-        (bill) => !bill.recurringTemplateId || !recurringTemplateIds.has(bill.recurringTemplateId)
-      );
-      const deletedCount = initialCount - updatedBills.length;
-
-      await updateDoc(settingsDocRef, {
-        ...currentData,
-        bills: updatedBills,
-      });
-
-      showNotification(`Deleted ${deletedCount} auto-generated bill(s)`, 'success');
-    } catch (error) {
-      console.error('Error deleting generated bills:', error);
-      showNotification('Error deleting generated bills', 'error');
-    } finally {
-      setSaving(false);
-    }
-  };
-
-  const handleGenerateBillsFromTemplates = async () => {
-    try {
-      setSaving(true);
-      setShowCleanupMenu(false);
-
-      const settingsDocRef = doc(db, 'users', currentUser.uid, 'settings', 'personal');
-      const currentDoc = await getDoc(settingsDocRef);
-      const currentData = currentDoc.exists() ? currentDoc.data() : {};
-
-      const bills = currentData.bills || [];
-      const generateBillId = () => `bill_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
-
-      // Generate bills from active recurring templates
-      const activeTemplates = recurringItems.filter(
-        (item) => item.status === 'active' && item.type === 'expense'
-      );
-      let newBills = [];
-
-      activeTemplates.forEach((template) => {
-        try {
-          // Generate 3 months of bills from each template
-          const generatedBills = RecurringBillManager.generateBillsFromTemplate(
-            template,
-            3,
-            generateBillId
-          );
-
-          // Filter out bills that already exist (same template ID and due date)
-          const uniqueBills = generatedBills.filter((newBill) => {
-            return !bills.some(
-              (existingBill) =>
-                existingBill.recurringTemplateId === newBill.recurringTemplateId &&
-                existingBill.dueDate === newBill.dueDate
-            );
-          });
-
-          newBills = [...newBills, ...uniqueBills];
-        } catch (error) {
-          console.error(`Error generating bills from template ${template.name}:`, error);
-        }
-      });
-
-      if (newBills.length === 0) {
-        showNotification('No new bills to generate (all bills already exist)', 'info');
-        return;
-      }
-
-      // Add new bills to existing bills
-      let updatedBills = [...bills, ...newBills];
-
-      // DEDUPLICATION: Remove any duplicates that might have been created
-      const deduplicationResult = BillDeduplicationManager.removeDuplicates(updatedBills);
-      if (deduplicationResult.stats.duplicates > 0) {
-        console.log('[Bill Generation] Removed duplicates:', deduplicationResult.stats.duplicates);
-        updatedBills = deduplicationResult.cleanedBills;
-      }
-
-      await updateDoc(settingsDocRef, {
-        ...currentData,
-        bills: updatedBills,
-      });
-
-      const finalCount = updatedBills.length - bills.length;
-      showNotification(
-        `Generated ${finalCount} bill(s) from ${activeTemplates.length} template(s)`,
-        'success'
-      );
-    } catch (error) {
-      console.error('Error generating bills:', error);
-      showNotification('Error generating bills from templates', 'error');
-    } finally {
-      setSaving(false);
-    }
-  };
-
   const handleTogglePause = async (item) => {
     const newStatus = item.status === 'paused' ? 'active' : 'paused';
 
     try {
       setSaving(true);
 
-      const updatedItem = { ...item, status: newStatus, updatedAt: new Date().toISOString() };
+      const recurringPatternRef = doc(
+        db,
+        'users',
+        currentUser.uid,
+        'recurringPatterns',
+        item.id
+      );
 
-      // Auto-sync bills when toggling pause/active status
-      let billSyncStats = null;
+      await setDoc(
+        recurringPatternRef,
+        {
+          ...item,
+          status: newStatus,
+          updatedAt: new Date().toISOString()
+        },
+        { merge: true }
+      );
 
-      if (item.type === 'expense') {
-        try {
-          if (newStatus === 'paused') {
-            // When pausing, remove unpaid bill instances from this template
-            const billsQuery = query(
-              collection(db, 'users', currentUser.uid, 'financialEvents'),
-              where('type', '==', 'bill'),
-              where('recurringPatternId', '==', item.id),
-              where('isPaid', '==', false)
-            );
-            const billsSnapshot = await getDocs(billsQuery);
-            
-            const deletePromises = billsSnapshot.docs.map(doc => 
-              deleteDoc(doc.ref)
-            );
-            await Promise.all(deletePromises);
-            
-            billSyncStats = { removed: billsSnapshot.size };
-          }
-          // Note: When activating, bills will be auto-generated on next load
-        } catch (error) {
-          console.error('Error syncing bills on pause toggle:', error);
-        }
-      }
-
-      // ✅ FIX: Save to recurringPatterns collection
-      const recurringPatternRef = doc(db, 'users', currentUser.uid, 'recurringPatterns', item.id);
-      await setDoc(recurringPatternRef, updatedItem, { merge: true });
-
-      // ✅ FIX: Reload from recurringPatterns collection
+      // Existing bill occurrences are intentionally untouched. Pausing a
+      // template controls future recurrence; it does not rewrite history.
       await loadRecurringItems();
-
-      // Show notification with bill sync details
-      let message = newStatus === 'paused' ? 'Item paused' : 'Item resumed';
-      if (billSyncStats) {
-        if (newStatus === 'active' && billSyncStats.added > 0) {
-          message += ` (${billSyncStats.added} bills generated)`;
-        } else if (newStatus === 'paused' && billSyncStats.removed > 0) {
-          message += ` (${billSyncStats.removed} future bills removed)`;
-        }
-      }
-
-      showNotification(message, 'success');
+      showNotification(newStatus === 'paused' ? 'Item paused' : 'Item resumed', 'success');
     } catch (error) {
       console.error('Error toggling pause:', error);
       showNotification('Error updating item', 'error');
-    } finally {
-      setSaving(false);
-    }
-  };
-
-  const handleMarkRecurringBillAsPaid = async (item) => {
-    try {
-      setSaving(true);
-
-      if (import.meta.env.DEV) {
-        console.log(`💰 Marking bill as paid for recurring item: ${item.name}`);
-      }
-
-      // Step 1: Query for unpaid bills linked to this recurring pattern
-      const billsCollection = collection(db, 'users', currentUser.uid, 'financialEvents');
-      const billQuery = query(
-        billsCollection,
-        where('type', '==', 'bill'),
-        where('recurringPatternId', '==', item.id),
-        where('isPaid', '==', false)
-      );
-
-      const billsSnapshot = await getDocs(billQuery);
-      let billToPay;
-      let billRef;
-
-      // Step 2: If no bill exists, create one from the recurring pattern
-      if (billsSnapshot.empty) {
-        if (import.meta.env.DEV) {
-          console.log(`No bill instance found for ${item.name}, creating one...`);
-        }
-
-        const billId = `bill_${Date.now()}_${Math.random().toString(36).substring(2, 11)}`;
-        const nextDueDate = getDateOnly(item.nextOccurrence);
-
-        // Create bill instance from recurring pattern
-        const newBill = {
-          id: billId,
-          name: item.name,
-          amount: parseFloat(item.amount),
-          dueDate: nextDueDate,
-          nextDueDate: nextDueDate,
-          originalDueDate: nextDueDate,
-          isPaid: false,
-          status: 'pending',
-          category: item.category || 'Other',
-          recurrence: item.frequency.toLowerCase(),
-          type: 'bill',
-          isSubscription: false,
-          paymentHistory: [],
-          linkedTransactionIds: [],
-          description: item.description || '',
-          accountId: item.linkedAccount || null,
-          autoPayEnabled: item.autoPay || false,
-          recurringPatternId: item.id,
-          createdAt: serverTimestamp(),
-          updatedAt: serverTimestamp(),
-          createdFrom: 'recurring-page-pay-button',
-        };
-
-        // Save to Firebase
-        billRef = doc(db, 'users', currentUser.uid, 'financialEvents', billId);
-        await setDoc(billRef, newBill);
-
-        billToPay = { ...newBill, ref: billRef };
-
-        if (import.meta.env.DEV) {
-          console.log(`✅ Created bill instance: ${item.name} due ${nextDueDate}`);
-        }
-      } else {
-        // If multiple unpaid bills exist, mark the oldest one first
-        const unpaidBills = billsSnapshot.docs.map(doc => ({
-          id: doc.id,
-          ref: doc.ref,
-          ...doc.data()
-        }));
-
-        // Sort by dueDate to get the oldest bill
-        // Use a fixed far-future date as fallback for missing dates to ensure consistent sorting
-        unpaidBills.sort((a, b) => {
-          const dateA = new Date(a.dueDate || a.nextDueDate || MISSING_DATE_FALLBACK);
-          const dateB = new Date(b.dueDate || b.nextDueDate || MISSING_DATE_FALLBACK);
-          return dateA.getTime() - dateB.getTime();
-        });
-
-        billToPay = unpaidBills[0];
-        billRef = billToPay.ref;
-
-        if (import.meta.env.DEV) {
-          console.log(`💰 Marking oldest unpaid bill: ${billToPay.name} due ${billToPay.dueDate}`);
-        }
-      }
-
-      // Step 3: Use RecurringBillManager to mark bill as paid with proper date advancement
-      const updatedBill = RecurringBillManager.markBillAsPaid(billToPay);
-
-      // Step 4: Update the bill document in financialEvents
-      await updateDoc(billRef, {
-        isPaid: true,
-        status: 'paid',
-        paidDate: updatedBill.lastPaidDate,
-        paidAmount: updatedBill.lastPayment.amount,
-        lastPaidDate: updatedBill.lastPaidDate,
-        lastPayment: updatedBill.lastPayment,
-        paymentHistory: updatedBill.paymentHistory,
-        nextDueDate: updatedBill.nextDueDate,
-        dueDate: updatedBill.nextDueDate,
-        markedBy: 'user',
-        markedAt: serverTimestamp(),
-        markedVia: 'recurring-page-pay-button',
-        canBeUnmarked: true,
-        updatedAt: serverTimestamp()
-      });
-
-      if (import.meta.env.DEV) {
-        console.log(`✅ Bill marked as paid in financialEvents: ${billToPay.name}`);
-      }
-
-      // Step 5: Update the recurring pattern's nextOccurrence to the next billing cycle
-      const recurringPatternRef = doc(db, 'users', currentUser.uid, 'recurringPatterns', item.id);
-      await updateDoc(recurringPatternRef, {
-        nextOccurrence: getDateOnly(updatedBill.nextDueDate),
-        lastPaidDate: updatedBill.lastPaidDate,
-        updatedAt: serverTimestamp()
-      });
-
-      if (import.meta.env.DEV) {
-        console.log(`✅ Advanced recurring pattern nextOccurrence to: ${updatedBill.nextDueDate}`);
-      }
-
-      // Step 6: Reload recurring items to refresh the UI
-      await loadRecurringItems();
-
-      // Format the next occurrence date for display (always format for consistency)
-      const nextOccurrenceFormatted = formatDateForInput(
-        typeof updatedBill.nextDueDate === 'string' 
-          ? new Date(updatedBill.nextDueDate) 
-          : updatedBill.nextDueDate
-      );
-
-      showNotification(
-        `✅ Marked "${item.name}" as paid!`,
-        'success'
-      );
-    } catch (error) {
-      console.error('❌ Error marking recurring bill as paid:', error);
-      showNotification('Error marking bill as paid: ' + error.message, 'error');
     } finally {
       setSaving(false);
     }
