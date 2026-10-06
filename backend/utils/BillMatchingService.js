@@ -853,36 +853,55 @@ export async function unmarkManualBillPayment(db, userId, billId) {
     let nextBillRef = null;
 
     if (liveBill.recurringPatternId) {
-      if (!liveBill.lifecycleNextOccurrence || !liveBill.lifecycleNextBillId) {
+      if (!liveBill.lifecyclePreviousPatternState) {
         return { success: false, skipped: true, reason: 'MISSING_LIFECYCLE_REVERSAL_DATA' };
       }
 
       patternRef = userRef
         .collection('recurringPatterns')
         .doc(liveBill.recurringPatternId);
-      nextBillRef = userRef
-        .collection('financialEvents')
-        .doc(liveBill.lifecycleNextBillId);
 
-      const [patternSnapshot, nextBillSnapshot] = await Promise.all([
-        firestoreTransaction.get(patternRef),
-        firestoreTransaction.get(nextBillRef)
-      ]);
+      if (liveBill.lifecycleNextBillId) {
+        nextBillRef = userRef
+          .collection('financialEvents')
+          .doc(liveBill.lifecycleNextBillId);
+      }
+
+      const patternSnapshot = await firestoreTransaction.get(patternRef);
+      const nextBillSnapshot = nextBillRef
+        ? await firestoreTransaction.get(nextBillRef)
+        : null;
 
       if (!patternSnapshot.exists) {
         return { success: false, skipped: true, reason: 'RECURRING_PATTERN_NOT_FOUND' };
       }
 
       const pattern = patternSnapshot.data();
-      if (pattern.nextOccurrence !== liveBill.lifecycleNextOccurrence) {
-        return {
-          success: false,
-          skipped: true,
-          reason: 'RECURRING_PATTERN_HAS_MOVED_FORWARD'
-        };
+
+      if (liveBill.lifecycleNextOccurrence) {
+        if (pattern.nextOccurrence !== liveBill.lifecycleNextOccurrence) {
+          return {
+            success: false,
+            skipped: true,
+            reason: 'RECURRING_PATTERN_HAS_MOVED_FORWARD'
+          };
+        }
+      } else {
+        const finalPaymentStillReversible =
+          pattern.nextOccurrence == null &&
+          pattern.status === 'ended' &&
+          Number(pattern.remainingPayments) === 0;
+
+        if (!finalPaymentStillReversible) {
+          return {
+            success: false,
+            skipped: true,
+            reason: 'RECURRING_PATTERN_HAS_MOVED_FORWARD'
+          };
+        }
       }
 
-      if (nextBillSnapshot.exists) {
+      if (nextBillSnapshot?.exists) {
         const nextBill = nextBillSnapshot.data();
         if (nextBill.isPaid || nextBill.status === 'paid') {
           return { success: false, skipped: true, reason: 'NEXT_BILL_ALREADY_PAID' };
@@ -904,6 +923,7 @@ export async function unmarkManualBillPayment(db, userId, billId) {
       markedAt: null,
       markedVia: null,
       canBeUnmarked: false,
+      lifecyclePreviousPatternState: null,
       lifecycleNextOccurrence: null,
       lifecycleNextBillId: null,
       updatedAt: FieldValue.serverTimestamp()
@@ -913,8 +933,16 @@ export async function unmarkManualBillPayment(db, userId, billId) {
     firestoreTransaction.delete(paidArchiveRef);
 
     if (patternRef) {
+      const previousPatternState = liveBill.lifecyclePreviousPatternState || {};
       firestoreTransaction.update(patternRef, {
-        nextOccurrence: liveBill.lifecyclePreviousDueDate,
+        nextOccurrence:
+          previousPatternState.nextOccurrence ||
+          liveBill.lifecyclePreviousDueDate ||
+          null,
+        status: previousPatternState.status || 'active',
+        remainingPayments: previousPatternState.remainingPayments ?? null,
+        remainingBalance: previousPatternState.remainingBalance ?? null,
+        completedAt: previousPatternState.completedAt ?? null,
         lastPaidDate: null,
         updatedAt: FieldValue.serverTimestamp()
       });
