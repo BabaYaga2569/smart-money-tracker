@@ -779,50 +779,6 @@ snapshot.docChanges().forEach(async (change) => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [currentUser, processedBills, userSettings, settingsLoaded]);
 
-  // Auto-detect recurring bills on first login
-  useEffect(() => {
-    if (!currentUser) return;
-
-    const checkAndAutoDetect = async () => {
-      try {
-        const settingsRef = doc(db, 'users', currentUser.uid, 'settings', 'personal');
-        const settingsSnap = await getDoc(settingsRef);
-
-        if (settingsSnap.exists()) {
-          const data = settingsSnap.data();
-
-          // Only auto-detect once
-          if (!data.recurringBillsDetected) {
-            console.log('Running automatic recurring bill detection...');
-            
-            const result = await detectAndAutoAddRecurringBills(currentUser.uid, db);
-            
-            if (result.success && result.addedCount > 0) {
-              NotificationManager.showSuccess(
-                `Auto-detected and added ${result.addedCount} recurring bill${result.addedCount > 1 ? 's' : ''}!`
-              );
-            }
-
-            // Mark as detected
-            await updateDoc(settingsRef, { 
-              recurringBillsDetected: true,
-              lastAutoDetection: new Date().toISOString()
-            });
-          }
-        } else {
-          // Create settings document if it doesn't exist
-          await setDoc(settingsRef, {
-            recurringBillsDetected: false
-          });
-        }
-      } catch (error) {
-        console.error('Error in auto-detection:', error);
-      }
-    };
-
-    checkAndAutoDetect();
-  }, [currentUser]);
-
   // Load bills on mount - ADDED
   useEffect(() => {
     if (currentUser) {
@@ -851,14 +807,27 @@ snapshot.docChanges().forEach(async (change) => {
     return () => unsub();
   }, [currentUser]);
 
-  // If you already load transactions elsewhere, remove this listener and pass them in
+  // Keep only recent matching history live. Bill matching does not need the
+  // user's entire transaction ledger on every Bills page mount.
   useEffect(() => {
     if (!currentUser) return;
+
     const txRef = collection(db, "users", currentUser.uid, "transactions");
-    const unsub = onSnapshot(txRef, snap => {
+    const ninetyDaysAgo = new Date();
+    ninetyDaysAgo.setDate(ninetyDaysAgo.getDate() - 90);
+
+    const recentTxQuery = query(
+      txRef,
+      where("date", ">=", ninetyDaysAgo.toISOString().split("T")[0]),
+      orderBy("date", "desc"),
+      limit(500)
+    );
+
+    const unsub = onSnapshot(recentTxQuery, snap => {
       const data = snap.docs.map(d => ({ id: d.id, ...d.data() }));
       setTransactions(data);
     });
+
     return () => unsub();
   }, [currentUser]);
 
