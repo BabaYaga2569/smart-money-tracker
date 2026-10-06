@@ -249,3 +249,45 @@ test('variable amount pattern with no current amount is not seeded', async () =>
   assert.equal(result.skippedNoAmount, 1);
   assert.equal(db.financialEvents.writes.length, 0);
 });
+
+
+test('ambiguous duplicate legacy bills block new occurrence seeding', async () => {
+  const duplicateA = {
+    id: 'legacy-a',
+    name: 'Affirm Dog Water Bowl and Vacuum',
+    amount: 21.21,
+    dueDate: '2026-10-07',
+    isPaid: false
+  };
+  const duplicateB = {
+    id: 'legacy-b',
+    name: 'Affirm Dog Water Bowl and Vacuum',
+    amount: 21.21,
+    dueDate: '2026-10-07',
+    isPaid: false
+  };
+
+  const db = createDb();
+
+  const result = await ensureCurrentBillOccurrences({
+    db,
+    userId: 'user-1',
+    patterns: [{
+      id: 'pattern-dog-bowl',
+      name: 'Affirm Dog Water Bowl and Vacuum',
+      amount: 21.21,
+      type: 'expense',
+      status: 'active',
+      frequency: 'monthly',
+      nextOccurrence: '2026-10-07'
+    }],
+    unpaidBills: [duplicateA, duplicateB],
+    log: { warn() {}, info() {} }
+  });
+
+  assert.equal(result.seeded, 0);
+  assert.equal(result.linked, 0);
+  assert.equal(result.ambiguousLegacy, 1);
+  assert.equal(result.bills.length, 2);
+  assert.equal(db.financialEvents.writes.length, 0);
+});
