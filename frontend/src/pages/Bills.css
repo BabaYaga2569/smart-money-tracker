@@ -246,8 +246,8 @@
 
 .bill-item {
   display: grid;
-  grid-template-columns: auto 1fr auto auto auto;
-  align-items: center;
+  grid-template-columns: minmax(0, 1fr) minmax(260px, 340px);
+  align-items: stretch;
   background: #1a1a1a !important;
   border: 2px solid #333333 !important;
   border-radius: 8px;
@@ -301,6 +301,12 @@
   display: flex;
   align-items: center;
   gap: 15px;
+  min-width: 0;
+}
+
+.bill-details {
+  min-width: 0;
+  width: 100%;
 }
 
 .bill-icon {
@@ -379,6 +385,15 @@
 
 .bill-amount-section {
   text-align: right;
+  width: 100%;
+  min-width: 0;
+  max-width: 340px;
+  justify-self: end;
+}
+
+.bill-amount-section > div,
+.bill-amount-section > button {
+  max-width: 100%;
 }
 
 .bill-amount {
@@ -1585,5 +1600,85 @@ html body .layout .main-content .bills-container button[class*="delete"] {
 
   .bill-meta {
     gap: 6px;
+  }
+}
+
+
+/* ===== Bill Integrity Audit ===== */
+.bill-integrity-audit {
+  margin: 18px 0 24px;
+  padding: 16px 18px;
+  border: 1px solid #3b82f6;
+  border-radius: 10px;
+  background: rgba(59, 130, 246, 0.08);
+}
+
+.bill-integrity-audit.has-issues {
+  border-color: #f59e0b;
+  background: rgba(245, 158, 11, 0.08);
+}
+
+.bill-integrity-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.bill-integrity-header h3 {
+  margin: 0;
+  color: #00ff88;
+}
+
+.bill-integrity-summary {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.bill-integrity-pill {
+  padding: 5px 9px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 700;
+  background: #252525;
+  border: 1px solid #444;
+}
+
+.bill-integrity-pill.warning {
+  color: #ffb020;
+  border-color: #ffb020;
+}
+
+.bill-integrity-pill.danger {
+  color: #ff4d5e;
+  border-color: #ff4d5e;
+}
+
+.bill-integrity-details {
+  margin-top: 12px;
+  font-size: 13px;
+  color: #ddd;
+}
+
+.bill-integrity-group {
+  margin-top: 10px;
+  padding: 10px;
+  border-radius: 8px;
+  background: rgba(255,255,255,0.04);
+}
+
+.bill-integrity-group strong {
+  color: #fff;
+}
+
+@media (max-width: 700px) {
+  .bill-integrity-audit {
+    padding: 14px;
+  }
+
+  .bill-integrity-summary {
+    width: 100%;
   }
 }
