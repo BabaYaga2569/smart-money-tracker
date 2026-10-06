@@ -1,11 +1,11 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { collection, getDocs, doc, updateDoc, addDoc, deleteDoc, query as firestoreQuery, orderBy as firestoreOrderBy, limit as firestoreLimit } from 'firebase/firestore';
+import { collection, getDocs, doc, updateDoc, addDoc, deleteDoc, query as firestoreQuery, orderBy as firestoreOrderBy, limit as firestoreLimit, where as firestoreWhere } from 'firebase/firestore';
 import { db } from '../firebase';
 
 // Query keys for cache management
 export const QUERY_KEYS = {
   accounts: (userId) => ['accounts', userId],
-  transactions: (userId) => ['transactions', userId],
+  transactions: (userId, options = {}) => ['transactions', userId, options.limitCount || 100, options.orderByField || 'timestamp', options.orderDirection || 'desc'],
   bills: (userId) => ['bills', userId],
   categories: (userId) => ['categories', userId],
   settings: (userId) => ['settings', userId],
@@ -30,7 +30,7 @@ export const useTransactionsQuery = (userId, options = {}) => {
   const { limitCount = 100, orderByField = 'timestamp', orderDirection = 'desc' } = options;
   
   return useQuery({
-    queryKey: QUERY_KEYS.transactions(userId),
+    queryKey: QUERY_KEYS.transactions(userId, { limitCount, orderByField, orderDirection }),
     queryFn: async () => {
       if (!userId) return [];
       
@@ -55,7 +55,12 @@ export const useBillsQuery = (userId) => {
     queryKey: QUERY_KEYS.bills(userId),
     queryFn: async () => {
       if (!userId) return [];
-      const snapshot = await getDocs(collection(db, `users/${userId}/bills`));
+      const billsRef = collection(db, `users/${userId}/financialEvents`);
+      const q = firestoreQuery(
+        billsRef,
+        firestoreWhere('type', '==', 'bill')
+      );
+      const snapshot = await getDocs(q);
       return snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
     },
     enabled: !!userId,
