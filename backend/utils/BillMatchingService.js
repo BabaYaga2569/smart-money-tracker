@@ -389,9 +389,31 @@ function enrichBillsWithAliases(bills, merchantAliases) {
  * Keep date-generation semantics isolated from payment persistence so the
  * lifecycle can be committed atomically.
  */
-function calculateNextOccurrence(currentDate, frequency) {
+function daysInMonth(year, monthIndex) {
+  return new Date(year, monthIndex + 1, 0).getDate();
+}
+
+function dateAtDay(year, monthIndex, day) {
+  return new Date(year, monthIndex, Math.min(day, daysInMonth(year, monthIndex)));
+}
+
+function addMonthsPreserveSchedule(current, months, preferredDay = null) {
+  const targetMonthIndex = current.getMonth() + months;
+  const targetYear = current.getFullYear() + Math.floor(targetMonthIndex / 12);
+  const normalizedMonth = ((targetMonthIndex % 12) + 12) % 12;
+  const day = preferredDay || current.getDate();
+  return dateAtDay(targetYear, normalizedMonth, day);
+}
+
+function calculateNextOccurrence(currentDate, frequency, pattern = {}) {
   const current = parseDueDateLocal(currentDate);
   if (!current) return null;
+
+  const scheduleRule = pattern.scheduleRule || {};
+  const preferredDay =
+    scheduleRule.kind === 'dayOfMonth' && Number(scheduleRule.day)
+      ? Number(scheduleRule.day)
+      : current.getDate();
 
   let next;
 
@@ -406,25 +428,77 @@ function calculateNextOccurrence(currentDate, frequency) {
       next.setDate(current.getDate() + 14);
       break;
     case 'monthly':
-      next = new Date(current);
-      next.setMonth(current.getMonth() + 1);
+      next = addMonthsPreserveSchedule(current, 1, preferredDay);
       break;
     case 'quarterly':
-      next = new Date(current);
-      next.setMonth(current.getMonth() + 3);
+      if (scheduleRule.kind === 'quarterEndLastDay') {
+        const target = addMonthsPreserveSchedule(current, 3, 1);
+        next = new Date(
+          target.getFullYear(),
+          target.getMonth(),
+          daysInMonth(target.getFullYear(), target.getMonth())
+        );
+      } else {
+        next = addMonthsPreserveSchedule(current, 3, preferredDay);
+      }
       break;
     case 'yearly':
     case 'annually':
     case 'annual':
-      next = new Date(current);
-      next.setFullYear(current.getFullYear() + 1);
+      next = dateAtDay(
+        current.getFullYear() + 1,
+        current.getMonth(),
+        preferredDay
+      );
       break;
     default:
-      next = new Date(current);
-      next.setMonth(current.getMonth() + 1);
+      next = addMonthsPreserveSchedule(current, 1, preferredDay);
+  }
+
+  const activeMonths = Array.isArray(pattern.activeMonths)
+    ? pattern.activeMonths.map(Number).filter(month => month >= 1 && month <= 12)
+    : [];
+
+  if (activeMonths.length > 0) {
+    let guard = 0;
+    while (!activeMonths.includes(next.getMonth() + 1) && guard < 24) {
+      next = addMonthsPreserveSchedule(next, 1, preferredDay);
+      guard += 1;
+    }
   }
 
   return next;
+}
+
+function isFinalInstallment(pattern, currentDueDate) {
+  if (!pattern?.installmentPlan) return false;
+
+  const remainingPayments = Number(pattern.remainingPayments);
+  if (Number.isFinite(remainingPayments) && remainingPayments <= 1) {
+    return true;
+  }
+
+  const endDate = String(pattern.endDate || '').slice(0, 10);
+  return Boolean(endDate && endDate === String(currentDueDate || '').slice(0, 10));
+}
+
+function amountForNextOccurrence(pattern, liveBill, nextOccurrence) {
+  const endDate = String(pattern?.endDate || '').slice(0, 10);
+  const finalPaymentAmount = Number(pattern?.finalPaymentAmount);
+
+  if (
+    pattern?.installmentPlan &&
+    endDate &&
+    nextOccurrence === endDate &&
+    Number.isFinite(finalPaymentAmount)
+  ) {
+    return Math.abs(finalPaymentAmount);
+  }
+
+  const patternAmount = Number(pattern?.amount);
+  if (Number.isFinite(patternAmount)) return Math.abs(patternAmount);
+
+  return Math.abs(Number(liveBill?.amount) || 0);
 }
 
 function toDateOnlyString(date) {
@@ -528,22 +602,41 @@ async function applyBillPaymentLifecycle(db, userId, billId, payment) {
         };
       }
 
-      const nextDate = calculateNextOccurrence(
-        currentDueDate,
-        pattern.frequency || liveBill.recurrence || 'monthly'
-      );
-      nextOccurrence = toDateOnlyString(nextDate);
+      const finalInstallment = isFinalInstallment(pattern, currentDueDate);
 
-      if (!nextOccurrence) {
-        return { success: false, skipped: true, reason: 'NEXT_OCCURRENCE_INVALID' };
+      if (!finalInstallment) {
+        const nextDate = calculateNextOccurrence(
+          currentDueDate,
+          pattern.frequency || liveBill.recurrence || 'monthly',
+          pattern
+        );
+        nextOccurrence = toDateOnlyString(nextDate);
+
+        if (!nextOccurrence) {
+          return { success: false, skipped: true, reason: 'NEXT_OCCURRENCE_INVALID' };
+        }
+
+        if (
+          pattern.installmentPlan &&
+          pattern.endDate &&
+          nextOccurrence > String(pattern.endDate).slice(0, 10)
+        ) {
+          return {
+            success: false,
+            skipped: true,
+            reason: 'INSTALLMENT_NEXT_OCCURRENCE_AFTER_END_DATE',
+            nextOccurrence,
+            endDate: String(pattern.endDate).slice(0, 10)
+          };
+        }
+
+        nextBillRef = userRef
+          .collection('financialEvents')
+          .doc(deterministicNextBillId(liveBill.recurringPatternId, nextOccurrence));
+
+        const nextBillSnapshot = await firestoreTransaction.get(nextBillRef);
+        nextBillExists = nextBillSnapshot.exists;
       }
-
-      nextBillRef = userRef
-        .collection('financialEvents')
-        .doc(deterministicNextBillId(liveBill.recurringPatternId, nextOccurrence));
-
-      const nextBillSnapshot = await firestoreTransaction.get(nextBillRef);
-      nextBillExists = nextBillSnapshot.exists;
     }
 
     const parsedPaidDate = parseDueDateLocal(paidDate);
@@ -569,6 +662,15 @@ async function applyBillPaymentLifecycle(db, userId, billId, payment) {
       markedVia,
       canBeUnmarked: markedVia === 'manual-payment',
       lifecyclePreviousDueDate: liveBill.dueDate || liveBill.nextDueDate || null,
+      lifecyclePreviousPatternState: pattern
+        ? {
+            nextOccurrence: pattern.nextOccurrence || null,
+            status: pattern.status || 'active',
+            remainingPayments: pattern.remainingPayments ?? null,
+            remainingBalance: pattern.remainingBalance ?? null,
+            completedAt: pattern.completedAt || null
+          }
+        : null,
       lifecycleNextOccurrence: nextOccurrence,
       lifecycleNextBillId: nextBillRef?.id || null,
       updatedAt: FieldValue.serverTimestamp()
@@ -607,37 +709,68 @@ async function applyBillPaymentLifecycle(db, userId, billId, payment) {
       archivedAt: FieldValue.serverTimestamp()
     }, { merge: true });
 
-    if (patternRef && pattern && nextOccurrence) {
-      firestoreTransaction.update(patternRef, {
-        nextOccurrence,
-        lastPaidDate: paidDate,
-        updatedAt: FieldValue.serverTimestamp()
-      });
+    if (patternRef && pattern) {
+      const finalInstallment = isFinalInstallment(
+        pattern,
+        liveBill.dueDate || liveBill.nextDueDate
+      );
 
-      if (!nextBillExists) {
-        firestoreTransaction.set(nextBillRef, {
-          id: nextBillRef.id,
-          type: 'bill',
-          name: liveBill.name,
-          amount: liveBill.amount,
-          dueDate: nextOccurrence,
-          originalDueDate: nextOccurrence,
-          isPaid: false,
-          status: 'pending',
-          paidDate: null,
-          paidAmount: null,
-          linkedTransactionId: null,
-          category: liveBill.category,
-          recurrence: liveBill.recurrence || pattern.frequency || 'monthly',
-          recurringPatternId: liveBill.recurringPatternId,
-          merchantNames: liveBill.merchantNames || [],
-          autoPayEnabled: liveBill.autoPayEnabled || false,
-          paymentHistory: [],
-          notes: null,
-          createdAt: FieldValue.serverTimestamp(),
-          updatedAt: FieldValue.serverTimestamp(),
-          createdFrom: 'canonical-bill-engine'
+      const currentRemainingPayments = Number(pattern.remainingPayments);
+      const nextRemainingPayments =
+        pattern.installmentPlan && Number.isFinite(currentRemainingPayments)
+          ? Math.max(0, currentRemainingPayments - 1)
+          : pattern.remainingPayments;
+
+      const currentRemainingBalance = Number(pattern.remainingBalance);
+      const nextRemainingBalance =
+        pattern.installmentPlan && Number.isFinite(currentRemainingBalance)
+          ? Math.max(0, Math.round((currentRemainingBalance - paidAmount) * 100) / 100)
+          : pattern.remainingBalance;
+
+      if (finalInstallment) {
+        firestoreTransaction.update(patternRef, {
+          nextOccurrence: null,
+          status: 'ended',
+          remainingPayments: 0,
+          remainingBalance: 0,
+          lastPaidDate: paidDate,
+          completedAt: FieldValue.serverTimestamp(),
+          updatedAt: FieldValue.serverTimestamp()
         });
+      } else {
+        firestoreTransaction.update(patternRef, {
+          nextOccurrence,
+          remainingPayments: nextRemainingPayments,
+          remainingBalance: nextRemainingBalance,
+          lastPaidDate: paidDate,
+          updatedAt: FieldValue.serverTimestamp()
+        });
+
+        if (!nextBillExists) {
+          firestoreTransaction.set(nextBillRef, {
+            id: nextBillRef.id,
+            type: 'bill',
+            name: liveBill.name,
+            amount: amountForNextOccurrence(pattern, liveBill, nextOccurrence),
+            dueDate: nextOccurrence,
+            originalDueDate: nextOccurrence,
+            isPaid: false,
+            status: 'pending',
+            paidDate: null,
+            paidAmount: null,
+            linkedTransactionId: null,
+            category: liveBill.category,
+            recurrence: liveBill.recurrence || pattern.frequency || 'monthly',
+            recurringPatternId: liveBill.recurringPatternId,
+            merchantNames: liveBill.merchantNames || [],
+            autoPayEnabled: liveBill.autoPayEnabled || false,
+            paymentHistory: [],
+            notes: null,
+            createdAt: FieldValue.serverTimestamp(),
+            updatedAt: FieldValue.serverTimestamp(),
+            createdFrom: 'canonical-bill-engine'
+          });
+        }
       }
     }
 
@@ -646,7 +779,11 @@ async function applyBillPaymentLifecycle(db, userId, billId, payment) {
       idempotent: false,
       cleared: true,
       advanced: Boolean(patternRef),
-      generated: Boolean(patternRef && !nextBillExists),
+      generated: Boolean(patternRef && nextBillRef && !nextBillExists),
+      completed: Boolean(patternRef && pattern && isFinalInstallment(
+        pattern,
+        liveBill.dueDate || liveBill.nextDueDate
+      )),
       nextOccurrence,
       paymentRecordId
     };
@@ -716,36 +853,60 @@ export async function unmarkManualBillPayment(db, userId, billId) {
     let nextBillRef = null;
 
     if (liveBill.recurringPatternId) {
-      if (!liveBill.lifecycleNextOccurrence || !liveBill.lifecycleNextBillId) {
+      const hasNewReversalState = Boolean(liveBill.lifecyclePreviousPatternState);
+      const hasLegacyReversalState = Boolean(
+        liveBill.lifecycleNextOccurrence && liveBill.lifecycleNextBillId
+      );
+
+      if (!hasNewReversalState && !hasLegacyReversalState) {
         return { success: false, skipped: true, reason: 'MISSING_LIFECYCLE_REVERSAL_DATA' };
       }
 
       patternRef = userRef
         .collection('recurringPatterns')
         .doc(liveBill.recurringPatternId);
-      nextBillRef = userRef
-        .collection('financialEvents')
-        .doc(liveBill.lifecycleNextBillId);
 
-      const [patternSnapshot, nextBillSnapshot] = await Promise.all([
-        firestoreTransaction.get(patternRef),
-        firestoreTransaction.get(nextBillRef)
-      ]);
+      if (liveBill.lifecycleNextBillId) {
+        nextBillRef = userRef
+          .collection('financialEvents')
+          .doc(liveBill.lifecycleNextBillId);
+      }
+
+      const patternSnapshot = await firestoreTransaction.get(patternRef);
+      const nextBillSnapshot = nextBillRef
+        ? await firestoreTransaction.get(nextBillRef)
+        : null;
 
       if (!patternSnapshot.exists) {
         return { success: false, skipped: true, reason: 'RECURRING_PATTERN_NOT_FOUND' };
       }
 
       const pattern = patternSnapshot.data();
-      if (pattern.nextOccurrence !== liveBill.lifecycleNextOccurrence) {
-        return {
-          success: false,
-          skipped: true,
-          reason: 'RECURRING_PATTERN_HAS_MOVED_FORWARD'
-        };
+
+      if (liveBill.lifecycleNextOccurrence) {
+        if (pattern.nextOccurrence !== liveBill.lifecycleNextOccurrence) {
+          return {
+            success: false,
+            skipped: true,
+            reason: 'RECURRING_PATTERN_HAS_MOVED_FORWARD'
+          };
+        }
+      } else {
+        const finalPaymentStillReversible =
+          pattern.nextOccurrence == null &&
+          pattern.status === 'ended' &&
+          Number(pattern.remainingPayments) === 0;
+
+        if (!finalPaymentStillReversible) {
+          return {
+            success: false,
+            skipped: true,
+            reason: 'RECURRING_PATTERN_HAS_MOVED_FORWARD'
+          };
+        }
       }
 
-      if (nextBillSnapshot.exists) {
+      if (nextBillSnapshot?.exists) {
         const nextBill = nextBillSnapshot.data();
         if (nextBill.isPaid || nextBill.status === 'paid') {
           return { success: false, skipped: true, reason: 'NEXT_BILL_ALREADY_PAID' };
@@ -767,6 +928,7 @@ export async function unmarkManualBillPayment(db, userId, billId) {
       markedAt: null,
       markedVia: null,
       canBeUnmarked: false,
+      lifecyclePreviousPatternState: null,
       lifecycleNextOccurrence: null,
       lifecycleNextBillId: null,
       updatedAt: FieldValue.serverTimestamp()
@@ -776,11 +938,27 @@ export async function unmarkManualBillPayment(db, userId, billId) {
     firestoreTransaction.delete(paidArchiveRef);
 
     if (patternRef) {
-      firestoreTransaction.update(patternRef, {
-        nextOccurrence: liveBill.lifecyclePreviousDueDate,
-        lastPaidDate: null,
-        updatedAt: FieldValue.serverTimestamp()
-      });
+      const previousPatternState = liveBill.lifecyclePreviousPatternState || null;
+      const restorePattern = previousPatternState
+        ? {
+            nextOccurrence:
+              previousPatternState.nextOccurrence ||
+              liveBill.lifecyclePreviousDueDate ||
+              null,
+            status: previousPatternState.status || 'active',
+            remainingPayments: previousPatternState.remainingPayments ?? null,
+            remainingBalance: previousPatternState.remainingBalance ?? null,
+            completedAt: previousPatternState.completedAt ?? null,
+            lastPaidDate: null,
+            updatedAt: FieldValue.serverTimestamp()
+          }
+        : {
+            nextOccurrence: liveBill.lifecyclePreviousDueDate,
+            lastPaidDate: null,
+            updatedAt: FieldValue.serverTimestamp()
+          };
+
+      firestoreTransaction.update(patternRef, restorePattern);
 
       if (nextBillRef) {
         firestoreTransaction.delete(nextBillRef);

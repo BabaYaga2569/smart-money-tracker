@@ -80,6 +80,11 @@ const compactCurrent = (item) => ({
     null,
   linkedAccount: item.linkedAccount || item.accountId || null,
   variableAmount: Boolean(item.variableAmount),
+  installmentPlan: Boolean(item.installmentPlan),
+  remainingPayments: item.remainingPayments ?? null,
+  remainingBalance: money(item.remainingBalance),
+  endDate: item.endDate || null,
+  finalPaymentAmount: money(item.finalPaymentAmount),
   customRecurrence: Boolean(item.customRecurrence),
   activeMonths: item.activeMonths || [],
 });
@@ -87,6 +92,8 @@ const compactCurrent = (item) => ({
 const compactProposal = (proposal) => ({
   ...proposal,
   amount: money(proposal.amount),
+  remainingBalance: money(proposal.remainingBalance),
+  finalPaymentAmount: money(proposal.finalPaymentAmount),
   scheduleLabel: scheduleLabel(proposal),
 });
 
@@ -126,8 +133,13 @@ const scoreCandidate = (current, target) => {
 
   const currentAmount = money(current.amount);
   const targetAmount = money(target.amount);
-  const amountComparable = !target.variableAmount && targetAmount !== null && currentAmount !== null;
-  const amountMatches = amountComparable && Math.abs(currentAmount - targetAmount) <= 0.01;
+  const amountComparable =
+    !target.variableAmount &&
+    targetAmount !== null &&
+    currentAmount !== null;
+  const amountMatches =
+    amountComparable &&
+    Math.abs(currentAmount - targetAmount) <= 0.01;
 
   if (amountMatches) {
     score += 20;
@@ -135,9 +147,10 @@ const scoreCandidate = (current, target) => {
   }
 
   const currentDay = dateDay(current.nextOccurrence);
-  const targetDay = target.scheduleRule?.kind === 'dayOfMonth'
-    ? target.scheduleRule.day
-    : null;
+  const targetDay =
+    target.scheduleRule?.kind === 'dayOfMonth'
+      ? target.scheduleRule.day
+      : null;
   const dayMatches = currentDay && targetDay && currentDay === targetDay;
 
   if (dayMatches) {
@@ -152,14 +165,15 @@ const scoreCandidate = (current, target) => {
 
   const currentInstitution = compactName(current.institutionName);
   const targetInstitution = compactName(target.institutionName);
-  if (currentInstitution && targetInstitution && currentInstitution === targetInstitution) {
+  if (
+    currentInstitution &&
+    targetInstitution &&
+    currentInstitution === targetInstitution
+  ) {
     score += 5;
     reasons.push('institution');
   }
 
-  // Distinct Affirm installment plans must not collapse just because the
-  // merchant name contains "Affirm". Require strong name evidence, or both
-  // amount and due-day evidence, before considering the candidate.
   if (isAffirm(current.name) || isAffirm(target.name)) {
     const strongAffirmIdentity =
       name.score >= 65 ||
@@ -187,9 +201,10 @@ const bestMatchForTarget = (availableCurrent, target) => {
   const best = ranked[0];
   const second = ranked[1];
 
-  // Exact/known alias matches are safe. Fuzzy matches need corroboration and
-  // must beat the runner-up by enough margin to avoid accidental merges.
-  const hasStrongIdentity = best.reasons.includes('exact-name') || best.reasons.includes('known-alias');
+  const hasStrongIdentity =
+    best.reasons.includes('exact-name') ||
+    best.reasons.includes('known-alias');
+
   const hasCorroboration =
     best.reasons.includes('amount') ||
     best.reasons.includes('due-day') ||
@@ -204,14 +219,22 @@ const bestMatchForTarget = (availableCurrent, target) => {
   return null;
 };
 
-export function buildRecurringRebuildDryRun(currentPatterns, proposal, reviewItems = [], exclusions = []) {
+export function buildRecurringRebuildDryRun(
+  currentPatterns,
+  proposal,
+  reviewItems = [],
+  exclusions = []
+) {
   const current = (currentPatterns || []).map(compactCurrent);
   const proposed = (proposal || []).map(compactProposal);
   const usedCurrentIds = new Set();
   const results = [];
 
   proposed.forEach(target => {
-    const availableCurrent = current.filter(item => !usedCurrentIds.has(item.id));
+    const availableCurrent = current.filter(
+      item => !usedCurrentIds.has(item.id)
+    );
+
     const match = bestMatchForTarget(availableCurrent, target);
     const matched = match?.current || null;
 
@@ -232,6 +255,7 @@ export function buildRecurringRebuildDryRun(currentPatterns, proposal, reviewIte
     if (!target.variableAmount) {
       const currentAmount = money(matched.amount);
       const targetAmount = money(target.amount);
+
       if (
         currentAmount !== null &&
         targetAmount !== null &&
@@ -246,27 +270,110 @@ export function buildRecurringRebuildDryRun(currentPatterns, proposal, reviewIte
     }
 
     if (frequency(matched.frequency) !== frequency(target.frequency)) {
-      changes.push(`Frequency: ${matched.frequency} → ${target.frequency}`);
+      changes.push(
+        `Frequency: ${matched.frequency} → ${target.frequency}`
+      );
     }
 
     if (target.scheduleRule?.kind === 'dayOfMonth') {
       const currentDay = dateDay(matched.nextOccurrence);
       if (currentDay && currentDay !== target.scheduleRule.day) {
-        changes.push(`Due day: ${currentDay} → ${target.scheduleRule.day}`);
+        changes.push(
+          `Due day: ${currentDay} → ${target.scheduleRule.day}`
+        );
       }
     }
 
     if (
       target.customRecurrence &&
-      (!matched.customRecurrence || !arraysEqual(matched.activeMonths, target.activeMonths))
+      (
+        !matched.customRecurrence ||
+        !arraysEqual(matched.activeMonths, target.activeMonths)
+      )
     ) {
       changes.push(
-        `Active months: ${matched.activeMonths?.length ? matched.activeMonths.join(',') : 'not configured'} → ${target.activeMonths.join(',')}`
+        `Active months: ${
+          matched.activeMonths?.length
+            ? matched.activeMonths.join(',')
+            : 'not configured'
+        } → ${target.activeMonths.join(',')}`
       );
     }
 
+    if (target.installmentPlan) {
+      if (!matched.installmentPlan) {
+        changes.push('Installment plan: not configured → finite plan');
+      }
+
+      if (
+        target.nextOccurrence &&
+        matched.nextOccurrence !== target.nextOccurrence
+      ) {
+        changes.push(
+          `Next payment: ${
+            matched.nextOccurrence || 'not configured'
+          } → ${target.nextOccurrence}`
+        );
+      }
+
+      if (
+        Number(matched.remainingPayments) !==
+        Number(target.remainingPayments)
+      ) {
+        changes.push(
+          `Payments left: ${
+            matched.remainingPayments ?? 'not configured'
+          } → ${target.remainingPayments}`
+        );
+      }
+
+      if (matched.endDate !== target.endDate) {
+        changes.push(
+          `Final payment date: ${
+            matched.endDate || 'not configured'
+          } → ${target.endDate}`
+        );
+      }
+
+      const matchedFinal = money(matched.finalPaymentAmount);
+      const targetFinal = money(target.finalPaymentAmount);
+
+      if (
+        matchedFinal === null ||
+        targetFinal === null ||
+        Math.abs(matchedFinal - targetFinal) > 0.009
+      ) {
+        changes.push(
+          `Final payment: ${
+            matchedFinal === null
+              ? 'not configured'
+              : '$' + matchedFinal.toFixed(2)
+          } → $${targetFinal.toFixed(2)}`
+        );
+      }
+
+      const matchedBalance = money(matched.remainingBalance);
+      const targetBalance = money(target.remainingBalance);
+
+      if (
+        matchedBalance === null ||
+        targetBalance === null ||
+        Math.abs(matchedBalance - targetBalance) > 0.009
+      ) {
+        changes.push(
+          `Remaining balance: ${
+            matchedBalance === null
+              ? 'not configured'
+              : '$' + matchedBalance.toFixed(2)
+          } → $${targetBalance.toFixed(2)}`
+        );
+      }
+    }
+
     if (normalizeName(matched.name) !== normalizeName(target.name)) {
-      changes.push(`Canonical name: ${matched.name} → ${target.name}`);
+      changes.push(
+        `Canonical name: ${matched.name} → ${target.name}`
+      );
     }
 
     results.push({
@@ -278,13 +385,25 @@ export function buildRecurringRebuildDryRun(currentPatterns, proposal, reviewIte
     });
   });
 
-  const unmatchedCurrent = current.filter(item => !usedCurrentIds.has(item.id));
-  const preserve = unmatchedCurrent.filter(item => item.type !== 'expense');
-  const unmatchedExpense = unmatchedCurrent.filter(item => item.type === 'expense');
+  const unmatchedCurrent = current.filter(
+    item => !usedCurrentIds.has(item.id)
+  );
+
+  const preserve = unmatchedCurrent.filter(
+    item => item.type !== 'expense'
+  );
+
+  const unmatchedExpense = unmatchedCurrent.filter(
+    item => item.type === 'expense'
+  );
 
   const confirmedRetireNames = new Set(
     (exclusions || [])
-      .filter(item => /no longer|no longer active|no longer exists/i.test(item.reason || ''))
+      .filter(item =>
+        /no longer|no longer active|no longer exists/i.test(
+          item.reason || ''
+        )
+      )
       .map(item => normalizeName(item.sourceName))
   );
 
@@ -292,23 +411,31 @@ export function buildRecurringRebuildDryRun(currentPatterns, proposal, reviewIte
     confirmedRetireNames.has(normalizeName(item.name))
   );
 
-  const unresolvedExpense = unmatchedExpense.filter(item =>
-    !confirmedRetireNames.has(normalizeName(item.name))
+  const unresolvedExpense = unmatchedExpense.filter(
+    item => !confirmedRetireNames.has(normalizeName(item.name))
   );
 
   const unmatchedReviews = unresolvedExpense.map(item => ({
     sourceName: item.name,
     amount: item.amount,
-    reason: 'Existing expense pattern could not be matched confidently to the TEMPLATE proposal.',
+    reason:
+      'Existing expense pattern could not be matched confidently to the TEMPLATE proposal.',
     suggestedAction: 'Review before any retirement decision.',
     currentPattern: item,
   }));
 
-  const allReviewItems = [...reviewItems, ...unmatchedReviews];
+  const allReviewItems = [
+    ...reviewItems,
+    ...unmatchedReviews,
+  ];
 
-  const engineRequirements = [...new Set(
-    proposed.map(item => item.engineRequirement).filter(Boolean)
-  )];
+  const engineRequirements = [
+    ...new Set(
+      proposed
+        .map(item => item.engineRequirement)
+        .filter(Boolean)
+    ),
+  ];
 
   return {
     summary: {
@@ -329,6 +456,8 @@ export function buildRecurringRebuildDryRun(currentPatterns, proposal, reviewIte
     reviewItems: allReviewItems,
     exclusions,
     engineRequirements,
-    safeToApply: engineRequirements.length === 0 && allReviewItems.length === 0,
+    safeToApply:
+      engineRequirements.length === 0 &&
+      allReviewItems.length === 0,
   };
 }
