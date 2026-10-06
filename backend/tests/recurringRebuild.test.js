@@ -164,3 +164,22 @@ test('write payload preserves existing user metadata while applying canonical sc
   assert.deepEqual(write.merchantNames, ['Starlink']);
   assert.equal(write.archived, false);
 });
+
+
+test('preserveCurrent cadence rolls stale monthly date forward', () => {
+  const current = [
+    {
+      id: 'plaid-id',
+      name: 'Plaid Technologies Inc',
+      amount: 6.26,
+      frequency: 'monthly',
+      nextOccurrence: '2026-08-13',
+      type: 'expense'
+    }
+  ];
+
+  const plan = buildRecurringRebuildPlan(current, '2026-10-06');
+  const plaid = plan.matched.find(item => item.id === 'plaid-id');
+
+  assert.equal(plaid.target.nextOccurrence, '2026-10-13');
+});
