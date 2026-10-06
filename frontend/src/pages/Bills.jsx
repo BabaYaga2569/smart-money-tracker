@@ -1,5 +1,5 @@
 import React, { useMemo, useState, useEffect } from "react";
-import { collection, doc, orderBy, query, updateDoc, getDoc, addDoc, where, getDocs, setDoc, deleteDoc, serverTimestamp, arrayUnion } from "firebase/firestore";
+import { collection, doc, orderBy, query, updateDoc, getDoc, where, getDocs, setDoc, deleteDoc, serverTimestamp, arrayUnion } from "firebase/firestore";
 import { db } from "../firebase";
 import { useAuth } from "../contexts/AuthContext";
 import { RecurringBillManager } from '../utils/RecurringBillManager';
@@ -7,22 +7,14 @@ import { RecurringManager } from '../utils/RecurringManager';
 import { BillSortingManager } from '../utils/BillSortingManager';
 import { NotificationManager } from '../utils/NotificationManager';
 import { BillAnimationManager } from '../utils/BillAnimationManager';
-import { PlaidIntegrationManager } from '../utils/PlaidIntegrationManager';
 import PlaidConnectionManager from '../utils/PlaidConnectionManager';
 import PlaidErrorModal from '../components/PlaidErrorModal';
-import BillCSVImportModal from '../components/BillCSVImportModal';
 import PaymentHistoryModal from '../components/PaymentHistoryModal';
-import DuplicatePreviewModal from '../components/DuplicatePreviewModal';
 import BillTransactionLinker from '../components/BillTransactionLinker';
 import { formatDateForDisplay, formatDateForInput, getPacificTime } from '../utils/DateUtils';
 import { getLocalMidnight, parseDueDateLocal, getRelativeDateString } from '../utils/dateHelpers';
 import { TRANSACTION_CATEGORIES, CATEGORY_ICONS, getCategoryIcon, migrateLegacyCategory } from '../constants/categories';
 import NotificationSystem from '../components/NotificationSystem';
-import { BillDeduplicationManager } from '../utils/BillDeduplicationManager';
-import { cleanupDuplicateBills, analyzeForCleanup } from '../utils/billCleanupMigration';
-import { detectAndAutoAddRecurringBills } from '../components/SubscriptionDetector';
-import { generateAllBills, updateTemplatesDates } from '../utils/billGenerator';
-import { getDateOnly, getMonthOnly } from '../utils/dateNormalization';
 import { getCanonicalDisplayBalance, getVisiblePlaidAccounts } from '../utils/accountVisibility';
 import "./Bills.css";
 
@@ -46,36 +38,18 @@ export default function Bills() {
   const [plaidStatus, setPlaidStatus] = useState({ isConnected: false, hasError: false });
   const [showErrorModal, setShowErrorModal] = useState(false);
   const [showModal, setShowModal] = useState(false);
-  const [showBulkDeleteModal, setShowBulkDeleteModal] = useState(false);
-  const [showCSVImport, setShowCSVImport] = useState(false);
-  const [showImportHistory, setShowImportHistory] = useState(false);
   const [showPaymentHistory, setShowPaymentHistory] = useState(false);
   const [showHelpModal, setShowHelpModal] = useState(false);
-  const [deletedBills, setDeletedBills] = useState([]);
   const [editingBill, setEditingBill] = useState(null);
-  const [deduplicating, setDeduplicating] = useState(false);
-  const [showDuplicatePreview, setShowDuplicatePreview] = useState(false);
-  const [duplicateReport, setDuplicateReport] = useState(null);
-  const [importHistory, setImportHistory] = useState([]);
   const [refreshingTransactions, setRefreshingTransactions] = useState(false);
   const [paidThisMonth, setPaidThisMonth] = useState(0);
   const [paidBillsCount, setPaidBillsCount] = useState(0);
   const [recurringBills, setRecurringBills] = useState([]);
   const [showRecurringBills, setShowRecurringBills] = useState(false);
-  const [generatingBills, setGeneratingBills] = useState(false);
   const [showPaidBills, setShowPaidBills] = useState(false);
   const [paidBills, setPaidBills] = useState([]);
-  const [userSettings, setUserSettings] = useState(null);
-  const [settingsLoaded, setSettingsLoaded] = useState(false);
-  const [autoGenerationLock, setAutoGenerationLock] = useState(new Set());
   const [showLinker, setShowLinker] = useState(false);
   const [selectedBillForLink, setSelectedBillForLink] = useState(null);
-
-  // Helper function to generate lock key for template
-  const getLockKey = (template) => {
-    const dueDate = template.nextRenewal || template.nextOccurrence;
-    return `${template.id}-${dueDate}`;
-  };
 
   // ✅ UPDATED: Load bills from financialEvents collection (one source of truth)
   const loadBills = async () => {
@@ -118,8 +92,7 @@ export default function Bills() {
         const settingsDocRef = doc(db, 'users', currentUser.uid, 'settings', 'personal');
         const settingsDoc = await getDoc(settingsDocRef);
         if (settingsDoc.exists()) {
-          setImportHistory(settingsDoc.data().importHistory || []);
-        }
+            }
       } catch (err) {
         console.log('No import history found');
       }
@@ -184,32 +157,6 @@ export default function Bills() {
     } catch (error) {
       console.error('Error loading paid bills:', error);
       setPaidBills([]);
-    }
-  };
-
-  // Load user settings
-  const loadUserSettings = async () => {
-    if (!currentUser) return;
-    try {
-      const settingsDocRef = doc(db, 'users', currentUser.uid, 'settings', 'personal');
-      const settingsDoc = await getDoc(settingsDocRef);
-      if (settingsDoc.exists()) {
-        const settings = settingsDoc.data();
-        setUserSettings(settings);
-        console.log('✅ Loaded user settings:', {
-          autoDetectBills: settings.autoDetectBills,
-          disableAutoGeneration: settings.disableAutoGeneration,
-          ignoredMerchants: settings.ignoredMerchants || []
-        });
-      } else {
-        // If no settings exist, set empty object so we know settings are loaded
-        setUserSettings({});
-      }
-      setSettingsLoaded(true);
-    } catch (error) {
-      console.error('Error loading user settings:', error);
-      // Even on error, mark as loaded to prevent infinite waiting
-      setSettingsLoaded(true);
     }
   };
 
@@ -306,205 +253,6 @@ const refreshPlaidTransactions = async () => {
 };
 
   // Auto-generate bill instance from recurring template
-  const autoGenerateBillFromTemplate = async (template) => {
-    // Declare lockKey at function scope so it's available in catch block
-    let lockKey = null;
-    
-    try {
-      // Check if auto-generation is disabled in user settings
-      if (userSettings?.autoDetectBills === false || userSettings?.disableAutoGeneration === true) {
-        console.log('[AutoBillDetection] Auto-generation is disabled in settings, skipping:', template.name);
-        return;
-      }
-      
-      // Check if merchant is in ignored list
-      const ignoredMerchants = userSettings?.ignoredMerchants || [];
-      const merchantLower = template.name.toLowerCase();
-      // Use startsWith, endsWith, or exact match to avoid false positives
-      const isIgnored = ignoredMerchants.some(ignored => {
-        const ignoredLower = ignored.toLowerCase();
-        return merchantLower === ignoredLower || 
-               merchantLower.startsWith(ignoredLower + ' ') || 
-               merchantLower.endsWith(' ' + ignoredLower);
-      });
-      if (isIgnored) {
-        console.log('[AutoBillDetection] Merchant is ignored, skipping:', template.name);
-        return;
-      }
-      
-      // Check debounce lock to prevent infinite loops
-      lockKey = getLockKey(template);
-      if (autoGenerationLock.has(lockKey)) {
-        console.log('[AutoBillDetection] Already processing this template, skipping:', template.name);
-        return;
-      }
-      
-      // Add to lock
-      setAutoGenerationLock(prev => new Set([...prev, lockKey]));
-      
-      // ✅ FIX: Always normalize template date to YYYY-MM-DD format
-const templateDate = template.nextRenewal || template. nextOccurrence;
-
-if (!templateDate) {
-  console.warn(`Template ${template.name} has no nextRenewal/nextOccurrence date`);
-  setAutoGenerationLock(prev => {
-    const newSet = new Set(prev);
-    newSet.delete(lockKey);
-    return newSet;
-  });
-  return;
-}
-
-// ✅ CRITICAL:  Normalize date to prevent format mismatches
-const exactDueDate = getDateOnly(templateDate);
-
-if (!exactDueDate || exactDueDate. length !== 10) {
-  console.error(`❌ Failed to normalize template date for ${template.name}:`, templateDate, '→', exactDueDate);
-  setAutoGenerationLock(prev => {
-    const newSet = new Set(prev);
-    newSet.delete(lockKey);
-    return newSet;
-  });
-  return;
-}
-
-console.log(`✅ Normalized template date for ${template.name}:  ${templateDate} → ${exactDueDate}`);
-      
-      // ✅ CHECK SKIPPED PERIODS: Don't recreate bills that were manually deleted
-      const currentPeriod = exactDueDate.substring(0, 7); // e.g., "2025-12"
-      if (template.skippedPeriods && Array.isArray(template.skippedPeriods) && template.skippedPeriods.includes(currentPeriod)) {
-        console.log(`⏭️ Skipping auto-generation: ${template.name} was deleted for period ${currentPeriod}`);
-        // Remove from lock
-        setAutoGenerationLock(prev => {
-          const newSet = new Set(prev);
-          newSet.delete(lockKey);
-          return newSet;
-        });
-        return;
-      }
-      
-      // Check if bill already exists for this template and due date
-      // First try exact match query
-      const existingQuery = query(
-        collection(db, 'users', currentUser.uid, 'financialEvents'),
-        where('type', '==', 'bill'),
-        where('recurringPatternId', '==', template.id),
-        where('dueDate', '==', exactDueDate)
-      );
-      
-      const existingBills = await getDocs(existingQuery);
-      
-      if (!existingBills.empty) {
-        console.log(`⚠️ Bill already exists: ${template.name} on ${exactDueDate} - skipping auto-generation`);
-        // Remove from lock
-        setAutoGenerationLock(prev => {
-          const newSet = new Set(prev);
-          newSet.delete(lockKey);
-          return newSet;
-        });
-        return;
-      }
-      
-      // Also check with date-only comparison in case of format mismatch
-      const allBillsQuery = query(
-        collection(db, 'users', currentUser.uid, 'financialEvents'),
-        where('type', '==', 'bill'),
-        where('recurringPatternId', '==', template.id)
-      );
-      
-      const allBills = await getDocs(allBillsQuery);
-      const exactDateOnly = getDateOnly(exactDueDate);
-      const duplicateFound = allBills.docs.some(doc => {
-        const billDate = getDateOnly(doc.data().dueDate);
-        return billDate === exactDateOnly;
-      });
-      
-      if (duplicateFound) {
-        console.log(`⚠️ Bill already exists (date-only match): ${template.name} on ${exactDateOnly} - skipping auto-generation`);
-        // Remove from lock
-        setAutoGenerationLock(prev => {
-          const newSet = new Set(prev);
-          newSet.delete(lockKey);
-          return newSet;
-        });
-        return;
-      }
-      
-      // Check max unpaid bills limit (2 per template)
-      const unpaidQuery = query(
-        collection(db, 'users', currentUser.uid, 'financialEvents'),
-        where('type', '==', 'bill'),
-        where('recurringPatternId', '==', template.id),
-        where('isPaid', '==', false)
-      );
-      
-      const unpaidBills = await getDocs(unpaidQuery);
-      
-      if (unpaidBills.size >= 2) {
-        console.log(`⚠️ Already have ${unpaidBills.size} unpaid bills for template ${template.name} - skipping auto-generation`);
-        // Remove from lock
-        setAutoGenerationLock(prev => {
-          const newSet = new Set(prev);
-          newSet.delete(lockKey);
-          return newSet;
-        });
-        return;
-      }
-      
-      const billId = generateBillId();
-      const billInstance = {
-        id: billId,
-        type: 'bill',
-        name: template.name,
-        amount: template.cost || template.amount,
-        dueDate: exactDueDate, // ← USE EXACT DATE FROM TEMPLATE!
-        nextDueDate: exactDueDate,
-        originalDueDate: exactDueDate,
-        category: template.category || 'Subscriptions',
-        recurrence: template.billingCycle || template.frequency || 'monthly',
-        recurringPatternId: template.id,
-        isPaid: false,
-        status: 'pending',
-        paidDate: null,
-        paidAmount: null,
-        linkedTransactionId: null,
-        paymentHistory: [],
-        merchantNames: [
-          template.name.toLowerCase(),
-          template.name.toLowerCase().replace(/[^a-z0-9]/g, '')
-        ],
-        autoPayEnabled: false,
-        notes: null,
-        createdAt: serverTimestamp(),
-        updatedAt: serverTimestamp(),
-        createdFrom: 'auto-generated'
-      };
-      
-      await setDoc(doc(db, 'users', currentUser.uid, 'financialEvents', billId), billInstance);
-      console.log(`✅ Auto-generated bill to financialEvents: ${template.name} due ${exactDueDate}`);
-      
-      // Reload bills to show new instance
-      await loadBills();
-      
-      // Remove from lock after successful generation
-      setAutoGenerationLock(prev => {
-        const newSet = new Set(prev);
-        newSet.delete(lockKey);
-        return newSet;
-      });
-    } catch (error) {
-      console.error('❌ Error auto-generating bill:', error);
-      // Remove from lock on error (if lock was acquired)
-      if (lockKey) {
-        setAutoGenerationLock(prev => {
-          const newSet = new Set(prev);
-          newSet.delete(lockKey);
-          return newSet;
-        });
-      }
-    }
-  };
-
   // Load recurring templates for display only. Bills must never generate or
   // mutate bill occurrences merely because the page was opened.
   useEffect(() => {
@@ -541,7 +289,6 @@ console.log(`✅ Normalized template date for ${template.name}:  ${templateDate}
     if (currentUser) {
       // Load settings FIRST before anything else
       const loadData = async () => {
-        await loadUserSettings();
         loadBills();
         loadAccounts();
         loadPaidThisMonth();
@@ -881,55 +628,6 @@ console.log(`✅ Normalized template date for ${template.name}:  ${templateDate}
     return result;
   };
 
-  const updateAccountBalance = async (accountKey, amount) => {
-    try {
-      const settingsDocRef = doc(db, 'users', currentUser.uid, 'settings', 'personal');
-      const currentDoc = await getDoc(settingsDocRef);
-      const currentData = currentDoc.exists() ? currentDoc.data() : {};
-      
-      const bankAccounts = currentData.bankAccounts || {};
-      const currentBalance = parseFloat(bankAccounts[accountKey]?.balance || 0);
-      const newBalance = currentBalance + amount;
-      
-      const updatedAccounts = {
-        ...bankAccounts,
-        [accountKey]: {
-          ...bankAccounts[accountKey],
-          balance: newBalance.toString()
-        }
-      };
-      
-      await updateDoc(settingsDocRef, {
-        ...currentData,
-        bankAccounts: updatedAccounts
-      });
-    } catch (error) {
-      console.error('Error updating account balance:', error);
-      throw error;
-    }
-  };
-
-  const testPlaidAutoPayment = async () => {
-    const unpaidBills = processedBills.filter(bill => bill.status !== 'paid');
-    
-    if (unpaidBills.length === 0) {
-      NotificationManager.showNotification({
-        type: 'warning',
-        message: 'No unpaid bills available for auto-payment simulation',
-        duration: 3000
-      });
-      return;
-    }
-
-    const testBill = unpaidBills[0];
-    
-    await PlaidIntegrationManager.simulateTransaction({
-      amount: parseFloat(testBill.amount),
-      merchantName: testBill.name,
-      date: new Date().toISOString().split('T')[0]
-    });
-  };
-
   const showNotification = (message, type) => {
     NotificationManager.showNotification({
       type,
@@ -1146,217 +844,6 @@ console.log(`✅ Normalized template date for ${template.name}:  ${templateDate}
     }
   };
 
-  const handleBulkDelete = async () => {
-    setShowBulkDeleteModal(false);
-    
-    try {
-      setLoading(true);
-      
-      // ✅ Get all unpaid bills from financialEvents
-      const billsSnapshot = await getDocs(
-        query(
-          collection(db, 'users', currentUser.uid, 'financialEvents'),
-          where('type', '==', 'bill'),
-          where('isPaid', '==', false)
-        )
-      );
-      
-      const billsToDelete = billsSnapshot.docs.map(doc => ({
-        id: doc.id,
-        ...doc.data()
-      }));
-      
-      setDeletedBills(billsToDelete);
-      
-      // ✅ Delete all bills from financialEvents
-      for (const billDoc of billsSnapshot.docs) {
-        await deleteDoc(doc(db, 'users', currentUser.uid, 'financialEvents', billDoc.id));
-      }
-      
-      await loadBills();
-      showNotification(
-        `Deleted ${billsToDelete.length} bills. Click Undo to restore.`, 
-        'success'
-      );
-    } catch (error) {
-      console.error('❌ Error bulk deleting bills:', error);
-      showNotification('Error deleting bills: ' + error.message, 'error');
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const handleUndoBulkDelete = async () => {
-    if (deletedBills.length === 0) return;
-    
-    try {
-      setLoading(true);
-      
-      // ✅ Restore all bills to financialEvents
-      for (const bill of deletedBills) {
-        await setDoc(doc(db, 'users', currentUser.uid, 'financialEvents', bill.id), bill);
-      }
-      
-      await loadBills();
-      setDeletedBills([]);
-      showNotification('Bills restored successfully!', 'success');
-    } catch (error) {
-      console.error('❌ Error undoing bulk delete:', error);
-      showNotification('Error restoring bills: ' + error.message, 'error');
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const handleDeduplicateBills = async () => {
-    try {
-      setDeduplicating(true);
-      
-      // ✅ Load all unpaid bills from financialEvents
-      const billsSnapshot = await getDocs(
-        query(
-          collection(db, 'users', currentUser.uid, 'financialEvents'),
-          where('type', '==', 'bill'),
-          where('isPaid', '==', false)
-        )
-      );
-      
-      const existingBills = billsSnapshot.docs.map(doc => ({
-        id: doc.id,
-        ...doc.data()
-      }));
-      
-      // Use the new cleanup migration logic
-      const report = analyzeForCleanup(existingBills);
-      
-      if (report.duplicatesFound === 0) {
-        showNotification('No duplicate bills found. All bills are unique.', 'info');
-        setDeduplicating(false);
-        return;
-      }
-      
-      // Convert to format expected by DuplicatePreviewModal
-      const modalReport = {
-        duplicateCount: report.duplicatesFound,
-        totalBills: report.totalBills,
-        billsToKeep: report.billsToKeep.length,
-        groups: report.groupDetails.map(group => ({
-          name: group.name,
-          amount: group.amount,
-          frequency: group.frequency,
-          totalCount: group.totalCount,
-          duplicateCount: group.duplicateCount,
-          keepBill: report.billsToKeep.find(b => b.id === group.keepBillId),
-          removeBills: report.billsToRemove.filter(b => group.removeBillIds.includes(b.id))
-        }))
-      };
-      
-      // Show preview modal
-      setDuplicateReport(modalReport);
-      setShowDuplicatePreview(true);
-      setDeduplicating(false);
-      
-    } catch (error) {
-      console.error('❌ Error analyzing duplicates:', error);
-      showNotification('Error analyzing duplicates: ' + error.message, 'error');
-      setDeduplicating(false);
-    }
-  };
-
-  const handleConfirmDeduplication = async () => {
-    if (!duplicateReport) return;
-    
-    try {
-      setDeduplicating(true);
-      setShowDuplicatePreview(false);
-      
-      // Delete all bills marked for removal
-      const allBillsToRemove = duplicateReport.groups.flatMap(g => g.removeBills);
-      
-      for (const bill of allBillsToRemove) {
-        await deleteDoc(doc(db, 'users', currentUser.uid, 'financialEvents', bill.id));
-      }
-      
-      await loadBills();
-      
-      showNotification(
-        `Successfully removed ${duplicateReport.duplicateCount} duplicate bills!`,
-        'success'
-      );
-      
-    } catch (error) {
-      console.error('❌ Error removing duplicates:', error);
-      showNotification('Error removing duplicates: ' + error.message, 'error');
-    } finally {
-      setDeduplicating(false);
-      setDuplicateReport(null);
-    }
-  };
-
-  // 🔥 Force Delete Bills by Name - Direct Firebase cleanup utility
-  const handleForceDeleteByName = async (billName) => {
-    if (!currentUser) return;
-    
-    // Confirm action
-    const confirmMessage = `⚠️ FORCE DELETE ALL "${billName}" bills?\n\n` +
-      `This will permanently delete ALL bill instances matching this name directly from Firebase,\n` +
-      `bypassing any local cache or state.\n\n` +
-      `This action cannot be undone. Continue?`;
-    
-    if (!window.confirm(confirmMessage)) {
-      return;
-    }
-    
-    const loadingId = NotificationManager.showLoading(`🔥 Force deleting all "${billName}" bills...`);
-    
-    try {
-      console.log(`🔥 [Force Delete] Starting deletion for bill name: "${billName}"`);
-      
-      // Query Firebase directly for all bills matching the name
-      const billsRef = collection(db, 'users', currentUser.uid, 'financialEvents');
-      const q = query(billsRef, where('type', '==', 'bill'), where('name', '==', billName));
-      const snapshot = await getDocs(q);
-      
-      console.log(`🔥 [Force Delete] Found ${snapshot.docs.length} bill(s) matching "${billName}"`);
-      
-      if (snapshot.docs.length === 0) {
-        NotificationManager.removeNotification(loadingId);
-        NotificationManager.showInfo(`No bills found with name "${billName}"`);
-        return;
-      }
-      
-      // Delete all matching bills directly from Firebase
-      const deletedIds = [];
-      for (const docSnap of snapshot.docs) {
-        const billData = docSnap.data();
-        console.log(`🔥 [Force Delete] Deleting bill ID: ${docSnap.id}`, {
-          name: billData.name,
-          amount: billData.amount,
-          dueDate: billData.dueDate || billData.nextDueDate,
-          recurringPatternId: billData.recurringPatternId
-        });
-        
-        await deleteDoc(doc(db, 'users', currentUser.uid, 'financialEvents', docSnap.id));
-        deletedIds.push(docSnap.id);
-      }
-      
-      console.log(`🔥 [Force Delete] Successfully deleted ${deletedIds.length} bill(s):`, deletedIds);
-      
-      // Reload bills from Firebase
-      await loadBills();
-      
-      NotificationManager.removeNotification(loadingId);
-      NotificationManager.showSuccess(
-        `🔥 Force deleted ${deletedIds.length} "${billName}" bill(s)!\n\nDeleted IDs: ${deletedIds.join(', ')}`
-      );
-      
-    } catch (error) {
-      console.error('🔥 [Force Delete] Error:', error);
-      NotificationManager.removeNotification(loadingId);
-      NotificationManager.showError('Force delete failed', error.message);
-    }
-  };
-
   const handleExportToCSV = () => {
     try {
       const csvData = processedBills.map(bill => ({
@@ -1395,188 +882,6 @@ console.log(`✅ Normalized template date for ${template.name}:  ${templateDate}
     } catch (error) {
       console.error('Error exporting bills:', error);
       showNotification('Error exporting bills: ' + error.message, 'error');
-    }
-  };
-
-  const handleCSVImport = async (importedBills) => {
-    try {
-      setLoading(true);
-      
-      const cleanedBills = importedBills.map(bill => {
-        const { dateError, dateWarning, rowNumber, isDuplicate, ...cleanBill } = bill;
-        // Ensure bill has all required fields
-        return {
-          ...cleanBill,
-          isPaid: false,
-          status: 'pending',
-          paymentHistory: [],
-          linkedTransactionIds: [],
-          merchantNames: [
-            cleanBill.name.toLowerCase(),
-            cleanBill.name.toLowerCase().replace(/[^a-z0-9]/g, '')
-          ],
-          createdAt: serverTimestamp(),
-          updatedAt: serverTimestamp(),
-          createdFrom: 'csv-import'
-        };
-      });
-      
-      // ✅ Save all bills to financialEvents collection
-      for (const bill of cleanedBills) {
-        // Add type field for financialEvents
-        const billWithType = { ...bill, type: 'bill' };
-        await setDoc(doc(db, 'users', currentUser.uid, 'financialEvents', bill.id), billWithType);
-      }
-      
-      const errorsCount = importedBills.filter(b => b.dateError).length;
-      const warningsCount = importedBills.filter(b => b.dateWarning && !b.dateError).length;
-      
-      // Save import history to settings
-      const importEntry = {
-        id: `import_${Date.now()}`,
-        timestamp: new Date().toISOString(),
-        billCount: importedBills.length,
-        errorsCount: errorsCount,
-        warningsCount: warningsCount,
-        bills: importedBills.map(b => ({ 
-          id: b.id, 
-          name: b.name, 
-          amount: b.amount, 
-          dueDate: b.dueDate,
-          institutionName: b.institutionName || '',
-          dateError: b.dateError || null,
-          dateWarning: b.dateWarning || null
-        }))
-      };
-      
-      const newHistory = [importEntry, ...importHistory].slice(0, 10);
-      setImportHistory(newHistory);
-      
-      const settingsDocRef = doc(db, 'users', currentUser.uid, 'settings', 'personal');
-      const currentDoc = await getDoc(settingsDocRef);
-      const currentData = currentDoc.exists() ? currentDoc.data() : {};
-      
-      await updateDoc(settingsDocRef, {
-        ...currentData,
-        importHistory: newHistory
-      });
-      
-      console.log('✅ CSV import: Saved', cleanedBills.length, 'bills to financialEvents');
-      
-      await loadBills();
-      setShowCSVImport(false);
-      
-      let message = `Successfully imported ${importedBills.length} bills`;
-      if (errorsCount > 0) message += ` (${errorsCount} with errors)`;
-      if (warningsCount > 0) message += ` (${warningsCount} with warnings)`;
-      showNotification(message, errorsCount > 0 ? 'warning' : 'success');
-    } catch (error) {
-      console.error('❌ Error importing bills:', error);
-      showNotification('Error importing bills: ' + error.message, 'error');
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const handleUndoLastImport = async () => {
-    if (importHistory.length === 0) return;
-    
-    try {
-      setLoading(true);
-      const lastImport = importHistory[0];
-      
-      // ✅ Delete bills from financialEvents collection
-      const importedBillIds = new Set(lastImport.bills.map(b => b.id));
-      for (const billId of importedBillIds) {
-        try {
-          await deleteDoc(doc(db, 'users', currentUser.uid, 'financialEvents', billId));
-        } catch (err) {
-          console.log('Bill already deleted:', billId);
-        }
-      }
-      
-      const newHistory = importHistory.slice(1);
-      setImportHistory(newHistory);
-      
-      // Update import history in settings
-      const settingsDocRef = doc(db, 'users', currentUser.uid, 'settings', 'personal');
-      const currentDoc = await getDoc(settingsDocRef);
-      const currentData = currentDoc.exists() ? currentDoc.data() : {};
-      
-      await updateDoc(settingsDocRef, {
-        ...currentData,
-        importHistory: newHistory
-      });
-      
-      await loadBills();
-      showNotification(`Undid import of ${lastImport.billCount} bills`, 'success');
-    } catch (error) {
-      console.error('❌ Error undoing import:', error);
-      showNotification('Error undoing import: ' + error.message, 'error');
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const formatCurrency = (amount) => {
-    const value = parseFloat(amount);
-    if (isNaN(value)) {
-      return '$0.00'; // Return default for invalid values
-    }
-    return new Intl.NumberFormat('en-US', {
-      style: 'currency',
-      currency: 'USD'
-    }).format(value);
-  };
-
-  const formatDate = (dateStr) => {
-    return formatDateForDisplay(dateStr, 'short');
-  };
-
-  const getStatusBadgeClass = (status) => {
-    switch (status) {
-      case 'overdue': return 'status-badge status-overdue';
-      case 'due-today': return 'status-badge status-due-today';
-      case 'urgent': return 'status-badge status-urgent';
-      case 'this-week': return 'status-badge status-this-week';
-      case 'pending': return 'status-badge status-pending';
-      case 'paid': return 'status-badge status-paid';
-      default: return 'status-badge';
-    }
-  };
-
-  const getStatusDisplayText = (bill) => {
-    if (bill.status === 'skipped') {
-      return '⏭️ SKIPPED';
-    }
-    
-    // Use LOCAL timezone helpers to avoid off-by-one errors
-    const now = getLocalMidnight();
-    const dueDateStr = bill.nextDueDate || bill.dueDate;
-    const dueDate = parseDueDateLocal(dueDateStr);
-    
-    if (!dueDate) {
-      return 'NO DATE';
-    }
-    
-    const daysUntilDue = Math.ceil((dueDate - now) / (1000 * 60 * 60 * 24));
-    const status = determineBillStatus(bill);
-    
-    switch (status) {
-      case 'overdue':
-        return `OVERDUE by ${Math.abs(daysUntilDue)} day${Math.abs(daysUntilDue) !== 1 ? 's' : ''}`;
-      case 'due-today':
-        return 'DUE TODAY';
-      case 'urgent':
-        return `Due in ${daysUntilDue} day${daysUntilDue !== 1 ? 's' : ''}`;
-      case 'this-week':
-        return `Due in ${daysUntilDue} days`;
-      case 'pending':
-        return 'UPCOMING';
-      case 'paid':
-        return 'PAID';
-      default:
-        return status.toUpperCase();
     }
   };
 
@@ -1622,76 +927,6 @@ console.log(`✅ Normalized template date for ${template.name}:  ${templateDate}
     });
   };
 
-  const handleGenerateAllBills = async () => {
-    if (generatingBills) {
-      NotificationManager.showWarning('Bill generation is already in progress. Please wait...');
-      return;
-    }
-    
-    // Confirm with user
-    const confirmed = window.confirm(
-      '🔄 Generate Bills from Recurring Templates?\n\n' +
-      'This will:\n' +
-      '• Read all recurring bill templates\n' +
-      '• Update any October dates to current month\n' +
-      '• Generate fresh bill instances\n' +
-      '• Show all bills on this page\n' +
-      '• Prevent duplicates automatically\n\n' +
-      'Existing unpaid bills will be replaced. Continue?'
-    );
-    
-    if (!confirmed) return;
-    
-    setGeneratingBills(true);
-    
-    const loadingNotificationId = NotificationManager.showLoading(
-      '🔄 Generating bills from recurring templates...'
-    );
-    
-    try {
-      // Step 1: Update template dates
-      const updateResult = await updateTemplatesDates(currentUser.uid, db);
-      
-      if (updateResult.templatesUpdated > 0) {
-        console.log(`✅ Updated ${updateResult.templatesUpdated} template dates`);
-      }
-      
-      // Step 2: Generate all bills (clear existing and create fresh)
-      const generateResult = await generateAllBills(currentUser.uid, db, true);
-      
-      NotificationManager.removeNotification(loadingNotificationId);
-      
-      if (generateResult.success) {
-        NotificationManager.showNotification({
-          type: 'success',
-          message: `✅ Success!\n\n` +
-            `📋 Generated ${generateResult.billsGenerated} bills from ${generateResult.templatesProcessed} templates\n` +
-            `🗑️ Cleared ${generateResult.billsCleared} old bill instances\n` +
-            `📅 Updated ${updateResult.templatesUpdated} template dates\n` +
-            `🛡️ Prevented ${generateResult.duplicatesPrevented} duplicates\n` +
-            `⏭️ Skipped ${generateResult.skipped} (max limit reached)`,
-          duration: 6000
-        });
-        
-        // Reload bills to show the new ones
-        await loadBills();
-        await loadPaidThisMonth();
-      } else {
-        NotificationManager.showNotification({
-          type: 'error',
-          message: `❌ Error: ${generateResult.message}`,
-          duration: 5000
-        });
-      }
-    } catch (error) {
-      console.error('Error generating bills:', error);
-      NotificationManager.removeNotification(loadingNotificationId);
-      NotificationManager.showError('Error generating bills', error.message);
-    } finally {
-      setGeneratingBills(false);
-    }
-  };
-
   if (loading) {
     return (
       <div className="bills-container">
@@ -1706,17 +941,6 @@ console.log(`✅ Normalized template date for ${template.name}:  ${templateDate}
   return (
     <div className="bills-container">
       <NotificationSystem />
-      
-      {showDuplicatePreview && (
-        <DuplicatePreviewModal
-          report={duplicateReport}
-          onConfirm={handleConfirmDeduplication}
-          onCancel={() => {
-            setShowDuplicatePreview(false);
-            setDuplicateReport(null);
-          }}
-        />
-      )}
       
       {!plaidStatus.isConnected && !hasPlaidAccounts && !plaidStatus.hasError && (
         <div style={{
@@ -1819,53 +1043,6 @@ console.log(`✅ Normalized template date for ${template.name}:  ${templateDate}
           </div>
           <div style={{ display: 'flex', gap: '12px' }}>
             <button 
-              onClick={async () => {
-                const result = await detectAndAutoAddRecurringBills(currentUser.uid, db);
-                if (result.success) {
-                  NotificationManager.showSuccess(
-                    result.addedCount > 0 
-                      ? `Auto-detected and added ${result.addedCount} recurring bill${result.addedCount > 1 ? 's' : ''}!`
-                      : `Found ${result.totalDetected} recurring bills but all already exist.`
-                  );
-                } else {
-                  NotificationManager.showError('Detection failed', result.error);
-                }
-              }}
-              style={{
-                background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
-                color: '#fff',
-                border: 'none',
-                borderRadius: '8px',
-                padding: '12px 20px',
-                fontWeight: '600',
-                cursor: 'pointer',
-                transition: 'all 0.2s ease'
-              }}
-              title="Manually run recurring bill detection"
-            >
-              🤖 Detect Recurring Bills
-            </button>
-            <button 
-              onClick={handleGenerateAllBills}
-              disabled={generatingBills}
-              style={{
-                background: generatingBills 
-                  ? 'linear-gradient(135deg, #999 0%, #666 100%)'
-                  : 'linear-gradient(135deg, #11998e 0%, #38ef7d 100%)',
-                color: '#fff',
-                border: 'none',
-                borderRadius: '8px',
-                padding: '12px 20px',
-                fontWeight: '600',
-                cursor: generatingBills ? 'not-allowed' : 'pointer',
-                transition: 'all 0.2s ease',
-                opacity: generatingBills ? 0.6 : 1
-              }}
-              title="Generate bill instances from all recurring templates"
-            >
-              {generatingBills ? '⏳ Generating...' : '🔄 Generate All Bills'}
-            </button>
-            <button 
               onClick={() => setShowHelpModal(true)}
               style={{
                 background: '#6c757d',
@@ -1952,24 +1129,6 @@ console.log(`✅ Normalized template date for ${template.name}:  ${templateDate}
               🔄 Re-match Transactions
             </button>
             
-            {typeof window !== 'undefined' && window.location.hostname === 'localhost' && (
-              <button 
-                className="test-plaid-btn"
-                onClick={() => testPlaidAutoPayment()}
-                style={{ 
-                  marginLeft: '10px', 
-                  background: '#ff6b00', 
-                  color: '#fff',
-                  border: 'none',
-                  borderRadius: '6px',
-                  padding: '12px 16px',
-                  fontSize: '12px',
-                  cursor: 'pointer'
-                }}
-              >
-                🧪 Test Auto-Payment
-              </button>
-            )}
           </div>
         </div>
       </div>
@@ -2088,105 +1247,6 @@ console.log(`✅ Normalized template date for ${template.name}:  ${templateDate}
         </div>
         
         <div className="action-buttons">
-          {deletedBills.length > 0 && (
-            <button 
-              className="undo-button"
-              onClick={handleUndoBulkDelete}
-              disabled={loading}
-              title="Restore deleted bills"
-            >
-              ↩️ Undo Delete
-            </button>
-          )}
-          {processedBills.length > 0 && (
-            <button 
-              className="delete-all-button"
-              onClick={() => setShowBulkDeleteModal(true)}
-              disabled={loading}
-              title="Delete all bills"
-            >
-              🗑️ Delete All Bills
-            </button>
-          )}
-          {processedBills.length > 0 && (
-            <button 
-              className="force-delete-button"
-              onClick={() => {
-                const billName = window.prompt(
-                  '🔥 FORCE DELETE UTILITY\n\n' +
-                  'Enter the EXACT bill name to force delete ALL matching instances from Firebase:\n\n' +
-                  'Examples:\n' +
-                  '  • "NV Energy"\n' +
-                  '  • "Netflix"\n' +
-                  '  • "Rent"\n\n' +
-                  'This bypasses all caches and directly removes bills from the database.\n\n' +
-                  'Bill name:'
-                );
-                if (billName && billName.trim()) {
-                  handleForceDeleteByName(billName.trim());
-                }
-              }}
-              disabled={loading}
-              title="🔥 Force delete all bills with a specific name - bypasses cache, directly queries Firebase"
-              style={{
-                background: 'linear-gradient(135deg, #dc2626 0%, #991b1b 100%)',
-                color: '#fff',
-                border: 'none',
-                borderRadius: '8px',
-                padding: '12px 20px',
-                fontWeight: '600',
-                cursor: loading ? 'not-allowed' : 'pointer',
-                transition: 'all 0.2s ease',
-                whiteSpace: 'nowrap',
-                opacity: loading ? 0.6 : 1,
-                boxShadow: '0 4px 12px rgba(220, 38, 38, 0.4)'
-              }}
-            >
-              🔥 Force Delete by Name
-            </button>
-          )}
-          {processedBills.length > 0 && (
-            <button 
-              className="deduplicate-button"
-              onClick={handleDeduplicateBills}
-              disabled={loading || deduplicating}
-              title="Cleanup duplicate bills - keeps only the next upcoming unpaid bill per group"
-              style={{
-                background: '#17a2b8',
-                color: '#fff',
-                border: 'none',
-                borderRadius: '8px',
-                padding: '12px 20px',
-                fontWeight: '600',
-                cursor: (loading || deduplicating) ? 'not-allowed' : 'pointer',
-                transition: 'all 0.2s ease',
-                whiteSpace: 'nowrap',
-                opacity: (loading || deduplicating) ? 0.6 : 1
-              }}
-            >
-              {deduplicating ? '🔄 Cleaning up...' : '🧹 Cleanup Duplicates'}
-            </button>
-          )}
-          <button 
-            className="import-button"
-            onClick={() => setShowCSVImport(true)}
-            disabled={loading}
-            title="Import bills from CSV"
-            style={{
-              background: '#007bff',
-              color: '#fff',
-              border: 'none',
-              borderRadius: '8px',
-              padding: '12px 20px',
-              fontWeight: '600',
-              cursor: loading ? 'not-allowed' : 'pointer',
-              transition: 'all 0.2s ease',
-              whiteSpace: 'nowrap',
-              opacity: loading ? 0.6 : 1
-            }}
-          >
-                        📊 Import from CSV
-          </button>
           <button 
             className="export-button"
             onClick={handleExportToCSV}
@@ -2207,51 +1267,6 @@ console.log(`✅ Normalized template date for ${template.name}:  ${templateDate}
           >
             📊 Export to CSV
           </button>
-          {importHistory.length > 0 && (
-            <>
-              <button 
-                className="import-history-button"
-                onClick={() => setShowImportHistory(true)}
-                disabled={loading}
-                title="View import history"
-                style={{
-                  background: '#6c757d',
-                  color: '#fff',
-                  border: 'none',
-                  borderRadius: '8px',
-                  padding: '12px 20px',
-                  fontWeight: '600',
-                  cursor: loading ? 'not-allowed' : 'pointer',
-                  transition: 'all 0.2s ease',
-                  whiteSpace: 'nowrap',
-                  opacity: loading ? 0.6 : 1
-                }}
-              >
-                📜 Import History ({importHistory.length})
-              </button>
-              <button 
-                className="undo-import-button"
-                onClick={handleUndoLastImport}
-                disabled={loading}
-                title="Undo last import"
-                style={{
-                  background: '#ff9800',
-                  color: '#000',
-                  border: 'none',
-                  borderRadius: '8px',
-                  padding: '12px 20px',
-                  fontWeight: '600',
-                  cursor: loading ? 'not-allowed' : 'pointer',
-                  transition: 'all 0.2s ease',
-                  whiteSpace: 'nowrap',
-                  opacity: loading ? 0.6 : 1,
-                  animation: 'pulse 2s ease-in-out infinite'
-                }}
-              >
-                ↩️ Undo Last Import
-              </button>
-            </>
-          )}
         </div>
       </div>
 
@@ -2943,174 +1958,6 @@ console.log(`✅ Normalized template date for ${template.name}:  ${templateDate}
       )}
 
       {/* Import History Modal */}
-      {showImportHistory && (
-        <div 
-          className="modal-overlay"
-          onClick={() => setShowImportHistory(false)}
-          style={{
-            position: 'fixed',
-            top: 0,
-            left: 0,
-            right: 0,
-            bottom: 0,
-            background: 'rgba(0, 0, 0, 0.8)',
-            display: 'flex',
-            justifyContent: 'center',
-            alignItems: 'center',
-            zIndex: 1000
-          }}
-        >
-          <div 
-            className="modal-content"
-            onClick={(e) => e.stopPropagation()}
-            style={{
-              background: '#1a1a1a',
-              border: '2px solid #333',
-              borderRadius: '12px',
-              padding: '24px',
-              maxWidth: '600px',
-              width: '90%',
-              maxHeight: '80vh',
-              overflowY: 'auto'
-            }}
-          >
-            <h3 style={{ marginTop: 0, marginBottom: '20px', color: '#fff' }}>
-              Import History
-            </h3>
-            
-            {importHistory.length > 0 ? (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-                {importHistory.map((entry, index) => (
-                  <div 
-                    key={entry.id}
-                    style={{
-                      padding: '16px',
-                      background: '#2a2a2a',
-                      border: '1px solid #444',
-                      borderRadius: '8px'
-                    }}
-                  >
-                    <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '8px' }}>
-                      <span style={{ fontWeight: '600', color: '#fff' }}>
-                        Import #{importHistory.length - index}
-                      </span>
-                      <span style={{ fontSize: '12px', color: '#888' }}>
-                        {new Date(entry.timestamp).toLocaleString()}
-                      </span>
-                    </div>
-                    <div style={{ fontSize: '14px', color: '#ccc' }}>
-                      <div>📋 {entry.billCount} bills imported</div>
-                      {entry.errorsCount > 0 && (
-                        <div style={{ color: '#ff073a' }}>
-                          ⚠️ {entry.errorsCount} errors
-                        </div>
-                      )}
-                      {entry.warningsCount > 0 && (
-                        <div style={{ color: '#ffdd00' }}>
-                          ⚠️ {entry.warningsCount} warnings
-                        </div>
-                      )}
-                    </div>
-                  </div>
-                ))}
-              </div>
-            ) : (
-              <p style={{ color: '#888' }}>No import history available</p>
-            )}
-            
-            <div style={{ marginTop: '20px', display: 'flex', justifyContent: 'flex-end' }}>
-              <button
-                onClick={() => setShowImportHistory(false)}
-                style={{
-                  padding: '10px 20px',
-                  background: '#444',
-                  color: '#fff',
-                  border: 'none',
-                  borderRadius: '6px',
-                  fontSize: '14px',
-                  fontWeight: '600',
-                  cursor: 'pointer'
-                }}
-              >
-                Close
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Bulk Delete Confirmation Modal */}
-      {showBulkDeleteModal && (
-        <div 
-          className="modal-overlay"
-          onClick={() => setShowBulkDeleteModal(false)}
-          style={{
-            position: 'fixed',
-            top: 0,
-            left: 0,
-            right: 0,
-            bottom: 0,
-            background: 'rgba(0, 0, 0, 0.8)',
-            display: 'flex',
-            justifyContent: 'center',
-            alignItems: 'center',
-            zIndex: 1000
-          }}
-        >
-          <div 
-            className="modal-content"
-            onClick={(e) => e.stopPropagation()}
-            style={{
-              background: '#1a1a1a',
-              border: '2px solid #ff073a',
-              borderRadius: '12px',
-              padding: '24px',
-              maxWidth: '400px',
-              width: '90%'
-            }}
-          >
-            <h3 style={{ marginTop: 0, marginBottom: '16px', color: '#ff073a' }}>
-              ⚠️ Delete All Bills?
-            </h3>
-            <p style={{ color: '#ccc', marginBottom: '20px' }}>
-              Are you sure you want to delete all {processedBills.length} bills? This action can be undone using the "Undo Delete" button.
-            </p>
-            <div style={{ display: 'flex', gap: '12px', justifyContent: 'flex-end' }}>
-              <button
-                onClick={() => setShowBulkDeleteModal(false)}
-                style={{
-                  padding: '10px 20px',
-                  background: '#444',
-                  color: '#fff',
-                  border: 'none',
-                  borderRadius: '6px',
-                  fontSize: '14px',
-                  fontWeight: '600',
-                  cursor: 'pointer'
-                }}
-              >
-                Cancel
-              </button>
-              <button
-                onClick={handleBulkDelete}
-                style={{
-                  padding: '10px 20px',
-                  background: '#ff073a',
-                  color: '#fff',
-                  border: 'none',
-                  borderRadius: '6px',
-                  fontSize: '14px',
-                  fontWeight: '700',
-                  cursor: 'pointer'
-                }}
-              >
-                Delete All
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
       {/* Help Modal */}
       {showHelpModal && (
         <div 
@@ -3201,15 +2048,6 @@ console.log(`✅ Normalized template date for ${template.name}:  ${templateDate}
             </div>
           </div>
         </div>
-      )}
-
-      {/* CSV Import Modal */}
-      {showCSVImport && (
-        <BillCSVImportModal
-          onClose={() => setShowCSVImport(false)}
-          onImport={handleCSVImport}
-          existingBills={processedBills}
-        />
       )}
 
       {/* Payment History Modal */}
