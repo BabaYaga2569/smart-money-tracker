@@ -853,7 +853,12 @@ export async function unmarkManualBillPayment(db, userId, billId) {
     let nextBillRef = null;
 
     if (liveBill.recurringPatternId) {
-      if (!liveBill.lifecyclePreviousPatternState) {
+      const hasNewReversalState = Boolean(liveBill.lifecyclePreviousPatternState);
+      const hasLegacyReversalState = Boolean(
+        liveBill.lifecycleNextOccurrence && liveBill.lifecycleNextBillId
+      );
+
+      if (!hasNewReversalState && !hasLegacyReversalState) {
         return { success: false, skipped: true, reason: 'MISSING_LIFECYCLE_REVERSAL_DATA' };
       }
 
@@ -933,19 +938,27 @@ export async function unmarkManualBillPayment(db, userId, billId) {
     firestoreTransaction.delete(paidArchiveRef);
 
     if (patternRef) {
-      const previousPatternState = liveBill.lifecyclePreviousPatternState || {};
-      firestoreTransaction.update(patternRef, {
-        nextOccurrence:
-          previousPatternState.nextOccurrence ||
-          liveBill.lifecyclePreviousDueDate ||
-          null,
-        status: previousPatternState.status || 'active',
-        remainingPayments: previousPatternState.remainingPayments ?? null,
-        remainingBalance: previousPatternState.remainingBalance ?? null,
-        completedAt: previousPatternState.completedAt ?? null,
-        lastPaidDate: null,
-        updatedAt: FieldValue.serverTimestamp()
-      });
+      const previousPatternState = liveBill.lifecyclePreviousPatternState || null;
+      const restorePattern = previousPatternState
+        ? {
+            nextOccurrence:
+              previousPatternState.nextOccurrence ||
+              liveBill.lifecyclePreviousDueDate ||
+              null,
+            status: previousPatternState.status || 'active',
+            remainingPayments: previousPatternState.remainingPayments ?? null,
+            remainingBalance: previousPatternState.remainingBalance ?? null,
+            completedAt: previousPatternState.completedAt ?? null,
+            lastPaidDate: null,
+            updatedAt: FieldValue.serverTimestamp()
+          }
+        : {
+            nextOccurrence: liveBill.lifecyclePreviousDueDate,
+            lastPaidDate: null,
+            updatedAt: FieldValue.serverTimestamp()
+          };
+
+      firestoreTransaction.update(patternRef, restorePattern);
 
       if (nextBillRef) {
         firestoreTransaction.delete(nextBillRef);
