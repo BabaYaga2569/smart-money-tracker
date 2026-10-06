@@ -80,6 +80,11 @@ const compactCurrent = (item) => ({
     null,
   linkedAccount: item.linkedAccount || item.accountId || null,
   variableAmount: Boolean(item.variableAmount),
+  installmentPlan: Boolean(item.installmentPlan),
+  remainingPayments: item.remainingPayments ?? null,
+  remainingBalance: money(item.remainingBalance),
+  endDate: item.endDate || null,
+  finalPaymentAmount: money(item.finalPaymentAmount),
   customRecurrence: Boolean(item.customRecurrence),
   activeMonths: item.activeMonths || [],
 });
@@ -264,6 +269,184 @@ export function buildRecurringRebuildDryRun(currentPatterns, proposal, reviewIte
         `Active months: ${matched.activeMonths?.length ? matched.activeMonths.join(',') : 'not configured'} → ${target.activeMonths.join(',')}`
       );
     }
+    if (target.installmentPlan) {
+      if (!matched.installmentPlan) {
+        changes.push('Installment plan: not configured → finite plan');
+      }
+
+      if (Number(matched.remainingPayments) !== Number(target.remainingPayments)) {
+        changes.push(
+          `Payments left: ${matched.remainingPayments ?? 'not configured'} → ${target.remainingPayments}`
+        );
+      }
+
+      if (matched.endDate !== target.endDate) {
+        changes.push(
+          `Final payment date: ${matched.endDate || 'not configured'} → ${target.endDate}`
+        );
+      }
+
+      const matchedFinal = money(matched.finalPaymentAmount);
+      const targetFinal = money(target.finalPaymentAmount);
+      if (
+        matchedFinal === null ||
+        targetFinal === null ||
+        Math.abs(matchedFinal - targetFinal) > 0.009
+      ) {
+        changes.push(
+          `Final payment: ${matchedFinal === null ? 'not configured' : '
+    if (normalizeName(matched.name) !== normalizeName(target.name)) {
+      changes.push(`Canonical name: ${matched.name} → ${target.name}`);
+    }
+
+    results.push({
+      action: changes.length ? 'update' : 'keep',
+      current: matched,
+      proposed: target,
+      matchReasons: match?.reasons || [],
+      changes,
+    });
+  });
+
+  const unmatchedCurrent = current.filter(item => !usedCurrentIds.has(item.id));
+  const preserve = unmatchedCurrent.filter(item => item.type !== 'expense');
+  const unmatchedExpense = unmatchedCurrent.filter(item => item.type === 'expense');
+
+  const confirmedRetireNames = new Set(
+    (exclusions || [])
+      .filter(item => /no longer|no longer active|no longer exists/i.test(item.reason || ''))
+      .map(item => normalizeName(item.sourceName))
+  );
+
+  const retireCandidates = unmatchedExpense.filter(item =>
+    confirmedRetireNames.has(normalizeName(item.name))
+  );
+
+  const unresolvedExpense = unmatchedExpense.filter(item =>
+    !confirmedRetireNames.has(normalizeName(item.name))
+  );
+
+  const unmatchedReviews = unresolvedExpense.map(item => ({
+    sourceName: item.name,
+    amount: item.amount,
+    reason: 'Existing expense pattern could not be matched confidently to the TEMPLATE proposal.',
+    suggestedAction: 'Review before any retirement decision.',
+    currentPattern: item,
+  }));
+
+  const allReviewItems = [...reviewItems, ...unmatchedReviews];
+
+  const engineRequirements = [...new Set(
+    proposed.map(item => item.engineRequirement).filter(Boolean)
+  )];
+
+  return {
+    summary: {
+      currentPatterns: current.length,
+      proposedBills: proposed.length,
+      keep: results.filter(item => item.action === 'keep').length,
+      update: results.filter(item => item.action === 'update').length,
+      add: results.filter(item => item.action === 'add').length,
+      unmatchedExisting: unresolvedExpense.length,
+      confirmedRetire: retireCandidates.length,
+      preserveNonExpense: preserve.length,
+      needsReview: allReviewItems.length,
+    },
+    results,
+    unmatchedExisting: unresolvedExpense,
+    retireCandidates,
+    preserveNonExpense: preserve,
+    reviewItems: allReviewItems,
+    exclusions,
+    engineRequirements,
+    safeToApply: engineRequirements.length === 0 && allReviewItems.length === 0,
+  };
+}
+ + matchedFinal.toFixed(2)} → ${targetFinal.toFixed(2)}`
+        );
+      }
+
+      const matchedBalance = money(matched.remainingBalance);
+      const targetBalance = money(target.remainingBalance);
+      if (
+        matchedBalance === null ||
+        targetBalance === null ||
+        Math.abs(matchedBalance - targetBalance) > 0.009
+      ) {
+        changes.push(
+          `Remaining balance: ${matchedBalance === null ? 'not configured' : '
+    if (normalizeName(matched.name) !== normalizeName(target.name)) {
+      changes.push(`Canonical name: ${matched.name} → ${target.name}`);
+    }
+
+    results.push({
+      action: changes.length ? 'update' : 'keep',
+      current: matched,
+      proposed: target,
+      matchReasons: match?.reasons || [],
+      changes,
+    });
+  });
+
+  const unmatchedCurrent = current.filter(item => !usedCurrentIds.has(item.id));
+  const preserve = unmatchedCurrent.filter(item => item.type !== 'expense');
+  const unmatchedExpense = unmatchedCurrent.filter(item => item.type === 'expense');
+
+  const confirmedRetireNames = new Set(
+    (exclusions || [])
+      .filter(item => /no longer|no longer active|no longer exists/i.test(item.reason || ''))
+      .map(item => normalizeName(item.sourceName))
+  );
+
+  const retireCandidates = unmatchedExpense.filter(item =>
+    confirmedRetireNames.has(normalizeName(item.name))
+  );
+
+  const unresolvedExpense = unmatchedExpense.filter(item =>
+    !confirmedRetireNames.has(normalizeName(item.name))
+  );
+
+  const unmatchedReviews = unresolvedExpense.map(item => ({
+    sourceName: item.name,
+    amount: item.amount,
+    reason: 'Existing expense pattern could not be matched confidently to the TEMPLATE proposal.',
+    suggestedAction: 'Review before any retirement decision.',
+    currentPattern: item,
+  }));
+
+  const allReviewItems = [...reviewItems, ...unmatchedReviews];
+
+  const engineRequirements = [...new Set(
+    proposed.map(item => item.engineRequirement).filter(Boolean)
+  )];
+
+  return {
+    summary: {
+      currentPatterns: current.length,
+      proposedBills: proposed.length,
+      keep: results.filter(item => item.action === 'keep').length,
+      update: results.filter(item => item.action === 'update').length,
+      add: results.filter(item => item.action === 'add').length,
+      unmatchedExisting: unresolvedExpense.length,
+      confirmedRetire: retireCandidates.length,
+      preserveNonExpense: preserve.length,
+      needsReview: allReviewItems.length,
+    },
+    results,
+    unmatchedExisting: unresolvedExpense,
+    retireCandidates,
+    preserveNonExpense: preserve,
+    reviewItems: allReviewItems,
+    exclusions,
+    engineRequirements,
+    safeToApply: engineRequirements.length === 0 && allReviewItems.length === 0,
+  };
+}
+ + matchedBalance.toFixed(2)} → ${targetBalance.toFixed(2)}`
+        );
+      }
+    }
+
 
     if (normalizeName(matched.name) !== normalizeName(target.name)) {
       changes.push(`Canonical name: ${matched.name} → ${target.name}`);
