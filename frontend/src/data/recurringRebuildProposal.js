@@ -29,12 +29,12 @@ export const RECURRING_REBUILD_PROPOSAL = [
   monthly('Geico SXS', 31.42, 8, 'Bank of America'),
   monthly('LAS VEGAS VALLEY Water Bill', 26.30, 8, 'SoFi', { aliases: ['Valley', 'Las Vegas Valley Water District'] }),
   monthly('Barclay Card', 30.00, 9, 'Capital One', { aliases: ['Barclays'] }),
-  monthly('Geico For all cars kids included', 496.94, 10, null, { aliases: ['Geico Charger Durango', 'Geico Charger Durango and Challenger', 'Geico Charger, Durango, and Challenger'] }),
+  monthly('Geico For all cars kids included', 496.94, 10, null, { aliases: ['Geico Charger Durango', 'Geico Charger Durango Challenger', 'Geico Charger Durango and Challenger', 'Geico Charger, Durango, and Challenger'] }),
   monthly('Walmart Card', null, 10, null, { variableAmount: true, amountNote: 'Amount is set month-to-month based on actual card usage.' }),
   monthly('Affirm Vevor Meat Slicer', 42.96, 10, null),
   monthly('Clean Freak Car Wash Subscription', 27.00, 11, null, { aliases: ['Clean Freak Car Wash'] }),
   monthly('CVS Membership', 5.00, 12, null, { aliases: ['CVS Pharmacy', 'CVS ExtraCare'] }),
-  monthly('Rent - Raylene (15th)', 350.00, 15, 'Capital One', { aliases: ['Zelle to Raylene'] }),
+  monthly('Rent - Raylene (15th)', 350.00, 15, 'Capital One', { aliases: ['Zelle to Raylene', 'Rent (mid-month)', 'Rent mid month'] }),
   monthly('Side X Side America 1st Credit Union', 295.36, 15, 'Bank of America', { aliases: ['AMERICA FIRST CU LOAN Bill Payment', 'America First Credit Union loan payment'] }),
   monthly('Dodge Ram Tracker', 8.95, 15, null),
   monthly('CHRYSLER CAPITAL Durango Payment', 618.00, 15, 'USAA', { aliases: ['Chrysler Capital'] }),
@@ -65,7 +65,7 @@ export const RECURRING_REBUILD_PROPOSAL = [
   monthly('Google One Storage', 19.99, 30, null, { aliases: ['Google One'] }),
   monthly('Bankruptcy Payment', 1390.99, 30, null),
   monthly('Rent - Raylene (30th)', 350.00, 30, 'Capital One', {
-    aliases: ['Zelle to Raylene'],
+    aliases: ['Zelle to Raylene', 'Rent (end of month)', 'Rent end of month'],
     scheduleNote: 'Second partial rent payment; fixed on the 30th.'
   }),
   {
