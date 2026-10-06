@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { collection, addDoc, getDocs, query, where, doc, updateDoc } from 'firebase/firestore';
+import { collection, addDoc, getDocs, query, where, orderBy, limit, doc, updateDoc } from 'firebase/firestore';
 import { db } from '../firebase';
 import { useAuth } from '../contexts/AuthContext';
 import { removeDetection, getAllDetections, getDismissedIds } from '../utils/detectionStorage';
@@ -14,9 +14,17 @@ import './SubscriptionDetector.css';
  */
 export const detectAndAutoAddRecurringBills = async (userId, db) => {
   try {
-    // Get all transactions from Firebase
+    // Recurring detection needs recent history, not the user's entire ledger.
     const transactionsRef = collection(db, 'users', userId, 'transactions');
-    const transactionsSnap = await getDocs(transactionsRef);
+    const cutoff = new Date();
+    cutoff.setDate(cutoff.getDate() - 400);
+    const transactionsQuery = query(
+      transactionsRef,
+      where('date', '>=', cutoff.toISOString().split('T')[0]),
+      orderBy('date', 'desc'),
+      limit(1000)
+    );
+    const transactionsSnap = await getDocs(transactionsQuery);
     const transactions = transactionsSnap.docs.map(doc => ({
       id: doc.id,
       ...doc.data()

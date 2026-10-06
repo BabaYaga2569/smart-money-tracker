@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useAuth } from '../contexts/AuthContext';
 import { db } from '../firebase';
-import { doc, getDoc, collection, getDocs } from 'firebase/firestore';
+import { doc, getDoc, collection, getDocs, query, where, orderBy, limit } from 'firebase/firestore';
 import { analyzeDebtSituation, calculateDebtFreeTimeline } from '../utils/debtAnalyzer';
 import { calculatePayoffDate } from '../utils/payoffCalculator';
 import { calculateTotalProjectedBalance } from '../utils/BalanceCalculator';
@@ -107,7 +107,15 @@ export default function DebtOptimizer() {
           currentUser.uid,
           'transactions'
         );
-        const transactionsSnapshot = await getDocs(transactionsRef);
+        const transactionCutoff = new Date();
+        transactionCutoff.setDate(transactionCutoff.getDate() - 180);
+        const transactionsQuery = query(
+          transactionsRef,
+          where('date', '>=', transactionCutoff.toISOString().split('T')[0]),
+          orderBy('date', 'desc'),
+          limit(750)
+        );
+        const transactionsSnapshot = await getDocs(transactionsQuery);
         const transactions = transactionsSnapshot.docs.map((doc) => ({
           id: doc.id,
           ...doc.data(),
@@ -242,7 +250,15 @@ export default function DebtOptimizer() {
       try {
         // Load transactions for cash flow analysis
         const transactionsRef = collection(db, 'users', currentUser.uid, 'transactions');
-        const transactionsSnapshot = await getDocs(transactionsRef);
+        const transactionCutoff = new Date();
+        transactionCutoff.setDate(transactionCutoff.getDate() - 180);
+        const transactionsQuery = query(
+          transactionsRef,
+          where('date', '>=', transactionCutoff.toISOString().split('T')[0]),
+          orderBy('date', 'desc'),
+          limit(750)
+        );
+        const transactionsSnapshot = await getDocs(transactionsQuery);
         const transactions = transactionsSnapshot.docs.map(doc => ({
           id: doc.id,
           ...doc.data()

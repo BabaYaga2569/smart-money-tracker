@@ -1,8 +1,7 @@
 import React, { useState, useEffect } from 'react';
-import { doc, getDoc, collection, getDocs } from 'firebase/firestore';
+import { doc, getDoc, collection, getDocs, query, where, orderBy, limit } from 'firebase/firestore';
 import { db } from '../firebase';
 import { CashFlowAnalytics } from '../utils/CashFlowAnalytics';
-import { mockTransactions, mockAccounts } from '../utils/MockCashFlowData';
 import { useAuth } from '../contexts/AuthContext';
 import {
   CashFlowTrendChart,
@@ -42,10 +41,8 @@ const CashFlow = () => {
       await Promise.all([loadAccounts(), loadTransactions()]);
     } catch (error) {
       console.error('Error loading cash flow data:', error);
-      // Use mock data if Firebase is offline
-      console.log('Using mock data for demo purposes');
-      setTransactions(mockTransactions);
-      setAccounts(mockAccounts);
+      setTransactions([]);
+      setAccounts({});
     } finally {
       setLoading(false);
     }
@@ -53,45 +50,44 @@ const CashFlow = () => {
 
   const loadAccounts = async () => {
     try {
-      const settingsDocRef = doc(db, 'users', 'currentUser.uid', 'settings', 'personal');
+      const settingsDocRef = doc(db, 'users', currentUser.uid, 'settings', 'personal');
       const settingsDocSnap = await getDoc(settingsDocRef);
       
       if (settingsDocSnap.exists()) {
         const data = settingsDocSnap.data();
         setAccounts(data.bankAccounts || {});
       } else {
-        setAccounts(mockAccounts);
+        setAccounts({});
       }
     } catch (error) {
       console.error('Error loading accounts:', error);
-      setAccounts(mockAccounts);
+      setAccounts({});
     }
   };
 
   const loadTransactions = async () => {
     try {
-      const transactionsRef = collection(db, 'users', 'currentUser.uid', 'transactions');
-      const querySnapshot = await getDocs(transactionsRef);
-      
-      const transactionsList = [];
-      querySnapshot.forEach((doc) => {
-        transactionsList.push({
-          id: doc.id,
-          ...doc.data()
-        });
-      });
+      const transactionsRef = collection(db, 'users', currentUser.uid, 'transactions');
+      const thirteenMonthsAgo = new Date();
+      thirteenMonthsAgo.setMonth(thirteenMonthsAgo.getMonth() - 13);
 
-      if (transactionsList.length === 0) {
-        // Use mock data if no transactions found
-        setTransactions(mockTransactions);
-      } else {
-        // Sort by date (newest first)
-        transactionsList.sort((a, b) => new Date(b.date) - new Date(a.date));
-        setTransactions(transactionsList);
-      }
+      const transactionsQuery = query(
+        transactionsRef,
+        where('date', '>=', thirteenMonthsAgo.toISOString().split('T')[0]),
+        orderBy('date', 'desc'),
+        limit(1500)
+      );
+
+      const querySnapshot = await getDocs(transactionsQuery);
+      setTransactions(
+        querySnapshot.docs.map((docSnap) => ({
+          id: docSnap.id,
+          ...docSnap.data()
+        }))
+      );
     } catch (error) {
       console.error('Error loading transactions:', error);
-      setTransactions(mockTransactions);
+      setTransactions([]);
     }
   };
 
