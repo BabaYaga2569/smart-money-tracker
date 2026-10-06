@@ -1,8 +1,7 @@
 import React, { useMemo, useState, useEffect } from "react";
-import { collection, doc, onSnapshot, orderBy, query, updateDoc, Timestamp, getDoc, addDoc, where, getDocs, setDoc, deleteDoc, serverTimestamp, arrayUnion } from "firebase/firestore";
+import { collection, doc, onSnapshot, orderBy, query, updateDoc, getDoc, addDoc, where, getDocs, setDoc, deleteDoc, serverTimestamp, arrayUnion } from "firebase/firestore";
 import { db } from "../firebase";
 import { useAuth } from "../contexts/AuthContext";
-import { findMatchingTransactionForBill } from "../utils/billMatcher";
 import { RecurringBillManager } from '../utils/RecurringBillManager';
 import { RecurringManager } from '../utils/RecurringManager';
 import { BillSortingManager } from '../utils/BillSortingManager';
@@ -21,10 +20,8 @@ import { TRANSACTION_CATEGORIES, CATEGORY_ICONS, getCategoryIcon, migrateLegacyC
 import NotificationSystem from '../components/NotificationSystem';
 import { BillDeduplicationManager } from '../utils/BillDeduplicationManager';
 import { cleanupDuplicateBills, analyzeForCleanup } from '../utils/billCleanupMigration';
-import { runAutoDetection } from '../utils/AutoBillDetection';
 import { detectAndAutoAddRecurringBills } from '../components/SubscriptionDetector';
 import { generateAllBills, updateTemplatesDates } from '../utils/billGenerator';
-import { ensureSettingsDocument } from '../utils/settingsUtils';
 import { getDateOnly, getMonthOnly } from '../utils/dateNormalization';
 import { getCanonicalDisplayBalance, getVisiblePlaidAccounts } from '../utils/accountVisibility';
 import "./Bills.css";
@@ -35,8 +32,6 @@ const generateBillId = () => {
 
 export default function Bills() {
   const { currentUser } = useAuth();
-  const [bills, setBills] = useState([]);
-  const [transactions, setTransactions] = useState([]);
   
   // Missing State Declarations - ADDED
   const [loading, setLoading] = useState(true);
@@ -222,207 +217,51 @@ export default function Bills() {
   // ENHANCED: Refresh Plaid transactions and match with bills (90 days historical)
 const refreshPlaidTransactions = async () => {
   if (!currentUser || refreshingTransactions) return;
-  
-  setRefreshingTransactions(true);
-  
-  const loadingNotificationId = NotificationManager.showLoading(
-    'Syncing bank transactions and matching bills...'
-  );
-  
-  try {
-    // Step 1: Sync Plaid transactions from backend (last 90 days)
-    const apiUrl = import.meta.env.VITE_API_URL || 'https://smart-money-tracker-09ks.onrender.com';
-    
-    // Calculate date range (90 days ago to today)
-    const endDate = new Date();
-    const startDate = new Date();
-    startDate.setDate(startDate.getDate() - 90);
 
+  setRefreshingTransactions(true);
+
+  const loadingNotificationId = NotificationManager.showLoading(
+    'Syncing bank transactions and running the canonical bill engine...'
+  );
+
+  try {
+    const apiUrl = import.meta.env.VITE_API_URL || 'https://smart-money-tracker-09ks.onrender.com';
+
+    // The backend now owns both transaction reconciliation and automatic
+    // bill clearing. The browser must not download transactions and re-match
+    // them using a second algorithm.
     const response = await fetch(`${apiUrl}/api/plaid/sync_transactions`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json'
       },
-      body: JSON.stringify({
-        userId: currentUser.uid,
-        start_date: startDate.toISOString().split('T')[0],
-        end_date: endDate.toISOString().split('T')[0]
-      })
+      body: JSON.stringify({ userId: currentUser.uid })
     });
-    
+
     if (!response.ok) {
       throw new Error('Failed to sync transactions from Plaid');
     }
-    
+
     const data = await response.json();
 
-    // Log sync results
-    console.log(`[Plaid Sync] Synced: ${data.added} added, ${data.updated} updated, ${data.pending} pending`);
-
-    // Step 2: Now fetch all transactions from Firebase (sync_transactions saves them there)
-    const transactionsRef = collection(db, 'users', currentUser.uid, 'transactions');
-    const ninetyDaysAgo = new Date();
-    ninetyDaysAgo.setDate(ninetyDaysAgo.getDate() - 90);
-
-    const transactionsQuery = query(
-      transactionsRef,
-      where('date', '>=', ninetyDaysAgo.toISOString().split('T')[0]),
-      orderBy('date', 'desc')
-    );
-
-    const transactionsSnapshot = await getDocs(transactionsQuery);
-    const allTransactions = transactionsSnapshot.docs.map(doc => ({
-      id: doc.id,
-      ...doc.data()
-    }));
-
-    console.log(`[Plaid Sync] Fetched ${allTransactions.length} transactions from Firebase`);
-    
-    // Step 4: Ensure settings document exists and get all bills
-    await ensureSettingsDocument(currentUser.uid);
-    const settingsDocRef = doc(db, 'users', currentUser.uid, 'settings', 'personal');
-    const settingsDoc = await getDoc(settingsDocRef);
-    const billsData = settingsDoc.exists() ? settingsDoc.data().bills || [] : [];
-    
-    // Step 5: Match bills with transactions (including historical)
-    let matchedCount = 0;
-    const matchedBills = [];
-    
-    const updatedBills = billsData.map(bill => {
-      // Skip if already paid for current cycle
-      if (RecurringBillManager.isBillPaidForCurrentCycle(bill)) {
-        return bill;
-      }
-      
-      // Try to find matching transaction
-      const matchedTransaction = findMatchingTransactionForBill(bill, allTransactions);
-      
-      if (matchedTransaction && !matchedTransaction.pending) {
-        matchedCount++;
-        matchedBills.push({
-          name: bill.name,
-          amount: bill.amount,
-          transactionName: matchedTransaction.name || matchedTransaction.merchant_name,
-          transactionDate: matchedTransaction.date,
-          transactionId: matchedTransaction.transaction_id || matchedTransaction.id
-        });
-        
-        // Mark bill as paid with transaction details
-        return RecurringBillManager.markBillAsPaid(
-          bill,
-          new Date(matchedTransaction.date),
-          {
-            source: 'plaid',
-            method: 'auto',
-            transactionId: matchedTransaction.transaction_id || matchedTransaction.id,
-            accountId: matchedTransaction.account_id,
-            merchantName: matchedTransaction.merchant_name || matchedTransaction.name || bill.name,
-            amount: Math.abs(parseFloat(matchedTransaction.amount))
-          }
-        );
-      }
-      
-      return bill;
-    });
-    
-    // Step 6: Update recurring templates for bills that were auto-matched
-    const currentData = settingsDoc.exists() ? settingsDoc.data() : {};
-    const recurringItems = currentData.recurringItems || [];
-    let updatedRecurringItems = recurringItems;
-    
-    // Advance recurring templates for matched bills
-    matchedBills.forEach(match => {
-      const matchedBill = updatedBills.find(b => b.name === match.name);
-      if (matchedBill && matchedBill.recurringTemplateId) {
-        updatedRecurringItems = updatedRecurringItems.map(template => {
-          if (template.id === matchedBill.recurringTemplateId) {
-            const billDueDate = matchedBill.dueDate || matchedBill.nextDueDate;
-            const templateNextOccurrence = template.nextOccurrence;
-            
-            // Only advance if bill's due date matches template's current nextOccurrence
-            if (billDueDate === templateNextOccurrence) {
-              const nextOccurrence = RecurringManager.calculateNextOccurrenceAfterPayment(
-                templateNextOccurrence,
-                template.frequency
-              );
-              
-              console.log(`[Plaid Auto-Pay] Advancing recurring template "${template.name}" from ${templateNextOccurrence} to ${nextOccurrence.toISOString().split('T')[0]}`);
-              
-              return {
-                ...template,
-                nextOccurrence: nextOccurrence.toISOString().split('T')[0],
-                lastPaidDate: match.transactionDate,
-                updatedAt: new Date().toISOString()
-              };
-            }
-          }
-          return template;
-        });
-      }
-    });
-    
-    // Step 7: Save updated bills and recurring items
-    await updateDoc(settingsDocRef, {
-      bills: updatedBills,
-      recurringItems: updatedRecurringItems
-    });
-    
-    // Step 8: Record payments in bill_payments collection
-    const paymentsRef = collection(db, 'users', currentUser.uid, 'bill_payments');
-    for (const match of matchedBills) {
-      const matchedBill = updatedBills.find(b => b.name === match.name);
-      if (!matchedBill) continue;
-      
-      const paidDate = match.transactionDate;
-      const dueDate = matchedBill.nextDueDate || matchedBill.dueDate;
-      const daysPastDue = Math.max(0, Math.floor((new Date(paidDate) - new Date(dueDate)) / (1000 * 60 * 60 * 24)));
-      
-      await addDoc(paymentsRef, {
-        billId: matchedBill.id,
-        billName: matchedBill.name,
-        amount: Math.abs(parseFloat(matchedBill.amount)),
-        dueDate: dueDate,
-        paidDate: paidDate,
-        paymentMonth: paidDate.slice(0, 7),
-        paymentMethod: 'Auto (Plaid)',
-        category: matchedBill.category || 'Bills & Utilities',
-        linkedTransactionId: match.transactionId,
-        isOverdue: daysPastDue > 0,
-        daysPastDue: daysPastDue,
-        createdAt: new Date()
-      });
-    }
-    
-    // Step 9: Reload bills
     await loadBills();
     await loadPaidThisMonth();
-    
-    // Step 10: Show success notification
+
     NotificationManager.removeNotification(loadingNotificationId);
-    
-    if (matchedCount > 0) {
-      // Show detailed match notification
-      const matchDetails = matchedBills.map(m => 
-        `✅ ${m.name} → ${m.transactionName} (${m.transactionDate})`
-      ).join('\n');
-      
-      NotificationManager.showNotification({
-        type: 'success',
-        message: `🎉 Auto-matched ${matchedCount} bill${matchedCount !== 1 ? 's' : ''}!\n\n${matchDetails}`,
-        duration: 8000
-      });
-    } else {
-      NotificationManager.showNotification({
-        type: 'info',
-        message: `Synced ${allTransactions.length} transactions. No new bill matches found.`,
-        duration: 4000
-      });
-    }
-    
+    NotificationManager.showNotification({
+      type: 'success',
+      message:
+        `Bank sync complete. ${data.added || 0} added, ${data.updated || 0} updated. ` +
+        'Automatic bill matching was handled by the backend.',
+      duration: 5000
+    });
   } catch (error) {
     console.error('Error refreshing transactions:', error);
     NotificationManager.removeNotification(loadingNotificationId);
-    NotificationManager.showError('Error syncing transactions', error.message || 'Failed to connect to Plaid');
+    NotificationManager.showError(
+      'Error syncing transactions',
+      error.message || 'Failed to connect to Plaid'
+    );
   } finally {
     setRefreshingTransactions(false);
   }
@@ -430,56 +269,35 @@ const refreshPlaidTransactions = async () => {
 
  const handleRematchTransactions = async () => {
   if (!currentUser) return;
-  
-  const loadingId = NotificationManager.showLoading('🔄 Scanning transactions with NEW 85% confidence threshold...');
-  
+
+  const loadingId = NotificationManager.showLoading(
+    '🔄 Re-running the canonical backend bill matcher...'
+  );
+
   try {
-    // Get all unpaid bills from financialEvents
-    const unpaidBills = processedBills.filter(b => !b.isPaid && b.status !== 'paid');
-    
-    if (unpaidBills.length === 0) {
-      NotificationManager.removeNotification(loadingId);
-      NotificationManager.showInfo('No unpaid bills to match');
-      return;
+    const apiUrl = import.meta.env.VITE_API_URL || 'https://smart-money-tracker-09ks.onrender.com';
+    const response = await fetch(`${apiUrl}/api/bills/auto_clear`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({ userId: currentUser.uid })
+    });
+
+    const result = await response.json();
+    if (!response.ok || !result.success) {
+      throw new Error(result.error || 'Bill matching failed');
     }
-    
-    // Get recent transactions (last 30 days)
-    const thirtyDaysAgo = new Date();
-    thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
-    
-    const transactionsRef = collection(db, 'users', currentUser.uid, 'transactions');
-    const q = query(
-      transactionsRef,
-      where('date', '>=', thirtyDaysAgo.toISOString().split('T')[0]),
-      orderBy('date', 'desc')
-    );
-    const snapshot = await getDocs(q);
-    const recentTransactions = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-    
-    console.log(`[Re-match] Found ${unpaidBills.length} unpaid bills and ${recentTransactions.length} recent transactions`);
-    
-    // ✅ NEW: Use runAutoDetection with 85% confidence threshold!
-    const { runAutoDetection } = await import('../utils/AutoBillDetection.js');
-    const result = await runAutoDetection(currentUser.uid, recentTransactions, unpaidBills, userSettings);
-    
+
     NotificationManager.removeNotification(loadingId);
-    
-    if (result.success) {
-      // Show detailed results
-      const message = `✅ Auto-Detection Complete!\n\n` +
-        `🎯 Auto-Approved: ${result.autoApproved} bill(s)\n` +
-        `⚠️ Skipped (75-84%): ${result.skipped} bill(s)\n` +
-        `❌ Rejected (<75%): ${result.rejected} bill(s)`;
-      
-      NotificationManager.showSuccess(message);
-      
-      // Reload bills to show updated status
-      await loadBills();
-      await loadPaidThisMonth();
-    } else {
-      NotificationManager.showError('Auto-detection failed', result.error);
-    }
-    
+    NotificationManager.showSuccess(
+      `Backend matching complete: ${result.cleared || 0} cleared, ` +
+      `${result.advanced || 0} recurring pattern(s) advanced, ` +
+      `${result.generated || 0} next bill(s) generated.`
+    );
+
+    await loadBills();
+    await loadPaidThisMonth();
   } catch (error) {
     console.error('[Re-match] Error:', error);
     NotificationManager.removeNotification(loadingId);
@@ -778,120 +596,8 @@ snapshot.docChanges().forEach(async (change) => {
     }
   }, [currentUser, showPaidBills]);
 
-  useEffect(() => {
-    if (!currentUser) return;
-    const billsRef = collection(db, "users", currentUser.uid, "bills");
-    const q = query(billsRef, orderBy("dueDate", "asc"));
-    const unsub = onSnapshot(q, snap => {
-      const data = snap.docs.map(d => ({ id: d.id, ...d.data() }));
-      setBills(data);
-    });
-    return () => unsub();
-  }, [currentUser]);
-
-  // Keep only recent matching history live. Bill matching does not need the
-  // user's entire transaction ledger on every Bills page mount.
-  useEffect(() => {
-    if (!currentUser) return;
-
-    const txRef = collection(db, "users", currentUser.uid, "transactions");
-    const ninetyDaysAgo = new Date();
-    ninetyDaysAgo.setDate(ninetyDaysAgo.getDate() - 90);
-
-    const recentTxQuery = query(
-      txRef,
-      where("date", ">=", ninetyDaysAgo.toISOString().split("T")[0]),
-      orderBy("date", "desc"),
-      limit(500)
-    );
-
-    const unsub = onSnapshot(recentTxQuery, snap => {
-      const data = snap.docs.map(d => ({ id: d.id, ...d.data() }));
-      setTransactions(data);
-    });
-
-    return () => unsub();
-  }, [currentUser]);
-
-  const now = new Date();
-
-  const { overdue, upcoming, paid } = useMemo(() => {
-    const o = [], u = [], p = [];
-    for (const b of bills) {
-      const isPaid = !!b.paid;
-      const due = b.dueDate ? new Date(b.dueDate) : null;
-      const pastDue = due && due < new Date(now.toDateString()) && !isPaid;
-      if (isPaid) p.push(b); else if (pastDue) o.push(b); else u.push(b);
-    }
-    o.sort((a,b)=>new Date(a.dueDate)-new Date(b.dueDate));
-    u.sort((a,b)=>new Date(a.dueDate)-new Date(b.dueDate));
-    p.sort((a,b)=>new Date(b.paidDate||0)-new Date(a.paidDate||0));
-    return { overdue:o, upcoming:u, paid:p };
-  }, [bills]);
-
-  async function markPaid(bill) {
-    if (!currentUser) return;
-    const ref = doc(db, "users", currentUser.uid, "bills", bill.id);
-    await updateDoc(ref, { paid:true, paidDate:Timestamp.now(), paidVia:"Manual" });
-  }
-
-  // Local auto-match pass using transactions (non-destructive; only marks when certain)
-  useEffect(() => {
-    (async () => {
-      if (!currentUser || !transactions.length || !bills.length) return;
-      const updates = [];
-      for (const b of bills) {
-        if (b.paid) continue;
-        const m = findMatchingTransactionForBill(b, transactions);
-        if (!m) continue;
-        const ref = doc(db, "users", currentUser.uid, "bills", b.id);
-        updates.push(updateDoc(ref, {
-          paid: true,
-          paidDate: Timestamp.now(),
-          paidVia: "Auto (Plaid)",
-          lastMatchedTxnId: m.id || null,
-        }));
-      }
-      await Promise.allSettled(updates);
-    })();
-  }, [currentUser, transactions, bills]);
-
-  const Section = ({ title, items, emptyText }) => (
-    <section className="bills-section">
-      <h3 className="bills-section-title">{title} ({items.length})</h3>
-      {items.length===0 ? <div className="bills-empty">{emptyText}</div> : (
-        <div className="bills-list">
-          {items.map(b => {
-            const isOverdue = new Date(b.dueDate) < now && !b.paid;
-            return (
-              <div key={b.id} className={`bill-card ${b.paid?"paid":""} ${isOverdue?"overdue":""}`}>
-                <div className="bill-title-row">
-                  <span className="bill-name">{b.name}</span>
-                  <span className="bill-amount">${Number(b.amount).toFixed(2)}</span>
-                </div>
-                <div className="bill-meta-row">
-                  <span className="bill-duedate">Due {new Date(b.dueDate).toLocaleDateString()}</span>
-                  {b.paid ? (
-                    <span className="bill-paid-badge">
-                      ✅ Paid {b.paidDate?.toDate?.() ? b.paidDate.toDate().toLocaleDateString() : (b.paidDate? new Date(b.paidDate).toLocaleDateString() : "")}
-                      {b.paidVia ? ` • ${b.paidVia}` : ""}
-                    </span>
-                  ) : null}
-                </div>
-                <div className="bill-actions">
-                  {!b.paid ? (
-                    <button className="btn btn-success" onClick={() => markPaid(b)}>Mark Paid</button>
-                  ) : (
-                    <button className="btn btn-muted" disabled>Paid {b.paidVia?`(${b.paidVia})`:""}</button>
-                  )}
-                </div>
-              </div>
-            );
-          })}
-        </div>
-      )}
-    </section>
-  );
+  // Automatic transaction-to-bill clearing is backend-owned. Legacy /bills
+  // listeners and browser-side transaction matchers were intentionally removed.
 
   const loadAccounts = async () => {
     // ... rest of your loadAccounts function stays exactly the same
