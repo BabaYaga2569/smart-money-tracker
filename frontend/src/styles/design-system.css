@@ -278,7 +278,7 @@ body {
 
 
 /* ===== Premium QA: shared interaction accessibility ===== */
-:where(
+html body :is(
   button,
   a,
   input,
@@ -287,13 +287,14 @@ body {
   [role="button"],
   [tabindex]:not([tabindex="-1"])
 ):focus-visible {
-  outline: 2px solid var(--smt-theme-secondary);
-  outline-offset: 3px;
-  box-shadow: 0 0 0 4px rgba(var(--smt-theme-primary-rgb), .14);
+  outline: 2px solid var(--smt-theme-secondary) !important;
+  outline-offset: 3px !important;
+  box-shadow: 0 0 0 4px rgba(var(--smt-theme-primary-rgb), .14) !important;
 }
 
-:where(button, a, input, select, textarea):disabled {
-  cursor: not-allowed;
+html body :is(button, input, select, textarea):disabled,
+html body [aria-disabled="true"] {
+  cursor: not-allowed !important;
 }
 
 ::selection {
