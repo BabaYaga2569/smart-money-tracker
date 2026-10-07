@@ -1,6 +1,4 @@
 import { useState } from 'react';
-import { doc, updateDoc, serverTimestamp } from 'firebase/firestore';
-import { db } from '../firebase';
 import { useAuth } from '../contexts/AuthContext';
 import { getCategoryIcon } from '../constants/categories';
 import './PaidBillDetailsModal.css';
@@ -66,16 +64,18 @@ export default function PaidBillDetailsModal({ bill, onClose, onUnmark }) {
   };
 
   const handleUnmark = async () => {
-    if (!bill.canBeUnmarked) {
-      setError('This bill cannot be unmarked. It may be locked or past the undo window.');
+    const isAutoMatch = bill.markedVia === 'auto-plaid-match';
+    const isManualPayment = bill.markedVia === 'manual-payment';
+
+    if (!isAutoMatch && !isManualPayment) {
+      setError('This payment cannot be safely reversed through the canonical lifecycle.');
       return;
     }
 
     const confirmed = window.confirm(
-      `⚠️ Unmark Bill as Paid?\n\n` +
-      `This will restore "${bill.name}" to unpaid status.\n\n` +
-      `The bill will reappear on the Bills page and disappear from Payment History.\n\n` +
-      `Continue?`
+      isAutoMatch
+        ? `⚠️ Undo Incorrect Auto Match?\n\nThis will restore "${bill.name}" to unpaid status, roll its recurring schedule back, and remove the generated next occurrence if it is still safe to do so.\n\nUse this only when Plaid matched the wrong transaction.\n\nContinue?`
+        : `⚠️ Unmark Bill as Paid?\n\nThis will restore "${bill.name}" to unpaid status and roll back any recurring-schedule advancement created by that payment.\n\nContinue?`
     );
 
     if (!confirmed) return;
@@ -84,35 +84,34 @@ export default function PaidBillDetailsModal({ bill, onClose, onUnmark }) {
       setUnmarking(true);
       setError(null);
 
-      const billRef = doc(db, 'users', currentUser.uid, 'financialEvents', bill.id);
-      
-      // Restore bill to unpaid status
-      await updateDoc(billRef, {
-        isPaid: false,
-        status: 'pending',
-        paidDate: null,
-        paidAmount: null,
-        linkedTransactionId: null,
-        markedBy: null,
-        markedAt: null,
-        markedVia: null,
-        canBeUnmarked: false,
-        updatedAt: serverTimestamp(),
-        // Track undo action
-        lastUnmarkedAt: serverTimestamp(),
-        lastUnmarkedBy: 'user'
+      const apiUrl = import.meta.env.VITE_API_URL || 'https://smart-money-tracker-09ks.onrender.com';
+      const endpoint = isAutoMatch
+        ? `${apiUrl}/api/bills/${encodeURIComponent(bill.id)}/reverse-auto-match`
+        : `${apiUrl}/api/bills/${encodeURIComponent(bill.id)}/unpay`;
+
+      const response = await fetch(endpoint, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ userId: currentUser.uid })
       });
 
-      // Callback to parent component
-      if (onUnmark) {
-        onUnmark(bill);
+      const result = await response.json();
+      if (!response.ok || !result.success) {
+        throw new Error(
+          result.message ||
+          result.reason ||
+          (isAutoMatch ? 'Unable to reverse automatic match.' : 'Unable to unmark payment.')
+        );
       }
 
-      // Close modal
+      if (onUnmark) {
+        await onUnmark(bill);
+      }
+
       onClose();
     } catch (err) {
-      console.error('Error unmarking bill:', err);
-      setError('Failed to unmark bill. Please try again.');
+      console.error('Error reversing paid bill:', err);
+      setError(err.message || 'Failed to reverse payment. Please try again.');
     } finally {
       setUnmarking(false);
     }
@@ -299,13 +298,17 @@ export default function PaidBillDetailsModal({ bill, onClose, onUnmark }) {
             Close
           </button>
           
-          {bill.canBeUnmarked && (
+          {(bill.markedVia === 'manual-payment' || bill.markedVia === 'auto-plaid-match') && (
             <button 
               className="btn-unmark"
               onClick={handleUnmark}
               disabled={unmarking}
             >
-              {unmarking ? '⏳ Unmarking...' : '↩️ Unmark as Paid'}
+              {unmarking
+                ? '⏳ Reversing...'
+                : bill.markedVia === 'auto-plaid-match'
+                  ? '🛠️ Undo Incorrect Match'
+                  : '↩️ Unmark as Paid'}
             </button>
           )}
         </div>
