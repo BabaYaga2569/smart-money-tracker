@@ -1696,10 +1696,10 @@ const refreshPlaidTransactions = async () => {
                     <div className="bill-title-row" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                       <h4 style={{ margin: 0 }}>
                         {bill.name}
-                        {bill.recurringTemplateId && (
+                        {bill.recurringPatternId && (
                           <span 
                             className="recurring-badge" 
-                            title="Generated from recurring template"
+                            title="Occurrence created from a recurring schedule"
                             style={{
                               marginLeft: '8px',
                               padding: '2px 8px',
@@ -1710,7 +1710,7 @@ const refreshPlaidTransactions = async () => {
                               fontWeight: 'normal'
                             }}
                           >
-                            🔄 Auto
+                            🔄 Recurring
                           </span>
                         )}
                       </h4>
