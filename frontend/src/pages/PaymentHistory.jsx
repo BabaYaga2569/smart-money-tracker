@@ -372,20 +372,10 @@ export default function PaymentHistory() {
             <h2>💳 Payment History</h2>
             <p>Complete record of all bill payments</p>
           </div>
-          <div style={{ display: 'flex', gap: '12px' }}>
-            <button 
+          <div className="payment-history-actions">
+            <button
               onClick={handleRefresh}
               className="refresh-btn"
-              style={{
-                background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
-                color:  '#fff',
-                border: 'none',
-                borderRadius: '8px',
-                padding: '12px 20px',
-                fontWeight: '600',
-                cursor: 'pointer',
-                fontSize: '14px'
-              }}
               title="Refresh payment list"
             >
               🔄 Refresh
@@ -523,21 +513,21 @@ export default function PaymentHistory() {
                   className="clickable-row"
                   title="Click to view details"
                 >
-                  <td>{payment. name || payment.billName}</td>
-                  <td className="amount-cell">{formatCurrency(payment.amount || payment.paidAmount)}</td>
-                  <td>
+                  <td data-label="Bill">{payment.name || payment.billName}</td>
+                  <td data-label="Amount" className="amount-cell">{formatCurrency(payment.amount || payment.paidAmount)}</td>
+                  <td data-label="Category">
                     <span className="category-badge">
                       {getCategoryIcon(payment.category)} {payment.category}
                     </span>
                   </td>
-                  <td>{formatDate(payment.paidDate)}</td>
-                  <td>{formatDate(payment.dueDate || payment.nextDueDate)}</td>
-                  <td>
+                  <td data-label="Paid">{formatDate(payment.paidDate)}</td>
+                  <td data-label="Due">{formatDate(payment.dueDate || payment.nextDueDate)}</td>
+                  <td data-label="Method">
                     {payment.markedBy === 'auto-bill-clearing' ? '🤖 Auto (Plaid)' :
                      payment.markedBy === 'manual-link' ? '🔗 Linked' :
                      payment.paymentMethod || '👤 Manual'}
                   </td>
-                  <td>
+                  <td data-label="Status">
                     {payment.isOverdue ? (
                       <span className="status-badge overdue">
                         ⚠️ {payment.daysPastDue} day{payment.daysPastDue !== 1 ? 's' :  ''} late
