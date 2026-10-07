@@ -17,7 +17,7 @@
 
 .mobile-menu-btn:hover {
   background: var(--smt-surface-hover);
-  border-color: rgba(50,210,150,.22);
+  border-color: rgba(var(--smt-theme-primary-rgb), .22);
 }
 
 .mobile-menu-btn:active {
@@ -147,9 +147,9 @@
 }
 
 .mobile-sidebar-nav ul li a.active {
-  background: rgba(50, 210, 150, .1);
-  color: #8cf0c6;
-  border-color: rgba(50, 210, 150, .16);
+  background: rgba(var(--smt-theme-primary-rgb), .1);
+  color: var(--smt-theme-secondary);
+  border-color: rgba(var(--smt-theme-primary-rgb), .16);
 }
 
 .mobile-nav-badge {
