@@ -970,7 +970,7 @@ export async function applyManualBillPayment(db, userId, billId, options = {}) {
   });
 }
 
-export async function unmarkManualBillPayment(db, userId, billId) {
+async function reverseCanonicalBillPayment(db, userId, billId, expectedMarkedVia) {
   const userRef = db.collection('users').doc(userId);
   const billRef = userRef.collection('financialEvents').doc(billId);
 
@@ -986,11 +986,13 @@ export async function unmarkManualBillPayment(db, userId, billId) {
       return { success: true, idempotent: true, unmarked: false };
     }
 
-    if (liveBill.markedVia !== 'manual-payment' || !liveBill.paymentRecordId) {
+    if (liveBill.markedVia !== expectedMarkedVia || !liveBill.paymentRecordId) {
       return {
         success: false,
         skipped: true,
-        reason: 'ONLY_CANONICAL_MANUAL_PAYMENTS_CAN_BE_UNMARKED'
+        reason: 'PAYMENT_REVERSAL_MARKED_VIA_MISMATCH',
+        expectedMarkedVia,
+        actualMarkedVia: liveBill.markedVia || null
       };
     }
 
@@ -1115,6 +1117,14 @@ export async function unmarkManualBillPayment(db, userId, billId) {
 
     return { success: true, idempotent: false, unmarked: true };
   });
+}
+
+export async function unmarkManualBillPayment(db, userId, billId) {
+  return reverseCanonicalBillPayment(db, userId, billId, 'manual-payment');
+}
+
+export async function reverseIncorrectAutoBillMatch(db, userId, billId) {
+  return reverseCanonicalBillPayment(db, userId, billId, 'auto-plaid-match');
 }
 
 /**
