@@ -870,13 +870,21 @@ async function applyBillPaymentLifecycle(db, userId, billId, payment) {
           updatedAt: FieldValue.serverTimestamp()
         });
       } else {
-        firestoreTransaction.update(patternRef, {
+        const patternUpdate = {
           nextOccurrence,
-          remainingPayments: nextRemainingPayments,
-          remainingBalance: nextRemainingBalance,
           lastPaidDate: paidDate,
           updatedAt: FieldValue.serverTimestamp()
-        });
+        };
+
+        if (nextRemainingPayments !== undefined) {
+          patternUpdate.remainingPayments = nextRemainingPayments;
+        }
+
+        if (nextRemainingBalance !== undefined) {
+          patternUpdate.remainingBalance = nextRemainingBalance;
+        }
+
+        firestoreTransaction.update(patternRef, patternUpdate);
 
         if (!nextBillExists) {
           firestoreTransaction.set(nextBillRef, {
