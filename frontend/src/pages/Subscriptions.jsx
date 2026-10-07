@@ -309,7 +309,7 @@ const Subscriptions = () => {
           <div className="summary-value">{formatCurrency(annualTotal)}</div>
         </div>
         <div className="summary-card">
-          <div className="summary-label">Active Bills</div>
+          <div className="summary-label">Active Subscriptions</div>
           <div className="summary-value">{activeCount}</div>
         </div>
       </div>
