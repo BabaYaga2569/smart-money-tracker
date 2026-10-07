@@ -9,6 +9,10 @@ import { useAuth } from '../contexts/AuthContext';
 import { useTransactionsQuery } from '../hooks/useFirebaseQuery';
 import { getVisiblePlaidAccounts, isDepositoryAccount } from '../utils/accountVisibility';
 import { visibleBillOccurrences } from '../utils/billVisibility';
+import {
+  buildHouseholdPayEvents,
+  summarizeNextHouseholdRefill
+} from '../utils/householdPayEvents';
 
 
 const Dashboard = () => {
@@ -239,70 +243,39 @@ try {
   console.error('Error loading subscriptions:', error);
 }
 
-// Calculate spendability (same logic as Spendability page)
+// Calculate spendability using the same canonical occurrence/pay-cycle rules
+// as Spendability. No cached payday document and no recurrence re-processing.
 let calculatedSafeToSpend = 0;
-let calculatedDaysUntilPayday = Number(data.daysUntilPayday || 0);
+let calculatedDaysUntilPayday = 0;
 try {
-  // Get pay cycle data for bills filtering
-  const payCycleDocRef = doc(db, 'users', currentUser.uid, 'financial', 'payCycle');
-  const payCycleDocSnap = await getDoc(payCycleDocRef);
-  
-  // Calculate next payday and days until payday
-  let nextPaydayDate = new Date();
-  let daysUntilPayday = 0;
-  
-  // Check for override or cached payCycle data
-  if (data.nextPaydayOverride) {
-    nextPaydayDate = new Date(data.nextPaydayOverride);
-    const { getDaysUntilDateInPacific } = await import('../utils/DateUtils');
-    daysUntilPayday = getDaysUntilDateInPacific(nextPaydayDate);
-    calculatedDaysUntilPayday = daysUntilPayday;
-  } else if (payCycleDocSnap.exists() && payCycleDocSnap.data().date) {
-    const payCycleData = payCycleDocSnap.data();
-    nextPaydayDate = new Date(payCycleData.date);
-    daysUntilPayday = payCycleData.daysUntil || 0;
-    calculatedDaysUntilPayday = daysUntilPayday;
-  } else if (data.paySchedules) {
-    // Fallback: Calculate from pay schedules if no cached data
-    const { PayCycleCalculator } = await import('../utils/PayCycleCalculator');
-    const result = PayCycleCalculator.calculateNextPayday(
-      { 
-        lastPaydate: data.paySchedules?.yours?.lastPaydate, 
-        amount: data.paySchedules?.yours?.amount || 0 
-      },
-      { 
-        type: data.paySchedules?.spouse?.type,
-        amount: data.paySchedules?.spouse?.amount || 0 
-      }
-    );
-    nextPaydayDate = new Date(result.date);
-    daysUntilPayday = result.daysUntil;
-    calculatedDaysUntilPayday = daysUntilPayday;
+  const { getDaysUntilDateInPacific } = await import('../utils/DateUtils');
+  const householdPayEvents = buildHouseholdPayEvents(data, { horizonDays: 45 });
+  const nextRefill = summarizeNextHouseholdRefill(householdPayEvents);
+  const nextRefillDate = nextRefill.date;
+
+  if (nextRefillDate) {
+    calculatedDaysUntilPayday = getDaysUntilDateInPacific(nextRefillDate);
   }
-  
-  // Calculate bills due before next payday
-  const RecurringBillManager = (await import('../utils/RecurringBillManager')).RecurringBillManager;
-  const billsWithRecurrence = bills.map(bill => ({
-    ...bill,
-    recurrence: bill.recurrence || 'monthly'
-  }));
-  const processedBills = RecurringBillManager.processBills(billsWithRecurrence);
-  const billsDueBeforePayday = RecurringBillManager.getBillsDueBefore(processedBills, nextPaydayDate);
-  const totalBillsDue = billsDueBeforePayday.reduce((sum, bill) => sum + (parseFloat(bill.amount) || 0), 0);
-  
-  // Get preferences for weekly essentials and safety buffer
-  const preferences = data.preferences || {};
-  const weeklyEssentials = preferences.weeklyEssentials || 0;
-  const safetyBuffer = preferences.safetyBuffer || 0;
-  
-  // Calculate weeks until payday
-  const weeksUntilPayday = Math.ceil(daysUntilPayday / 7);
-  const essentialsNeeded = weeklyEssentials * weeksUntilPayday;
-  
-  // Calculate safe to spend: Total Available - Bills - Essentials - Safety Buffer
-  calculatedSafeToSpend = totalProjectedBalance - totalBillsDue - essentialsNeeded - safetyBuffer;
+
+  const visibleUnpaidBills = visibleBillOccurrences(bills)
+    .filter(bill => bill.status !== 'skipped' && bill.pendingPayment !== true);
+
+  const billsDueBeforeRefill = nextRefillDate
+    ? visibleUnpaidBills.filter(bill => {
+        const due = String(bill.dueDate || bill.nextDueDate || '').slice(0, 10);
+        return due && due < nextRefillDate;
+      })
+    : visibleUnpaidBills;
+
+  const totalBillsDue = billsDueBeforeRefill.reduce(
+    (sum, bill) => sum + (parseFloat(bill.amount || bill.cost) || 0),
+    0
+  );
+
+  calculatedSafeToSpend =
+    (totalProjectedBalance || totalBalance) - totalBillsDue;
 } catch (error) {
-  console.error('Error calculating spendability:', error);
+  console.error('Error calculating dashboard spendability:', error);
   calculatedSafeToSpend = 0;
 }
 

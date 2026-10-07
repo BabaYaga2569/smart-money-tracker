@@ -9,6 +9,11 @@ import { getPacificTime } from '../utils/timezoneHelpers';
 import { SettingsSchemaManager } from '../utils/SettingsSchemaManager';
 import { getVisiblePlaidAccounts, isDepositoryAccount } from '../utils/accountVisibility';
 import { visibleBillOccurrences } from '../utils/billVisibility';
+import {
+  buildHouseholdPayEvents,
+  summarizeNextHouseholdRefill,
+  nextMainPaydayDate
+} from '../utils/householdPayEvents';
 import './Spendability.css';
 import { useAuth } from '../contexts/AuthContext';
 // Force rebuild 2025-11-12 v2 - Fix spendability issues
@@ -357,142 +362,33 @@ console.log('🔍 PAYDAY CALCULATION DEBUG:', {
 });
 }      
  
-      // ✅ NEW: Calculate multiple paydays if early deposit is enabled
-      let paydays = [];
-      let totalPaydayAmount = 0;
-      let lastPaydayDate = nextPayday;
-      
-      // Check BOTH nested and flat field structures for backward compatibility
-      const earlyDepositEnabled = 
-        settingsData.earlyDeposit?.enabled === true || 
-        settingsData.enableEarlyDeposit === true;
+      // Canonical household pay events from Settings.
+      // This includes spouse paydays plus your early-deposit split and main payday.
+      const householdPayEvents = buildHouseholdPayEvents(settingsData, { horizonDays: 45 });
+      const nextRefill = summarizeNextHouseholdRefill(householdPayEvents);
 
-      const earlyDepositAmount = parseFloat(
-        settingsData.earlyDeposit?.amount || 
-        settingsData.earlyDepositAmount || 
+      if (nextRefill.date) {
+        nextPayday = nextRefill.date;
+        daysUntilPayday = getDaysUntilDateInPacific(nextPayday);
+      }
+
+      const nextYourMainPayday = nextMainPaydayDate(householdPayEvents, 'yours');
+      const futureWindowEnd = nextYourMainPayday || nextPayday;
+
+      // Show every household deposit through your next main payday so a same-day
+      // spouse deposit + early SoFi deposit and the following-day remainder are
+      // all visible in the projection.
+      const paydays = householdPayEvents.filter(event =>
+        event.date >= formatDateForInput(getPacificTime()) &&
+        (!futureWindowEnd || event.date <= futureWindowEnd)
+      );
+
+      const totalPaydayAmount = paydays.reduce(
+        (sum, event) => sum + Number(event.amount || 0),
         0
       );
+      const lastPaydayDate = paydays[paydays.length - 1]?.date || nextPayday;
 
-      const earlyDepositBank = 
-        settingsData.earlyDeposit?.bankName || 
-        settingsData.earlyDepositBank || 
-        'Early Deposit Account';
-
-      const daysBeforePayday = parseInt(
-        settingsData.earlyDeposit?.daysBefore || 
-        settingsData.earlyDeposit?.daysBeforePayday ||
-        settingsData.daysBeforePayday || 
-        1
-      );
-
-      const remainderBank = 
-        settingsData.earlyDeposit?.remainderBank || 
-        settingsData.remainderBank || 
-        'Main Account';
-
-      // Log what we found for debugging
-      console.log('🔍 Early deposit field detection:', {
-        nestedEnabled: settingsData.earlyDeposit?.enabled,
-        flatEnabled: settingsData.enableEarlyDeposit,
-        finalEnabled: earlyDepositEnabled,
-        nestedAmount: settingsData.earlyDeposit?.amount,
-        flatAmount: settingsData.earlyDepositAmount,
-        finalAmount: earlyDepositAmount,
-        daysBeforePayday: daysBeforePayday
-      });
-      
-      // Whose payday is next? Early-deposit split only applies to YOUR paycheck.
-      const paydayInfo = paydayCalcResult || payCycleData || {};
-      const paydaySource = paydayInfo.source || 'yours';
-      const isSpousePayday = String(paydaySource).toLowerCase().includes('spouse');
-
-      if (earlyDepositEnabled && earlyDepositAmount > 0 && !isSpousePayday) {
-        // Early deposit is enabled - calculate both deposits
-        const mainPaydayDate = new Date(nextPayday);
-        const earlyDepositDate = new Date(mainPaydayDate);
-        earlyDepositDate.setDate(earlyDepositDate.getDate() - daysBeforePayday);
-        
-        const earlyAmount = earlyDepositAmount;
-        // NOTE: Fallback chain for backward compatibility with different settings schema versions
-        // Newer schema uses payAmount, older schema uses paySchedules.yours.amount
-        const totalPayAmount = parseFloat(settingsData.payAmount || settingsData.paySchedules?.yours?.amount) || 0;
-        const mainAmount = totalPayAmount - earlyAmount;
-        
-        // ✅ VALIDATION: Ensure early deposit doesn't exceed total pay
-        if (earlyAmount > totalPayAmount) {
-          console.warn('⚠️ Early deposit amount exceeds total pay amount.');
-          console.warn(`   Early: $${earlyAmount}, Total: $${totalPayAmount}`);
-          
-          // Fallback to single payday with warning
-          paydays = [
-            { 
-              date: nextPayday, 
-              amount: totalPayAmount, 
-              bank: remainderBank, 
-              type: 'single',
-              daysUntil: daysUntilPayday
-            }
-          ];
-          totalPaydayAmount = totalPayAmount;
-        } else {
-          // Normal case - split between early and main
-          paydays = [
-            { 
-              date: formatDateForInput(earlyDepositDate), 
-              amount: earlyAmount, 
-              bank: earlyDepositBank, 
-              type: 'early',
-              daysUntil: getDaysUntilDateInPacific(formatDateForInput(earlyDepositDate))
-            },
-            { 
-              date: nextPayday, 
-              amount: mainAmount, 
-              bank: remainderBank, 
-              type: 'main',
-              daysUntil: daysUntilPayday
-            }
-          ];
-          
-          totalPaydayAmount = earlyAmount + mainAmount;
-        }
-        
-        lastPaydayDate = nextPayday; // Use main payday as the cutoff for bills
-        
-        console.log('✅ Early deposit enabled - split payday:', {
-          earlyDate: paydays[0]?.date,
-          earlyAmount: paydays[0]?.amount,
-          earlyBank: paydays[0]?.bank,
-          mainDate: paydays[paydays.length - 1]?.date,
-          mainAmount: paydays[paydays.length - 1]?.amount,
-          mainBank: paydays[paydays.length - 1]?.bank,
-          total: totalPaydayAmount
-        });
-      } else {
-        // Single payday (default). Use the amount for WHOSE payday this is:
-        // the calculator returns spouse's amount on spouse's payday.
-        const totalPayAmount = parseFloat(paydayInfo.amount) ||
-          parseFloat(settingsData.payAmount || settingsData.paySchedules?.yours?.amount) || 0;
-        
-        paydays = [
-          { 
-            date: nextPayday, 
-            amount: totalPayAmount, 
-            bank: isSpousePayday ? 'Spouse Deposit' : (remainderBank || 'Main Bank'), 
-            type: 'single',
-            daysUntil: daysUntilPayday
-          }
-        ];
-        
-        totalPaydayAmount = totalPayAmount;
-        lastPaydayDate = nextPayday;
-        
-        console.log('ℹ️ Single payday mode:', {
-          reason: !earlyDepositEnabled ? 'Early deposit not enabled' : 'Early deposit amount is 0',
-          amount: totalPayAmount,
-          date: nextPayday
-        });
-      }
- 
       // ✅ FIX: Load bills from financialEvents collection (where Bills.jsx reads from)
       let allBills = [];
       try {

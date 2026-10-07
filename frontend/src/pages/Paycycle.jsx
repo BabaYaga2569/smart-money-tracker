@@ -5,6 +5,7 @@ import { PaycycleManager } from '../utils/PaycycleManager';
 import { PayCycleCalculator } from '../utils/PayCycleCalculator';
 import { useAuth } from '../contexts/AuthContext';
 import { getLocalMidnight, parseDueDateLocal } from '../utils/dateHelpers';
+import { getDaysUntilDateInPacific } from '../utils/DateUtils';
 import {
   IncomeTimelineChart,
   CashFlowForecastChart,
@@ -13,6 +14,10 @@ import {
   PayFrequencyChart
 } from '../components/charts/PaycycleCharts';
 import { getVisiblePlaidAccounts, isDepositoryAccount } from '../utils/accountVisibility';
+import {
+  buildHouseholdPayEvents,
+  summarizeNextHouseholdRefill
+} from '../utils/householdPayEvents';
 import './Paycycle.css';
 
 const PayCycle = () => {
@@ -47,60 +52,49 @@ const PayCycle = () => {
       }
       
       const data = settingsSnap.data();
+      const payEvents = buildHouseholdPayEvents(data, { horizonDays: 60 });
+      const nextRefill = summarizeNextHouseholdRefill(payEvents);
+
+      // Group canonical pay events by owner/main payday so charts can still
+      // display durable income sources without inventing separate schedules.
       const sources = [];
-      
-      // ✅ Add YOUR paycheck from paySchedules.yours
-      if (data.paySchedules?.yours?.amount && data.paySchedules?.yours?.lastPaydate) {
-        const yourAmount = parseFloat(data.paySchedules.yours.amount) || 0;
-        
-        if (yourAmount > 0) {
-          // Calculate next payday (bi-weekly)
-          const lastPayDate = new Date(data.paySchedules.yours.lastPaydate);
-          const nextPayDate = new Date(lastPayDate);
-          nextPayDate.setDate(lastPayDate.getDate() + 14);
-          
-          // If next payday is in the past, keep adding 14 days
-          const today = new Date();
-          today.setHours(0, 0, 0, 0);
-          while (nextPayDate < today) {
-            nextPayDate.setDate(nextPayDate.getDate() + 14);
-          }
-          
-          sources.push({
-            id: 'yours-paycheck',
-            name: `${data.personalInfo?.yourName || 'Your'} Paycheck`,
-            amount: yourAmount,
-            frequency: 'bi-weekly',
-            nextDate: nextPayDate.toISOString().split('T')[0],
-            type: 'SALARY',
-            source: 'settings-auto-sync',
-            active: true,
-            lastPayDate: data.paySchedules.yours.lastPaydate
-          });
-        }
-      } else if (data.paySchedules?.yours) {
-        setWarnings(prev => [...prev, '⚠️ Your pay schedule not fully configured. Go to Settings to add your last pay date and amount.']);
-      }
-      
-      // ✅ Add SPOUSE paycheck from paySchedules.spouse
+      const yourAmount = parseFloat(data.paySchedules?.yours?.amount || data.payAmount) || 0;
       const spouseAmount = parseFloat(data.paySchedules?.spouse?.amount || data.spousePayAmount) || 0;
-      
-      if (spouseAmount > 0) {
-        // Calculate next payday (15th or 30th)
-        const nextSpousePayday = PayCycleCalculator.getWifeNextPayday();
-        
+      const nextYourEvent = payEvents.find(event => event.owner === 'yours');
+      const nextSpouseEvent = payEvents.find(event => event.owner === 'spouse');
+
+      if (yourAmount > 0 && nextYourEvent) {
+        sources.push({
+          id: 'yours-paycheck',
+          name: `${data.personalInfo?.yourName || 'Your'} Paycheck`,
+          amount: yourAmount,
+          frequency: 'bi-weekly',
+          nextDate: nextYourEvent.mainPaydayDate || nextYourEvent.date,
+          type: 'SALARY',
+          source: 'settings-auto-sync',
+          active: true,
+          lastPayDate: data.paySchedules?.yours?.lastPaydate || data.lastPayDate
+        });
+      }
+
+      if (spouseAmount > 0 && nextSpouseEvent) {
         sources.push({
           id: 'spouse-paycheck',
           name: `${data.personalInfo?.spouseName || 'Spouse'} Paycheck`,
           amount: spouseAmount,
           frequency: 'bi-monthly',
-          nextDate: nextSpousePayday.toISOString().split('T')[0],
+          nextDate: nextSpouseEvent.date,
           type: 'SALARY',
           source: 'settings-auto-sync',
           active: true
         });
       }
-      
+
+      if (nextRefill.date) {
+        setNextPayday(nextRefill.date);
+        setDaysUntilPayday(getDaysUntilDateInPacific(nextRefill.date));
+      }
+
       // Check for Plaid accounts
       if (!data.plaidAccounts || data.plaidAccounts.length === 0) {
         setWarnings(prev => [...prev, 'ℹ️ No bank accounts connected. Connect via Accounts page for automatic balance tracking.']);
@@ -173,68 +167,27 @@ const PayCycle = () => {
     }
   };
 
-  // Load next payday from payCycle cache or calculate
+  // Load next household refill directly from Settings.
+  // The old financial/payCycle cache is intentionally ignored because it was
+  // a second source of truth and caused cross-page date drift.
   const loadPayCycleInfo = async () => {
     if (!currentUser) return;
-    
+
     try {
-      const payCycleRef = doc(db, 'users', currentUser.uid, 'financial', 'payCycle');
-      const payCycleSnap = await getDoc(payCycleRef);
-      
-      if (payCycleSnap.exists()) {
-        const data = payCycleSnap.data();
-        
-        // Validate that cached date is still in the future
-        const cachedDate = new Date(data.date);
-        const today = new Date();
-        today.setHours(0, 0, 0, 0);
-        
-        if (cachedDate >= today) {
-          setNextPayday(data.date);
-          setDaysUntilPayday(data.daysUntil);
-          console.log('✅ Loaded next payday from cache:', data.date);
-          return;
-        }
-      }
-      
-      // Fallback: Calculate from Settings if cache is stale
-      console.warn('⚠️ Payday cache is stale or missing - recalculating');
-      
       const settingsRef = doc(db, 'users', currentUser.uid, 'settings', 'personal');
       const settingsSnap = await getDoc(settingsRef);
-      
-      if (settingsSnap.exists()) {
-        const data = settingsSnap.data();
-        
-        const yoursSchedule = {
-          lastPaydate: data.paySchedules?.yours?.lastPaydate || data.lastPayDate,
-          amount: parseFloat(data.paySchedules?.yours?.amount || data.payAmount) || 0
-        };
-        
-        const spouseSchedule = {
-          type: 'bi-monthly',
-          amount: parseFloat(data.paySchedules?.spouse?.amount || data.spousePayAmount) || 0,
-          dates: data.paySchedules?.spouse?.dates || [15, 30]
-        };
-        
-        const result = PayCycleCalculator.calculateNextPayday(yoursSchedule, spouseSchedule);
-        
-        setNextPayday(result.date);
-        setDaysUntilPayday(result.daysUntil);
-        
-        // Update cache
-        await setDoc(payCycleRef, {
-          date: result.date,
-          daysUntil: result.daysUntil,
-          source: result.source,
-          amount: result.amount,
-          lastCalculated: new Date().toISOString()
-        });
-        
-        console.log('✅ Calculated and cached next payday:', result.date);
+      if (!settingsSnap.exists()) return;
+
+      const data = settingsSnap.data();
+      const events = buildHouseholdPayEvents(data, { horizonDays: 45 });
+      const nextRefill = summarizeNextHouseholdRefill(events);
+
+      if (nextRefill.date) {
+        setNextPayday(nextRefill.date);
+        setDaysUntilPayday(getDaysUntilDateInPacific(nextRefill.date));
       }
     } catch (error) {
-      console.error('Error loading payCycle info:', error);
+      console.error('Error loading pay cycle info:', error);
     }
   };
 
