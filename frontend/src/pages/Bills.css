@@ -1965,3 +1965,128 @@ html body .layout .main-content .bills-container button[class*="delete"] {
     flex-direction: column;
   }
 }
+
+
+/* ===== Bills action contrast/accessibility pass =====
+   These rules intentionally live at the end of the stylesheet so the old
+   legacy "nuclear" transparency overrides cannot erase action backgrounds. */
+html body .layout .main-content .bills-container .bill-item .bill-card-actions,
+html body .app-container .bills-page .bill-item .bill-card-actions {
+  margin-top: 12px !important;
+  display: grid !important;
+  grid-template-columns: 1fr !important;
+  gap: 8px !important;
+  background: transparent !important;
+}
+
+html body .layout .main-content .bills-container .bill-item .bill-card-action,
+html body .app-container .bills-page .bill-item .bill-card-action {
+  width: 100% !important;
+  min-height: 40px !important;
+  padding: 9px 14px !important;
+  border-radius: 8px !important;
+  font-size: 13px !important;
+  line-height: 1.25 !important;
+  font-weight: 800 !important;
+  letter-spacing: 0.15px !important;
+  text-align: center !important;
+  cursor: pointer !important;
+  transition: background 0.18s ease, border-color 0.18s ease, transform 0.18s ease, box-shadow 0.18s ease !important;
+  opacity: 1 !important;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.75) !important;
+}
+
+html body .layout .main-content .bills-container .bill-item .bill-card-action-paid,
+html body .app-container .bills-page .bill-item .bill-card-action-paid {
+  background: #087a45 !important;
+  background-color: #087a45 !important;
+  color: #ffffff !important;
+  border: 1px solid #2ee59d !important;
+  box-shadow: 0 0 0 1px rgba(46, 229, 157, 0.12), 0 3px 10px rgba(0, 0, 0, 0.28) !important;
+  text-transform: uppercase !important;
+}
+
+html body .layout .main-content .bills-container .bill-item .bill-card-action-paid:hover,
+html body .app-container .bills-page .bill-item .bill-card-action-paid:hover {
+  background: #0a9656 !important;
+  background-color: #0a9656 !important;
+  border-color: #66ffc0 !important;
+  transform: translateY(-1px) !important;
+  box-shadow: 0 0 14px rgba(46, 229, 157, 0.28) !important;
+}
+
+html body .layout .main-content .bills-container .bill-item .bill-card-action-paid:disabled,
+html body .app-container .bills-page .bill-item .bill-card-action-paid:disabled {
+  background: #3f4f48 !important;
+  background-color: #3f4f48 !important;
+  color: #e5e7eb !important;
+  border-color: #66756e !important;
+  cursor: not-allowed !important;
+  opacity: 0.8 !important;
+  transform: none !important;
+  box-shadow: none !important;
+}
+
+html body .layout .main-content .bills-container .bill-item .bill-card-action-link,
+html body .app-container .bills-page .bill-item .bill-card-action-link {
+  background: #164e8a !important;
+  background-color: #164e8a !important;
+  color: #ffffff !important;
+  border: 1px solid #5aa9ff !important;
+  box-shadow: 0 3px 10px rgba(0, 0, 0, 0.24) !important;
+}
+
+html body .layout .main-content .bills-container .bill-item .bill-card-action-link:hover,
+html body .app-container .bills-page .bill-item .bill-card-action-link:hover {
+  background: #1d66ad !important;
+  background-color: #1d66ad !important;
+  border-color: #8cc6ff !important;
+  transform: translateY(-1px) !important;
+}
+
+html body .layout .main-content .bills-container .bill-item .bill-card-action-skip,
+html body .app-container .bills-page .bill-item .bill-card-action-skip {
+  background: #5c2583 !important;
+  background-color: #5c2583 !important;
+  color: #ffffff !important;
+  border: 1px solid #c084fc !important;
+  box-shadow: 0 3px 10px rgba(0, 0, 0, 0.24) !important;
+}
+
+html body .layout .main-content .bills-container .bill-item .bill-card-action-skip:hover,
+html body .app-container .bills-page .bill-item .bill-card-action-skip:hover,
+html body .layout .main-content .bills-container .bill-item .bill-card-action-skip.is-skipped,
+html body .app-container .bills-page .bill-item .bill-card-action-skip.is-skipped {
+  background: #7333a0 !important;
+  background-color: #7333a0 !important;
+  border-color: #d8b4fe !important;
+  transform: translateY(-1px) !important;
+}
+
+html body .layout .main-content .bills-container .bill-item .bill-card-action:focus-visible,
+html body .app-container .bills-page .bill-item .bill-card-action:focus-visible {
+  outline: 3px solid #ffffff !important;
+  outline-offset: 2px !important;
+}
+
+@media (max-width: 1024px) {
+  html body .layout .main-content .bills-container .bill-item .bill-card-action,
+  html body .app-container .bills-page .bill-item .bill-card-action {
+    min-height: 44px !important;
+    font-size: 14px !important;
+    padding: 10px 14px !important;
+  }
+}
+
+@media (max-width: 700px) {
+  html body .layout .main-content .bills-container .bill-item .bill-card-actions,
+  html body .app-container .bills-page .bill-item .bill-card-actions {
+    gap: 10px !important;
+  }
+
+  html body .layout .main-content .bills-container .bill-item .bill-card-action,
+  html body .app-container .bills-page .bill-item .bill-card-action {
+    min-height: 46px !important;
+    font-size: 14px !important;
+  }
+}
