@@ -1105,7 +1105,7 @@ console.log('🔍 PAYDAY CALCULATION DEBUG:', {
             <h3>
               Bills Due Before Payday 
               {financialData.billsBeforePayday.length > 0 && (
-                <span style={{ marginLeft: '10px', fontSize: '0.9em', color: '#ccc' }}>
+                <span className="bill-count">
                   ({financialData.billsBeforePayday.length})
                 </span>
               )}
@@ -1138,14 +1138,7 @@ console.log('🔍 PAYDAY CALCULATION DEBUG:', {
               <span><strong>{formatCurrency(financialData.totalBillsDue)}</strong></span>
             </div>
             {financialData.paidBillsCount > 0 && (
-              <div className="paid-bills-info" style={{ 
-                marginTop: '10px', 
-                padding: '10px', 
-                background: 'rgba(16, 185, 129, 0.1)', 
-                borderRadius: '6px',
-                fontSize: '0.9em',
-                color: '#10b981'
-              }}>
+              <div className="paid-bills-info">
                 ✅ {financialData.paidBillsCount} bill(s) already paid
               </div>
             )}
@@ -1158,7 +1151,7 @@ console.log('🔍 PAYDAY CALCULATION DEBUG:', {
             <h3>
               Bills Due After Payday
               {financialData.billsAfterPayday && financialData.billsAfterPayday.length > 0 && (
-                <span style={{ marginLeft: '10px', fontSize: '0.9em', color: '#ccc' }}>
+                <span className="bill-count">
                   ({financialData.billsAfterPayday.length})
                 </span>
               )}

@@ -767,3 +767,164 @@ html body .spendability-container select {
 html body .spendability-container input:focus,
 html body .spendability-container select:focus { border-color:rgba(var(--smt-theme-primary-rgb),.42)!important; }
 @media(max-width:700px){ html body .spendability-container{padding:18px 14px 30px;} }
+
+
+/* ===== Premium QA: theme-consistent Spendability details ===== */
+html body .spendability-container .tile {
+  color: var(--smt-text);
+  border: 1px solid var(--smt-border) !important;
+  background: var(--smt-surface) !important;
+  box-shadow:
+    0 10px 28px rgba(0,0,0,.18),
+    inset 0 1px 0 var(--smt-theme-metal) !important;
+  transition: transform .16s ease, border-color .16s ease, background .16s ease;
+}
+
+html body .spendability-container .tile:hover {
+  transform: translateY(-1px);
+  border-color: var(--smt-border-strong) !important;
+  background: var(--smt-surface-2) !important;
+  box-shadow:
+    0 12px 30px rgba(0,0,0,.22),
+    inset 0 1px 0 var(--smt-theme-metal) !important;
+}
+
+html body .spendability-container .tile h3,
+html body .spendability-container .calc-section-title,
+html body .spendability-container .currency-symbol,
+html body .spendability-container .collapse-icon,
+html body .spendability-container .bill-amount,
+html body .spendability-container .balance-total,
+html body .spendability-container .total-bills,
+html body .spendability-container .total-amount,
+html body .spendability-container .payday-date,
+html body .spendability-container .payday-single-amount,
+html body .spendability-container .payday-item-date,
+html body .spendability-container .payday-amount,
+html body .spendability-container .safe-amount.positive,
+html body .spendability-container .spend-amount.positive,
+html body .spendability-container .calc-item.positive {
+  color: var(--smt-theme-accent) !important;
+  text-shadow: none !important;
+}
+
+html body .spendability-container .bill-name,
+html body .spendability-container .payday-countdown,
+html body .spendability-container .payday-label,
+html body .spendability-container .calc-item,
+html body .spendability-container .spend-label {
+  color: var(--smt-text-2) !important;
+}
+
+html body .spendability-container .bill-due-date,
+html body .spendability-container .payday-item-countdown,
+html body .spendability-container .payday-bank,
+html body .spendability-container .spend-note,
+html body .spendability-container .spend-note-small,
+html body .spendability-container .spend-label-small,
+html body .spendability-container .bill-count {
+  color: var(--smt-text-3) !important;
+}
+
+html body .spendability-container .bill-count {
+  margin-left: 8px;
+  font-size: .86em;
+  font-weight: 650;
+}
+
+html body .spendability-container .currency-input {
+  background: var(--smt-surface-2) !important;
+  border: 1px solid var(--smt-border) !important;
+  border-radius: var(--smt-radius-sm) !important;
+}
+
+html body .spendability-container .currency-input:focus-within {
+  border-color: rgba(var(--smt-theme-primary-rgb), .48) !important;
+  box-shadow: 0 0 0 3px rgba(var(--smt-theme-primary-rgb), .09);
+}
+
+html body .spendability-container .spend-now-section {
+  background:
+    linear-gradient(145deg, rgba(var(--smt-theme-primary-rgb), .10), transparent 72%),
+    var(--smt-surface) !important;
+  border: 1px solid rgba(var(--smt-theme-primary-rgb), .22) !important;
+}
+
+html body .spendability-container .spend-future-section,
+html body .spendability-container .calc-section.future {
+  background: rgba(var(--smt-theme-secondary-rgb), .06) !important;
+  border-color: rgba(var(--smt-theme-secondary-rgb), .20) !important;
+}
+
+html body .spendability-container .spend-amount-small,
+html body .spendability-container .result-amount-small,
+html body .spendability-container .calc-item.future .positive {
+  color: var(--smt-theme-secondary) !important;
+}
+
+html body .spendability-container .paid-bills-info {
+  margin-top: 10px;
+  padding: 10px 12px;
+  border: 1px solid rgba(var(--smt-theme-primary-rgb), .18);
+  border-radius: 9px;
+  background: rgba(var(--smt-theme-primary-rgb), .07);
+  color: var(--smt-theme-secondary);
+  font-size: .88rem;
+  font-weight: 650;
+}
+
+html body .spendability-container .no-bills {
+  color: var(--smt-text-3) !important;
+  font-style: normal;
+}
+
+html body .spendability-container .bill-item {
+  border-bottom-color: var(--smt-border) !important;
+}
+
+html body .spendability-container .bill-item.overdue {
+  border-color: rgba(239,106,106,.55) !important;
+  background: rgba(239,106,106,.06);
+  animation: none;
+}
+
+html body .spendability-container .overdue-warning,
+html body .spendability-container .warning-message {
+  border-color: rgba(239,106,106,.5) !important;
+  background: rgba(239,106,106,.08) !important;
+  color: #ff9a9a !important;
+}
+
+html body .spendability-container .spend-result.can-spend,
+html body .spendability-container .calc-total.positive {
+  border-color: rgba(var(--smt-theme-primary-rgb), .22) !important;
+  background: rgba(var(--smt-theme-primary-rgb), .08) !important;
+  color: var(--smt-theme-secondary) !important;
+}
+
+html body .spendability-container .refresh-button {
+  background: var(--smt-surface-2) !important;
+  color: var(--smt-text-2) !important;
+  border: 1px solid var(--smt-border) !important;
+  border-radius: 9px;
+  box-shadow: none !important;
+  text-shadow: none !important;
+}
+
+html body .spendability-container .refresh-button:hover {
+  color: var(--smt-text) !important;
+  border-color: var(--smt-border-strong) !important;
+  background: var(--smt-surface-hover) !important;
+}
+
+@media (max-width: 640px) {
+  html body .spendability-container .tile {
+    padding: 16px;
+  }
+
+  html body .spendability-container .calc-item,
+  html body .spendability-container .balance-item,
+  html body .spendability-container .total-bills {
+    gap: 12px;
+  }
+}
