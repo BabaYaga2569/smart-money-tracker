@@ -87,56 +87,9 @@ const Goals = () => {
         goalsData.push({ id: doc.id, ...doc.data() });
       });
       
-      // If no goals from Firebase, add demo data for demonstration
+      // No stored goals means the user genuinely has no goals yet.
       if (goalsData.length === 0) {
-        const demoGoals = [
-          {
-            id: 'demo-1',
-            name: 'Emergency Fund',
-            category: 'Emergency Fund',
-            targetAmount: 6000,
-            currentAmount: 2400,
-            targetDate: '2025-06-01',
-            monthlyContribution: 400,
-            priority: 'high',
-            account: 'savings',
-            notes: 'Build 6 months of expenses for financial security',
-            status: 'active',
-            createdAt: Date.now() - 30 * 24 * 60 * 60 * 1000, // 30 days ago
-            updatedAt: Date.now()
-          },
-          {
-            id: 'demo-2',
-            name: 'Hawaii Vacation',
-            category: 'Vacation',
-            targetAmount: 4500,
-            currentAmount: 1350,
-            targetDate: '2025-12-15',
-            monthlyContribution: 300,
-            priority: 'medium',
-            account: 'checking',
-            notes: 'Dream vacation to Maui with the family',
-            status: 'active',
-            createdAt: Date.now() - 15 * 24 * 60 * 60 * 1000, // 15 days ago
-            updatedAt: Date.now()
-          },
-          {
-            id: 'demo-3',
-            name: 'New Car Down Payment',
-            category: 'Vehicle',
-            targetAmount: 8000,
-            currentAmount: 3200,
-            targetDate: '2025-09-01',
-            monthlyContribution: 500,
-            priority: 'medium',
-            account: 'savings',
-            notes: 'Save for reliable transportation',
-            status: 'active',
-            createdAt: Date.now() - 60 * 24 * 60 * 60 * 1000, // 60 days ago
-            updatedAt: Date.now()
-          }
-        ];
-        setGoals(demoGoals);
+        setGoals([]);
         return;
       }
       
@@ -156,55 +109,9 @@ const Goals = () => {
       setGoals(goalsData);
     } catch (error) {
       console.error('Error loading goals:', error);
-      // Fallback to demo goals on error
-      const demoGoals = [
-        {
-          id: 'demo-1',
-          name: 'Emergency Fund',
-          category: 'Emergency Fund',
-          targetAmount: 6000,
-          currentAmount: 2400,
-          targetDate: '2025-06-01',
-          monthlyContribution: 400,
-          priority: 'high',
-          account: 'savings',
-          notes: 'Build 6 months of expenses for financial security',
-          status: 'active',
-          createdAt: Date.now() - 30 * 24 * 60 * 60 * 1000,
-          updatedAt: Date.now()
-        },
-        {
-          id: 'demo-2',
-          name: 'Hawaii Vacation',
-          category: 'Vacation',
-          targetAmount: 4500,
-          currentAmount: 1350,
-          targetDate: '2025-12-15',
-          monthlyContribution: 300,
-          priority: 'medium',
-          account: 'checking',
-          notes: 'Dream vacation to Maui with the family',
-          status: 'active',
-          createdAt: Date.now() - 15 * 24 * 60 * 60 * 1000,
-          updatedAt: Date.now()
-        },
-        {
-          id: 'demo-3',
-          name: 'New Car Down Payment',
-          category: 'Vehicle',
-          targetAmount: 8000,
-          currentAmount: 3200,
-          targetDate: '2025-09-01',
-          monthlyContribution: 500,
-          priority: 'medium',
-          account: 'savings',
-          notes: 'Save for reliable transportation',
-          status: 'active',
-          createdAt: Date.now() - 60 * 24 * 60 * 60 * 1000,
-          updatedAt: Date.now()
-        }
-      ];
-      setGoals(demoGoals);
+      // Never substitute demo financial data for a failed/empty real-data load.
+      setGoals([]);
+      throw error;
     }
   };
 
