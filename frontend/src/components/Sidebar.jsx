@@ -4,7 +4,7 @@ import { useAuth } from '../contexts/AuthContext';
 import { auth } from '../firebase';
 import { Link, useLocation } from "react-router-dom";
 import { getPendingCount } from '../utils/detectionStorage';
-import { APP_NAV_ITEMS } from '../config/navigation';
+import { APP_NAV_ITEMS, APP_NAV_GROUPS } from '../config/navigation';
 import './Sidebar.css';
 
 const Sidebar = () => {
@@ -64,22 +64,32 @@ const Sidebar = () => {
   return (
     <aside className="sidebar">
       <h2 className="sidebar-title">💰 Smart Money</h2>
-      <nav>
-        <ul>
-          {menuItems.map((item) => (
-            <li key={item.name}>
-              <Link 
-                to={item.path}
-                className={location.pathname === item.path ?  "active" : ""}
-              >
-                {item.name}
-                {item.badge > 0 && (
-                  <span className="sidebar-badge">{item.badge}</span>
-                )}
-              </Link>
-            </li>
-          ))}
-        </ul>
+      <nav className="sidebar-nav">
+        {APP_NAV_GROUPS.map((group) => {
+          const groupItems = menuItems.filter(item => item.group === group);
+          if (groupItems.length === 0) return null;
+
+          return (
+            <div className="sidebar-nav-group" key={group}>
+              <div className="sidebar-nav-group-label">{group}</div>
+              <ul>
+                {groupItems.map((item) => (
+                  <li key={item.name}>
+                    <Link 
+                      to={item.path}
+                      className={location.pathname === item.path ? "active" : ""}
+                    >
+                      <span>{item.name}</span>
+                      {item.badge > 0 && (
+                        <span className="sidebar-badge">{item.badge}</span>
+                      )}
+                    </Link>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          );
+        })}
       </nav>
       
       <div className="sidebar-logout">

@@ -21,6 +21,7 @@ import { createRoot } from 'react-dom/client'
 import './utils/authFetch'  // attaches Firebase token to all API calls
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import './index.css'
+import './styles/design-system.css'
 import App from './App.jsx'
 import { registerSW } from 'virtual:pwa-register'
 
