@@ -610,8 +610,15 @@ console.log('🔍 PAYDAY CALCULATION DEBUG:', {
       // financialEvents has already been filtered to canonical unpaid,
       // non-skipped bill occurrences. Do not second-guess that state by
       // re-matching bank transactions in the browser.
-      const unpaidBillsBeforePayday = billsDueBeforePayday;
-      const unpaidBillsAfterPayday = billsDueAfterPayday;
+      const pendingPaymentBillsBeforePayday = billsDueBeforePayday.filter(
+        bill => bill.pendingPayment === true
+      );
+      const unpaidBillsBeforePayday = billsDueBeforePayday.filter(
+        bill => bill.pendingPayment !== true
+      );
+      const unpaidBillsAfterPayday = billsDueAfterPayday.filter(
+        bill => bill.pendingPayment !== true
+      );
 
       const totalUnpaidBills = unpaidBillsBeforePayday.reduce((sum, bill) => {
         return sum + (Number(bill.amount ?? bill.cost) || 0);
@@ -619,6 +626,7 @@ console.log('🔍 PAYDAY CALCULATION DEBUG:', {
 
       const totalBillsDue = totalUnpaidBills;
       const paidBillsCount = 0;
+      const pendingPaymentBillsCount = pendingPaymentBillsBeforePayday.length;
       const totalBillsDueLegacy = totalUnpaidBills;
 
       const preferences = settingsData.preferences || {};
@@ -1128,7 +1136,24 @@ console.log('🔍 PAYDAY CALCULATION DEBUG:', {
                     <span className="bill-name">{bill.name}</span>
                     <span className="bill-due-date">Due: {formatDate(bill.nextDueDate)}</span>
                     <span className="bill-amount">{formatCurrency(bill.amount ?? bill.cost)}</span>
-                    {bill.statusInfo?.status === 'overdue' && (
+                    {bill.pendingPayment === true && (
+                      <div
+                        className="pending-payment-warning"
+                        title="A matching Plaid transaction is still pending. The bank's available balance already reflects it, so this bill is not reserved again."
+                        style={{
+                          marginTop: '8px',
+                          padding: '6px 10px',
+                          borderRadius: '6px',
+                          background: 'rgba(0, 180, 255, 0.12)',
+                          border: '1px solid rgba(0, 180, 255, 0.45)',
+                          color: '#6fdcff',
+                          fontWeight: '700'
+                        }}
+                      >
+                        ⏳ PENDING PAYMENT — excluded from Safe-to-Spend reserve
+                      </div>
+                    )}
+                    {bill.pendingPayment !== true && bill.statusInfo?.status === 'overdue' && (
                       <div className="overdue-warning">
                         🚨 OVERDUE by {bill.statusInfo.daysOverdue} day{bill.statusInfo.daysOverdue !== 1 ? 's' : ''} - LATE FEES MAY APPLY!
                       </div>
@@ -1140,9 +1165,14 @@ console.log('🔍 PAYDAY CALCULATION DEBUG:', {
               <p className="no-bills">No bills due before your next refill! 🎉</p>
             )}
             <div className="total-bills">
-              <span><strong>Total Bills:</strong></span>
+              <span><strong>Reserved Bills:</strong></span>
               <span><strong>{formatCurrency(financialData.totalBillsDue)}</strong></span>
             </div>
+            {financialData.pendingPaymentBillsCount > 0 && (
+              <div className="paid-bills-info">
+                ⏳ {financialData.pendingPaymentBillsCount} bill(s) have pending bank payments and are not reserved again
+              </div>
+            )}
             {financialData.paidBillsCount > 0 && (
               <div className="paid-bills-info">
                 ✅ {financialData.paidBillsCount} bill(s) already paid
