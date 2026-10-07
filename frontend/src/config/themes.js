@@ -5,6 +5,7 @@ export const THEMES = {
     id: 'default',
     name: 'Smart Money Default',
     description: 'Calm charcoal with emerald accents.',
+    signature: 'Clean finance',
     preview: {
       primary: '#32d296',
       secondary: '#60a5fa',
@@ -16,6 +17,7 @@ export const THEMES = {
     id: 'laBlueGold',
     name: 'LA Blue & Gold',
     description: 'Royal blue, electric blue, and warm gold on black.',
+    signature: 'Sweeping arcs + stadium glow',
     preview: {
       primary: '#246BFD',
       secondary: '#5AA9FF',
@@ -27,6 +29,7 @@ export const THEMES = {
     id: 'jacksonvilleTealGold',
     name: 'Jacksonville Teal & Gold',
     description: 'Deep teal, bright aqua, and metallic gold.',
+    signature: 'Angular shards + metallic edge',
     preview: {
       primary: '#00B2B2',
       secondary: '#26D8D8',
@@ -38,6 +41,7 @@ export const THEMES = {
     id: 'pittsburghBlackGold',
     name: 'Pittsburgh Black & Gold',
     description: 'High-contrast black, steel gray, and vivid gold.',
+    signature: 'Steel texture + gold beams',
     preview: {
       primary: '#FFB612',
       secondary: '#F5C842',
