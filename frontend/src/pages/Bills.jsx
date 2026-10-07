@@ -1839,30 +1839,12 @@ const refreshPlaidTransactions = async () => {
                   
 {/* Manual Mark as Paid Button */}
 {bill.status !== 'paid' && bill.status !== 'skipped' && (
-  <div style={{ marginTop: '12px' }}>
+  <div className="bill-card-actions">
     <button
+      type="button"
+      className="bill-card-action bill-card-action-paid"
       onClick={() => handleMarkAsPaid(bill)}
       disabled={payingBill === bill.name}
-      style={{
-        width: '100%',
-        padding: '10px 16px',
-        background: payingBill === bill.name 
-          ? 'rgba(0, 255, 136, 0.3)' 
-          : 'linear-gradient(135deg, #00ff88 0%, #00d4ff 100%)',
-        color: '#000',
-        border: 'none',
-        borderRadius: '8px',
-        fontSize: '13px',
-        fontWeight: '700',
-        cursor: payingBill === bill.name ? 'not-allowed' : 'pointer',
-        transition: 'all 0.2s ease',
-        opacity: payingBill === bill.name ? 0.6 : 1,
-        boxShadow: payingBill === bill.name 
-          ? 'none' 
-          : '0 4px 12px rgba(0, 255, 136, 0.3)',
-        textTransform: 'uppercase',
-        letterSpacing: '0.5px'
-      }}
     >
       {payingBill === bill.name ? '⏳ Processing...' : '💳 Mark as Paid'}
     </button>
@@ -1870,26 +1852,9 @@ const refreshPlaidTransactions = async () => {
     {/* Link Transaction Button */}
     {!bill.linkedTransactionId && (
       <button
+        type="button"
+        className="bill-card-action bill-card-action-link"
         onClick={() => handleLinkTransaction(bill)}
-        style={{
-          marginTop: '8px',
-          width: '100%',
-          padding: '8px 12px',
-          background: 'rgba(59, 130, 246, 0.1)',
-          color: '#3b82f6',
-          border: '1px solid #3b82f6',
-          borderRadius: '6px',
-          fontSize: '11px',
-          fontWeight: '600',
-          cursor: 'pointer',
-          transition: 'all 0.2s ease'
-        }}
-        onMouseOver={(e) => {
-          e.target.style.background = 'rgba(59, 130, 246, 0.2)';
-        }}
-        onMouseOut={(e) => {
-          e.target.style.background = 'rgba(59, 130, 246, 0.1)';
-        }}
       >
         🔗 Link Transaction
       </button>
@@ -1897,22 +1862,9 @@ const refreshPlaidTransactions = async () => {
     
     {/* Skip Button */}
     <button
+      type="button"
+      className={`bill-card-action bill-card-action-skip ${bill.status === 'skipped' ? 'is-skipped' : ''}`}
       onClick={() => handleToggleSkipBill(bill)}
-      style={{
-        marginTop: '8px',
-        width: '100%',
-        padding: '8px 12px',
-        background: bill.status === 'skipped' 
-          ? 'rgba(138, 43, 226, 0.2)' 
-          : 'rgba(156, 39, 176, 0.1)',
-        color: bill.status === 'skipped' ? '#ba68c8' : '#9c27b0',
-        border: '1px solid ' + (bill.status === 'skipped' ? '#ba68c8' : '#9c27b0'),
-        borderRadius: '6px',
-        fontSize: '11px',
-        fontWeight: '600',
-        cursor: 'pointer',
-        transition: 'all 0.2s ease'
-      }}
     >
       {bill.status === 'skipped' ? '↩️ Unskip Bill' : '⏭️ Skip This Month'}
     </button>
