@@ -580,6 +580,8 @@ const refreshPlaidTransactions = async () => {
                 };
               });
               setAccounts(accountsMap);
+              setHasPlaidAccounts(true);
+              setPlaidStatus({ isConnected: true, hasError: false });
               return;
             }
           }
@@ -597,9 +599,15 @@ const refreshPlaidTransactions = async () => {
         const plaidAccountsList = getVisiblePlaidAccounts(canonicalPlaidAccounts, data);
         const bankAccounts = data.bankAccounts || {};
         
-        setHasPlaidAccounts(canonicalPlaidAccounts.length > 0);
+        const hasCanonicalPlaidAccounts = canonicalPlaidAccounts.length > 0;
+        setHasPlaidAccounts(hasCanonicalPlaidAccounts);
+        setPlaidStatus(prev => ({
+          ...prev,
+          isConnected: hasCanonicalPlaidAccounts,
+          hasError: hasCanonicalPlaidAccounts ? false : prev.hasError
+        }));
         
-        if (canonicalPlaidAccounts.length > 0) {
+        if (hasCanonicalPlaidAccounts) {
           const accountsMap = {};
           plaidAccountsList.forEach(account => {
             const accountId = account.account_id;
@@ -1312,7 +1320,7 @@ const refreshPlaidTransactions = async () => {
                   ? 'Plaid connection error - click banner above to see details' 
                   : (!plaidStatus.isConnected && !hasPlaidAccounts)
                     ? 'Connect your bank account with Plaid from the Accounts page to automatically match bills with your transactions' 
-                    : 'Automatically match bills with recent bank transactions from Plaid. This will mark bills as paid when matching transactions are found.'
+                    : 'Request fresh transactions from Plaid, then run backend bill matching. Use Re-match Transactions below if you only want to re-run matching against already-stored transactions.'
               }
               style={{ 
                 marginLeft: '10px', 
@@ -1338,16 +1346,16 @@ const refreshPlaidTransactions = async () => {
                   ? '❌ Plaid Error' 
                   : (!plaidStatus.isConnected && !hasPlaidAccounts)
                     ? '🔒 Connect Plaid' 
-                    : '🔄 Match Transactions'}
+                    : '🔄 Sync Plaid'}
             </button>
             
             <button 
               onClick={handleRematchTransactions}
-              disabled={!hasPlaidAccounts && !plaidStatus.isConnected}
-              title="Re-match unpaid bills with recent transactions (last 30 days)"
+              disabled={refreshingTransactions}
+              title="Re-match unpaid bills with transactions already stored in Smart Money. This does not request new Plaid transactions."
               style={{ 
                 marginLeft: '10px', 
-                background: (!hasPlaidAccounts && !plaidStatus.isConnected)
+                background: refreshingTransactions
                   ? '#999'
                   : '#3b82f6', 
                 color: '#fff',
@@ -1356,9 +1364,9 @@ const refreshPlaidTransactions = async () => {
                 padding: '10px 20px',
                 fontSize: '14px',
                 fontWeight: '600',
-                cursor: (!hasPlaidAccounts && !plaidStatus.isConnected) ? 'not-allowed' : 'pointer',
-                opacity: (!hasPlaidAccounts && !plaidStatus.isConnected) ? 0.6 : 1,
-                boxShadow: (!hasPlaidAccounts && !plaidStatus.isConnected) ? 'none' : '0 2px 4px rgba(59,130,246,0.3)'
+                cursor: refreshingTransactions ? 'not-allowed' : 'pointer',
+                opacity: refreshingTransactions ? 0.6 : 1,
+                boxShadow: refreshingTransactions ? 'none' : '0 2px 4px rgba(59,130,246,0.3)'
               }}
             >
               🔄 Re-match Transactions
