@@ -3,7 +3,7 @@ import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import { auth } from '../firebase';
 import { getPendingCount } from '../utils/detectionStorage';
-import { APP_NAV_ITEMS } from '../config/navigation';
+import { APP_NAV_ITEMS, APP_NAV_GROUPS } from '../config/navigation';
 import './MobileNav.css';
 
 export default function MobileNav({ isOpen, onToggle, onClose }) {
@@ -79,22 +79,32 @@ export default function MobileNav({ isOpen, onToggle, onClose }) {
         </div>
         
         <nav className="mobile-sidebar-nav">
-          <ul>
-            {menuItems.map((item) => (
-              <li key={item.name}>
-                <Link 
-                  to={item.path}
-                  className={location.pathname === item.path ? "active" : ""}
-                  onClick={handleNavClick}
-                >
-                  <span>{item.name}</span>
-                  {item.badge > 0 && (
-                    <span className="mobile-nav-badge">{item.badge}</span>
-                  )}
-                </Link>
-              </li>
-            ))}
-          </ul>
+          {APP_NAV_GROUPS.map((group) => {
+            const groupItems = menuItems.filter(item => item.group === group);
+            if (groupItems.length === 0) return null;
+
+            return (
+              <div className="mobile-nav-group" key={group}>
+                <div className="mobile-nav-group-label">{group}</div>
+                <ul>
+                  {groupItems.map((item) => (
+                    <li key={item.name}>
+                      <Link 
+                        to={item.path}
+                        className={location.pathname === item.path ? "active" : ""}
+                        onClick={handleNavClick}
+                      >
+                        <span>{item.name}</span>
+                        {item.badge > 0 && (
+                          <span className="mobile-nav-badge">{item.badge}</span>
+                        )}
+                      </Link>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            );
+          })}
         </nav>
         
         <div className="mobile-sidebar-logout">
