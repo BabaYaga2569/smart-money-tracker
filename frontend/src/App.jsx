@@ -3,6 +3,7 @@ import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-d
 import { doc, getDoc } from 'firebase/firestore';
 import { db } from './firebase';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
+import { ThemeProvider } from './contexts/ThemeContext';
 import ErrorBoundary from './components/ErrorBoundary';
 import Sidebar from './components/Sidebar';
 import MobileNav from './components/MobileNav';
@@ -215,6 +216,7 @@ function App() {
       <ErrorBoundary>
         <Router>
           <AuthProvider>
+            <ThemeProvider>
             <PWAInstallPrompt />
             <Suspense fallback={<LoadingSpinner />}>
               <Routes>
@@ -461,6 +463,7 @@ function App() {
                 } />
               </Routes>
             </Suspense>
+            </ThemeProvider>
           </AuthProvider>
         </Router>
       </ErrorBoundary>

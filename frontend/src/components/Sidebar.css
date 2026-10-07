@@ -72,9 +72,9 @@
 }
 
 .sidebar nav ul li a.active {
-  color: #8cf0c6;
-  background: rgba(50, 210, 150, 0.1);
-  border-color: rgba(50, 210, 150, 0.16);
+  color: var(--smt-theme-secondary);
+  background: rgba(var(--smt-theme-primary-rgb), 0.1);
+  border-color: rgba(var(--smt-theme-primary-rgb), 0.16);
   font-weight: 750;
 }
 

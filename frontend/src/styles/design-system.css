@@ -9,8 +9,17 @@
   --smt-text: #f5f7fa;
   --smt-text-2: #c5ccd6;
   --smt-text-3: #8993a2;
-  --smt-accent: #32d296;
-  --smt-accent-strong: #20b77c;
+  --smt-theme-primary: #32d296;
+  --smt-theme-primary-rgb: 50, 210, 150;
+  --smt-theme-secondary: #60a5fa;
+  --smt-theme-secondary-rgb: 96, 165, 250;
+  --smt-theme-accent: #f6b94a;
+  --smt-theme-accent-rgb: 246, 185, 74;
+  --smt-theme-hero-start: #18251f;
+  --smt-theme-hero-end: #151a20;
+  --smt-theme-sidebar: #111419;
+  --smt-accent: var(--smt-theme-primary);
+  --smt-accent-strong: var(--smt-theme-primary);
   --smt-info: #60a5fa;
   --smt-warning: #f6b94a;
   --smt-danger: #ef6a6a;
@@ -31,6 +40,64 @@
   --radius-md: var(--smt-radius-sm);
   --radius-lg: var(--smt-radius-md);
   --radius-xl: var(--smt-radius-lg);
+}
+
+
+:root[data-theme="laBlueGold"] {
+  --smt-bg: #070b13;
+  --smt-sidebar: #090f1b;
+  --smt-surface: #101722;
+  --smt-surface-2: #151f2f;
+  --smt-surface-hover: #1b2a3f;
+  --smt-theme-primary: #246bfd;
+  --smt-theme-primary-rgb: 36, 107, 253;
+  --smt-theme-secondary: #5aa9ff;
+  --smt-theme-secondary-rgb: 90, 169, 255;
+  --smt-theme-accent: #ffd028;
+  --smt-theme-accent-rgb: 255, 208, 40;
+  --smt-theme-hero-start: #111d38;
+  --smt-theme-hero-end: #0d1422;
+  --smt-theme-sidebar: #08101e;
+  --smt-info: #5aa9ff;
+  --smt-warning: #ffd028;
+}
+
+:root[data-theme="jacksonvilleTealGold"] {
+  --smt-bg: #061012;
+  --smt-sidebar: #071417;
+  --smt-surface: #0d1a1d;
+  --smt-surface-2: #122427;
+  --smt-surface-hover: #173034;
+  --smt-theme-primary: #00b2b2;
+  --smt-theme-primary-rgb: 0, 178, 178;
+  --smt-theme-secondary: #26d8d8;
+  --smt-theme-secondary-rgb: 38, 216, 216;
+  --smt-theme-accent: #d7a63b;
+  --smt-theme-accent-rgb: 215, 166, 59;
+  --smt-theme-hero-start: #0b2629;
+  --smt-theme-hero-end: #0b1719;
+  --smt-theme-sidebar: #061316;
+  --smt-info: #26d8d8;
+  --smt-warning: #d7a63b;
+}
+
+:root[data-theme="pittsburghBlackGold"] {
+  --smt-bg: #080808;
+  --smt-sidebar: #0d0d0d;
+  --smt-surface: #151515;
+  --smt-surface-2: #1d1d1d;
+  --smt-surface-hover: #262626;
+  --smt-theme-primary: #ffb612;
+  --smt-theme-primary-rgb: 255, 182, 18;
+  --smt-theme-secondary: #f5c842;
+  --smt-theme-secondary-rgb: 245, 200, 66;
+  --smt-theme-accent: #ffd94a;
+  --smt-theme-accent-rgb: 255, 217, 74;
+  --smt-theme-hero-start: #26200e;
+  --smt-theme-hero-end: #141414;
+  --smt-theme-sidebar: #0a0a0a;
+  --smt-info: #f5c842;
+  --smt-warning: #ffb612;
 }
 
 html,
@@ -103,7 +170,7 @@ body {
 }
 
 .smt-primary-button:hover {
-  background: #45dfa8;
+  background: var(--smt-theme-secondary);
   border-color: rgba(255,255,255,.08);
   transform: translateY(-1px);
 }
@@ -134,9 +201,9 @@ body {
 }
 
 .smt-badge.success {
-  color: #74e7b6;
-  background: rgba(50,210,150,.1);
-  border-color: rgba(50,210,150,.18);
+  color: var(--smt-theme-secondary);
+  background: rgba(var(--smt-theme-primary-rgb),.1);
+  border-color: rgba(var(--smt-theme-primary-rgb),.18);
 }
 
 .smt-badge.warning {
