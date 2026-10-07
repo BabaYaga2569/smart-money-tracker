@@ -6,9 +6,7 @@ import { calculateTotalProjectedBalance } from '../utils/BalanceCalculator';
 import PlaidConnectionManager from '../utils/PlaidConnectionManager';
 import './Dashboard.css';
 import { useAuth } from '../contexts/AuthContext';
-import DashboardTileCreditCard from "../components/DashboardTileCreditCard";
 import { useTransactionsQuery } from '../hooks/useFirebaseQuery';
-import HealthStatus from '../components/HealthStatus';
 import { getVisiblePlaidAccounts, isDepositoryAccount } from '../utils/accountVisibility';
 import { visibleBillOccurrences } from '../utils/billVisibility';
 
@@ -37,7 +35,13 @@ const Dashboard = () => {
   daysUntilPayday: 0,
   monthlyIncome: 0,
   monthlyExpenses: 0,
-  transactionCount: 0
+  transactionCount: 0,
+  dueTodayCount: 0,
+  dueNext7Count: 0,
+  remainingMonthAmount: 0,
+  overdueCount: 0,
+  upcomingBills: [],
+  recentTransactions: []
 });
 
   // ✅ React Query - Cached transactions query (instant on subsequent visits!)
@@ -159,6 +163,43 @@ const recurringPatterns = recurringPatternsSnapshot.docs.map(doc => ({ id: doc.i
 const billsDueSoon = bills.length;
 const recurringCount = recurringPatterns.filter(pattern => pattern.status === 'active').length;
 
+const nowLocal = new Date();
+const todayYmd = [
+  nowLocal.getFullYear(),
+  String(nowLocal.getMonth() + 1).padStart(2, '0'),
+  String(nowLocal.getDate()).padStart(2, '0')
+].join('-');
+
+const next7 = new Date(nowLocal);
+next7.setDate(next7.getDate() + 7);
+const next7Ymd = [
+  next7.getFullYear(),
+  String(next7.getMonth() + 1).padStart(2, '0'),
+  String(next7.getDate()).padStart(2, '0')
+].join('-');
+
+const currentMonthPrefix = todayYmd.slice(0, 7);
+const billDueDate = bill => String(
+  bill.dueDate || bill.nextDueDate || bill.nextOccurrence || ''
+).slice(0, 10);
+
+const dueTodayCount = bills.filter(bill => billDueDate(bill) === todayYmd).length;
+const dueNext7Count = bills.filter(bill => {
+  const due = billDueDate(bill);
+  return due && due >= todayYmd && due <= next7Ymd;
+}).length;
+const overdueCount = bills.filter(bill => {
+  const due = billDueDate(bill);
+  return due && due < todayYmd;
+}).length;
+const remainingMonthAmount = bills
+  .filter(bill => billDueDate(bill).startsWith(currentMonthPrefix))
+  .reduce((sum, bill) => sum + (Number(bill.amount) || 0), 0);
+const upcomingBills = [...bills]
+  .filter(bill => billDueDate(bill))
+  .sort((a, b) => billDueDate(a).localeCompare(billDueDate(b)))
+  .slice(0, 6);
+
 // Load goals count
 const goalsRef = collection(db, 'users', currentUser.uid, 'goals');
 const goalsSnapshot = await getDocs(goalsRef);
@@ -275,8 +316,14 @@ setDashboardData({
   monthlyIncome: data.monthlyIncome || 0,       // ✅ From Firebase or 0
   monthlyExpenses: data.monthlyExpenses || 0,   // ✅ From Firebase or 0
   transactionCount: transactionCount,
-  goalsCount: goalsCount,                        // ✅ Add this for Goals tile
-  categoriesCount: categoriesCount               // ✅ Add this for Categories tile
+  goalsCount: goalsCount,
+  categoriesCount: categoriesCount,
+  dueTodayCount,
+  dueNext7Count,
+  remainingMonthAmount,
+  overdueCount,
+  upcomingBills,
+  recentTransactions: transactions.slice(0, 6)
 });
       } else {
         // Firebase connected but no data - use defaults
