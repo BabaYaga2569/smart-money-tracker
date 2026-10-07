@@ -14,7 +14,7 @@ const ThemePicker = () => {
           <h3>🎨 App Theme</h3>
           <p>Choose the visual style for Smart Money Tracker. Changes apply instantly.</p>
         </div>
-        <span className="theme-picker-badge">Premium themes</span>
+        <span className="theme-picker-badge">Immersive themes</span>
       </div>
 
       <div className="theme-picker-grid">
@@ -25,12 +25,12 @@ const ThemePicker = () => {
             <button
               type="button"
               key={theme.id}
-              className={`theme-option ${selected ? 'selected' : ''}`}
+              className={`theme-option theme-option-${theme.id} ${selected ? 'selected' : ''}`}
               onClick={() => setTheme(theme.id)}
               aria-pressed={selected}
             >
               <div
-                className="theme-preview"
+                className={`theme-preview theme-preview-${theme.id}`}
                 style={{
                   '--preview-bg': theme.preview.background,
                   '--preview-primary': theme.preview.primary,
@@ -59,6 +59,7 @@ const ThemePicker = () => {
                   {selected && <span className="theme-selected-pill">Selected</span>}
                 </div>
                 <span>{theme.description}</span>
+                <span className="theme-option-signature">{theme.signature}</span>
               </div>
             </button>
           );
@@ -66,7 +67,7 @@ const ThemePicker = () => {
       </div>
 
       <div className="theme-picker-note">
-        Team-style color themes use generic regional/color names so the product can stay commercially flexible.
+        Fan-inspired themes use generic regional/color names and original visual effects so the product can stay commercially flexible.
       </div>
     </div>
   );
