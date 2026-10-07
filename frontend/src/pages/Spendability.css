@@ -961,3 +961,23 @@ html body .spendability-container .bills-list {
   margin-top: 12px;
   padding: 0 14px 12px;
 }
+
+
+/* ===== Screenshot QA: prevent full-width Spendability sections from stretching ===== */
+html body .spendability-container .tiles-grid {
+  align-items: start;
+}
+
+html body .spendability-container .bills-tile,
+html body .spendability-container .calculation-tile {
+  grid-column: 1 / -1 !important;
+  align-self: start;
+  height: auto !important;
+  min-height: 0 !important;
+}
+
+@media (min-width: 1200px) {
+  html body .spendability-container .tiles-grid {
+    grid-template-columns: repeat(4, minmax(0, 1fr)) !important;
+  }
+}
