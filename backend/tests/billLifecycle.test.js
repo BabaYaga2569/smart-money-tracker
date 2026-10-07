@@ -616,3 +616,54 @@ test('manual final installment can be unmarked and restores installment state', 
   assert.equal(pattern.remainingBalance, 35.83);
   assert.equal(db.store.get(finalBillPath).isPaid, false);
 });
+
+
+test('recurring payment omits undefined installment fields from Firestore update', async () => {
+  const patternPath = `users/${userId}/recurringPatterns/pattern-plain`;
+  const recurringBillPath = `users/${userId}/financialEvents/bill-plain`;
+  const db = createDb({
+    [recurringBillPath]: {
+      type: 'bill',
+      name: 'Las Vegas Valley Water Bill',
+      amount: 26.30,
+      dueDate: '2026-10-08',
+      isPaid: false,
+      status: 'pending',
+      recurrence: 'monthly',
+      recurringPatternId: 'pattern-plain'
+    },
+    [patternPath]: {
+      name: 'Las Vegas Valley Water Bill',
+      amount: 26.30,
+      frequency: 'monthly',
+      nextOccurrence: '2026-10-08',
+      status: 'active'
+    }
+  });
+
+  const result = await applyMatchedBillPayment(
+    db,
+    userId,
+    { id: 'bill-plain' },
+    transaction({
+      id: 'tx-water',
+      transaction_id: 'tx-water',
+      date: '2026-10-07',
+      amount: -26.30
+    })
+  );
+
+  assert.equal(result.success, true);
+  assert.equal(result.cleared, true);
+
+  const pattern = db.store.get(patternPath);
+  assert.equal(pattern.nextOccurrence, '2026-11-08');
+  assert.equal(
+    Object.prototype.hasOwnProperty.call(pattern, 'remainingPayments'),
+    false
+  );
+  assert.equal(
+    Object.prototype.hasOwnProperty.call(pattern, 'remainingBalance'),
+    false
+  );
+});
