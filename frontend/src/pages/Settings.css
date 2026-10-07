@@ -448,3 +448,26 @@
   background: #cc3333;
   border-color: #cc3333;
 }
+/* ===== Premium themed Settings foundation ===== */
+html body .settings-container {
+  width:100%; max-width:var(--smt-content-max); margin:0 auto;
+  padding:28px var(--smt-page-gutter) 42px; background:transparent!important; color:var(--smt-text);
+}
+html body .settings-container .page-header h2 { color:var(--smt-text)!important; font-size:clamp(25px,2.4vw,32px); }
+html body .settings-container .settings-tiles-grid { gap:12px!important; }
+html body .settings-container .settings-tile,
+html body .settings-container .settings-section,
+html body .settings-container .settings-card {
+  background:var(--smt-surface)!important; border:1px solid var(--smt-border)!important;
+  border-radius:14px!important; box-shadow:none!important;
+}
+html body .settings-container .settings-tile:hover { border-color:var(--smt-border-strong)!important; transform:none!important; box-shadow:none!important; }
+html body .settings-container .settings-tile h3,
+html body .settings-container .settings-section-title,
+html body .settings-container .form-group label { color:var(--smt-text)!important; }
+html body .settings-container .form-group input,
+html body .settings-container .form-group select {
+  background:var(--smt-surface-2)!important; color:var(--smt-text)!important; border-color:var(--smt-border)!important;
+}
+html body .settings-container .save-btn { background:var(--smt-theme-primary)!important; color:#09100d!important; }
+@media(max-width:700px){ html body .settings-container{padding:18px 14px 30px;} }
