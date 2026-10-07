@@ -845,5 +845,28 @@ html body .debt-optimizer-container .summary-item .interest-amount {
 }
 
 html body .debt-optimizer-container .summary-item .cash-amount {
-  color: var(--smt-positive) !important;
+  color: var(--smt-theme-secondary) !important;
+}
+
+
+/* Follow-up QA: pair readable text with dark premium surfaces */
+html body .debt-optimizer-container .strategy-item,
+html body .debt-optimizer-container .stat-item {
+  background: var(--smt-surface-2) !important;
+  border: 1px solid var(--smt-border) !important;
+  color: var(--smt-text) !important;
+}
+
+html body .debt-optimizer-container .strategy-item:hover {
+  border-color: var(--smt-border-strong) !important;
+  background: var(--smt-surface-hover) !important;
+}
+
+html body .debt-optimizer-container .strategy-item p,
+html body .debt-optimizer-container .stat-item .stat-label {
+  color: var(--smt-text-3) !important;
+}
+
+html body .debt-optimizer-container .stat-item .stat-value {
+  color: var(--smt-text) !important;
 }
