@@ -6,6 +6,7 @@ import {
   setDoc,
   getDocs,
   deleteDoc,
+  serverTimestamp,
 } from 'firebase/firestore';
 import { db } from '../firebase';
 import { RecurringManager } from '../utils/RecurringManager';
@@ -79,6 +80,9 @@ const Recurring = () => {
   // Single item delete with options
   const [itemToDelete, setItemToDelete] = useState(null);
   const [showDeleteModal, setShowDeleteModal] = useState(false);
+  const [variableCycleItem, setVariableCycleItem] = useState(null);
+  const [variableCycleAmount, setVariableCycleAmount] = useState('');
+  const [savingVariableCycleAmount, setSavingVariableCycleAmount] = useState(false);
 
   useEffect(() => {
     loadRecurringData();
@@ -975,6 +979,96 @@ const Recurring = () => {
     setShowHistoryModal(true);
   };
 
+  const openVariableCycleAmount = (item) => {
+    setVariableCycleItem(item);
+    setVariableCycleAmount('');
+  };
+
+  const closeVariableCycleAmount = () => {
+    if (savingVariableCycleAmount) return;
+    setVariableCycleItem(null);
+    setVariableCycleAmount('');
+  };
+
+  const handleSaveVariableCycleAmount = async () => {
+    if (!currentUser || !variableCycleItem) return;
+
+    const amount = Number(variableCycleAmount);
+    if (!Number.isFinite(amount) || amount <= 0) {
+      showNotification('Enter a valid current-cycle amount greater than $0.', 'error');
+      return;
+    }
+
+    const dueDate = String(variableCycleItem.nextOccurrence || '').slice(0, 10);
+    if (!dueDate) {
+      showNotification('This recurring item does not have a valid next occurrence date.', 'error');
+      return;
+    }
+
+    const occurrenceId = `bill_${variableCycleItem.id}_${dueDate}`;
+    const occurrenceRef = doc(
+      db,
+      'users',
+      currentUser.uid,
+      'financialEvents',
+      occurrenceId
+    );
+
+    try {
+      setSavingVariableCycleAmount(true);
+
+      const existing = await getDoc(occurrenceRef);
+      if (existing.exists() && existing.data()?.isPaid === true) {
+        throw new Error('This cycle occurrence is already paid and cannot be changed.');
+      }
+
+      await setDoc(
+        occurrenceRef,
+        {
+          type: 'bill',
+          name: variableCycleItem.name,
+          amount: Math.abs(amount),
+          dueDate,
+          originalDueDate: dueDate,
+          isPaid: false,
+          status: 'pending',
+          paidDate: null,
+          paidAmount: null,
+          linkedTransactionId: null,
+          category: variableCycleItem.category || 'Bills & Utilities',
+          recurrence: variableCycleItem.frequency || 'monthly',
+          recurringPatternId: variableCycleItem.id,
+          merchantNames: variableCycleItem.merchantNames || [],
+          autoPayEnabled: variableCycleItem.autoPay || false,
+          variableAmount: true,
+          cycleAmountSource: 'manual-current-cycle',
+          updatedAt: serverTimestamp(),
+          ...(existing.exists()
+            ? {}
+            : {
+                paymentHistory: [],
+                notes: null,
+                createdAt: serverTimestamp(),
+                createdFrom: 'variable-current-cycle-amount'
+              })
+        },
+        { merge: true }
+      );
+
+      showNotification(
+        `${variableCycleItem.name} current-cycle amount set to ${formatCurrency(amount)} for ${formatDate(dueDate)}. The recurring template remains variable.`,
+        'success'
+      );
+
+      closeVariableCycleAmount();
+    } catch (error) {
+      console.error('Error setting current-cycle variable amount:', error);
+      showNotification(error.message || 'Unable to set current-cycle amount.', 'error');
+    } finally {
+      setSavingVariableCycleAmount(false);
+    }
+  };
+
   const getStatusBadgeClass = (status) => {
     const statusClasses = {
       active: 'status-active',
@@ -1225,8 +1319,9 @@ const Recurring = () => {
 
                 <div className="item-amount-section">
                   <div className={`item-amount ${item.type}`}>
-                    {item.type === 'income' ? '+' : '-'}
-                    {formatCurrency(Math.abs(item.amount))}
+                    {item.variableAmount === true && (item.amount === null || item.amount === undefined || item.amount === '')
+                      ? 'Variable'
+                      : `${item.type === 'income' ? '+' : '-'}${formatCurrency(Math.abs(Number(item.amount) || 0))}`}
                   </div>
                   <div className="item-next-date">
                     {item.formattedDueDate || `Next: ${formatDate(item.nextOccurrence)}`}
@@ -1247,6 +1342,16 @@ const Recurring = () => {
                 </div>
 
                 <div className="item-actions">
+                  {item.type === 'expense' && item.variableAmount === true && item.status !== 'paused' && item.status !== 'ended' && (
+                    <button
+                      className="action-btn"
+                      onClick={() => openVariableCycleAmount(item)}
+                      title="Set Current Cycle Amount"
+                      aria-label={`Set current cycle amount for ${item.name}`}
+                    >
+                      💵
+                    </button>
+                  )}
                   <button
                     className="action-btn edit"
                     onClick={() => handleEditItem(item)}
@@ -1538,6 +1643,50 @@ const Recurring = () => {
               </button>
               <button className="save-btn" onClick={handleSaveItem} disabled={saving}>
                 {saving ? 'Saving...' : editingItem ? 'Update' : 'Add'} Item
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Variable current-cycle amount modal */}
+      {variableCycleItem && (
+        <div className="modal-overlay" onClick={closeVariableCycleAmount}>
+          <div className="modal" onClick={(e) => e.stopPropagation()} style={{ maxWidth: '520px' }}>
+            <div className="modal-header">
+              <h3>💵 Set Current Cycle Amount</h3>
+              <button className="close-btn" onClick={closeVariableCycleAmount}>×</button>
+            </div>
+
+            <div className="modal-body">
+              <p>
+                <strong>{variableCycleItem.name}</strong> is a variable bill due{' '}
+                <strong>{formatDate(variableCycleItem.nextOccurrence)}</strong>.
+              </p>
+              <p style={{ opacity: 0.8 }}>
+                This sets only this cycle's bill amount. The recurring template will stay variable for future cycles.
+              </p>
+              <div className="form-group">
+                <label>Current Cycle Amount *</label>
+                <input
+                  type="number"
+                  min="0.01"
+                  step="0.01"
+                  inputMode="decimal"
+                  autoFocus
+                  value={variableCycleAmount}
+                  onChange={(e) => setVariableCycleAmount(e.target.value)}
+                  placeholder="0.00"
+                />
+              </div>
+            </div>
+
+            <div className="modal-footer">
+              <button className="cancel-btn" onClick={closeVariableCycleAmount} disabled={savingVariableCycleAmount}>
+                Cancel
+              </button>
+              <button className="save-btn" onClick={handleSaveVariableCycleAmount} disabled={savingVariableCycleAmount}>
+                {savingVariableCycleAmount ? 'Saving...' : 'Set This Cycle Amount'}
               </button>
             </div>
           </div>
