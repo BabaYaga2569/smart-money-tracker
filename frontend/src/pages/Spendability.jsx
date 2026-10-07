@@ -3,7 +3,7 @@ import { doc, getDoc, collection, getDocs, query, where, orderBy, limit } from '
 import { db } from '../firebase';
 import { PayCycleCalculator } from '../utils/PayCycleCalculator';
 import { RecurringBillManager } from '../utils/RecurringBillManager';
-import { projectCashFlow, nextOwnPaydays, spousePaydaysBetween, addDays } from '../utils/CashFlowProjection';
+import { projectCashFlow, addDays } from '../utils/CashFlowProjection';
 import { formatDateForDisplay, formatDateForInput, getDaysUntilDateInPacific, getManualPacificDaysUntilPayday } from '../utils/DateUtils';
 import { getPacificTime } from '../utils/timezoneHelpers';
 import { SettingsSchemaManager } from '../utils/SettingsSchemaManager';
@@ -250,31 +250,29 @@ const SpendabilityV2 = () => {
       } 
      // Get pay cycle data
 let nextPayday, daysUntilPayday;
+const todayPayCycleStr = new Intl.DateTimeFormat('en-CA', {
+  timeZone: 'America/Los_Angeles'
+}).format(new Date());
+const isStrictFuturePayday = (value) =>
+  String(value || '').slice(0, 10) > todayPayCycleStr;
 
-if (settingsData.nextPaydayOverride) {
+if (settingsData.nextPaydayOverride && isStrictFuturePayday(settingsData.nextPaydayOverride)) {
   nextPayday = settingsData.nextPaydayOverride;
   daysUntilPayday = getDaysUntilDateInPacific(nextPayday);
-} else if (payCycleData && payCycleData.date) {
-  // ✅ FIX: Validate cached date is in the future
-  const cachedDate = new Date(payCycleData.date);
-  const today = getPacificTime();
-  today.setHours(0, 0, 0, 0);
-  
-  if (cachedDate >= today) {
-    // Cached date is valid (today or future)
-    nextPayday = payCycleData.date;
-    daysUntilPayday = getDaysUntilDateInPacific(nextPayday);
-    console.log('✅ Using valid cached payday:', nextPayday);
-  } else {
-    // Cached date is in the past - recalculate!
-    console.warn('❌ Cached payday is in the past:', payCycleData.date, '- recalculating...');
-    
-    // Fall through to calculation from schedules (set payCycleData to null to trigger calculation)
-    payCycleData.date = null;
+} else if (payCycleData && payCycleData.date && isStrictFuturePayday(payCycleData.date)) {
+  // Spendability works from money already in the bank. A payday that is today
+  // has already refilled the balance, so the horizon must move to the next one.
+  nextPayday = payCycleData.date;
+  daysUntilPayday = getDaysUntilDateInPacific(nextPayday);
+  console.log('✅ Using strict-future cached payday:', nextPayday);
+} else {
+  if (settingsData.nextPaydayOverride || payCycleData?.date) {
+    console.log('↪️ Ignoring today/past payday for Spendability and rolling to next refill');
   }
+  if (payCycleData) payCycleData.date = null;
 }
 
-if (!payCycleData || !payCycleData.date) {
+if (!nextPayday) {
   console.log('Spendability: Calculating payday from schedules');
 
 // ✅ FIX: Read from the ACTUAL Settings data structure
@@ -301,7 +299,11 @@ console.log('Spendability: Using schedules', {
   }
 });
 
-const result = PayCycleCalculator.calculateNextPayday(yoursSchedule, spouseSchedule);
+const result = PayCycleCalculator.calculateNextPayday(
+  yoursSchedule,
+  spouseSchedule,
+  { includeToday: false }
+);
 paydayCalcResult = result;
 
 console.log('Spendability: Payday calculation result', result);
@@ -524,21 +526,27 @@ console.log('🔍 PAYDAY CALCULATION DEBUG:', {
         nextDueDate: String(bill.dueDate || bill.nextDueDate || '').slice(0, 10)
       }));
 
-      // Use the SAME pay-cycle boundary for both the displayed bill groups and
-      // the Safe-to-Spend projection. The cycle ends the day before the user's
-      // next own money arrives (early deposit if enabled, otherwise main payday).
+      // Production-sheet semantics: Safe to Spend covers bills until the next
+      // household refill. Money arriving today is already reflected in the live
+      // bank balance, so only strictly-future pay events can end the cycle.
       const todayStrProj = new Intl.DateTimeFormat('en-CA', {
         timeZone: 'America/Los_Angeles'
       }).format(new Date());
 
-      const ownLastPay = settingsData.lastPayDate || settingsData.paySchedules?.yours?.lastPaydate;
-      const { mainDate: ownMainNext, earlyDate: ownEarlyNext } = nextOwnPaydays(
-        ownLastPay,
-        todayStrProj,
-        { earlyDepositEnabled, daysBeforePayday }
-      );
-      const ownBoundary = ownEarlyNext || ownMainNext;
-      const cycleEndStr = ownBoundary ? addDays(ownBoundary, -1) : String(nextPayday).slice(0, 10);
+      const futureRefillDates = (paydays || [])
+        .map(p => String(p.date || '').slice(0, 10))
+        .filter(date => date && date > todayStrProj)
+        .sort();
+
+      const nextRefillDate =
+        futureRefillDates[0] ||
+        (String(nextPayday || '').slice(0, 10) > todayStrProj
+          ? String(nextPayday).slice(0, 10)
+          : null);
+
+      const cycleEndStr = nextRefillDate
+        ? addDays(nextRefillDate, -1)
+        : todayStrProj;
 
       const billsBeforePaydayRaw = [];
       const billsAfterPaydayRaw = [];
@@ -611,16 +619,11 @@ console.log('🔍 PAYDAY CALCULATION DEBUG:', {
       const essentialsNeeded = weeklyEssentials * weeksUntilPayday;
 
       // ═══════════ PAY-CYCLE PROJECTION ENGINE ═══════════
-      // Day-by-day running balance from today through the day BEFORE the
-      // user's own next money arrives (early deposit if enabled, else main
-      // payday). Spouse paydays inside the window are mid-cycle income; all
-      // unpaid bills in the window (including overdue) are outflows on their
-      // dates; essentials drip daily. Safe-to-spend = the LOWEST projected
-      // dip minus the safety buffer — the spreadsheet algorithm.
-      const spouseAmt = parseFloat(
-        settingsData.paySchedules?.spouse?.amount || settingsData.spouseAmount
-      ) || 0;
-      const cycleIncomes = spousePaydaysBetween(todayStrProj, cycleEndStr, spouseAmt);
+      // Match the production spreadsheet: current live balance minus unpaid
+      // obligations through the day before the next household refill.
+      // Synthetic cushions remain optional information and do not redefine the
+      // headline Safe-to-Spend number.
+      const cycleIncomes = [];
 
       const allUnpaidCycleBills = [
         ...(unpaidBillsBeforePayday || []),
@@ -633,13 +636,13 @@ console.log('🔍 PAYDAY CALCULATION DEBUG:', {
         cycleEndStr,
         incomes: cycleIncomes,
         bills: allUnpaidCycleBills,
-        weeklyEssentials,
-        safetyBuffer,
+        weeklyEssentials: 0,
+        safetyBuffer: 0,
       });
 
       console.log('📈 PAY-CYCLE PROJECTION:', {
         cycle: `${todayStrProj} → ${cycleEndStr} (${projection.daysInCycle} days)`,
-        ownNextMoney: ownBoundary,
+        nextRefill: nextRefillDate,
         cycleIncome: projection.totalIncome,
         cycleBills: projection.totalBills,
         lowestPoint: `$${projection.minBalance} on ${projection.minDate}`,
@@ -647,14 +650,14 @@ console.log('🔍 PAYDAY CALCULATION DEBUG:', {
       });
 
       const safeToSpendToday = projection.safeToSpend;
+      const protectedSafeToSpend =
+        safeToSpendToday - (Number(safetyBuffer) || 0) - (Number(essentialsNeeded) || 0);
       
       // Calculate what will be available AFTER all deposits arrive (projection)
       const availableAfterPayday = 
         totalAvailable +
         totalPaydayAmount -        // All future deposits
-        totalBillsDue -
-        essentialsNeeded -
-        safetyBuffer;
+        totalBillsDue;
       
       // Legacy field for backward compatibility (now points to "safe to spend today")
       const safeToSpend = safeToSpendToday;
@@ -666,6 +669,7 @@ console.log('🔍 PAYDAY CALCULATION DEBUG:', {
         safetyBuffer,
         essentialsNeeded,
         safeToSpendToday,
+        protectedSafeToSpend,
         availableAfterPayday,
         paydays: paydays.map(p => ({ date: p.date, amount: p.amount, type: p.type, daysUntil: p.daysUntil }))
       });
@@ -776,7 +780,8 @@ console.log('🔍 PAYDAY CALCULATION DEBUG:', {
         billsAfterPayday: unpaidBillsAfterPayday,    // Only unpaid bills after payday
         totalBillsDue,  // Total of unpaid bills only
         safeToSpend,
-        safeToSpendToday,  // NEW: What's safe to spend RIGHT NOW
+        safeToSpendToday,  // Spreadsheet-equivalent Safe to Spend
+        protectedSafeToSpend, // Optional cushion-adjusted amount
         projection: {
           cycleEnd: cycleEndStr,
           minDate: projection.minDate,
@@ -1239,14 +1244,15 @@ console.log('🔍 PAYDAY CALCULATION DEBUG:', {
                   )}
                 </span>
               </div>
-              <div className="calc-item negative">
-                <span>- Weekly Essentials:</span>
-                <span>-{formatCurrency(financialData.weeklyEssentials)}</span>
-              </div>
-              <div className="calc-item negative">
-                <span>- Safety Buffer:</span>
-                <span>-{formatCurrency(financialData.safetyBuffer)}</span>
-              </div>
+              {(financialData.weeklyEssentials > 0 || financialData.safetyBuffer > 0) && (
+                <div className="calc-note">
+                  <small>
+                    Optional planning cushion: {formatCurrency(
+                      (financialData.weeklyEssentials || 0) + (financialData.safetyBuffer || 0)
+                    )} — shown separately and not deducted from the spreadsheet-equivalent Safe to Spend.
+                  </small>
+                </div>
+              )}
             </div>
             
             {/* Results Section */}
@@ -1255,6 +1261,12 @@ console.log('🔍 PAYDAY CALCULATION DEBUG:', {
                 <span className="result-label">Safe to Spend NOW:</span>
                 <span className="result-amount">{formatCurrency(financialData.safeToSpendToday)}</span>
               </div>
+              {(financialData.safetyBuffer > 0 || financialData.weeklyEssentials > 0) && (
+                <div className="calc-total future">
+                  <span className="result-label-small">After Optional Cushion:</span>
+                  <span className="result-amount-small">{formatCurrency(financialData.protectedSafeToSpend)}</span>
+                </div>
+              )}
               
               {financialData.paydays && financialData.paydays.length > 0 && 
                financialData.paydays.some(p => {
