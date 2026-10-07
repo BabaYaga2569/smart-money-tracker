@@ -22,91 +22,83 @@ export default function PaymentHistory() {
   const [minAmount, setMinAmount] = useState('');
   const [maxAmount, setMaxAmount] = useState('');
 
-  // Load all payments
-  useEffect(() => {
-    if (! currentUser) return;
-    
-    const loadPayments = async () => {
-      try {
-        setLoading(true);
-        
-        const eventsRef = collection(db, 'users', currentUser.uid, 'financialEvents');
-        const q = query(
-          eventsRef,
-          where('type', '==', 'bill'),
-          where('isPaid', '==', true)
-        );
-        const snapshot = await getDocs(q);
-        
-        const paymentsData = snapshot.docs.map(doc => ({
-          id: doc. id,
-          ...doc.data()
-        }));
-        
-        paymentsData.sort((a, b) => {
-          const dateA = a.paidDate ?  new Date(a.paidDate) : new Date(0);
-          const dateB = b.paidDate ? new Date(b. paidDate) : new Date(0);
-          return dateB - dateA;
-        });
-        
-        setPayments(paymentsData);
-        setFilteredPayments(paymentsData);
-        console.log(`✅ Loaded ${paymentsData.length} paid bills`);
-      } catch (error) {
-        console.error('Error loading payments:', error);
-        setPayments([]);
-        setFilteredPayments([]);
-      } finally {
-        setLoading(false);
+  const parsePaymentDate = (value) => {
+    if (!value) return new Date(0);
+
+    try {
+      if (typeof value?.toDate === 'function') return value.toDate();
+      if (value instanceof Date) return value;
+
+      if (typeof value === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(value)) {
+        const [year, month, day] = value.split('-').map(Number);
+        return new Date(year, month - 1, day);
       }
-    };
-    
+
+      const parsed = new Date(value);
+      return Number.isNaN(parsed.getTime()) ? new Date(0) : parsed;
+    } catch {
+      return new Date(0);
+    }
+  };
+
+  const sortPaymentsNewestFirst = (items) =>
+    [...items].sort(
+      (a, b) => parsePaymentDate(b.paidDate) - parsePaymentDate(a.paidDate)
+    );
+
+  const loadPayments = async ({ showLoading = true } = {}) => {
+    if (!currentUser) return [];
+
+    if (showLoading) setLoading(true);
+
+    try {
+      const eventsRef = collection(db, 'users', currentUser.uid, 'financialEvents');
+      const q = query(
+        eventsRef,
+        where('type', '==', 'bill'),
+        where('isPaid', '==', true)
+      );
+      const snapshot = await getDocs(q);
+
+      const paymentsData = sortPaymentsNewestFirst(
+        snapshot.docs.map(doc => ({
+          id: doc.id,
+          ...doc.data()
+        }))
+      );
+
+      setPayments(paymentsData);
+      setFilteredPayments(paymentsData);
+      return paymentsData;
+    } catch (error) {
+      console.error('Error loading payments:', error);
+      setPayments([]);
+      setFilteredPayments([]);
+      return [];
+    } finally {
+      if (showLoading) setLoading(false);
+    }
+  };
+
+  // Load all payments using one canonical loader/sorter.
+  useEffect(() => {
+    if (!currentUser) return;
     loadPayments();
   }, [currentUser]);
 
-  // Auto-reload when page becomes visible
+  // Auto-reload when page becomes visible using the same canonical loader.
   useEffect(() => {
-    if (! currentUser) return;
-    
+    if (!currentUser) return;
+
     const handleVisibilityChange = () => {
-      if (! document.hidden) {
-        const loadPayments = async () => {
-          try {
-            const eventsRef = collection(db, 'users', currentUser.uid, 'financialEvents');
-            const q = query(
-              eventsRef,
-              where('type', '==', 'bill'),
-              where('isPaid', '==', true)
-            );
-            const snapshot = await getDocs(q);
-            
-            const paymentsData = snapshot.docs.map(doc => ({
-              id: doc.id,
-              ...doc.data()
-            }));
-            
-            paymentsData.sort((a, b) => {
-              const dateA = a.paidDate ? new Date(a.paidDate) : new Date(0);
-              const dateB = b.paidDate ? new Date(b.paidDate) : new Date(0);
-              return dateB - dateA;
-            });
-            
-            setPayments(paymentsData);
-            setFilteredPayments(paymentsData);
-            console.log(`🔄 Auto-reloaded ${paymentsData. length} payments`);
-          } catch (error) {
-            console.error('Error reloading payments:', error);
-          }
-        };
-        
-        loadPayments();
+      if (!document.hidden) {
+        loadPayments({ showLoading: false });
       }
     };
-    
+
     document.addEventListener('visibilitychange', handleVisibilityChange);
-    
     return () => {
-      document. removeEventListener('visibilitychange', handleVisibilityChange);
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
     };
   }, [currentUser]);
 
@@ -164,117 +156,12 @@ export default function PaymentHistory() {
   const handleUnmark = async () => {
     setShowDetailsModal(false);
     setSelectedBill(null);
-    
-    if (currentUser) {
-      try {
-        const eventsRef = collection(db, 'users', currentUser.uid, 'financialEvents');
-        const q = query(
-          eventsRef,
-          where('type', '==', 'bill'),
-          where('isPaid', '==', true)
-        );
-        const snapshot = await getDocs(q);
-        
-        const paymentsData = snapshot.docs. map(doc => ({
-          id: doc.id,
-          ... doc.data()
-        }));
-        
-        paymentsData.sort((a, b) => {
-          const dateA = a.paidDate ? new Date(a.paidDate) : new Date(0);
-          const dateB = b.paidDate ?  new Date(b.paidDate) : new Date(0);
-          return dateB - dateA;
-        });
-        
-        setPayments(paymentsData);
-        setFilteredPayments(paymentsData);
-      } catch (error) {
-        console.error('Error reloading payments:', error);
-      }
-    }
+    await loadPayments({ showLoading: false });
   };
 
   const handleRefresh = async () => {
-  setLoading(true);
-  try {
-    const eventsRef = collection(db, 'users', currentUser.uid, 'financialEvents');
-    const q = query(
-      eventsRef,
-      where('type', '==', 'bill'),
-      where('isPaid', '==', true)
-    );
-    const snapshot = await getDocs(q);
-    
-    const paymentsData = snapshot.docs.map(doc => ({
-      id: doc. id,
-      ...doc.data()
-    }));
-    
-    // Enhanced sorting with better date parsing
-    paymentsData.sort((a, b) => {
-      // Parse dates more robustly
-      let dateA, dateB;
-      
-      // Try to parse a. paidDate
-      if (a.paidDate) {
-        if (typeof a.paidDate.toDate === 'function') {
-          dateA = a. paidDate.toDate();
-        } else if (a.paidDate instanceof Date) {
-          dateA = a.paidDate;
-        } else if (typeof a.paidDate === 'string') {
-          // Handle YYYY-MM-DD format
-          if (/^\d{4}-\d{2}-\d{2}$/.test(a. paidDate)) {
-            const [year, month, day] = a.paidDate.split('-');
-            dateA = new Date(parseInt(year), parseInt(month) - 1, parseInt(day));
-          } else {
-            dateA = new Date(a. paidDate);
-          }
-        } else {
-          dateA = new Date(0);
-        }
-      } else {
-        dateA = new Date(0);
-      }
-      
-      // Try to parse b.paidDate
-      if (b.paidDate) {
-        if (typeof b.paidDate.toDate === 'function') {
-          dateB = b.paidDate.toDate();
-        } else if (b.paidDate instanceof Date) {
-          dateB = b.paidDate;
-        } else if (typeof b.paidDate === 'string') {
-          // Handle YYYY-MM-DD format
-          if (/^\d{4}-\d{2}-\d{2}$/.test(b.paidDate)) {
-            const [year, month, day] = b.paidDate.split('-');
-            dateB = new Date(parseInt(year), parseInt(month) - 1, parseInt(day));
-          } else {
-            dateB = new Date(b.paidDate);
-          }
-        } else {
-          dateB = new Date(0);
-        }
-      } else {
-        dateB = new Date(0);
-      }
-      
-      // Log for debugging
-      console.log(`Comparing:  ${a.name || a.billName} (${a.paidDate}) vs ${b.name || b.billName} (${b.paidDate})`);
-      console.log(`  Parsed dates: ${dateA.toISOString()} vs ${dateB.toISOString()}`);
-      
-      // Sort descending (newest first)
-      return dateB.getTime() - dateA.getTime();
-    });
-    
-    setPayments(paymentsData);
-    setFilteredPayments(paymentsData);
-    console.log(`🔄 Manually refreshed ${paymentsData. length} payments`);
-    console.log('First 3 payments:', paymentsData.slice(0, 3).map(p => ({ name: p.name || p.billName, paidDate: p.paidDate })));
-  } catch (error) {
-    console.error('Error refreshing:', error);
-  } finally {
-    setLoading(false);
-  }
-};
+    await loadPayments();
+  };
 
   const handleExportCSV = () => {
     if (filteredPayments.length === 0) {
