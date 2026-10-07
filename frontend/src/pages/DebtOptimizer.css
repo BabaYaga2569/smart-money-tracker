@@ -796,3 +796,17 @@ html body .debt-optimizer-container .strategy-card h3 {
 html body .debt-optimizer-container .cash-flow-row.total {
   border-top-color: var(--smt-border-strong) !important;
 }
+
+
+/* Follow-up QA: readable text on dark premium surfaces */
+html body .debt-optimizer-container .action-title,
+html body .debt-optimizer-container .insight-row .category,
+html body .debt-optimizer-container .target-card-info h3,
+html body .debt-optimizer-container .benefits-list h4 {
+  color: var(--smt-text) !important;
+}
+
+html body .debt-optimizer-container .recommendation-card .reasoning,
+html body .debt-optimizer-container .benefits-list li {
+  color: var(--smt-text-2) !important;
+}
