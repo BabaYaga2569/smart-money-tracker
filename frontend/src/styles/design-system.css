@@ -18,6 +18,9 @@
   --smt-theme-hero-start: #18251f;
   --smt-theme-hero-end: #151a20;
   --smt-theme-sidebar: #111419;
+  --smt-theme-glow-opacity: .06;
+  --smt-theme-art-opacity: 0;
+  --smt-theme-metal: rgba(255,255,255,.04);
   --smt-accent: var(--smt-theme-primary);
   --smt-accent-strong: var(--smt-theme-primary);
   --smt-info: #60a5fa;
@@ -60,6 +63,9 @@
   --smt-theme-sidebar: #08101e;
   --smt-info: #5aa9ff;
   --smt-warning: #ffd028;
+  --smt-theme-glow-opacity: .16;
+  --smt-theme-art-opacity: .9;
+  --smt-theme-metal: rgba(255,208,40,.08);
 }
 
 :root[data-theme="jacksonvilleTealGold"] {
@@ -79,6 +85,9 @@
   --smt-theme-sidebar: #061316;
   --smt-info: #26d8d8;
   --smt-warning: #d7a63b;
+  --smt-theme-glow-opacity: .14;
+  --smt-theme-art-opacity: .82;
+  --smt-theme-metal: rgba(38,216,216,.07);
 }
 
 :root[data-theme="pittsburghBlackGold"] {
@@ -98,6 +107,9 @@
   --smt-theme-sidebar: #0a0a0a;
   --smt-info: #f5c842;
   --smt-warning: #ffb612;
+  --smt-theme-glow-opacity: .13;
+  --smt-theme-art-opacity: .82;
+  --smt-theme-metal: rgba(255,182,18,.08);
 }
 
 html,
@@ -235,4 +247,31 @@ body {
     gap: 14px;
     margin-bottom: 20px;
   }
+}
+
+
+/* ===== Theme Engine v2 immersive surfaces ===== */
+:root[data-theme="laBlueGold"] body,
+:root[data-theme="jacksonvilleTealGold"] body,
+:root[data-theme="pittsburghBlackGold"] body {
+  background-attachment: fixed;
+}
+
+:root[data-theme="laBlueGold"] .smt-surface,
+:root[data-theme="laBlueGold"] .smt-surface-flat,
+:root[data-theme="jacksonvilleTealGold"] .smt-surface,
+:root[data-theme="jacksonvilleTealGold"] .smt-surface-flat,
+:root[data-theme="pittsburghBlackGold"] .smt-surface,
+:root[data-theme="pittsburghBlackGold"] .smt-surface-flat {
+  box-shadow:
+    0 12px 32px rgba(0,0,0,.22),
+    inset 0 1px 0 var(--smt-theme-metal);
+}
+
+:root[data-theme="laBlueGold"] .smt-primary-button,
+:root[data-theme="jacksonvilleTealGold"] .smt-primary-button,
+:root[data-theme="pittsburghBlackGold"] .smt-primary-button {
+  box-shadow:
+    0 8px 22px rgba(var(--smt-theme-primary-rgb), .16),
+    inset 0 1px 0 rgba(255,255,255,.16);
 }
