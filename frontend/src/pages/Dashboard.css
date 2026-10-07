@@ -548,10 +548,6 @@
     padding: 22px;
   }
 
-  .dashboard-safe-link {
-    left: 22px;
-    bottom: 20px;
-  }
 
   .dashboard-key-metrics {
     grid-template-columns: 1fr;
