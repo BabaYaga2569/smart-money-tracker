@@ -202,3 +202,101 @@
     height: 100px;
   }
 }
+
+
+/* Theme Engine v2 preview signatures */
+.theme-option-signature {
+  margin-top: 7px !important;
+  color: var(--smt-text-2) !important;
+  font-size: 9px !important;
+  font-weight: 750;
+  letter-spacing: .02em;
+}
+
+.theme-preview {
+  position: relative;
+  isolation: isolate;
+}
+
+.theme-preview::before,
+.theme-preview::after {
+  content: '';
+  position: absolute;
+  pointer-events: none;
+  z-index: 1;
+}
+
+.theme-preview > * {
+  position: relative;
+  z-index: 2;
+}
+
+.theme-preview-laBlueGold::before {
+  width: 130px;
+  height: 130px;
+  right: -34px;
+  top: -68px;
+  border: 10px solid color-mix(in srgb, var(--preview-accent) 72%, transparent);
+  border-left-color: transparent;
+  border-bottom-color: transparent;
+  border-radius: 50%;
+  transform: rotate(20deg);
+  filter: drop-shadow(0 0 10px color-mix(in srgb, var(--preview-primary) 45%, transparent));
+}
+
+.theme-preview-laBlueGold::after {
+  width: 100px;
+  height: 100px;
+  right: -8px;
+  top: -54px;
+  border: 5px solid color-mix(in srgb, var(--preview-primary) 70%, transparent);
+  border-left-color: transparent;
+  border-bottom-color: transparent;
+  border-radius: 50%;
+  transform: rotate(20deg);
+}
+
+.theme-preview-jacksonvilleTealGold::before {
+  inset: 0;
+  background:
+    linear-gradient(128deg, transparent 0 54%, color-mix(in srgb, var(--preview-primary) 24%, transparent) 54% 61%, transparent 61%),
+    linear-gradient(145deg, transparent 0 67%, color-mix(in srgb, var(--preview-accent) 22%, transparent) 67% 72%, transparent 72%);
+}
+
+.theme-preview-jacksonvilleTealGold::after {
+  width: 54px;
+  height: 130px;
+  right: 12px;
+  top: -12px;
+  background: linear-gradient(180deg,
+    color-mix(in srgb, var(--preview-secondary) 36%, transparent),
+    transparent);
+  clip-path: polygon(58% 0, 100% 0, 44% 100%, 0 100%);
+  opacity: .72;
+}
+
+.theme-preview-pittsburghBlackGold::before {
+  inset: 0;
+  background:
+    repeating-linear-gradient(120deg,
+      transparent 0 20px,
+      color-mix(in srgb, white 4%, transparent) 20px 21px),
+    linear-gradient(135deg,
+      transparent 0 66%,
+      color-mix(in srgb, var(--preview-accent) 24%, transparent) 66% 72%,
+      transparent 72%);
+}
+
+.theme-preview-pittsburghBlackGold::after {
+  width: 8px;
+  height: 150%;
+  right: 42px;
+  top: -22px;
+  background: linear-gradient(180deg,
+    color-mix(in srgb, var(--preview-accent) 92%, white),
+    color-mix(in srgb, var(--preview-accent) 36%, transparent));
+  transform: rotate(28deg);
+  box-shadow:
+    18px 0 0 color-mix(in srgb, var(--preview-accent) 18%, transparent),
+    -18px 0 0 color-mix(in srgb, white 5%, transparent);
+}
