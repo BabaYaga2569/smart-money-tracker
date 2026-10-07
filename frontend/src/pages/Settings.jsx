@@ -8,6 +8,7 @@ import './Settings.css';
 import { useAuth } from '../contexts/AuthContext';
 import { ensureSettingsDocument } from '../utils/settingsUtils';
 import { SettingsSchemaManager } from '../utils/SettingsSchemaManager';
+import ThemePicker from '../components/ThemePicker';
 
 
 const Settings = () => {
@@ -427,6 +428,7 @@ const Settings = () => {
       </div>
 
       <div className="settings-tiles-grid">
+        <ThemePicker />
         
         {/* Tile 1: Personal Information */}
         <div className="settings-tile">
