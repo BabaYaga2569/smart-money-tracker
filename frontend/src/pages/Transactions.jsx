@@ -1764,6 +1764,7 @@ useEffect(() => {
   };
 
 
+  // Keep monthly analytics aligned with Debt Optimizer's posted/non-transfer rules.
   const getTransactionCategory = (transaction = {}) =>
     transaction.category ||
     transaction.personal_finance_category?.primary ||
