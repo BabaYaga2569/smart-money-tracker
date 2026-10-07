@@ -446,3 +446,42 @@ html body .bill-doctor-page h2,
 html body .bill-doctor-page h3 { color:var(--smt-text)!important; }
 html body .bill-doctor-page button { border-radius:10px!important; }
 @media(max-width:700px){ html body .bill-doctor-page{padding:18px 14px 30px;} }
+
+
+/* ===== Premium QA: Bill Doctor theme residue cleanup ===== */
+html body .bill-doctor-page .doctor-run-section,
+html body .bill-doctor-page .doctor-section,
+html body .bill-doctor-page .doctor-store-card,
+html body .bill-doctor-page .doctor-issue-card,
+html body .bill-doctor-page .doctor-next-steps > div {
+  background: var(--smt-surface) !important;
+  border: 1px solid var(--smt-border) !important;
+  box-shadow:
+    0 10px 28px rgba(0,0,0,.16),
+    inset 0 1px 0 var(--smt-theme-metal) !important;
+}
+
+html body .bill-doctor-page .doctor-next-steps span,
+html body .bill-doctor-page .doctor-meta,
+html body .bill-doctor-page .doctor-description {
+  color: var(--smt-text-3) !important;
+}
+
+html body .bill-doctor-page .doctor-run-btn {
+  background: var(--smt-theme-primary) !important;
+  color: #07100d !important;
+  border-color: rgba(var(--smt-theme-primary-rgb), .34) !important;
+  box-shadow: none !important;
+  text-shadow: none !important;
+}
+
+html body .bill-doctor-page .doctor-run-btn:hover {
+  background: var(--smt-theme-secondary) !important;
+}
+
+html body .bill-doctor-page .doctor-flow-arrow,
+html body .bill-doctor-page .doctor-count,
+html body .bill-doctor-page .doctor-highlight {
+  color: var(--smt-theme-accent) !important;
+  text-shadow: none !important;
+}

@@ -454,3 +454,43 @@ html body .reports-container .stat-card:hover,
 html body .reports-container .insight-card:hover { border-color:var(--smt-border-strong)!important; background:var(--smt-surface-2)!important; }
 html body .reports-container .stat-value { color:var(--smt-theme-accent)!important; }
 @media(max-width:700px){ html body .reports-container{padding:18px 14px 30px;} }
+
+
+/* ===== Premium QA: Reports theme residue cleanup ===== */
+html body .reports-container .stat-card,
+html body .reports-container .chart-card,
+html body .reports-container .category-table-section,
+html body .reports-container .top-expenses-section,
+html body .reports-container .insights-section,
+html body .reports-container .insight-card {
+  box-shadow:
+    0 10px 28px rgba(0,0,0,.18),
+    inset 0 1px 0 var(--smt-theme-metal) !important;
+}
+
+html body .reports-container .stat-label,
+html body .reports-container .chart-subtitle,
+html body .reports-container .expense-details,
+html body .reports-container .insight-description {
+  color: var(--smt-text-3) !important;
+}
+
+html body .reports-container .stat-value,
+html body .reports-container .expense-amount,
+html body .reports-container .category-amount {
+  color: var(--smt-theme-accent) !important;
+  text-shadow: none !important;
+}
+
+html body .reports-container .year-selector,
+html body .reports-container .export-btn {
+  background: var(--smt-surface-2) !important;
+  color: var(--smt-text) !important;
+  border-color: var(--smt-border) !important;
+  box-shadow: none !important;
+}
+
+html body .reports-container .export-btn:hover {
+  background: var(--smt-surface-hover) !important;
+  border-color: var(--smt-border-strong) !important;
+}
