@@ -277,12 +277,19 @@ Expected output:
 
 See [README-FIREBASE-DEPLOYMENT.md](README-FIREBASE-DEPLOYMENT.md) for Firebase deployment instructions.
 
-### Frontend Deployment (Netlify/Vercel)
+### Frontend Deployment (Canonical: Netlify)
+
+**Production frontend:** `https://smart-money-tracker-v2.netlify.app`
+
+Netlify is the canonical production host for the Smart Money Tracker frontend. Other historical preview/hosting deployments, including Vercel, are non-canonical and should not be used to judge production freshness.
+
 ```bash
 cd frontend
 npm run build
-# Deploy dist/ directory
+# Netlify publishes frontend/dist via netlify.toml
 ```
+
+See `docs/PRODUCTION_FRONTEND.md` for the deployment source-of-truth.
 
 ### Backend Deployment (Render/Heroku)
 ```bash
