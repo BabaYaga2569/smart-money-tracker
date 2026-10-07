@@ -272,8 +272,11 @@ try {
     0
   );
 
+  // Safe-to-Spend must start from the same current available bank balance
+  // as Spendability. Projected cash is a separate forecast metric and can
+  // double-count transaction activity already reflected in Plaid balances.
   calculatedSafeToSpend =
-    (totalProjectedBalance || totalBalance) - totalBillsDue;
+    totalBalance - totalBillsDue;
 } catch (error) {
   console.error('Error calculating dashboard spendability:', error);
   calculatedSafeToSpend = 0;
