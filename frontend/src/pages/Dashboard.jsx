@@ -476,13 +476,19 @@ setDashboardData({
     'Transaction';
 
   const plaidHealthy = plaidStatus.isConnected || hasPlaidAccounts;
+  const hour = new Date().getHours();
+  const greeting = hour < 12
+    ? 'Good morning'
+    : hour < 17
+      ? 'Good afternoon'
+      : 'Good evening';
 
   return (
     <div className="dashboard-container smt-page">
       <header className="dashboard-topbar">
         <div className="dashboard-title-block">
           <div className="dashboard-eyebrow">Smart Money Tracker</div>
-          <h1>Good evening</h1>
+          <h1>{greeting}</h1>
           <p>Your money, bills, and activity at a glance.</p>
         </div>
 
