@@ -665,3 +665,24 @@
     padding: 15px;
   }
 }
+/* ===== Premium themed Accounts foundation ===== */
+html body .accounts-container {
+  width: 100%; max-width: var(--smt-content-max); margin: 0 auto;
+  padding: 28px var(--smt-page-gutter) 42px; background: transparent !important; color: var(--smt-text);
+}
+html body .accounts-container .page-header h2 { color: var(--smt-text) !important; font-size: clamp(25px,2.4vw,32px); letter-spacing:-.03em; }
+html body .accounts-container .page-header p { color: var(--smt-text-3) !important; }
+html body .accounts-container .accounts-grid { gap: 10px !important; }
+html body .accounts-container .account-card,
+html body .accounts-container .summary-card,
+html body .accounts-container .help-section {
+  background: var(--smt-surface) !important; border: 1px solid var(--smt-border) !important;
+  border-radius: 14px !important; box-shadow: none !important;
+}
+html body .accounts-container .account-card:hover { background: var(--smt-surface-2) !important; border-color: var(--smt-border-strong) !important; }
+html body .accounts-container .account-card h3,
+html body .accounts-container .account-name { color: var(--smt-text) !important; }
+html body .accounts-container .account-balance,
+html body .accounts-container .summary-value { color: var(--smt-theme-accent) !important; }
+html body .accounts-container button { border-radius: 10px !important; }
+@media(max-width:700px){ html body .accounts-container{padding:18px 14px 30px;} }

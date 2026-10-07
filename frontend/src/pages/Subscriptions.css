@@ -455,3 +455,21 @@
     width: 100%;
   }
 }
+
+/* ===== Premium themed Subscriptions foundation ===== */
+html body .subscriptions-page {
+  width:100%; max-width:var(--smt-content-max); margin:0 auto;
+  padding:28px var(--smt-page-gutter) 42px; background:transparent!important; color:var(--smt-text);
+}
+html body .subscriptions-page .page-header h2 { color:var(--smt-text)!important; font-size:clamp(25px,2.4vw,32px); letter-spacing:-.03em; }
+html body .subscriptions-page .page-header p { color:var(--smt-text-3)!important; }
+html body .subscriptions-page .subscription-summary { gap:10px!important; }
+html body .subscriptions-page .summary-card,
+html body .subscriptions-page .subscription-card {
+  background:var(--smt-surface)!important; border:1px solid var(--smt-border)!important;
+  border-radius:14px!important; box-shadow:none!important;
+}
+html body .subscriptions-page .subscription-card:hover { background:var(--smt-surface-2)!important; border-color:var(--smt-border-strong)!important; }
+html body .subscriptions-page .summary-value { color:var(--smt-theme-accent)!important; }
+html body .subscriptions-page .subscription-card-header h3 { color:var(--smt-text)!important; }
+@media(max-width:700px){ html body .subscriptions-page{padding:18px 14px 30px;} }

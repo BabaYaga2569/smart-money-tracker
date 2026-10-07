@@ -739,3 +739,31 @@
     opacity: 1;
   }
 }
+/* ===== Premium themed Spendability foundation ===== */
+html body .spendability-container {
+  width:100%; max-width:var(--smt-content-max); margin:0 auto;
+  padding:28px var(--smt-page-gutter) 42px; background:transparent !important; color:var(--smt-text);
+}
+html body .spendability-container .page-header h2 { color:var(--smt-text)!important; font-size:clamp(25px,2.4vw,32px); letter-spacing:-.03em; }
+html body .spendability-container .page-header p { color:var(--smt-text-3)!important; }
+html body .spendability-container .tiles-grid { gap:10px!important; }
+html body .spendability-container .spend-input-section,
+html body .spendability-container .spend-now-section,
+html body .spendability-container .spend-future-section,
+html body .spendability-container .calc-section,
+html body .spendability-container .bills-tile,
+html body .spendability-container [class*="tile"] {
+  border-color:var(--smt-border)!important; background:var(--smt-surface)!important;
+  border-radius:14px!important; box-shadow:none!important;
+}
+html body .spendability-container .calc-section-title,
+html body .spendability-container .payday-header,
+html body .spendability-container .bills-tile-header { color:var(--smt-text)!important; }
+html body .spendability-container input,
+html body .spendability-container select {
+  background:var(--smt-surface-2)!important; color:var(--smt-text)!important;
+  border-color:var(--smt-border)!important; border-radius:9px!important;
+}
+html body .spendability-container input:focus,
+html body .spendability-container select:focus { border-color:rgba(var(--smt-theme-primary-rgb),.42)!important; }
+@media(max-width:700px){ html body .spendability-container{padding:18px 14px 30px;} }
