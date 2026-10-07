@@ -998,26 +998,20 @@ html body .layout .main-content .bills-container button[class*="delete"] {
   background: #00b4ff !important;
 }
 
-/* NUCLEAR OPTION - ELIMINATE ALL WHITE BACKGROUNDS */
-.bill-card *,
-.bill-item *,
-.bill-details *,
-.bill-main-info *,
-.bill-amount-section *,
-.bill-status-section * {
-  background: transparent !important;
-  background-color: transparent !important;
-}
-
-/* Force dark backgrounds everywhere in bills */
-[class*="bill"] {
+/* Bills surface backgrounds
+   Keep the card itself dark, but do not blanket-force every descendant or
+   every class containing "bill" to a dark/transparent background. Those
+   legacy selectors were erasing action-button colors and other intentional UI. */
+.bill-card,
+.bill-item {
   background: #1a1a1a !important;
 }
 
-/* Override any inline styles */
-.bill-card[style*="background"],
-.bill-item[style*="background"] {
-  background: #1a1a1a !important;
+.bill-details,
+.bill-main-info,
+.bill-amount-section,
+.bill-status-section {
+  background: transparent;
 }
 
 /* ===== DYNAMIC PAYMENT WORKFLOW ANIMATIONS ===== */
