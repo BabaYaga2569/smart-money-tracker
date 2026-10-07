@@ -6,9 +6,7 @@ import { calculateTotalProjectedBalance } from '../utils/BalanceCalculator';
 import PlaidConnectionManager from '../utils/PlaidConnectionManager';
 import './Dashboard.css';
 import { useAuth } from '../contexts/AuthContext';
-import DashboardTileCreditCard from "../components/DashboardTileCreditCard";
 import { useTransactionsQuery } from '../hooks/useFirebaseQuery';
-import HealthStatus from '../components/HealthStatus';
 import { getVisiblePlaidAccounts, isDepositoryAccount } from '../utils/accountVisibility';
 import { visibleBillOccurrences } from '../utils/billVisibility';
 
@@ -37,7 +35,13 @@ const Dashboard = () => {
   daysUntilPayday: 0,
   monthlyIncome: 0,
   monthlyExpenses: 0,
-  transactionCount: 0
+  transactionCount: 0,
+  dueTodayCount: 0,
+  dueNext7Count: 0,
+  remainingMonthAmount: 0,
+  overdueCount: 0,
+  upcomingBills: [],
+  recentTransactions: []
 });
 
   // ✅ React Query - Cached transactions query (instant on subsequent visits!)
@@ -159,6 +163,43 @@ const recurringPatterns = recurringPatternsSnapshot.docs.map(doc => ({ id: doc.i
 const billsDueSoon = bills.length;
 const recurringCount = recurringPatterns.filter(pattern => pattern.status === 'active').length;
 
+const nowLocal = new Date();
+const todayYmd = [
+  nowLocal.getFullYear(),
+  String(nowLocal.getMonth() + 1).padStart(2, '0'),
+  String(nowLocal.getDate()).padStart(2, '0')
+].join('-');
+
+const next7 = new Date(nowLocal);
+next7.setDate(next7.getDate() + 7);
+const next7Ymd = [
+  next7.getFullYear(),
+  String(next7.getMonth() + 1).padStart(2, '0'),
+  String(next7.getDate()).padStart(2, '0')
+].join('-');
+
+const currentMonthPrefix = todayYmd.slice(0, 7);
+const billDueDate = bill => String(
+  bill.dueDate || bill.nextDueDate || bill.nextOccurrence || ''
+).slice(0, 10);
+
+const dueTodayCount = bills.filter(bill => billDueDate(bill) === todayYmd).length;
+const dueNext7Count = bills.filter(bill => {
+  const due = billDueDate(bill);
+  return due && due >= todayYmd && due <= next7Ymd;
+}).length;
+const overdueCount = bills.filter(bill => {
+  const due = billDueDate(bill);
+  return due && due < todayYmd;
+}).length;
+const remainingMonthAmount = bills
+  .filter(bill => billDueDate(bill).startsWith(currentMonthPrefix))
+  .reduce((sum, bill) => sum + (Number(bill.amount) || 0), 0);
+const upcomingBills = [...bills]
+  .filter(bill => billDueDate(bill))
+  .sort((a, b) => billDueDate(a).localeCompare(billDueDate(b)))
+  .slice(0, 6);
+
 // Load goals count
 const goalsRef = collection(db, 'users', currentUser.uid, 'goals');
 const goalsSnapshot = await getDocs(goalsRef);
@@ -200,6 +241,7 @@ try {
 
 // Calculate spendability (same logic as Spendability page)
 let calculatedSafeToSpend = 0;
+let calculatedDaysUntilPayday = Number(data.daysUntilPayday || 0);
 try {
   // Get pay cycle data for bills filtering
   const payCycleDocRef = doc(db, 'users', currentUser.uid, 'financial', 'payCycle');
@@ -214,10 +256,12 @@ try {
     nextPaydayDate = new Date(data.nextPaydayOverride);
     const { getDaysUntilDateInPacific } = await import('../utils/DateUtils');
     daysUntilPayday = getDaysUntilDateInPacific(nextPaydayDate);
+    calculatedDaysUntilPayday = daysUntilPayday;
   } else if (payCycleDocSnap.exists() && payCycleDocSnap.data().date) {
     const payCycleData = payCycleDocSnap.data();
     nextPaydayDate = new Date(payCycleData.date);
     daysUntilPayday = payCycleData.daysUntil || 0;
+    calculatedDaysUntilPayday = daysUntilPayday;
   } else if (data.paySchedules) {
     // Fallback: Calculate from pay schedules if no cached data
     const { PayCycleCalculator } = await import('../utils/PayCycleCalculator');
@@ -233,6 +277,7 @@ try {
     );
     nextPaydayDate = new Date(result.date);
     daysUntilPayday = result.daysUntil;
+    calculatedDaysUntilPayday = daysUntilPayday;
   }
   
   // Calculate bills due before next payday
@@ -271,12 +316,18 @@ setDashboardData({
   recurringCount: recurringCount,                // ✅ Calculated from Firebase
   subscriptionsCount: subscriptionsCount,        // ✅ Calculated from Firebase
   subscriptionsBurn: subscriptionsBurn,          // ✅ Calculated from Firebase
-  daysUntilPayday: data.daysUntilPayday || 0,   // ✅ From Firebase or 0
+  daysUntilPayday: calculatedDaysUntilPayday,
   monthlyIncome: data.monthlyIncome || 0,       // ✅ From Firebase or 0
   monthlyExpenses: data.monthlyExpenses || 0,   // ✅ From Firebase or 0
   transactionCount: transactionCount,
-  goalsCount: goalsCount,                        // ✅ Add this for Goals tile
-  categoriesCount: categoriesCount               // ✅ Add this for Categories tile
+  goalsCount: goalsCount,
+  categoriesCount: categoriesCount,
+  dueTodayCount,
+  dueNext7Count,
+  remainingMonthAmount,
+  overdueCount,
+  upcomingBills,
+  recentTransactions: transactions.slice(0, 6)
 });
       } else {
         // Firebase connected but no data - use defaults
@@ -352,197 +403,274 @@ setDashboardData({
     }).format(amount);
   };
 
-  const tiles = [
+  const shortcuts = [
     {
       title: 'Accounts',
       icon: '💳',
-      value: `${dashboardData.accountCount} accounts`,
-      subtitle: dashboardData.totalBalance !== dashboardData.totalProjectedBalance
-        ? `Live: ${formatCurrency(dashboardData.totalBalance)} | Projected: ${formatCurrency(dashboardData.totalProjectedBalance)}`
-        : `Total: ${formatCurrency(dashboardData.totalBalance)}`,
-      path: '/accounts',
-      color: 'blue',
-      tooltip: 'Live balance from bank, Projected includes manual transactions'
+      value: `${dashboardData.accountCount} connected`,
+      subtitle: formatCurrency(dashboardData.totalBalance),
+      path: '/accounts'
     },
-    {
-      title: 'Transactions',
-      icon: '📊',
-      value: `${dashboardData.transactionCount} this month`,
-      subtitle: 'Recent activity',
-      path: '/transactions',
-      color: 'green'
-    },
-    {
-      title: 'Spendability',
-      icon: '💰',
-      value: formatCurrency(dashboardData.safeToSpend),
-      subtitle: 'Safe to spend',
-      path: '/spendability',
-      color: 'yellow'
-    },
-    {
-      title: 'Bills',
-      icon: '🧾',
-      value: `${dashboardData.billsDueSoon} open bills`,
-      subtitle: 'Due, overdue & upcoming',
-      path: '/bills',
-      color: 'red'
-    },
-    {
-  title: 'Credit Cards',
-  icon: '💳',
-  value: 'View balances & payoffs',
-  subtitle: 'Snowball + Utilization',
-  path: '/creditcards',
-  color: 'emerald', // match your theme
-  tooltip: 'Live credit card data from Plaid'
-},
     {
       title: 'Recurring',
-      icon: '🔄',
+      icon: '🔁',
       value: `${dashboardData.recurringCount} active`,
-      subtitle: 'Auto-payments',
-      path: '/recurring',
-      color: 'purple'
+      subtitle: 'Schedules & installments',
+      path: '/recurring'
+    },
+    {
+      title: 'Credit Cards',
+      icon: '💳',
+      value: 'Balances & payoff',
+      subtitle: 'Utilization and snowball',
+      path: '/creditcards'
     },
     {
       title: 'Subscriptions',
-      icon: '💳',
+      icon: '▶️',
       value: `${dashboardData.subscriptionsCount || 0} active`,
       subtitle: `${formatCurrency(dashboardData.subscriptionsBurn || 0)}/mo`,
-      path: '/subscriptions',
-      color: 'cyan'
+      path: '/subscriptions'
+    },
+    {
+      title: 'Cash Flow',
+      icon: '↕️',
+      value: formatCurrency(dashboardData.monthlyIncome - dashboardData.monthlyExpenses),
+      subtitle: 'Monthly net',
+      path: '/cashflow'
     },
     {
       title: 'Goals',
       icon: '🎯',
-      value: `${dashboardData.goalsCount || 0} in progress`,  // ✅ Real data
+      value: `${dashboardData.goalsCount || 0} in progress`,
       subtitle: 'Financial targets',
-      path: '/goals',
-      color: 'orange'
+      path: '/goals'
     },
     {
-      title: 'Categories',
-      icon: '🏷️',
-      value: `${dashboardData.categoriesCount || 0} categories`,
-      subtitle: 'Spending breakdown',
-      path: '/categories',
-      color: 'pink'
-    },
-    {
-      title: 'Cash Flow',
+      title: 'Reports',
       icon: '📈',
-      value: formatCurrency(dashboardData.monthlyIncome - dashboardData.monthlyExpenses),
-      subtitle: 'Monthly net income',
-      path: '/cashflow',
-      color: 'teal'
-    },
-    {
-      title: 'Pay Cycle',
-      icon: '📅',
-      value: `${dashboardData.daysUntilPayday} days`,
-      subtitle: 'Until next payday',
-      path: '/paycycle',
-      color: 'indigo'
+      value: 'Insights',
+      subtitle: 'Trends and summaries',
+      path: '/reports'
     }
   ];
 
-  // Always show tiles, even when loading
+  const formatShortDate = (value) => {
+    if (!value) return 'No date';
+    const normalized = String(value).slice(0, 10);
+    const parts = normalized.split('-');
+    if (parts.length !== 3) return normalized;
+    const [year, month, day] = parts.map(Number);
+    const date = new Date(year, month - 1, day);
+    return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+  };
+
+  const billDueDate = (bill) =>
+    bill?.dueDate || bill?.nextDueDate || bill?.nextOccurrence || '';
+
+  const transactionName = (transaction) =>
+    transaction?.merchant_name ||
+    transaction?.merchantName ||
+    transaction?.name ||
+    transaction?.description ||
+    'Transaction';
+
+  const plaidHealthy = plaidStatus.isConnected || hasPlaidAccounts;
+  const hour = new Date().getHours();
+  const greeting = hour < 12
+    ? 'Good morning'
+    : hour < 17
+      ? 'Good afternoon'
+      : 'Good evening';
+
   return (
-    <div className="dashboard-container">
-      <div className="page-header">
-        <h2>💰 Smart Money Tracker</h2>
-        <p>Your complete financial overview</p>
-        <div className="backend-status" style={{ display: 'flex', alignItems: 'center', gap: '20px' }}>
-          <div style={{ 
-            display: 'flex', 
-            alignItems: 'center', 
-            gap: '8px',
-            padding: '6px 12px',
-            borderRadius: '6px',
-            background: firebaseConnected ? 'rgba(16, 185, 129, 0.1)' : 'rgba(251, 191, 36, 0.1)',
-            border: `1px solid ${firebaseConnected ? 'rgba(16, 185, 129, 0.3)' : 'rgba(251, 191, 36, 0.3)'}`
-          }}>
-            <span className={`status-indicator ${firebaseConnected ? 'online' : 'offline'}`}></span>
-            <span style={{ 
-              fontSize: '13px', 
-              fontWeight: '500',
-              color: firebaseConnected ? '#059669' : '#d97706'
-            }}>
-              Firebase: {loading ? 'Loading...' : firebaseConnected ? 'Connected' : 'Offline'}
-            </span>
-          </div>
-          <div style={{ 
-            display: 'flex', 
-            alignItems: 'center', 
-            gap: '8px',
-            padding: '6px 12px',
-            borderRadius: '6px',
-            background: (plaidStatus.isConnected || hasPlaidAccounts) ? 'rgba(16, 185, 129, 0.1)' : (plaidStatus.hasError ? 'rgba(239, 68, 68, 0.1)' : 'rgba(251, 191, 36, 0.1)'),
-            border: `1px solid ${(plaidStatus.isConnected || hasPlaidAccounts) ? 'rgba(16, 185, 129, 0.3)' : (plaidStatus.hasError ? 'rgba(239, 68, 68, 0.3)' : 'rgba(251, 191, 36, 0.3)')}`
-          }}>
-            <span style={{ fontSize: '12px' }}>
-              {(plaidStatus.isConnected || hasPlaidAccounts) ? '✅' : (plaidStatus.hasError ? '❌' : '⚠️')}
-            </span>
-            <span style={{ 
-              fontSize: '13px', 
-              fontWeight: '500',
-              color: (plaidStatus.isConnected || hasPlaidAccounts) ? '#059669' : (plaidStatus.hasError ? '#dc2626' : '#d97706')
-            }}
+    <div className="dashboard-container smt-page">
+      <header className="dashboard-topbar">
+        <div className="dashboard-title-block">
+          <div className="dashboard-eyebrow">Smart Money Tracker</div>
+          <h1>{greeting}</h1>
+          <p>Your money, bills, and activity at a glance.</p>
+        </div>
+
+        <div className="dashboard-connection-status" aria-label="Connection status">
+          <span className={`connection-pill ${firebaseConnected ? 'healthy' : 'warning'}`}>
+            <span className="connection-dot" />
+            {loading ? 'Loading data' : firebaseConnected ? 'Data connected' : 'Data offline'}
+          </span>
+          <button
+            type="button"
+            className={`connection-pill connection-button ${plaidHealthy ? 'healthy' : plaidStatus.hasError ? 'danger' : 'warning'}`}
+            onClick={() => !plaidHealthy && navigate('/accounts')}
             title={plaidStatus.hasError ? PlaidConnectionManager.getErrorMessage() : ''}
-            >
-              Plaid: {plaidStatus.isConnected || hasPlaidAccounts ? 'Connected' : (plaidStatus.hasError ? 'Error' : 'Not Connected')}
-            </span>
-            {!plaidStatus.isConnected && !hasPlaidAccounts && !loading && (
-              <button
-                onClick={() => navigate('/accounts')}
-                style={{
-                  background: plaidStatus.hasError ? '#dc2626' : '#d97706',
-                  color: '#fff',
-                  border: 'none',
-                  borderRadius: '4px',
-                  padding: '4px 8px',
-                  fontSize: '11px',
-                  fontWeight: '600',
-                  cursor: 'pointer',
-                  marginLeft: '4px'
-                }}
-                title={plaidStatus.hasError ? 'Click to view error details' : 'Connect your bank account'}
-              >
-                {plaidStatus.hasError ? 'Fix' : 'Connect'}
-              </button>
+          >
+            <span className="connection-dot" />
+            {plaidHealthy ? 'Banks connected' : plaidStatus.hasError ? 'Bank connection issue' : 'Connect banks'}
+          </button>
+        </div>
+      </header>
+
+      <section className="dashboard-hero-grid">
+        <button
+          type="button"
+          className="dashboard-safe-card"
+          onClick={() => navigate('/spendability')}
+        >
+          <div className="dashboard-card-kicker">Safe to spend</div>
+          <div className="dashboard-safe-value">
+            {loading ? '—' : formatCurrency(dashboardData.safeToSpend)}
+          </div>
+          <div className="dashboard-safe-caption">
+            {dashboardData.daysUntilPayday > 0
+              ? `Available until payday in ${dashboardData.daysUntilPayday} day${dashboardData.daysUntilPayday === 1 ? '' : 's'}`
+              : 'Available after upcoming obligations'}
+          </div>
+          <div className="dashboard-safe-link">Open Spendability <span>→</span></div>
+        </button>
+
+        <div className="dashboard-key-metrics">
+          <button type="button" className="dashboard-metric-card" onClick={() => navigate('/accounts')}>
+            <span>Projected cash</span>
+            <strong>{loading ? '—' : formatCurrency(dashboardData.totalProjectedBalance)}</strong>
+            <small>{dashboardData.accountCount} account{dashboardData.accountCount === 1 ? '' : 's'}</small>
+          </button>
+
+          <button type="button" className="dashboard-metric-card" onClick={() => navigate('/bills')}>
+            <span>Open bills</span>
+            <strong>{loading ? '—' : dashboardData.billsDueSoon}</strong>
+            <small>{formatCurrency(dashboardData.remainingMonthAmount)} remaining this month</small>
+          </button>
+
+          <button type="button" className="dashboard-metric-card" onClick={() => navigate('/paycycle')}>
+            <span>Next payday</span>
+            <strong>
+              {loading ? '—' : dashboardData.daysUntilPayday === 0 ? 'Today / due' : `${dashboardData.daysUntilPayday} days`}
+            </strong>
+            <small>Pay-cycle planning</small>
+          </button>
+        </div>
+      </section>
+
+      <section className="dashboard-attention-strip" aria-label="Bills needing attention">
+        <button type="button" onClick={() => navigate('/bills')}>
+          <span className="attention-number">{dashboardData.dueTodayCount}</span>
+          <span className="attention-label">Due today</span>
+        </button>
+        <button type="button" onClick={() => navigate('/bills')}>
+          <span className={`attention-number ${dashboardData.overdueCount > 0 ? 'danger' : ''}`}>
+            {dashboardData.overdueCount}
+          </span>
+          <span className="attention-label">Overdue</span>
+        </button>
+        <button type="button" onClick={() => navigate('/bills')}>
+          <span className="attention-number">{dashboardData.dueNext7Count}</span>
+          <span className="attention-label">Due in 7 days</span>
+        </button>
+        <button type="button" onClick={() => navigate('/transactions')}>
+          <span className="attention-number">{dashboardData.transactionCount}</span>
+          <span className="attention-label">Transactions this month</span>
+        </button>
+      </section>
+
+      <section className="dashboard-main-grid">
+        <div className="dashboard-panel">
+          <div className="dashboard-section-header">
+            <div>
+              <span className="dashboard-section-kicker">Coming up</span>
+              <h2>Upcoming bills</h2>
+            </div>
+            <button type="button" onClick={() => navigate('/bills')}>View all</button>
+          </div>
+
+          <div className="dashboard-list">
+            {dashboardData.upcomingBills.length > 0 ? (
+              dashboardData.upcomingBills.map((bill) => (
+                <button
+                  type="button"
+                  className="dashboard-list-row"
+                  key={bill.id}
+                  onClick={() => navigate('/bills')}
+                >
+                  <div className="dashboard-list-icon">🧾</div>
+                  <div className="dashboard-list-copy">
+                    <strong>{bill.name || 'Unnamed bill'}</strong>
+                    <span>{formatShortDate(billDueDate(bill))} · {bill.category || 'Bill'}</span>
+                  </div>
+                  <div className="dashboard-list-amount">
+                    {formatCurrency(Number(bill.amount) || 0)}
+                  </div>
+                </button>
+              ))
+            ) : (
+              <div className="dashboard-empty">No upcoming bill occurrences.</div>
             )}
           </div>
         </div>
-      </div>
 
-      {/* Health Status Widget */}
-      <div className="health-status-container">
-        <HealthStatus />
-      </div>
-
-      <div className="dashboard-tiles-grid">
-        {tiles.map((tile, index) => (
-          <div 
-            key={index} 
-            className={`dashboard-tile ${tile.color} ${loading ? 'loading' : ''}`}
-            onClick={() => navigate(tile.path)}
-            title={tile.tooltip || ''}
-          >
-            <div className="tile-header">
-              <div className="tile-icon">{tile.icon}</div>
-              <h3>{tile.title}</h3>
+        <div className="dashboard-panel">
+          <div className="dashboard-section-header">
+            <div>
+              <span className="dashboard-section-kicker">Activity</span>
+              <h2>Recent transactions</h2>
             </div>
-            <div className="tile-content">
-              <div className="tile-value">{tile.value}</div>
-              <div className="tile-subtitle">{tile.subtitle}</div>
-            </div>
-            <button className="tile-button">View All</button>
+            <button type="button" onClick={() => navigate('/transactions')}>View all</button>
           </div>
-        ))}
-      </div>
-      
-      {/* Notification */}
+
+          <div className="dashboard-list">
+            {dashboardData.recentTransactions.length > 0 ? (
+              dashboardData.recentTransactions.map((transaction) => (
+                <button
+                  type="button"
+                  className="dashboard-list-row"
+                  key={transaction.id}
+                  onClick={() => navigate('/transactions')}
+                >
+                  <div className="dashboard-list-icon">↕️</div>
+                  <div className="dashboard-list-copy">
+                    <strong>{transactionName(transaction)}</strong>
+                    <span>
+                      {formatShortDate(transaction.date)} · {transaction.category || transaction.account_name || 'Transaction'}
+                    </span>
+                  </div>
+                  <div className="dashboard-list-amount">
+                    {formatCurrency(Math.abs(Number(transaction.amount) || 0))}
+                  </div>
+                </button>
+              ))
+            ) : (
+              <div className="dashboard-empty">No recent transactions loaded.</div>
+            )}
+          </div>
+        </div>
+      </section>
+
+      <section className="dashboard-shortcuts-section">
+        <div className="dashboard-section-header standalone">
+          <div>
+            <span className="dashboard-section-kicker">Explore</span>
+            <h2>Financial tools</h2>
+          </div>
+        </div>
+
+        <div className="dashboard-shortcuts-grid">
+          {shortcuts.map((shortcut) => (
+            <button
+              type="button"
+              key={shortcut.title}
+              className="dashboard-shortcut"
+              onClick={() => navigate(shortcut.path)}
+            >
+              <div className="dashboard-shortcut-icon">{shortcut.icon}</div>
+              <div>
+                <strong>{shortcut.title}</strong>
+                <span>{shortcut.value}</span>
+                <small>{shortcut.subtitle}</small>
+              </div>
+              <div className="dashboard-shortcut-arrow">→</div>
+            </button>
+          ))}
+        </div>
+      </section>
+
       {notification.message && (
         <div className={`notification ${notification.type}`}>
           {notification.message}
