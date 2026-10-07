@@ -525,40 +525,53 @@ console.log('🔍 PAYDAY CALCULATION DEBUG:', {
       // Canonical bill paid/unpaid state comes from the backend Bill Engine.
       // Spendability does not run its own transaction matcher.
 
-      // Add default recurrence if missing
-      const billsWithRecurrence = allBills.map(bill => ({
+      // Canonical financialEvents occurrences already have their authoritative due dates.
+      // Do not recalculate or advance occurrence dates in the browser.
+      const processedBills = allBills.map(bill => ({
         ...bill,
-        recurrence: bill.recurrence || 'monthly'
+        recurrence: bill.recurrence || 'monthly',
+        nextDueDate: String(bill.dueDate || bill.nextDueDate || '').slice(0, 10)
       }));
 
-      const processedBills = RecurringBillManager.processBills(billsWithRecurrence);
+      // Use the SAME pay-cycle boundary for both the displayed bill groups and
+      // the Safe-to-Spend projection. The cycle ends the day before the user's
+      // next own money arrives (early deposit if enabled, otherwise main payday).
+      const todayStrProj = new Intl.DateTimeFormat('en-CA', {
+        timeZone: 'America/Los_Angeles'
+      }).format(new Date());
 
-      // ✅ NEW LOGIC: Split bills into "before payday" and "after payday" groups
-      const today = getPacificTime();
-      today.setHours(0, 0, 0, 0);
-      // Use the last (furthest) payday date as the cutoff for bills
-      const paydayDate = new Date(lastPaydayDate);
+      const ownLastPay = settingsData.lastPayDate || settingsData.paySchedules?.yours?.lastPaydate;
+      const { mainDate: ownMainNext, earlyDate: ownEarlyNext } = nextOwnPaydays(
+        ownLastPay,
+        todayStrProj,
+        { earlyDepositEnabled, daysBeforePayday }
+      );
+      const ownBoundary = ownEarlyNext || ownMainNext;
+      const cycleEndStr = ownBoundary ? addDays(ownBoundary, -1) : String(nextPayday).slice(0, 10);
 
-      // Separate bills into before and after payday
       const billsBeforePaydayRaw = [];
       const billsAfterPaydayRaw = [];
-      
+
       processedBills.forEach(bill => {
-        const billDueDate = new Date(bill.nextDueDate || bill.dueDate);
-        
-        // Classify based on due date relative to payday
-        if (billDueDate < paydayDate || billDueDate < today) {
-          // Overdue or due before payday
+        const dueDateStr = String(bill.nextDueDate || bill.dueDate || '').slice(0, 10);
+        if (!dueDateStr) return;
+
+        // Overdue bills and bills due through the cycle end belong in the
+        // current Safe-to-Spend window. Everything later is after the refill.
+        if (dueDateStr <= cycleEndStr || dueDateStr < todayStrProj) {
           billsBeforePaydayRaw.push(bill);
-          console.log(`📌 Bill before payday: ${bill.name} (due ${bill.nextDueDate})`);
+          console.log(`📌 Bill in current spendability cycle: ${bill.name} (due ${dueDateStr})`);
         } else {
-          // Due on or after payday
           billsAfterPaydayRaw.push(bill);
-          console.log(`📅 Bill after payday: ${bill.name} (due ${bill.nextDueDate})`);
+          console.log(`📅 Bill after current spendability cycle: ${bill.name} (due ${dueDateStr})`);
         }
       });
 
-      console.log(`✅ Spendability: Split ${processedBills.length} bills into ${billsBeforePaydayRaw.length} before payday, ${billsAfterPaydayRaw.length} after payday`);
+      console.log(
+        `✅ Spendability: Split ${processedBills.length} canonical bills into ` +
+        `${billsBeforePaydayRaw.length} current-cycle and ${billsAfterPaydayRaw.length} later bills ` +
+        `using cycle end ${cycleEndStr}`
+      );
 
       // Add status info to bills before payday and sort by priority (overdue bills first)
       const billsDueBeforePayday = billsBeforePaydayRaw
@@ -613,18 +626,6 @@ console.log('🔍 PAYDAY CALCULATION DEBUG:', {
       // unpaid bills in the window (including overdue) are outflows on their
       // dates; essentials drip daily. Safe-to-spend = the LOWEST projected
       // dip minus the safety buffer — the spreadsheet algorithm.
-      const todayStrProj = new Intl.DateTimeFormat('en-CA', {
-        timeZone: 'America/Los_Angeles'
-      }).format(new Date());
-
-      const ownLastPay = settingsData.lastPayDate || settingsData.paySchedules?.yours?.lastPaydate;
-      const { mainDate: ownMainNext, earlyDate: ownEarlyNext } = nextOwnPaydays(
-        ownLastPay, todayStrProj,
-        { earlyDepositEnabled, daysBeforePayday }
-      );
-      const ownBoundary = ownEarlyNext || ownMainNext;   // first own money arrival
-      const cycleEndStr = ownBoundary ? addDays(ownBoundary, -1) : nextPayday;
-
       const spouseAmt = parseFloat(
         settingsData.paySchedules?.spouse?.amount || settingsData.spouseAmount
       ) || 0;
@@ -917,7 +918,7 @@ console.log('🔍 PAYDAY CALCULATION DEBUG:', {
     <div className="spendability-container">
       <div className="page-header">
         <h2>💰 Spendability Calculator</h2>
-        <p>Find out how much you can safely spend until your next payday</p>
+        <p>Find out how much you can safely spend before your next account refill</p>
         <div className="connection-status">
           <span className="status-indicator connected"></span>
           Connected to Firebase
@@ -1103,7 +1104,7 @@ console.log('🔍 PAYDAY CALCULATION DEBUG:', {
         <div className="tile bills-tile">
           <div className="bills-tile-header" onClick={() => setBillsBeforeCollapsed(!billsBeforeCollapsed)}>
             <h3>
-              Bills Due Before Payday 
+              Bills Due Before Next Refill 
               {financialData.billsBeforePayday.length > 0 && (
                 <span className="bill-count">
                   ({financialData.billsBeforePayday.length})
@@ -1131,7 +1132,7 @@ console.log('🔍 PAYDAY CALCULATION DEBUG:', {
                 </div>
               ))
             ) : (
-              <p className="no-bills">No bills due before next payday! 🎉</p>
+              <p className="no-bills">No bills due before your next refill! 🎉</p>
             )}
             <div className="total-bills">
               <span><strong>Total Bills:</strong></span>
@@ -1149,7 +1150,7 @@ console.log('🔍 PAYDAY CALCULATION DEBUG:', {
         <div className="tile bills-tile">
           <div className="bills-tile-header" onClick={() => setBillsAfterCollapsed(!billsAfterCollapsed)}>
             <h3>
-              Bills Due After Payday
+              Bills Due After Next Refill
               {financialData.billsAfterPayday && financialData.billsAfterPayday.length > 0 && (
                 <span className="bill-count">
                   ({financialData.billsAfterPayday.length})
@@ -1182,7 +1183,7 @@ console.log('🔍 PAYDAY CALCULATION DEBUG:', {
                 </div>
               </>
             ) : (
-              <p className="no-bills">No bills due after payday</p>
+              <p className="no-bills">No later unpaid bills</p>
             )}
           </div>
         </div>
