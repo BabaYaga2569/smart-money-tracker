@@ -810,3 +810,40 @@ html body .debt-optimizer-container .recommendation-card .reasoning,
 html body .debt-optimizer-container .benefits-list li {
   color: var(--smt-text-2) !important;
 }
+
+
+/* ===== Screenshot QA: finish Debt Optimizer text hierarchy ===== */
+html body .debt-optimizer-container .page-header h1,
+html body .debt-optimizer-container .card h2,
+html body .debt-optimizer-container .smart-recommendations-section h3,
+html body .debt-optimizer-container .card-info h4,
+html body .debt-optimizer-container .strategy-item h4,
+html body .debt-optimizer-container .timeline-controls label {
+  color: var(--smt-text) !important;
+}
+
+html body .debt-optimizer-container .page-header p,
+html body .debt-optimizer-container .summary-item .label,
+html body .debt-optimizer-container .card-stats .stat,
+html body .debt-optimizer-container .cards-priority-list .strategy-description,
+html body .debt-optimizer-container .strategy-item p,
+html body .debt-optimizer-container .stat-label {
+  color: var(--smt-text-3) !important;
+}
+
+html body .debt-optimizer-container .summary-item .value,
+html body .debt-optimizer-container .stat-value {
+  color: var(--smt-text) !important;
+}
+
+html body .debt-optimizer-container .summary-item .debt-amount {
+  color: #ff6565 !important;
+}
+
+html body .debt-optimizer-container .summary-item .interest-amount {
+  color: var(--smt-warning) !important;
+}
+
+html body .debt-optimizer-container .summary-item .cash-amount {
+  color: var(--smt-positive) !important;
+}
