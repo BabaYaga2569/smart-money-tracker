@@ -10,7 +10,7 @@ import performanceTracker from './middleware/performanceTracker.js';
 import logger from './utils/logger.js';
 import { atomicTransaction, createOperation } from './utils/atomicTransaction.js';
 import { validateAccount as validateAccountConsistency, validateTransaction as validateTransactionConsistency, validateBalanceConsistency, checkDuplicateTransaction } from './utils/consistencyValidators.js';
-import { runBillMatching, applyManualBillPayment, unmarkManualBillPayment } from './utils/BillMatchingService.js';
+import { runBillMatching, applyManualBillPayment, unmarkManualBillPayment, reverseIncorrectAutoBillMatch } from './utils/BillMatchingService.js';
 import { runCanonicalBillEngine } from './utils/billEngine.js';
 import { findPlaidItemDocument, syncPlaidItemTransactions } from './utils/plaidSyncEngine.js';
 import {
@@ -1963,6 +1963,46 @@ app.post("/api/bills/:billId/unpay", async (req, res, next) => {
       billId: req.params.billId
     });
     next(error.statusCode ? error : createError.internal(error.message || 'Failed to unmark bill paid'));
+  }
+});
+
+// Guarded repair endpoint for reversing an incorrect automatic Plaid match.
+// This only succeeds when the bill was marked via the canonical auto-plaid-match
+// lifecycle and its saved reversal state is still safe to restore.
+app.post("/api/bills/:billId/reverse-auto-match", async (req, res, next) => {
+  const endpoint = "/api/bills/:billId/reverse-auto-match";
+  logDiagnostic.request(endpoint, {
+    billId: req.params.billId,
+    userId: req.body?.userId
+  });
+
+  try {
+    const { userId } = req.body || {};
+    const { billId } = req.params;
+
+    if (!userId) {
+      throw createError.badRequest('userId is required', 'MISSING_USER_ID');
+    }
+    if (!billId) {
+      throw createError.badRequest('billId is required', 'MISSING_BILL_ID');
+    }
+
+    validators.validateUserId(userId);
+
+    const result = await reverseIncorrectAutoBillMatch(db, userId, billId);
+
+    if (!result.success) {
+      const status = result.reason === 'BILL_NOT_FOUND' ? 404 : 409;
+      return res.status(status).json(result);
+    }
+
+    logDiagnostic.response(endpoint, 200, result);
+    return res.json(result);
+  } catch (error) {
+    logger.error('BILL_PAYMENT', 'Auto-match reversal failed', error, {
+      billId: req.params.billId
+    });
+    next(error.statusCode ? error : createError.internal(error.message || 'Failed to reverse automatic bill match'));
   }
 });
 
