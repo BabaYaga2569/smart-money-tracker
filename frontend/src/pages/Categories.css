@@ -1041,3 +1041,22 @@ input[type="checkbox"] {
     height: 250px;
   }
 }
+/* ===== Premium themed Categories foundation ===== */
+html body .categories-container {
+  width:100%; max-width:var(--smt-content-max); margin:0 auto;
+  padding:28px var(--smt-page-gutter) 42px; background:transparent!important; color:var(--smt-text);
+}
+html body .categories-container .page-header h2 { color:var(--smt-text)!important; font-size:clamp(25px,2.4vw,32px); }
+html body .categories-container .chart-container,
+html body .categories-container .insights-grid > *,
+html body .categories-container [class*="budget"],
+html body .categories-container [class*="management"] {
+  background:var(--smt-surface)!important; border-color:var(--smt-border)!important; border-radius:14px!important;
+}
+html body .categories-container .category-header,
+html body .categories-container .trend-header,
+html body .categories-container .budgets-header,
+html body .categories-container .management-header { color:var(--smt-text)!important; }
+html body .categories-container input,
+html body .categories-container select { background:var(--smt-surface-2)!important; color:var(--smt-text)!important; border-color:var(--smt-border)!important; }
+@media(max-width:700px){ html body .categories-container{padding:18px 14px 30px;} }
