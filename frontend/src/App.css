@@ -1,116 +1,63 @@
-/* App.css */
-
-/* Layout */
 .layout {
   display: flex;
   min-height: 100vh;
-  background: var(--bg);
-  color: var(--neon-green);
+  background: var(--smt-bg);
+  color: var(--smt-text);
 }
 
-/* Sidebar */
-.sidebar {
-  width: var(--sidebar-width); /* Use CSS variable! */
-  background: #0a0a0a;
-  padding: var(--spacing-md);
-  border-right: 1px solid var(--neon-green);
-  flex-shrink: 0;
-  position: fixed;
-  left: 0;
-  top: 0;
-  height: 100vh;
-  z-index: 1000;
-  transition: width var(--transition-normal);
-}
-
-.sidebar-title {
-  font-size: 1.5rem;
-  margin-bottom: var(--spacing-md);
-  color: var(--neon-green);
-}
-
-.sidebar ul {
-  list-style: none;
-  padding: 0;
-}
-
-.sidebar li {
-  margin: var(--spacing-sm) 0;
-}
-
-.sidebar a {
-  color: #fff;
-  text-decoration: none;
-  transition: var(--transition-fast);
-}
-
-.sidebar a:hover {
-  color: var(--neon-green);
-}
-
-.sidebar a.active {
-  color: var(--neon-green);
-  background: rgba(0, 255, 153, 0.1);
-  padding: var(--spacing-sm);
-  border-radius: var(--radius-sm);
-}
-
-/* Main content */
-.main-content {
-  flex: 1;
-  margin-left: var(--sidebar-width); /* Use CSS variable! */
-  padding: 0;
-  overflow-y: auto;
-  background: #0d0d0d;
-}
-
-/* App container */
 .app {
   display: flex;
   min-height: 100vh;
+  background: var(--smt-bg);
 }
 
-/* Placeholder page styling */
+.main-content {
+  flex: 1;
+  min-width: 0;
+  margin-left: 0;
+  padding: 0;
+  overflow-x: hidden;
+  overflow-y: auto;
+  background:
+    radial-gradient(circle at 50% -10%, rgba(50, 210, 150, 0.035), transparent 32rem),
+    var(--smt-bg);
+}
+
 .placeholder-page {
-  padding: var(--spacing-xl);
+  width: 100%;
+  max-width: var(--smt-content-max);
+  margin: 0 auto;
+  padding: 40px var(--smt-page-gutter);
   text-align: center;
-  color: #ffffff;
+  color: var(--smt-text);
 }
 
 .placeholder-page h1 {
-  color: #00ff88;
-  font-size: 2.5rem;
-  margin-bottom: var(--spacing-md);
+  margin-bottom: 12px;
+  color: var(--smt-text);
+  font-size: clamp(2rem, 4vw, 3rem);
 }
 
 .placeholder-page p {
-  color: #888;
-  font-size: 1.2rem;
+  color: var(--smt-text-3);
+  font-size: 1rem;
 }
 
-/* Mobile Responsive Styles */
 @media (max-width: 1024px) {
-  .app {
+  .app,
+  .layout {
     flex-direction: column;
   }
 
-  .sidebar {
-    width: 100%;
-    height: var(--mobile-nav-height);
-    position: fixed;
-    top: 0;
-    left: 0;
-  }
-
   .main-content {
-    margin-left: 0;
-    padding-top: var(--mobile-nav-height);
     width: 100%;
+    margin-left: 0;
+    padding-top: 68px;
   }
 }
 
-@media (max-width: 768px) {
+@media (max-width: 640px) {
   .main-content {
-    padding-top: 65px;
+    padding-top: 66px;
   }
 }
