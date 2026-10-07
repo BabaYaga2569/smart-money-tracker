@@ -36,6 +36,7 @@ import {
   buildBillDuplicateCleanupPlan,
   fingerprintBills
 } from './utils/billDuplicateCleanup.js';
+import { auditPriorMonthUnpaidBills } from './utils/priorMonthBillAudit.js';
 
 const app = express();
 
@@ -3186,6 +3187,78 @@ app.get("/api/diagnostics/bill-doctor", async (req, res, next) => {
     if (error.statusCode) return next(error);
     return next(createError.firebaseError(
       error.message || 'Unable to run read-only bill audit'
+    ));
+  }
+});
+
+/**
+ * GET /api/bills/prior-month-audit
+ *
+ * Read-only audit of unpaid bill occurrences dated before the current month.
+ * Compares them with posted transactions using the canonical bill matcher and
+ * with the current recurring-pattern state. Never writes financial data.
+ */
+app.get("/api/bills/prior-month-audit", async (req, res, next) => {
+  const userId = req.authUid;
+
+  try {
+    if (!userId) {
+      return next(createError.unauthorized('Authentication is required'));
+    }
+
+    const userRef = db.collection('users').doc(userId);
+    const cutoff = new Date();
+    cutoff.setDate(cutoff.getDate() - 180);
+    const cutoffStr = cutoff.toISOString().slice(0, 10);
+
+    const [billsSnap, transactionsSnap, patternsSnap] = await Promise.all([
+      userRef
+        .collection('financialEvents')
+        .where('type', '==', 'bill')
+        .where('isPaid', '==', false)
+        .get(),
+      userRef
+        .collection('transactions')
+        .where('date', '>=', cutoffStr)
+        .get(),
+      userRef
+        .collection('recurringPatterns')
+        .get()
+    ]);
+
+    const docs = snapshot => snapshot.docs.map(docSnap => ({
+      id: docSnap.id,
+      ...docSnap.data()
+    }));
+
+    const report = auditPriorMonthUnpaidBills({
+      bills: docs(billsSnap),
+      transactions: docs(transactionsSnap),
+      recurringPatterns: docs(patternsSnap),
+      referenceDate: new Date().toISOString().slice(0, 10)
+    });
+
+    res.set('Cache-Control', 'no-store');
+    return res.json({
+      success: true,
+      readOnly: true,
+      lookbackDays: 180,
+      estimatedDocumentsRead:
+        billsSnap.size + transactionsSnap.size + patternsSnap.size,
+      report
+    });
+  } catch (error) {
+    logger.error('PRIOR_MONTH_BILL_AUDIT', 'Prior-month bill audit failed', error, {});
+
+    if (isFirestoreQuotaExceeded(error)) {
+      return next(createError.resourceExhausted(
+        'Firestore quota is temporarily exhausted. The prior-month bill audit made no changes.'
+      ));
+    }
+
+    if (error.statusCode) return next(error);
+    return next(createError.firebaseError(
+      error.message || 'Unable to audit prior-month unpaid bills'
     ));
   }
 });
