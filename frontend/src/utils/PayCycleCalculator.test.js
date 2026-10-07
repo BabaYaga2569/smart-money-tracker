@@ -207,6 +207,27 @@ const runPayCycleCalculatorTests = () => {
         console.log('✅ Test 5 passed: Proper payday selection with date comparison (Issue #3 fix verified)\n');
     });
 
+    // Regression: Spendability must roll past a payday that is today.
+    test('Strict-future mode rolls past today and chooses the next household refill', () => {
+        const yoursSchedule = {
+            lastPaydate: '2026-09-23',
+            amount: 1945.17
+        };
+        const spouseSchedule = {
+            type: 'bi-monthly',
+            amount: 1892.26
+        };
+
+        const result = PayCycleCalculator.calculateNextPayday(
+            yoursSchedule,
+            spouseSchedule,
+            { includeToday: false, todayOverride: '2026-10-07' }
+        );
+
+        assert(result.date === '2026-10-15', `Expected 2026-10-15, got ${result.date}`);
+        assert(result.source === 'spouse', `Expected spouse refill, got ${result.source}`);
+    });
+
     console.log('🎉 All PayCycleCalculator tests passed!\n');
 };
 
