@@ -214,9 +214,9 @@ function App() {
   return (
     <>
       <ErrorBoundary>
-        <ThemeProvider>
-          <Router>
-            <AuthProvider>
+        <Router>
+          <AuthProvider>
+            <ThemeProvider>
             <PWAInstallPrompt />
             <Suspense fallback={<LoadingSpinner />}>
               <Routes>
@@ -463,9 +463,9 @@ function App() {
                 } />
               </Routes>
             </Suspense>
-            </AuthProvider>
-          </Router>
-        </ThemeProvider>
+            </ThemeProvider>
+          </AuthProvider>
+        </Router>
       </ErrorBoundary>
       <SentryTestButton />
     </>
