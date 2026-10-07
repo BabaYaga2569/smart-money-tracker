@@ -17,6 +17,7 @@ import { TRANSACTION_CATEGORIES, CATEGORY_ICONS, getCategoryIcon, migrateLegacyC
 import NotificationSystem from '../components/NotificationSystem';
 import BillDuplicateCleanupPanel from '../components/BillDuplicateCleanupPanel';
 import { getCanonicalDisplayBalance, getVisiblePlaidAccounts } from '../utils/accountVisibility';
+import { visibleBillOccurrences } from '../utils/billVisibility';
 import "./Bills.css";
 
 const generateBillId = () => {
@@ -109,12 +110,12 @@ export default function Bills() {
       
       const billsSnapshot = await getDocs(q);
       
-      const allBills = billsSnapshot.docs
-        .map(doc => ({
+      const allBills = visibleBillOccurrences(
+        billsSnapshot.docs.map(doc => ({
           id: doc.id,
           ...doc.data()
         }))
-        .filter(bill => bill.hiddenFromBills !== true && bill.archivedDuplicate !== true);
+      );
       
       // Never hide unpaid bills because they are old. Overdue items remain visible
       // until they are explicitly paid, skipped, or otherwise resolved.
