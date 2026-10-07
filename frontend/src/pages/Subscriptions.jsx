@@ -15,7 +15,7 @@ import {
 import { getVisiblePlaidAccounts } from '../utils/accountVisibility';
 import './Subscriptions.css';
 
-const LEGACY_SUBSCRIPTION_CATEGORIES = new Set([
+const SUBSCRIPTION_CATEGORIES = new Set([
   'Streaming',
   'Software',
   'Memberships',
@@ -26,10 +26,27 @@ const LEGACY_SUBSCRIPTION_CATEGORIES = new Set([
   'Storage'
 ]);
 
+const RECURRING_BILL_CATEGORIES = new Set([
+  'Utilities',
+  'Rent',
+  'Insurance',
+  'Phone',
+  'Internet',
+  'Mortgage',
+  'Housing',
+  'Auto & Transportation',
+  'Credit Cards & Loans',
+  'Utilities & Home Services',
+  'Phone & Internet',
+  'Insurance & Healthcare',
+  'Personal Care'
+]);
+
 const isSubscriptionRecord = (item = {}) => {
+  if (RECURRING_BILL_CATEGORIES.has(item.category)) return false;
+  if (item.type === 'recurring_bill') return false;
   if (item.type === 'subscription') return true;
-  if (item.type && item.type !== 'subscription') return false;
-  return LEGACY_SUBSCRIPTION_CATEGORIES.has(item.category);
+  return SUBSCRIPTION_CATEGORIES.has(item.category);
 };
 
 const Subscriptions = () => {
