@@ -585,3 +585,23 @@ html body .goals-container .goal-card:hover { background:var(--smt-surface-2)!im
 html body .goals-container .goal-header h3 { color:var(--smt-text)!important; }
 html body .goals-container .progress-bar-container { background:var(--smt-surface-2)!important; }
 @media(max-width:700px){ html body .goals-container{padding:18px 14px 30px;} }
+
+
+/* ===== Premium QA: Goals theme residue cleanup ===== */
+html body .goals-container .goal-card {
+  box-shadow: 0 10px 28px rgba(0,0,0,.16), inset 0 1px 0 var(--smt-theme-metal) !important;
+}
+html body .goals-container .goal-card:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 12px 30px rgba(0,0,0,.2), inset 0 1px 0 var(--smt-theme-metal) !important;
+}
+html body .goals-container .goal-amount,
+html body .goals-container .goal-progress-value,
+html body .goals-container .progress-text {
+  color: var(--smt-theme-accent) !important;
+  text-shadow: none !important;
+}
+html body .goals-container .progress-fill { background:var(--smt-theme-primary) !important; box-shadow:none !important; }
+html body .goals-container .goal-meta,
+html body .goals-container .goal-date,
+html body .goals-container .goal-description { color:var(--smt-text-3) !important; }
