@@ -1,32 +1,29 @@
-/* Mobile Navigation Styles */
-
-/* Hamburger Menu Button */
 .mobile-menu-btn {
   display: none;
   position: fixed;
-  top: 15px;
-  left: 15px;
+  top: 14px;
+  left: 14px;
   z-index: 1100;
-  width: 48px;
-  height: 48px;
-  background: #0a0a0a;
-  border: 1px solid #00ff99;
-  border-radius: 8px;
+  width: 46px;
+  height: 46px;
+  background: rgba(22, 26, 32, .96);
+  border: 1px solid var(--smt-border-strong);
+  border-radius: 12px;
   cursor: pointer;
   padding: 0;
-  transition: all 0.3s ease;
+  box-shadow: 0 8px 24px rgba(0,0,0,.26);
+  backdrop-filter: blur(14px);
 }
 
 .mobile-menu-btn:hover {
-  background: #1a1a1a;
-  border-color: #00ff99;
+  background: var(--smt-surface-hover);
+  border-color: rgba(50,210,150,.22);
 }
 
 .mobile-menu-btn:active {
-  transform: scale(0.95);
+  transform: scale(.97);
 }
 
-/* Hamburger Icon */
 .hamburger {
   display: flex;
   flex-direction: column;
@@ -38,54 +35,48 @@
 
 .hamburger span {
   display: block;
-  width: 24px;
+  width: 21px;
   height: 2px;
-  background: #00ff99;
+  background: #a9b3bf;
   margin: 3px 0;
-  transition: all 0.3s ease;
+  transition: all .2s ease;
   border-radius: 2px;
 }
 
-/* Hamburger Animation */
 .hamburger.open span:nth-child(1) {
   transform: translateY(8px) rotate(45deg);
 }
-
 .hamburger.open span:nth-child(2) {
   opacity: 0;
 }
-
 .hamburger.open span:nth-child(3) {
   transform: translateY(-8px) rotate(-45deg);
 }
 
-/* Backdrop Overlay */
 .mobile-backdrop {
   display: none;
   position: fixed;
-  top: 0;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  background: rgba(0, 0, 0, 0.7);
+  inset: 0;
+  background: rgba(2, 4, 7, .72);
   z-index: 1000;
-  backdrop-filter: blur(4px);
+  backdrop-filter: blur(7px);
 }
 
-/* Mobile Sidebar */
 .mobile-sidebar {
   position: fixed;
   top: 0;
-  left: -280px;
-  width: 280px;
+  left: -300px;
+  width: min(300px, 86vw);
   height: 100vh;
-  background: #0a0a0a;
-  border-right: 1px solid #00ff99;
+  background: rgba(17, 20, 25, .98);
+  border-right: 1px solid var(--smt-border);
   z-index: 1050;
-  transition: left 0.3s ease;
+  transition: left .22s ease;
   display: flex;
   flex-direction: column;
   overflow-y: auto;
+  box-shadow: 18px 0 40px rgba(0,0,0,.34);
+  backdrop-filter: blur(18px);
 }
 
 .mobile-sidebar.open {
@@ -93,20 +84,34 @@
 }
 
 .mobile-sidebar-header {
-  padding: 20px;
-  border-bottom: 1px solid #333;
+  padding: 22px 20px 16px;
+  border-bottom: 1px solid var(--smt-border);
 }
 
 .mobile-sidebar-title {
-  font-size: 1.4rem;
   margin: 0;
-  color: #00ff99;
+  color: var(--smt-text);
+  font-size: 1.12rem;
+  font-weight: 800;
 }
 
 .mobile-sidebar-nav {
   flex: 1;
-  padding: 20px 0;
+  padding: 16px 12px;
   overflow-y: auto;
+}
+
+.mobile-nav-group {
+  margin-bottom: 18px;
+}
+
+.mobile-nav-group-label {
+  margin: 0 10px 6px;
+  color: #6f7a89;
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: .11em;
+  text-transform: uppercase;
 }
 
 .mobile-sidebar-nav ul {
@@ -116,70 +121,81 @@
 }
 
 .mobile-sidebar-nav ul li {
-  margin: 0;
+  margin: 2px 0;
 }
 
 .mobile-sidebar-nav ul li a {
+  min-height: 44px;
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 12px;
-  padding: 16px 24px;
+  padding: 10px 12px;
   text-decoration: none;
-  color: #ccc;
-  font-size: 1rem;
-  transition: all 0.2s;
-  border-left: 3px solid transparent;
+  color: var(--smt-text-2);
+  font-size: 14px;
+  font-weight: 650;
+  border: 1px solid transparent;
+  border-radius: 10px;
+  transition: background .16s ease, color .16s ease, border-color .16s ease;
 }
 
 .mobile-sidebar-nav ul li a:hover {
-  background: rgba(0, 255, 153, 0.1);
-  color: #00ff99;
-  border-left-color: #00ff99;
+  background: var(--smt-surface-2);
+  color: var(--smt-text);
+  border-color: var(--smt-border);
 }
 
 .mobile-sidebar-nav ul li a.active {
-  background: rgba(0, 255, 153, 0.15);
-  color: #00ff99;
-  font-weight: bold;
-  border-left-color: #00ff99;
+  background: rgba(50, 210, 150, .1);
+  color: #8cf0c6;
+  border-color: rgba(50, 210, 150, .16);
+}
+
+.mobile-nav-badge {
+  min-width: 22px;
+  height: 22px;
+  padding: 0 7px;
+  border-radius: 999px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(239, 106, 106, .14);
+  border: 1px solid rgba(239, 106, 106, .2);
+  color: #ff9a9a;
+  font-size: 11px;
+  font-weight: 800;
 }
 
 .mobile-sidebar-logout {
-  padding: 20px;
-  border-top: 1px solid #333;
-  background: #0a0a0a;
+  padding: 16px;
+  border-top: 1px solid var(--smt-border);
+  background: rgba(17,20,25,.98);
 }
 
 .mobile-logout-btn {
   width: 100%;
-  padding: 14px;
-  background: #dc2626;
-  color: white;
-  border: none;
-  border-radius: 8px;
+  min-height: 46px;
+  padding: 11px 14px;
+  background: rgba(239,106,106,.1);
+  color: #ffb0b0;
+  border: 1px solid rgba(239,106,106,.16);
+  border-radius: 10px;
   cursor: pointer;
-  font-size: 16px;
-  font-weight: 600;
-  transition: background 0.2s;
-  min-height: 48px;
-}
-
-.mobile-logout-btn:hover {
-  background: #991b1b;
+  font-size: 14px;
+  font-weight: 700;
 }
 
 .mobile-user-email {
   display: block;
-  margin-top: 10px;
-  color: #888;
-  font-size: 12px;
+  margin-top: 9px;
+  color: #687382;
+  font-size: 11px;
   text-align: center;
   overflow: hidden;
   text-overflow: ellipsis;
 }
 
-/* Show mobile navigation on mobile/tablet screens */
 @media (max-width: 1024px) {
   .mobile-menu-btn {
     display: flex;
@@ -192,30 +208,9 @@
   }
 }
 
-
-.mobile-nav-badge {
-  min-width: 22px;
-  height: 22px;
-  padding: 0 7px;
-  border-radius: 999px;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  background: #dc2626;
-  color: #fff;
-  font-size: 12px;
-  font-weight: 700;
-  flex-shrink: 0;
-}
-
-/* iPad/tablet widths use the same mobile navigation breakpoint as AppLayout. */
 @media (min-width: 768px) and (max-width: 1024px) {
   .mobile-sidebar {
-    width: min(360px, 82vw);
-    left: min(-360px, -82vw);
-  }
-
-  .mobile-sidebar-nav ul li a {
-    padding: 14px 24px;
+    width: min(360px, 70vw);
+    left: min(-360px, -70vw);
   }
 }
