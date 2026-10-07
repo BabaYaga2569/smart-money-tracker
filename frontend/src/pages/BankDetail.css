@@ -421,3 +421,22 @@ html body .bank-detail-container .transaction-card:hover{background:var(--smt-su
 html body .bank-detail-container input,
 html body .bank-detail-container select{background:var(--smt-surface-2)!important;color:var(--smt-text)!important;border-color:var(--smt-border)!important;}
 @media(max-width:700px){html body .bank-detail-container{padding:18px 14px 30px;}}
+
+
+/* ===== Premium QA: Bank Detail theme residue cleanup ===== */
+html body .bank-detail-container .bank-header,
+html body .bank-detail-container .stat-card,
+html body .bank-detail-container .filters-section,
+html body .bank-detail-container .transaction-card {
+  box-shadow: 0 10px 28px rgba(0,0,0,.16), inset 0 1px 0 var(--smt-theme-metal) !important;
+}
+html body .bank-detail-container .stat-value,
+html body .bank-detail-container .transaction-amount,
+html body .bank-detail-container .bank-balance {
+  color:var(--smt-theme-accent) !important;
+  text-shadow:none !important;
+}
+html body .bank-detail-container .stat-label,
+html body .bank-detail-container .transaction-meta,
+html body .bank-detail-container .bank-subtitle { color:var(--smt-text-3) !important; }
+html body .bank-detail-container button { box-shadow:none !important; text-shadow:none !important; }
