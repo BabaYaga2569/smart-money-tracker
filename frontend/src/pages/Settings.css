@@ -471,3 +471,55 @@ html body .settings-container .form-group select {
 }
 html body .settings-container .save-btn { background:var(--smt-theme-primary)!important; color:#09100d!important; }
 @media(max-width:700px){ html body .settings-container{padding:18px 14px 30px;} }
+
+
+/* ===== Premium QA: Settings theme residue cleanup ===== */
+html body .settings-container .settings-tile,
+html body .settings-container .settings-section,
+html body .settings-container .settings-card {
+  box-shadow:
+    0 10px 28px rgba(0,0,0,.16),
+    inset 0 1px 0 var(--smt-theme-metal) !important;
+}
+
+html body .settings-container .settings-description,
+html body .settings-container .form-help,
+html body .settings-container small {
+  color: var(--smt-text-3) !important;
+}
+
+html body .settings-container .btn,
+html body .settings-container button {
+  text-shadow: none !important;
+  box-shadow: none !important;
+}
+
+html body .settings-container .btn-primary,
+html body .settings-container .save-btn {
+  background: var(--smt-theme-primary) !important;
+  border-color: rgba(var(--smt-theme-primary-rgb), .36) !important;
+  color: #07100d !important;
+}
+
+html body .settings-container .btn-secondary {
+  background: var(--smt-surface-2) !important;
+  color: var(--smt-text-2) !important;
+  border-color: var(--smt-border) !important;
+}
+
+html body .settings-container .btn-secondary:hover {
+  background: var(--smt-surface-hover) !important;
+  color: var(--smt-text) !important;
+  border-color: var(--smt-border-strong) !important;
+}
+
+html body .settings-container .btn-danger {
+  background: rgba(239,106,106,.12) !important;
+  color: #ff9a9a !important;
+  border-color: rgba(239,106,106,.28) !important;
+}
+
+html body .settings-container .btn-danger:hover {
+  background: rgba(239,106,106,.18) !important;
+  border-color: rgba(239,106,106,.4) !important;
+}
