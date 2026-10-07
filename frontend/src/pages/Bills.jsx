@@ -9,7 +9,6 @@ import { NotificationManager } from '../utils/NotificationManager';
 import { BillAnimationManager } from '../utils/BillAnimationManager';
 import PlaidConnectionManager from '../utils/PlaidConnectionManager';
 import PlaidErrorModal from '../components/PlaidErrorModal';
-import PaymentHistoryModal from '../components/PaymentHistoryModal';
 import BillTransactionLinker from '../components/BillTransactionLinker';
 import { formatDateForDisplay, formatDateForInput, getPacificTime } from '../utils/DateUtils';
 import { getLocalMidnight, parseDueDateLocal, getRelativeDateString } from '../utils/dateHelpers';
@@ -80,14 +79,11 @@ export default function Bills() {
   const [plaidStatus, setPlaidStatus] = useState({ isConnected: false, hasError: false });
   const [showErrorModal, setShowErrorModal] = useState(false);
   const [showModal, setShowModal] = useState(false);
-  const [showPaymentHistory, setShowPaymentHistory] = useState(false);
   const [showHelpModal, setShowHelpModal] = useState(false);
   const [editingBill, setEditingBill] = useState(null);
   const [refreshingTransactions, setRefreshingTransactions] = useState(false);
   const [paidThisMonth, setPaidThisMonth] = useState(0);
   const [paidBillsCount, setPaidBillsCount] = useState(0);
-  const [showPaidBills, setShowPaidBills] = useState(false);
-  const [paidBills, setPaidBills] = useState([]);
   const [showLinker, setShowLinker] = useState(false);
   const [selectedBillForLink, setSelectedBillForLink] = useState(null);
   const [duplicateCleanupPreview, setDuplicateCleanupPreview] = useState(null);
@@ -177,38 +173,6 @@ export default function Bills() {
       setPaidBillsCount(snapshot.size);
     } catch (error) {
       console.error('Error loading paid bills:', error);
-    }
-  };
-
-  // Load paid bills archive from financialEvents
-  const loadPaidBills = async () => {
-    if (!currentUser) return;
-    try {
-      const eventsRef = collection(db, 'users', currentUser.uid, 'financialEvents');
-      const q = query(
-        eventsRef,
-        where('type', '==', 'bill'),
-        where('isPaid', '==', true)
-        // Remove orderBy - will sort client-side instead
-      );
-      const snapshot = await getDocs(q);
-      const bills = snapshot.docs.map(doc => ({
-        id: doc.id,
-        ...doc.data()
-      }));
-      
-      // Sort client-side by paidDate descending
-      bills.sort((a, b) => {
-        const dateA = a.paidDate ? new Date(a.paidDate) : new Date(0);
-        const dateB = b.paidDate ? new Date(b.paidDate) : new Date(0);
-        return dateB - dateA;
-      });
-      
-      setPaidBills(bills);
-      console.log(`✅ Loaded ${bills.length} paid bills from financialEvents`);
-    } catch (error) {
-      console.error('Error loading paid bills:', error);
-      setPaidBills([]);
     }
   };
 
@@ -560,13 +524,10 @@ const refreshPlaidTransactions = async () => {
         loadBills();
         loadAccounts();
         loadPaidThisMonth();
-        if (showPaidBills) {
-          loadPaidBills();
-        }
       };
       loadData();
     }
-  }, [currentUser, showPaidBills]);
+  }, [currentUser]);
 
   // Automatic transaction-to-bill clearing is backend-owned. Legacy /bills
   // listeners and browser-side transaction matchers were intentionally removed.
@@ -851,50 +812,6 @@ const refreshPlaidTransactions = async () => {
       NotificationManager.showError('Error processing payment', error);
     } finally {
       setPayingBill(null);
-    }
-  };
-
-  const handleUnmarkAsPaid = async (bill) => {
-    const loadingNotificationId = NotificationManager.showLoading(
-      `Unmarking ${bill.name} as paid...`
-    );
-
-    try {
-      const apiUrl = import.meta.env.VITE_API_URL || 'https://smart-money-tracker-09ks.onrender.com';
-      const response = await fetch(`${apiUrl}/api/bills/${bill.id}/unpay`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({ userId: currentUser.uid })
-      });
-
-      const result = await response.json();
-      if (!response.ok || !result.success) {
-        const reason = result.reason || result.error || 'Unable to unmark this payment safely';
-        throw new Error(reason);
-      }
-
-      await loadBills();
-      await loadPaidThisMonth();
-      if (showPaidBills) {
-        await loadPaidBills();
-      }
-
-      NotificationManager.removeNotification(loadingNotificationId);
-
-      if (result.idempotent) {
-        NotificationManager.showInfo(`${bill.name} is already unpaid`);
-      } else {
-        NotificationManager.showSuccess(`${bill.name} unmarked as paid`);
-      }
-    } catch (error) {
-      console.error('Error unmarking bill as paid:', error);
-      NotificationManager.removeNotification(loadingNotificationId);
-      NotificationManager.showError(
-        'Unable to safely unmark payment',
-        error.message || 'The recurring chain may have moved forward.'
-      );
     }
   };
 
@@ -1456,9 +1373,9 @@ const refreshPlaidTransactions = async () => {
           </div>
           <div 
             className="overview-card clickable" 
-            onClick={() => setShowPaymentHistory(true)}
+            onClick={() => { window.location.href = '/payment-history'; }}
             style={{ cursor: 'pointer' }}
-            title="Click to view payment history"
+            title="Open Payment History"
           >
             <h3>💵 Paid This Month</h3>
             <div className="overview-value paid">{formatCurrency(metrics.paidThisMonth)}</div>
@@ -1858,42 +1775,7 @@ const refreshPlaidTransactions = async () => {
                     </div>
                   )}
                   
-                  {bill.status === 'paid' && bill.lastPaidDate && (
-                    <div className="paid-info" style={{
-                      marginTop: '8px',
-                      padding: '6px 10px',
-                      background: 'rgba(0, 255, 136, 0.1)',
-                      borderRadius: '6px',
-                      border: '1px solid #00ff88',
-                      fontSize: '11px',
-                      color: '#00ff88',
-                      fontWeight: 'bold',
-                      textAlign: 'center'
-                    }}>
-                      ✅ PAID {formatBillDate(bill.lastPaidDate)}
-                      
-                      {/* Undo Payment Button */}
-                      <button
-                        onClick={() => handleUnmarkAsPaid(bill)}
-                        style={{
-                          marginTop: '6px',
-                          width: '100%',
-                          padding: '6px 10px',
-                          background: 'rgba(255, 107, 0, 0.2)',
-                          color: '#ff6b00',
-                          border: '1px solid #ff6b00',
-                          borderRadius: '4px',
-                          fontSize: '10px',
-                          fontWeight: '600',
-                          cursor: 'pointer',
-                          transition: 'all 0.2s ease',
-                          textTransform: 'uppercase'
-                        }}
-                      >
-                        ↩️ Undo Payment
-                      </button>
-                    </div>
-                  )}
+
                 </div>
               </div>
             ))
@@ -1901,108 +1783,6 @@ const refreshPlaidTransactions = async () => {
             <div className="bills-empty">No bills found</div>
           )}
         </div>
-      </div>
-
-      {/* Paid Bills Archive Section */}
-      <div className="bills-list-section" style={{ marginTop: '40px' }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
-          <h3>📦 Paid Bills Archive ({paidBills.length})</h3>
-          <button 
-            onClick={() => setShowPaidBills(!showPaidBills)}
-            style={{
-              background: 'rgba(0, 255, 136, 0.2)',
-              color: '#00ff88',
-              border: '1px solid #00ff88',
-              borderRadius: '6px',
-              padding: '8px 16px',
-              fontSize: '13px',
-              fontWeight: '600',
-              cursor: 'pointer'
-            }}
-          >
-            {showPaidBills ? '▼ Hide' : '▶ Show'}
-          </button>
-        </div>
-        
-        {showPaidBills && (
-          <>
-            <div style={{
-              padding: '16px',
-              background: 'rgba(0, 255, 136, 0.1)',
-              borderRadius: '8px',
-              marginBottom: '20px',
-              border: '1px solid rgba(0, 255, 136, 0.3)'
-            }}>
-              <p style={{ margin: 0, fontSize: '14px', color: '#00ff88' }}>
-                <strong>ℹ️ Historical Record</strong><br/>
-                This is your archive of all paid bills. These bills are kept for your records and financial tracking.
-                {paidBills.length > 0 && ` Showing ${paidBills.length} paid bill${paidBills.length !== 1 ? 's' : ''}.`}
-              </p>
-            </div>
-
-            {paidBills.length > 0 ? (
-              <div className="bills-list">
-                {paidBills.map((bill, index) => (
-                  <div 
-                    key={bill.id || index}
-                    className="bill-item paid"
-                    style={{
-                      background: 'rgba(0, 255, 136, 0.05)',
-                      border: '2px solid rgba(0, 255, 136, 0.3)'
-                    }}
-                  >
-                    <div className="bill-main-info">
-                      <div className="bill-icon">
-                        {getCategoryIcon(bill.category)}
-                      </div>
-                      <div className="bill-details">
-                        <h4>
-                          {bill.name}
-                          <span 
-                            className="paid-badge" 
-                            style={{
-                              marginLeft: '8px',
-                              padding: '2px 8px',
-                              fontSize: '11px',
-                              background: 'rgba(0, 255, 136, 0.3)',
-                              color: '#00ff88',
-                              borderRadius: '4px',
-                              fontWeight: 'normal'
-                            }}
-                          >
-                            ✅ PAID
-                          </span>
-                        </h4>
-                        <div className="bill-meta">
-                          <span className="bill-category">{bill.category}</span>
-                          <span className="bill-frequency">{bill.recurrence}</span>
-                          <span>Paid: {formatBillDate(bill.paidDate)}</span>
-                        </div>
-                      </div>
-                    </div>
-                    
-                    <div className="bill-amount-section">
-                      <div className="bill-amount">{formatCurrency(bill.amount)}</div>
-                      <div className="bill-due-date">
-                        Original Due: {formatBillDate(bill.dueDate || bill.nextDueDate)}
-                      </div>
-                      <div style={{ 
-                        marginTop: '8px', 
-                        fontSize: '12px', 
-                        color: '#888',
-                        textAlign: 'center'
-                      }}>
-                        {bill.paymentMethod && `Paid via ${bill.paymentMethod}`}
-                      </div>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            ) : (
-              <div className="bills-empty">No paid bills in archive yet. Pay some bills to see them here!</div>
-            )}
-          </>
-        )}
       </div>
 
       {/* Bill Edit/Add Modal */}
@@ -2303,14 +2083,6 @@ const refreshPlaidTransactions = async () => {
             </div>
           </div>
         </div>
-      )}
-
-      {/* Payment History Modal */}
-      {showPaymentHistory && (
-        <PaymentHistoryModal
-          userId={currentUser?.uid}
-          onClose={() => setShowPaymentHistory(false)}
-        />
       )}
 
       {/* Plaid Error Modal */}
