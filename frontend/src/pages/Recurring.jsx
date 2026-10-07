@@ -1010,7 +1010,7 @@ const Recurring = () => {
       {/* Page Header */}
       <div className="page-header">
         <h2>🔄 Recurring</h2>
-        <p>Manage all recurring incomes, expenses, and subscriptions</p>
+        <p>Expected bills, subscriptions, installments, and scheduled obligations</p>
       </div>
 
       {/* Overview Dashboard */}
@@ -1120,54 +1120,58 @@ const Recurring = () => {
           </select>
         </div>
 
-        <div className="action-buttons">
-          {deletedItems.length > 0 && (
-            <button
-              className="undo-button"
-              onClick={handleUndoBulkDelete}
-              disabled={saving}
-              title="Restore deleted items"
-            >
-              ↩️ Undo Delete
-            </button>
-          )}
-          {recurringItems.length > 0 && (
-            <>
-              <button
-                className="delete-all-button"
-                onClick={() => setShowBulkDeleteModal(true)}
-                disabled={saving}
-                title="Delete all recurring items"
-              >
-                🗑️ Delete All
-              </button>
-            </>
-          )}
-          <button
-            className="import-button"
-            onClick={() => setShowRebuildDryRun(true)}
-            disabled={saving}
-            title="Read-only comparison of live recurringPatterns against the vetted TEMPLATE rebuild proposal"
-          >
-            🩺 Rebuild Dry Run
-          </button>
-          <button
-            className="import-button"
-            onClick={() => setShowDetection(true)}
-            disabled={saving}
-          >
-            🔍 Detect from my banks
-          </button>
-          <button
-            className="import-button"
-            onClick={() => setShowCSVImport(true)}
-            disabled={saving}
-          >
-            📊 Import from CSV
-          </button>
+        <div className="action-buttons recurring-primary-actions">
           <button className="add-button" onClick={handleAddItem} disabled={saving}>
             ➕ Add Recurring Item
           </button>
+
+          <details className="recurring-tools-menu">
+            <summary>Tools</summary>
+            <div className="recurring-tools-popover">
+              {deletedItems.length > 0 && (
+                <button
+                  className="undo-button"
+                  onClick={handleUndoBulkDelete}
+                  disabled={saving}
+                  title="Restore deleted items"
+                >
+                  ↩️ Undo Delete
+                </button>
+              )}
+              <button
+                className="import-button"
+                onClick={() => setShowRebuildDryRun(true)}
+                disabled={saving}
+                title="Read-only comparison of live recurringPatterns against the vetted TEMPLATE rebuild proposal"
+              >
+                🩺 Rebuild Dry Run
+              </button>
+              <button
+                className="import-button"
+                onClick={() => setShowDetection(true)}
+                disabled={saving}
+              >
+                🔍 Detect from my banks
+              </button>
+              <button
+                className="import-button"
+                onClick={() => setShowCSVImport(true)}
+                disabled={saving}
+              >
+                📊 Import from CSV
+              </button>
+              {recurringItems.length > 0 && (
+                <button
+                  className="delete-all-button"
+                  onClick={() => setShowBulkDeleteModal(true)}
+                  disabled={saving}
+                  title="Delete all recurring items"
+                >
+                  🗑️ Delete All
+                </button>
+              )}
+            </div>
+          </details>
         </div>
       </div>
 
