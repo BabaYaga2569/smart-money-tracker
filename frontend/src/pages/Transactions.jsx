@@ -1763,23 +1763,40 @@ useEffect(() => {
     setFilteredTransactions(filtered);
   };
 
+
+  const getTransactionCategory = (transaction = {}) =>
+    transaction.category ||
+    transaction.personal_finance_category?.primary ||
+    'Uncategorized';
+
+  const isTransferCategory = (category = '') =>
+    String(category).toLowerCase().includes('transfer');
+
+  const isPostedTransaction = (transaction = {}) =>
+    transaction.pending !== true &&
+    transaction.pending !== 'true' &&
+    transaction.status !== 'pending';
+
   const calculateAnalytics = () => {
-    const monthlyTransactions = monthlyAnalyticsTransactions;
+    const monthlyTransactions = monthlyAnalyticsTransactions
+      .filter(isPostedTransaction)
+      .filter(t => !isTransferCategory(getTransactionCategory(t)));
     
     let totalIncome = 0;
     let totalExpenses = 0;
     const categoryBreakdown = {};
     
     monthlyTransactions.forEach(t => {
+      const category = getTransactionCategory(t);
+
       if (t.amount > 0) {
         totalIncome += t.amount;
       } else {
         totalExpenses += Math.abs(t.amount);
       }
-      
-      if (t.category) {
-        categoryBreakdown[t.category] = (categoryBreakdown[t.category] || 0) + Math.abs(t.amount);
-      }
+
+      categoryBreakdown[category] =
+        (categoryBreakdown[category] || 0) + Math.abs(t.amount);
     });
     
     const topCategories = Object.entries(categoryBreakdown)
