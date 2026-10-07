@@ -14,7 +14,7 @@ const ThemePicker = () => {
           <h3>🎨 App Theme</h3>
           <p>Choose the visual style for Smart Money Tracker. Changes apply instantly.</p>
         </div>
-        <span className="theme-picker-badge">Premium themes</span>
+        <span className="theme-picker-badge">Immersive themes</span>
       </div>
 
       <div className="theme-picker-grid">
