@@ -468,3 +468,23 @@ html body .cashflow-container h3 { color:var(--smt-text)!important; }
 html body .cashflow-container input,
 html body .cashflow-container select { background:var(--smt-surface-2)!important; color:var(--smt-text)!important; border-color:var(--smt-border)!important; }
 @media(max-width:700px){ html body .cashflow-container{padding:18px 14px 30px;} }
+
+
+/* ===== Premium QA: Cash Flow theme residue cleanup ===== */
+html body .cashflow-container .controls-section,
+html body .cashflow-container .chart-container,
+html body .cashflow-container .forecast-summary,
+html body .cashflow-container .insight-card,
+html body .cashflow-container .summary-card {
+  box-shadow: 0 10px 28px rgba(0,0,0,.16), inset 0 1px 0 var(--smt-theme-metal) !important;
+}
+html body .cashflow-container .summary-value,
+html body .cashflow-container .forecast-value,
+html body .cashflow-container .positive {
+  color: var(--smt-theme-accent) !important;
+  text-shadow: none !important;
+}
+html body .cashflow-container .summary-label,
+html body .cashflow-container .forecast-label,
+html body .cashflow-container .insight-text { color:var(--smt-text-3) !important; }
+html body .cashflow-container button { box-shadow:none !important; text-shadow:none !important; }
