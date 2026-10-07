@@ -64,7 +64,7 @@ const Settings = () => {
     enabled: false,
     bankName: '',
     amount: '',
-    daysBefore: 2,
+    daysBefore: 1,
     remainderBank: ''
   });
 
@@ -182,7 +182,7 @@ const Settings = () => {
             enabled: data.earlyDeposit.enabled || false,
             bankName: data.earlyDeposit.bankName || '',
             amount: data.earlyDeposit.amount || '',
-            daysBefore: data.earlyDeposit.daysBefore || 2,
+            daysBefore: data.earlyDeposit.daysBefore || 1,
             remainderBank: data.earlyDeposit.remainderBank || ''
           });
         } else if (data.paySchedules?.yours?.bankSplit) {
@@ -192,7 +192,7 @@ const Settings = () => {
             enabled: !!oldSplit.fixedAmount?.amount,
             bankName: oldSplit.fixedAmount?.bank || '',
             amount: oldSplit.fixedAmount?.amount || '',
-            daysBefore: 2,
+            daysBefore: 1,
             remainderBank: oldSplit.remainder?.bank || ''
           });
         }
@@ -537,8 +537,8 @@ const Settings = () => {
                     type="number"
                     min="1"
                     max="5"
-                    value={earlyDeposit?.daysBefore || 2}
-                    onChange={(e) => setEarlyDeposit({...(earlyDeposit || {}), daysBefore: parseInt(e.target.value) || 2})}
+                    value={earlyDeposit?.daysBefore || 1}
+                    onChange={(e) => setEarlyDeposit({...(earlyDeposit || {}), daysBefore: parseInt(e.target.value) || 1})}
                   />
                   <small>How many days before payday to receive early deposit</small>
                 </div>
