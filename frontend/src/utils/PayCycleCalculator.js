@@ -32,9 +32,10 @@ export class PayCycleCalculator {
      * @param {Object} spouseSchedule - Spouse pay schedule object
      * @returns {Object} Detailed payday info
      */
-    static calculateNextPayday(yoursSchedule, spouseSchedule) {
+    static calculateNextPayday(yoursSchedule, spouseSchedule, options = {}) {
         try {
-            const today = getPacificTime();
+            const { includeToday = true, todayOverride = null } = options;
+            const today = todayOverride ? new Date(`${todayOverride}T00:00:00`) : getPacificTime();
             today.setHours(0, 0, 0, 0); // Start of day for comparison
             
             console.log('📅 PayCycleCalculator: Calculating next payday...', {
@@ -55,7 +56,7 @@ export class PayCycleCalculator {
                 yourNextPay.setDate(lastPay.getDate() + 14);
                 
                 // If the calculated next payday has already passed, keep adding 14 days until we find a future date
-                while (yourNextPay < today) {
+                while (includeToday ? yourNextPay < today : yourNextPay <= today) {
                     yourNextPay.setDate(yourNextPay.getDate() + 14);
                 }
                 
@@ -75,7 +76,7 @@ export class PayCycleCalculator {
             // Calculate spouse payday if spouse schedule exists AND has a valid amount
             // Only consider spouse schedule if amount is actually set and greater than 0
             if (spouseSchedule && spouseSchedule.amount && parseFloat(spouseSchedule.amount) > 0) {
-                spouseNextPay = this.getWifeNextPayday();
+                spouseNextPay = this.getWifeNextPayday({ includeToday, todayOverride });
                 spouseAmount = parseFloat(spouseSchedule.amount);
                 
                 console.log('📅 Spouse next payday:', {
@@ -161,8 +162,9 @@ export class PayCycleCalculator {
      * Calculate wife's next payday (15th or 30th with Friday rule)
      * @returns {Date} Next payday for wife
      */
-    static getWifeNextPayday() {
-        const now = getPacificTime();
+    static getWifeNextPayday(options = {}) {
+        const { includeToday = true, todayOverride = null } = options;
+        const now = todayOverride ? new Date(`${todayOverride}T00:00:00`) : getPacificTime();
         const today = new Date(now);
         today.setHours(0, 0, 0, 0); // Start of day for comparison
         const currentYear = today.getFullYear();
@@ -178,12 +180,14 @@ export class PayCycleCalculator {
         const adjustedMonthEnd = this.adjustForWeekend(monthEnd);
         
         // If both dates this month are in the future, return the earlier one
-        if (adjustedFifteenth >= today && adjustedMonthEnd >= today) {
+        const isEligible = (date) => includeToday ? date >= today : date > today;
+
+        if (isEligible(adjustedFifteenth) && isEligible(adjustedMonthEnd)) {
             return adjustedFifteenth < adjustedMonthEnd ? adjustedFifteenth : adjustedMonthEnd;
         }
         
-        // If only 30th is in the future this month
-        if (adjustedMonthEnd >= today) {
+        // If only month-end is still eligible this month
+        if (isEligible(adjustedMonthEnd)) {
             return adjustedMonthEnd;
         }
         
