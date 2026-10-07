@@ -109,7 +109,7 @@
   position: relative;
   min-height: 260px;
   overflow: hidden;
-  padding: 28px;
+  padding: 28px 28px 76px;
   border: 1px solid rgba(var(--smt-theme-primary-rgb), .16);
   border-radius: var(--smt-radius-lg);
   background:
@@ -158,6 +158,7 @@
   position: absolute;
   left: 28px;
   bottom: 24px;
+  z-index: 3;
   color: var(--smt-text);
   font-size: 13px;
   font-weight: 750;
@@ -677,8 +678,8 @@
 :root[data-theme="laBlueGold"] .dashboard-safe-card::before {
   width: 360px;
   height: 360px;
-  right: -102px;
-  top: -194px;
+  right: -54px;
+  top: -182px;
   border: 24px solid rgba(var(--smt-theme-accent-rgb), .46);
   border-left-color: transparent;
   border-bottom-color: transparent;
@@ -691,8 +692,8 @@
 :root[data-theme="laBlueGold"] .dashboard-safe-card::after {
   width: 300px;
   height: 300px;
-  right: -30px;
-  top: -176px;
+  right: 18px;
+  top: -164px;
   border: 11px solid rgba(var(--smt-theme-primary-rgb), .62);
   border-left-color: transparent;
   border-bottom-color: transparent;
@@ -845,5 +846,48 @@
   :root[data-theme="pittsburghBlackGold"] .dashboard-safe-card::before {
     right: 42px;
     opacity: .7;
+  }
+}
+
+
+/* Dashboard hero spacing/polish */
+.dashboard-safe-caption {
+  position: relative;
+  z-index: 3;
+  max-width: 62%;
+}
+
+.dashboard-safe-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  padding-top: 10px;
+}
+
+:root[data-theme="laBlueGold"] .dashboard-safe-card::before,
+:root[data-theme="laBlueGold"] .dashboard-safe-card::after {
+  opacity: .95;
+}
+
+@media (max-width: 920px) {
+  .dashboard-safe-caption {
+    max-width: 72%;
+  }
+}
+
+@media (max-width: 640px) {
+  .dashboard-safe-card {
+    padding-bottom: 70px;
+  }
+
+  .dashboard-safe-caption {
+    max-width: 78%;
+  }
+}
+
+@media (max-width: 420px) {
+  .dashboard-safe-caption {
+    max-width: 100%;
+    padding-right: 36px;
   }
 }
