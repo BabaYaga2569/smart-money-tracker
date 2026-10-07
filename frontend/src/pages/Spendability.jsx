@@ -14,6 +14,7 @@ import {
   summarizeNextHouseholdRefill,
   nextMainPaydayDate
 } from '../utils/householdPayEvents';
+import { buildSpendabilityReconciliation } from '../utils/spendabilityReconciliation';
 import './Spendability.css';
 import { useAuth } from '../contexts/AuthContext';
 // Force rebuild 2025-11-12 v2 - Fix spendability issues
@@ -44,6 +45,8 @@ const SpendabilityV2 = () => {
     weeklyEssentials: 0,
     safetyBuffer: 0,
     paidBillsCount: 0,
+    pendingPaymentBillsCount: 0,
+    reconciliation: null,
     paydays: [] // Array of payday objects: { date, amount, bank, type }
   });
   
@@ -389,16 +392,23 @@ console.log('🔍 PAYDAY CALCULATION DEBUG:', {
       );
       const lastPaydayDate = paydays[paydays.length - 1]?.date || nextPayday;
 
-      // ✅ FIX: Load bills from financialEvents collection (where Bills.jsx reads from)
+      // Load canonical unpaid bill occurrences plus recurring patterns for
+      // the read-only reconciliation audit.
       let allBills = [];
+      let recurringPatterns = [];
       try {
         const financialEventsRef = collection(db, 'users', currentUser.uid, 'financialEvents');
+        const recurringPatternsRef = collection(db, 'users', currentUser.uid, 'recurringPatterns');
         const billsQuery = query(
           financialEventsRef,
           where('type', '==', 'bill'),
           where('isPaid', '==', false)
         );
-        const billsSnapshot = await getDocs(billsQuery);
+
+        const [billsSnapshot, recurringPatternsSnapshot] = await Promise.all([
+          getDocs(billsQuery),
+          getDocs(recurringPatternsRef)
+        ]);
 
         // Use the exact same visibility rules as Bills.jsx so hidden legacy rows
         // and archived duplicates can never leak back into Safe-to-Spend.
@@ -414,12 +424,18 @@ console.log('🔍 PAYDAY CALCULATION DEBUG:', {
             nextDueDate: String(bill.dueDate || bill.nextDueDate || '').slice(0, 10),
             recurrence: bill.recurrence || 'monthly'
           }));
-        console.log('✅ Spendability: Loaded bills from financialEvents', {
-          count: allBills.length,
-          bills: allBills.map(b => ({ name: b.name, amount: b.amount, dueDate: b.dueDate, status: b.status }))
+
+        recurringPatterns = recurringPatternsSnapshot.docs.map(doc => ({
+          id: doc.id,
+          ...doc.data()
+        }));
+
+        console.log('✅ Spendability: Loaded canonical bill audit sources', {
+          unpaidBills: allBills.length,
+          recurringPatterns: recurringPatterns.length
         });
       } catch (error) {
-        console.error('❌ Spendability: Error loading bills from financialEvents:', error);
+        console.error('❌ Spendability: Error loading bill audit sources:', error);
       }
 
       // Canonical bill paid/unpaid state comes from the backend Bill Engine.
@@ -588,6 +604,17 @@ console.log('🔍 PAYDAY CALCULATION DEBUG:', {
       });
 
       const finalDaysUntilPayday = Math.max(0, daysUntilPayday);
+
+      const reconciliation = buildSpendabilityReconciliation({
+        recurringPatterns,
+        currentCycleBills: billsDueBeforePayday,
+        reservedBills: unpaidBillsBeforePayday,
+        pendingPaymentBills: pendingPaymentBillsBeforePayday,
+        todayStr: todayStrProj,
+        cycleEndStr,
+        totalAvailable,
+        safeToSpend: safeToSpendToday
+      });
       
       // Final logging before setting component state
       console.log('Spendability: Final calculation results', {
@@ -709,7 +736,9 @@ console.log('🔍 PAYDAY CALCULATION DEBUG:', {
         daysUntilPayday: finalDaysUntilPayday,
         weeklyEssentials: essentialsNeeded,
         safetyBuffer,
-        paidBillsCount: billsDueBeforePayday.length - unpaidBillsBeforePayday.length,
+        paidBillsCount: 0,
+        pendingPaymentBillsCount,
+        reconciliation,
         paydays  // Array of payday objects
       });
       
@@ -739,6 +768,8 @@ console.log('🔍 PAYDAY CALCULATION DEBUG:', {
     weeklyEssentials: 0,
     safetyBuffer: 0,
     paidBillsCount: 0,
+    pendingPaymentBillsCount: 0,
+    reconciliation: null,
     paydays: []
   };
   
@@ -1118,6 +1149,79 @@ console.log('🔍 PAYDAY CALCULATION DEBUG:', {
             )}
           </div>
         </div>
+
+        {/* Read-only Safe-to-Spend reconciliation audit */}
+        {financialData.reconciliation && (
+          <div className="tile calculation-tile">
+            <h3>🧾 Safe-to-Spend Reconciliation</h3>
+            <div className="calculation-list">
+              <div className="calc-section">
+                <div className="calc-section-title">Equation used</div>
+                <div className="calc-item">
+                  <span>Current available balance</span>
+                  <span className="positive">{formatCurrency(financialData.reconciliation.equation.startingBalance)}</span>
+                </div>
+                <div className="calc-item negative">
+                  <span>Reserved unpaid bills ({financialData.reconciliation.reservedCount})</span>
+                  <span>-{formatCurrency(financialData.reconciliation.equation.reservedBills)}</span>
+                </div>
+                <div className="calc-total">
+                  <span className="result-label">Safe to Spend</span>
+                  <span className="result-amount">{formatCurrency(financialData.reconciliation.equation.result)}</span>
+                </div>
+              </div>
+
+              <div className="calc-section">
+                <div className="calc-section-title">Excluded from reserve</div>
+                <div className="calc-item">
+                  <span>Pending bank payments ({financialData.reconciliation.pendingExcludedCount})</span>
+                  <span>{formatCurrency(financialData.reconciliation.pendingExcludedTotal)}</span>
+                </div>
+                <div className="calc-note">
+                  <small>These remain officially unpaid until posted, but are not reserved again because the bank available balance already reflects them.</small>
+                </div>
+              </div>
+
+              <div className="calc-section">
+                <div className="calc-section-title">
+                  Recurring-pattern coverage
+                </div>
+                {financialData.reconciliation.missingOccurrences.length > 0 ? (
+                  <>
+                    <div className="calc-note" style={{ marginBottom: '10px' }}>
+                      <small>⚠️ Active recurring items expected before {financialData.reconciliation.cycleEndStr} with no matching unpaid bill occurrence:</small>
+                    </div>
+                    {financialData.reconciliation.missingOccurrences.map(item => (
+                      <div className="calc-item negative" key={item.id}>
+                        <span>{item.name} · due {formatDate(item.dueDate)}</span>
+                        <span>{item.amount == null ? 'Variable amount' : formatCurrency(item.amount)}</span>
+                      </div>
+                    ))}
+                  </>
+                ) : (
+                  <div className="calc-note">
+                    <small>✅ Every active recurring pattern expected in this cycle has a matching bill occurrence.</small>
+                  </div>
+                )}
+              </div>
+
+              {financialData.reconciliation.unlinkedOccurrences.length > 0 && (
+                <div className="calc-section">
+                  <div className="calc-section-title">Manual / unlinked bill occurrences</div>
+                  {financialData.reconciliation.unlinkedOccurrences.map(item => (
+                    <div className="calc-item" key={item.id}>
+                      <span>{item.name} · due {formatDate(item.dueDate)}</span>
+                      <span>{formatCurrency(item.amount)}</span>
+                    </div>
+                  ))}
+                  <div className="calc-note">
+                    <small>These are valid bill occurrences but are not linked to a recurring pattern. Review them when reconciling against an external ledger.</small>
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
+        )}
 
         {/* Tile 6: Calculation Breakdown */}
         <div className="tile calculation-tile">
