@@ -928,3 +928,36 @@ html body .spendability-container .refresh-button:hover {
     gap: 12px;
   }
 }
+
+
+/* ===== Screenshot QA: keep Spendability bill rows dark ===== */
+html body .spendability-container .bills-list,
+html body .spendability-container .bill-item,
+html body .spendability-container .bill-info {
+  background: transparent !important;
+  color: var(--smt-text) !important;
+}
+
+html body .spendability-container .bill-item {
+  border: 0 !important;
+  border-bottom: 1px solid var(--smt-border) !important;
+  border-radius: 0 !important;
+  padding: 11px 0 !important;
+}
+
+html body .spendability-container .bill-item.overdue {
+  margin: 8px 0 !important;
+  padding: 12px !important;
+  border: 1px solid rgba(239,106,106,.42) !important;
+  border-radius: 10px !important;
+  background: rgba(239,106,106,.06) !important;
+}
+
+html body .spendability-container .bills-tile {
+  overflow: hidden;
+}
+
+html body .spendability-container .bills-list {
+  margin-top: 12px;
+  padding: 0 14px 12px;
+}

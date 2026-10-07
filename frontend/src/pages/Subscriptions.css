@@ -493,3 +493,166 @@ html body .subscriptions-page .subscription-meta,
 html body .subscriptions-page .subscription-frequency,
 html body .subscriptions-page .subscription-date { color:var(--smt-text-3) !important; }
 html body .subscriptions-page button { box-shadow:none !important; text-shadow:none !important; }
+
+
+/* ===== Screenshot QA: premium Subscriptions composition ===== */
+html body .subscriptions-page .page-header {
+  align-items: flex-start;
+  margin-bottom: 22px;
+}
+
+html body .subscriptions-page .page-header h1 {
+  margin: 0;
+  color: var(--smt-text) !important;
+  font-size: clamp(28px, 2.8vw, 36px);
+  line-height: 1.05;
+  letter-spacing: -.035em;
+}
+
+html body .subscriptions-page .header-actions {
+  gap: 8px;
+}
+
+html body .subscriptions-page .btn-auto-detect,
+html body .subscriptions-page .add-subscription-btn {
+  min-height: 40px;
+  padding: 9px 14px;
+  border: 1px solid var(--smt-border);
+  border-radius: 10px;
+  font-weight: 760;
+}
+
+html body .subscriptions-page .btn-auto-detect {
+  background: var(--smt-surface-2) !important;
+  color: var(--smt-text-2) !important;
+}
+
+html body .subscriptions-page .add-subscription-btn {
+  background: var(--smt-theme-primary) !important;
+  color: #07100d !important;
+  border-color: rgba(var(--smt-theme-primary-rgb), .34) !important;
+}
+
+html body .subscriptions-page .subscription-summary {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  margin-bottom: 18px;
+}
+
+html body .subscriptions-page .summary-card {
+  min-height: 104px;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  padding: 17px 18px !important;
+  text-align: left !important;
+  background:
+    linear-gradient(145deg, rgba(var(--smt-theme-primary-rgb), .05), transparent 75%),
+    var(--smt-surface) !important;
+}
+
+html body .subscriptions-page .summary-label {
+  color: var(--smt-text-3) !important;
+  font-size: 10px;
+  font-weight: 780;
+  letter-spacing: .07em;
+  text-transform: uppercase;
+}
+
+html body .subscriptions-page .summary-value {
+  margin-top: 8px;
+  font-size: 26px !important;
+  line-height: 1;
+  letter-spacing: -.03em;
+}
+
+html body .subscriptions-page .subscriptions-filters {
+  gap: 8px;
+  padding: 10px;
+  margin-bottom: 18px;
+  border: 1px solid var(--smt-border);
+  border-radius: 12px;
+  background: var(--smt-surface);
+}
+
+html body .subscriptions-page .filter-btn,
+html body .subscriptions-page .category-filter,
+html body .subscriptions-page .sort-select,
+html body .subscriptions-page .search-input {
+  min-height: 38px;
+  padding: 8px 11px;
+  border: 1px solid var(--smt-border) !important;
+  border-radius: 9px !important;
+  background: var(--smt-surface-2) !important;
+  color: var(--smt-text-2) !important;
+  box-shadow: none !important;
+}
+
+html body .subscriptions-page .filter-btn.active {
+  border-color: rgba(var(--smt-theme-primary-rgb), .28) !important;
+  background: rgba(var(--smt-theme-primary-rgb), .12) !important;
+  color: var(--smt-theme-secondary) !important;
+}
+
+html body .subscriptions-page .subscription-card {
+  padding: 17px 18px !important;
+  border-left: 3px solid rgba(var(--smt-theme-primary-rgb), .52) !important;
+}
+
+html body .subscriptions-page .subscription-name {
+  color: var(--smt-text) !important;
+  font-size: 15px !important;
+  font-weight: 780;
+}
+
+html body .subscriptions-page .subscription-cost {
+  color: var(--smt-theme-accent) !important;
+  font-size: 20px !important;
+  font-weight: 820;
+  text-shadow: none !important;
+}
+
+html body .subscriptions-page .subscription-category,
+html body .subscriptions-page .subscription-linked,
+html body .subscriptions-page .subscription-auto-renew {
+  color: var(--smt-theme-secondary) !important;
+}
+
+html body .subscriptions-page .subscription-notes {
+  margin: 10px 0 12px;
+  padding: 9px 10px;
+  border: 1px solid var(--smt-border);
+  border-radius: 8px;
+  background: rgba(255,255,255,.025) !important;
+  color: var(--smt-text-3) !important;
+  font-size: 11px;
+}
+
+html body .subscriptions-page .action-btn {
+  min-height: 34px;
+  padding: 7px 10px;
+  border: 1px solid var(--smt-border) !important;
+  border-radius: 8px !important;
+  background: var(--smt-surface-2) !important;
+  color: var(--smt-text-2) !important;
+}
+
+html body .subscriptions-page .edit-btn:hover {
+  color: var(--smt-theme-secondary) !important;
+  border-color: rgba(var(--smt-theme-primary-rgb), .30) !important;
+}
+
+html body .subscriptions-page .delete-btn:hover {
+  color: #ff9a9a !important;
+  border-color: rgba(239,106,106,.35) !important;
+}
+
+html body .subscriptions-page .cancel-btn:hover {
+  color: var(--smt-warning) !important;
+  border-color: rgba(246,185,74,.35) !important;
+}
+
+@media (max-width: 760px) {
+  html body .subscriptions-page .subscription-summary {
+    grid-template-columns: 1fr;
+  }
+}

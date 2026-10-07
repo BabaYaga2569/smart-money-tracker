@@ -9,7 +9,10 @@ export const SUBSCRIPTION_CATEGORIES = [
   'Software',
   'Memberships',
   'Entertainment',
-  'Gaming'
+  'Gaming',
+  'Subscriptions & Entertainment',
+  'Fitness',
+  'Storage'
 ];
 
 export const RECURRING_BILL_CATEGORIES = [
@@ -18,7 +21,14 @@ export const RECURRING_BILL_CATEGORIES = [
   'Insurance',
   'Phone',
   'Internet',
-  'Mortgage'
+  'Mortgage',
+  'Housing',
+  'Auto & Transportation',
+  'Credit Cards & Loans',
+  'Utilities & Home Services',
+  'Phone & Internet',
+  'Insurance & Healthcare',
+  'Personal Care'
 ];
 
 /**
@@ -29,7 +39,7 @@ export const RECURRING_BILL_CATEGORIES = [
 export const getTypeFromCategory = (category) => {
   if (SUBSCRIPTION_CATEGORIES.includes(category)) return 'subscription';
   if (RECURRING_BILL_CATEGORIES.includes(category)) return 'recurring_bill';
-  return 'subscription'; // Default to subscription
+  return 'recurring_bill'; // Unknown recurring charges belong with bills until explicitly classified as subscriptions
 };
 
 /**

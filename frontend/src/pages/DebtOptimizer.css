@@ -754,3 +754,59 @@ html body .debt-optimizer-container .card-item:hover{background:var(--smt-surfac
 html body .debt-optimizer-container .card-header,
 html body .debt-optimizer-container h3{color:var(--smt-text)!important;}
 @media(max-width:700px){html body .debt-optimizer-container{padding:18px 14px 30px;}}
+
+
+/* ===== Screenshot QA: eliminate legacy light-mode survivors ===== */
+html body .debt-optimizer-container .strategy-card,
+html body .debt-optimizer-container .action-item,
+html body .debt-optimizer-container .cash-flow-card,
+html body .debt-optimizer-container .spending-insights,
+html body .debt-optimizer-container .insight-item,
+html body .debt-optimizer-container .recommendation-action,
+html body .debt-optimizer-container .benefits-list,
+html body .debt-optimizer-container .no-debt-message {
+  background: var(--smt-surface-2) !important;
+  color: var(--smt-text) !important;
+  border-color: var(--smt-border) !important;
+  box-shadow: none !important;
+}
+
+html body .debt-optimizer-container .recommendation-card {
+  background:
+    linear-gradient(145deg, rgba(var(--smt-theme-primary-rgb), .08), transparent 75%),
+    var(--smt-surface) !important;
+  border-color: rgba(var(--smt-theme-primary-rgb), .22) !important;
+}
+
+html body .debt-optimizer-container .strategy-reasoning,
+html body .debt-optimizer-container .action-description,
+html body .debt-optimizer-container .insight-suggestion,
+html body .debt-optimizer-container .cash-flow-row,
+html body .debt-optimizer-container .debt-free-date {
+  color: var(--smt-text-2) !important;
+}
+
+html body .debt-optimizer-container .cash-flow-card h4,
+html body .debt-optimizer-container .spending-insights h4,
+html body .debt-optimizer-container .action-items h4,
+html body .debt-optimizer-container .strategy-card h3 {
+  color: var(--smt-text) !important;
+}
+
+html body .debt-optimizer-container .cash-flow-row.total {
+  border-top-color: var(--smt-border-strong) !important;
+}
+
+
+/* Follow-up QA: readable text on dark premium surfaces */
+html body .debt-optimizer-container .action-title,
+html body .debt-optimizer-container .insight-row .category,
+html body .debt-optimizer-container .target-card-info h3,
+html body .debt-optimizer-container .benefits-list h4 {
+  color: var(--smt-text) !important;
+}
+
+html body .debt-optimizer-container .recommendation-card .reasoning,
+html body .debt-optimizer-container .benefits-list li {
+  color: var(--smt-text-2) !important;
+}
