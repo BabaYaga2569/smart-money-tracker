@@ -12,6 +12,8 @@
 }
 
 .main-content {
+  position: relative;
+  isolation: isolate;
   flex: 1;
   min-width: 0;
   margin-left: 0;
@@ -59,5 +61,143 @@
 @media (max-width: 640px) {
   .main-content {
     padding-top: 66px;
+  }
+}
+
+
+/* ===== Theme Engine v2 immersive app canvas ===== */
+.main-content::before,
+.main-content::after {
+  content: '';
+  position: fixed;
+  pointer-events: none;
+  z-index: -1;
+  opacity: var(--smt-theme-art-opacity);
+}
+
+:root[data-theme="laBlueGold"] .main-content {
+  background:
+    radial-gradient(circle at 74% 4%, rgba(var(--smt-theme-primary-rgb), .13), transparent 26rem),
+    radial-gradient(circle at 28% 96%, rgba(var(--smt-theme-accent-rgb), .045), transparent 30rem),
+    linear-gradient(180deg, #070b13 0%, var(--smt-bg) 58%, #05080e 100%);
+}
+
+:root[data-theme="laBlueGold"] .main-content::before {
+  width: 620px;
+  height: 620px;
+  right: -260px;
+  top: -300px;
+  border: 34px solid rgba(var(--smt-theme-accent-rgb), .09);
+  border-left-color: transparent;
+  border-bottom-color: transparent;
+  border-radius: 50%;
+  transform: rotate(18deg);
+  filter: drop-shadow(0 0 34px rgba(var(--smt-theme-primary-rgb), .13));
+}
+
+:root[data-theme="laBlueGold"] .main-content::after {
+  width: 500px;
+  height: 500px;
+  right: -150px;
+  top: -260px;
+  border: 14px solid rgba(var(--smt-theme-primary-rgb), .12);
+  border-left-color: transparent;
+  border-bottom-color: transparent;
+  border-radius: 50%;
+  transform: rotate(18deg);
+}
+
+:root[data-theme="jacksonvilleTealGold"] .main-content {
+  background:
+    radial-gradient(circle at 76% 0%, rgba(var(--smt-theme-primary-rgb), .12), transparent 27rem),
+    linear-gradient(180deg, #061012 0%, var(--smt-bg) 62%, #040b0c 100%);
+}
+
+:root[data-theme="jacksonvilleTealGold"] .main-content::before {
+  inset: 0 0 auto auto;
+  width: min(48vw, 720px);
+  height: 100vh;
+  background:
+    linear-gradient(128deg,
+      transparent 0 52%,
+      rgba(var(--smt-theme-primary-rgb), .055) 52% 61%,
+      transparent 61%),
+    linear-gradient(145deg,
+      transparent 0 66%,
+      rgba(var(--smt-theme-accent-rgb), .05) 66% 71%,
+      transparent 71%);
+}
+
+:root[data-theme="jacksonvilleTealGold"] .main-content::after {
+  width: 170px;
+  height: 110vh;
+  right: 7%;
+  top: -5vh;
+  background: linear-gradient(180deg,
+    rgba(var(--smt-theme-secondary-rgb), .08),
+    rgba(var(--smt-theme-primary-rgb), .025) 48%,
+    transparent 88%);
+  clip-path: polygon(65% 0, 100% 0, 35% 100%, 0 100%);
+}
+
+:root[data-theme="pittsburghBlackGold"] .main-content {
+  background:
+    radial-gradient(circle at 75% 2%, rgba(var(--smt-theme-accent-rgb), .075), transparent 25rem),
+    repeating-linear-gradient(120deg,
+      transparent 0 56px,
+      rgba(255,255,255,.012) 56px 57px),
+    linear-gradient(180deg, #080808 0%, #090909 65%, #050505 100%);
+}
+
+:root[data-theme="pittsburghBlackGold"] .main-content::before {
+  width: 22px;
+  height: 120vh;
+  right: 13%;
+  top: -12vh;
+  background: linear-gradient(180deg,
+    rgba(var(--smt-theme-accent-rgb), .2),
+    rgba(var(--smt-theme-accent-rgb), .04) 72%,
+    transparent);
+  transform: rotate(24deg);
+  box-shadow:
+    54px 0 0 rgba(var(--smt-theme-accent-rgb), .035),
+    -54px 0 0 rgba(255,255,255,.012);
+}
+
+:root[data-theme="pittsburghBlackGold"] .main-content::after {
+  width: 420px;
+  height: 1px;
+  right: 2%;
+  top: 180px;
+  background: linear-gradient(90deg,
+    transparent,
+    rgba(var(--smt-theme-accent-rgb), .18),
+    transparent);
+  transform: rotate(-15deg);
+  box-shadow:
+    0 90px 0 rgba(var(--smt-theme-accent-rgb), .07),
+    0 180px 0 rgba(255,255,255,.025);
+}
+
+@media (max-width: 640px) {
+  :root[data-theme="laBlueGold"] .main-content::before {
+    width: 360px;
+    height: 360px;
+    right: -210px;
+    top: -165px;
+    border-width: 22px;
+  }
+
+  :root[data-theme="laBlueGold"] .main-content::after {
+    width: 300px;
+    height: 300px;
+    right: -150px;
+    top: -155px;
+    border-width: 9px;
+  }
+
+  :root[data-theme="jacksonvilleTealGold"] .main-content::before,
+  :root[data-theme="pittsburghBlackGold"] .main-content::before {
+    opacity: .6;
   }
 }
