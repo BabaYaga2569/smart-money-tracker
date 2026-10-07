@@ -449,3 +449,22 @@
 .insight-card:nth-child(4) { animation-delay: 0.4s; }
 .insight-card:nth-child(5) { animation-delay: 0.5s; }
 .insight-card:nth-child(6) { animation-delay: 0.6s; }
+/* ===== Premium themed Cash Flow foundation ===== */
+html body .cashflow-container {
+  width:100%; max-width:var(--smt-content-max); margin:0 auto;
+  padding:28px var(--smt-page-gutter) 42px; background:transparent!important; color:var(--smt-text);
+}
+html body .cashflow-container .page-header h2 { color:var(--smt-text)!important; font-size:clamp(25px,2.4vw,32px); }
+html body .cashflow-container .controls-section,
+html body .cashflow-container .chart-container,
+html body .cashflow-container .forecast-summary,
+html body .cashflow-container .insight-card,
+html body .cashflow-container .summary-card {
+  background:var(--smt-surface)!important; border:1px solid var(--smt-border)!important;
+  border-radius:14px!important; box-shadow:none!important;
+}
+html body .cashflow-container .insight-header,
+html body .cashflow-container h3 { color:var(--smt-text)!important; }
+html body .cashflow-container input,
+html body .cashflow-container select { background:var(--smt-surface-2)!important; color:var(--smt-text)!important; border-color:var(--smt-border)!important; }
+@media(max-width:700px){ html body .cashflow-container{padding:18px 14px 30px;} }
