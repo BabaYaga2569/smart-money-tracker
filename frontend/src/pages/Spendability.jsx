@@ -8,6 +8,7 @@ import { formatDateForDisplay, formatDateForInput, getDaysUntilDateInPacific, ge
 import { getPacificTime } from '../utils/timezoneHelpers';
 import { SettingsSchemaManager } from '../utils/SettingsSchemaManager';
 import { getVisiblePlaidAccounts, isDepositoryAccount } from '../utils/accountVisibility';
+import { visibleBillOccurrences } from '../utils/billVisibility';
 import './Spendability.css';
 import { useAuth } from '../contexts/AuthContext';
 // Force rebuild 2025-11-12 v2 - Fix spendability issues
@@ -483,37 +484,27 @@ console.log('🔍 PAYDAY CALCULATION DEBUG:', {
       let allBills = [];
       try {
         const financialEventsRef = collection(db, 'users', currentUser.uid, 'financialEvents');
-        const billsQuery = query(financialEventsRef, where('type', '==', 'bill'));
+        const billsQuery = query(
+          financialEventsRef,
+          where('type', '==', 'bill'),
+          where('isPaid', '==', false)
+        );
         const billsSnapshot = await getDocs(billsQuery);
-        
-        allBills = billsSnapshot.docs
-          .map(doc => {
-            const data = doc.data();
-            return {
-              id: doc.id,
-              name: data.name,
-              amount: data.amount,
-              dueDate: data.dueDate,
-              nextDueDate: data.dueDate,
-              category: data.category,
-              recurrence: data.recurrence || 'monthly',
-              isPaid: data.isPaid,
-              status: data.status,
-              isSubscription: data.isSubscription || false,
-              subscriptionId: data.subscriptionId,
-              paymentHistory: data.paymentHistory || [],
-              linkedTransactionIds: data.linkedTransactionIds || [],
-              merchantNames: data.merchantNames || [],
-              originalDueDate: data.originalDueDate
-            };
-          })
-          .filter(bill => {
-            // Only exclude if EXPLICITLY paid or skipped
-            if (bill.status === 'paid') return false;
-            if (bill.status === 'skipped') return false;
-            if (bill.isPaid === true) return false;
-            return true;
-          });
+
+        // Use the exact same visibility rules as Bills.jsx so hidden legacy rows
+        // and archived duplicates can never leak back into Safe-to-Spend.
+        allBills = visibleBillOccurrences(
+          billsSnapshot.docs.map(doc => ({
+            id: doc.id,
+            ...doc.data()
+          }))
+        )
+          .filter(bill => bill.status !== 'skipped')
+          .map(bill => ({
+            ...bill,
+            nextDueDate: String(bill.dueDate || bill.nextDueDate || '').slice(0, 10),
+            recurrence: bill.recurrence || 'monthly'
+          }));
         console.log('✅ Spendability: Loaded bills from financialEvents', {
           count: allBills.length,
           bills: allBills.map(b => ({ name: b.name, amount: b.amount, dueDate: b.dueDate, status: b.status }))
