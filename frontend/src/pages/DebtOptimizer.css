@@ -740,3 +740,17 @@
   font-size: 13px;
   color: #744210;
 }
+
+/* ===== Premium themed Debt Optimizer foundation ===== */
+html body .debt-optimizer-container{width:100%;max-width:var(--smt-content-max);margin:0 auto;padding:28px var(--smt-page-gutter) 42px;background:transparent!important;color:var(--smt-text);}
+html body .debt-optimizer-container .page-header h2{color:var(--smt-text)!important;font-size:clamp(25px,2.4vw,32px);}
+html body .debt-optimizer-container .card,
+html body .debt-optimizer-container .summary-item,
+html body .debt-optimizer-container .recommendation-card,
+html body .debt-optimizer-container .card-item,
+html body .debt-optimizer-container .chart-container,
+html body .debt-optimizer-container .smart-recommendations-section{background:var(--smt-surface)!important;border:1px solid var(--smt-border)!important;border-radius:14px!important;box-shadow:none!important;}
+html body .debt-optimizer-container .card-item:hover{background:var(--smt-surface-2)!important;border-color:var(--smt-border-strong)!important;}
+html body .debt-optimizer-container .card-header,
+html body .debt-optimizer-container h3{color:var(--smt-text)!important;}
+@media(max-width:700px){html body .debt-optimizer-container{padding:18px 14px 30px;}}
