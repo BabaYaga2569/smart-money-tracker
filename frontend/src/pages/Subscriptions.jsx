@@ -15,6 +15,23 @@ import {
 import { getVisiblePlaidAccounts } from '../utils/accountVisibility';
 import './Subscriptions.css';
 
+const LEGACY_SUBSCRIPTION_CATEGORIES = new Set([
+  'Streaming',
+  'Software',
+  'Memberships',
+  'Entertainment',
+  'Gaming',
+  'Subscriptions & Entertainment',
+  'Fitness',
+  'Storage'
+]);
+
+const isSubscriptionRecord = (item = {}) => {
+  if (item.type === 'subscription') return true;
+  if (item.type && item.type !== 'subscription') return false;
+  return LEGACY_SUBSCRIPTION_CATEGORIES.has(item.category);
+};
+
 const Subscriptions = () => {
   const { currentUser } = useAuth();
   const [loading, setLoading] = useState(true);
@@ -93,7 +110,7 @@ const Subscriptions = () => {
   };
 
   const handleSubscriptionAdded = () => {
-    showNotification('Recurring bill added successfully');
+    showNotification('Subscription added successfully');
   };
 
   const handleReviewSuggestions = () => {
@@ -111,19 +128,19 @@ const Subscriptions = () => {
         // Update existing subscription
         const subscriptionRef = doc(db, 'users', currentUser.uid, 'subscriptions', editingSubscription.id);
         await updateDoc(subscriptionRef, subscriptionData);
-        showNotification('Recurring bill updated successfully');
+        showNotification('Subscription updated successfully');
       } else {
         // Add new subscription
         const subscriptionsRef = collection(db, 'users', currentUser.uid, 'subscriptions');
         await addDoc(subscriptionsRef, subscriptionData);
-        showNotification('Recurring bill added successfully');
+        showNotification('Subscription added successfully');
       }
       
       setShowForm(false);
       setEditingSubscription(null);
     } catch (error) {
       console.error('Error saving subscription:', error);
-      showNotification('Error saving recurring bill', 'error');
+      showNotification('Error saving subscription', 'error');
     }
   };
 
@@ -135,10 +152,10 @@ const Subscriptions = () => {
     try {
       const subscriptionRef = doc(db, 'users', currentUser.uid, 'subscriptions', subscription.id);
       await deleteDoc(subscriptionRef);
-      showNotification('Recurring bill deleted successfully');
+      showNotification('Subscription deleted successfully');
     } catch (error) {
       console.error('Error deleting subscription:', error);
-      showNotification('Error deleting recurring bill', 'error');
+      showNotification('Error deleting subscription', 'error');
     }
   };
 
@@ -153,10 +170,10 @@ const Subscriptions = () => {
         status: 'cancelled',
         cancelledDate: new Date().toISOString()
       });
-      showNotification('Recurring bill cancelled successfully');
+      showNotification('Subscription cancelled successfully');
     } catch (error) {
       console.error('Error cancelling subscription:', error);
-      showNotification('Error cancelling recurring bill', 'error');
+      showNotification('Error cancelling subscription', 'error');
     }
   };
 
@@ -165,7 +182,7 @@ const Subscriptions = () => {
     // Only show subscriptions (not recurring bills) - backward compatible
     let filtered = subscriptions.filter(sub => 
       sub.status === 'active' && 
-      (sub.type === 'subscription' || !sub.type) // Backward compatibility: treat no type as subscription
+      isSubscriptionRecord(sub) // Backward compatibility: treat no type as subscription
     );
 
     // Filter by billing cycle
@@ -216,7 +233,7 @@ const Subscriptions = () => {
   // Only include actual subscriptions in calculations (not recurring bills)
   const activeSubscriptions = subscriptions.filter(sub => 
     sub.status === 'active' && 
-    (sub.type === 'subscription' || !sub.type)
+    isSubscriptionRecord(sub)
   );
   const monthlyTotal = calculateMonthlyTotal(activeSubscriptions);
   const annualTotal = calculateAnnualTotal(activeSubscriptions);
@@ -239,7 +256,7 @@ const Subscriptions = () => {
   if (loading) {
     return (
       <div className="subscriptions-page">
-        <div className="loading">Loading recurring bills...</div>
+        <div className="loading">Loading subscriptions...</div>
       </div>
     );
   }
@@ -250,13 +267,13 @@ const Subscriptions = () => {
     <div className="subscriptions-page">
       {/* Header */}
       <div className="page-header">
-        <h1>💳 Recurring Bills</h1>
+        <h1>💳 Subscriptions</h1>
         <div className="header-actions">
           <button className="btn-auto-detect" onClick={handleAutoDetect}>
             🤖 Auto-Detect
           </button>
           <button className="btn-primary add-subscription-btn" onClick={handleAddSubscription}>
-            + Add Recurring Bill
+            + Add Subscription
           </button>
         </div>
       </div>
@@ -345,7 +362,7 @@ const Subscriptions = () => {
         <input
           type="text"
           className="search-input"
-          placeholder="🔍 Search recurring bills..."
+          placeholder="🔍 Search subscriptions..."
           value={searchTerm}
           onChange={(e) => setSearchTerm(e.target.value)}
         />
@@ -365,10 +382,10 @@ const Subscriptions = () => {
           ))
         ) : (
           <div className="no-subscriptions">
-            <h3>No recurring bills found</h3>
-            <p>Add your first recurring bill to start tracking your recurring expenses!</p>
+            <h3>No subscriptions found</h3>
+            <p>Add your first subscription to start tracking recurring services and memberships.</p>
             <button className="btn-primary" onClick={handleAddSubscription}>
-              + Add Recurring Bill
+              + Add Subscription
             </button>
           </div>
         )}
