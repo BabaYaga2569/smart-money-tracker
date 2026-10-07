@@ -371,7 +371,7 @@ console.log('🔍 PAYDAY CALCULATION DEBUG:', {
         settingsData.earlyDeposit?.daysBefore || 
         settingsData.earlyDeposit?.daysBeforePayday ||
         settingsData.daysBeforePayday || 
-        2
+        1
       );
 
       const remainderBank = 
