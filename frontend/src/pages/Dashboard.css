@@ -108,8 +108,11 @@
 .dashboard-safe-card {
   position: relative;
   min-height: 260px;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
   overflow: hidden;
-  padding: 28px 28px 76px;
+  padding: 28px;
   border: 1px solid rgba(var(--smt-theme-primary-rgb), .16);
   border-radius: var(--smt-radius-lg);
   background:
@@ -155,10 +158,10 @@
 }
 
 .dashboard-safe-link {
-  position: absolute;
-  left: 28px;
-  bottom: 24px;
+  position: relative;
   z-index: 3;
+  margin-top: auto;
+  padding-top: 24px;
   color: var(--smt-text);
   font-size: 13px;
   font-weight: 750;
@@ -876,10 +879,6 @@
 }
 
 @media (max-width: 640px) {
-  .dashboard-safe-card {
-    padding-bottom: 70px;
-  }
-
   .dashboard-safe-caption {
     max-width: 78%;
   }
@@ -889,5 +888,24 @@
   .dashboard-safe-caption {
     max-width: 100%;
     padding-right: 36px;
+  }
+}
+
+
+/* Definitive hero action layout: keep CTA in normal document flow. */
+.dashboard-safe-card .dashboard-card-kicker,
+.dashboard-safe-card .dashboard-safe-value,
+.dashboard-safe-card .dashboard-safe-caption,
+.dashboard-safe-card .dashboard-safe-link {
+  flex: 0 0 auto;
+}
+
+.dashboard-safe-card .dashboard-safe-link {
+  align-self: flex-start;
+}
+
+@media (max-width: 640px) {
+  .dashboard-safe-link {
+    padding-top: 18px;
   }
 }
