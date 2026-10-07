@@ -3,6 +3,36 @@
  * Phase 1: Core analysis functions
  */
 
+/**
+ * Return posted transactions from the current calendar month.
+ * Debt Optimizer should use the same monthly window as Transactions.
+ */
+function getCurrentMonthPostedTransactions(transactions = []) {
+  const now = new Date();
+  const currentYear = now.getFullYear();
+  const currentMonth = now.getMonth();
+
+  return transactions.filter(t => {
+    if (!t?.date) return false;
+    if (t.pending === true || t.pending === 'true' || t.status === 'pending') return false;
+
+    const txDate = new Date(`${t.date}T12:00:00`);
+    return !Number.isNaN(txDate.getTime()) &&
+      txDate.getFullYear() === currentYear &&
+      txDate.getMonth() === currentMonth;
+  });
+}
+
+function getTransactionCategory(transaction = {}) {
+  return transaction.category ||
+    transaction.personal_finance_category?.primary ||
+    'Uncategorized';
+}
+
+function isTransferCategory(category = '') {
+  return String(category).toLowerCase().includes('transfer');
+}
+
 export class FinancialAnalyzer {
   /**
    * Analyze cash flow from recent transactions
@@ -12,19 +42,16 @@ export class FinancialAnalyzer {
       return null;
     }
 
-    const thirtyDaysAgo = new Date();
-    thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+    const monthlyTransactions = getCurrentMonthPostedTransactions(transactions);
+    const cashFlowTransactions = monthlyTransactions.filter(
+      t => !isTransferCategory(getTransactionCategory(t))
+    );
 
-    const recentTransactions = transactions.filter(t => {
-      const txDate = new Date(t.date);
-      return txDate >= thirtyDaysAgo;
-    });
-
-    const income = recentTransactions
+    const income = cashFlowTransactions
       .filter(t => t.amount > 0)
       .reduce((sum, t) => sum + Math.abs(t.amount), 0);
 
-    const expenses = recentTransactions
+    const expenses = cashFlowTransactions
       .filter(t => t.amount < 0)
       .reduce((sum, t) => sum + Math.abs(t.amount), 0);
 
@@ -54,16 +81,18 @@ export class FinancialAnalyzer {
     }
 
     const categoryTotals = {};
+    const monthlyTransactions = getCurrentMonthPostedTransactions(transactions);
     
-    transactions.forEach(t => {
+    monthlyTransactions.forEach(t => {
       if (t.amount < 0) {
-        const category = t.category || 'Uncategorized';
+        const category = getTransactionCategory(t);
+        if (isTransferCategory(category)) return;
         categoryTotals[category] = (categoryTotals[category] || 0) + Math.abs(t.amount);
       }
     });
 
     return Object.entries(categoryTotals)
-      .filter(([cat]) => cat !== 'Bills & Utilities' && cat !== 'Transfer')
+      .filter(([cat]) => cat !== 'Bills & Utilities')
       .sort((a, b) => b[1] - a[1])
       .slice(0, 3)
       .filter(([_, amount]) => amount > 200)
