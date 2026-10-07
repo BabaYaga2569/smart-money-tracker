@@ -19,7 +19,15 @@ export default function PriorMonthBillAuditPanel({
   report,
   loading,
   onRun,
-  formatCurrency
+  formatCurrency,
+  archivePreview,
+  archiveConfirmation,
+  preparingArchive,
+  applyingArchive,
+  onPrepareArchive,
+  onCancelArchive,
+  onArchiveConfirmationChange,
+  onApplyArchive
 }) {
   if (!report) {
     return (
@@ -84,6 +92,80 @@ export default function PriorMonthBillAuditPanel({
 
       <div className="prior-month-audit-note">
         Read-only audit. No bill was paid, archived, deleted, or advanced.
+      </div>
+
+      <div className="prior-month-archive-controls">
+        {!archivePreview ? (
+          <button
+            type="button"
+            className="prior-month-archive-preview-btn"
+            onClick={onPrepareArchive}
+            disabled={preparingArchive || report.summary.likelyStale === 0}
+          >
+            {preparingArchive
+              ? 'Re-checking stale bills...'
+              : '🛡️ Preview Stale Bill Archive'}
+          </button>
+        ) : (
+          <div className="prior-month-archive-preview">
+            <div className="prior-month-audit-summary">
+              <span className="bill-integrity-pill">
+                Archive candidates: {archivePreview.summary.archiveCandidates}
+              </span>
+              <span className={`bill-integrity-pill ${archivePreview.summary.blocked ? 'danger' : ''}`}>
+                Blocked: {archivePreview.summary.blocked}
+              </span>
+            </div>
+
+            {archivePreview.archiveCandidates?.map(item => (
+              <div className="prior-month-archive-item" key={item.billId}>
+                <strong>{item.name}</strong> · {formatCurrency(item.amount)} · {item.dueDate}
+                <div>Pattern next: {item.patternNextOccurrence}</div>
+                <div>Bill ID: <code>{item.billId}</code></div>
+              </div>
+            ))}
+
+            {archivePreview.canApply ? (
+              <div className="prior-month-archive-confirm">
+                <strong>Final confirmation</strong>
+                <p>
+                  These bills will be backed up and hidden as stale historical occurrences.
+                  Recurring templates and payment history will not be changed.
+                  Type <strong>ARCHIVE STALE BILLS</strong> exactly to continue.
+                </p>
+                <input
+                  type="text"
+                  value={archiveConfirmation}
+                  onChange={(e) => onArchiveConfirmationChange(e.target.value)}
+                  placeholder="ARCHIVE STALE BILLS"
+                  disabled={applyingArchive}
+                />
+                <div className="prior-month-archive-actions">
+                  <button type="button" onClick={onCancelArchive} disabled={applyingArchive}>
+                    Cancel
+                  </button>
+                  <button
+                    type="button"
+                    className="prior-month-archive-apply-btn"
+                    onClick={onApplyArchive}
+                    disabled={
+                      applyingArchive ||
+                      archiveConfirmation !== 'ARCHIVE STALE BILLS'
+                    }
+                  >
+                    {applyingArchive
+                      ? 'Backing Up & Archiving...'
+                      : 'Backup & Archive Stale Bills'}
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <div className="bill-cleanup-blocked">
+                Archive is blocked because at least one old bill no longer qualifies as safely stale.
+              </div>
+            )}
+          </div>
+        )}
       </div>
     </div>
   );

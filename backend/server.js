@@ -3264,6 +3264,233 @@ app.get("/api/bills/prior-month-audit", async (req, res, next) => {
 });
 
 /**
+ * GET /api/bills/prior-month-archive/preview
+ *
+ * Re-runs the prior-month audit and returns only bills that are currently
+ * safe archive candidates. No writes.
+ */
+app.get("/api/bills/prior-month-archive/preview", async (req, res, next) => {
+  const userId = req.authUid;
+
+  try {
+    if (!userId) {
+      return next(createError.unauthorized('Authentication is required'));
+    }
+
+    const userRef = db.collection('users').doc(userId);
+    const cutoff = new Date();
+    cutoff.setDate(cutoff.getDate() - 180);
+    const cutoffStr = cutoff.toISOString().slice(0, 10);
+
+    const [billsSnap, transactionsSnap, patternsSnap] = await Promise.all([
+      userRef.collection('financialEvents')
+        .where('type', '==', 'bill')
+        .where('isPaid', '==', false)
+        .get(),
+      userRef.collection('transactions')
+        .where('date', '>=', cutoffStr)
+        .get(),
+      userRef.collection('recurringPatterns').get()
+    ]);
+
+    const docs = snapshot => snapshot.docs.map(docSnap => ({
+      id: docSnap.id,
+      ...docSnap.data()
+    }));
+
+    const bills = docs(billsSnap);
+    const report = auditPriorMonthUnpaidBills({
+      bills,
+      transactions: docs(transactionsSnap),
+      recurringPatterns: docs(patternsSnap),
+      referenceDate: new Date().toISOString().slice(0, 10)
+    });
+
+    const archiveCandidates = report.items.filter(
+      item =>
+        item.classification === 'LIKELY_STALE_ORPHAN' &&
+        item.recommendation === 'ARCHIVE_REVIEW' &&
+        item.directPaymentEvidence === false &&
+        !item.bestMatch &&
+        item.patternAdvanced === true
+    );
+
+    const blockedItems = report.items.filter(
+      item => !archiveCandidates.some(candidate => candidate.billId === item.billId)
+    );
+
+    res.set('Cache-Control', 'no-store');
+    return res.json({
+      success: true,
+      readOnly: true,
+      fingerprint: fingerprintBills(bills),
+      canApply: archiveCandidates.length > 0 && blockedItems.length === 0,
+      summary: {
+        oldUnpaid: report.summary.total,
+        archiveCandidates: archiveCandidates.length,
+        blocked: blockedItems.length
+      },
+      archiveCandidates,
+      blockedItems
+    });
+  } catch (error) {
+    logger.error('PRIOR_MONTH_ARCHIVE_PREVIEW', 'Stale bill archive preview failed', error, {});
+    if (error.statusCode) return next(error);
+    return next(createError.firebaseError(
+      error.message || 'Unable to prepare stale bill archive preview'
+    ));
+  }
+});
+
+/**
+ * POST /api/bills/prior-month-archive/apply
+ *
+ * Reversible archive of stale prior-month bill occurrences.
+ * Recurring patterns and payment history are never modified.
+ */
+app.post("/api/bills/prior-month-archive/apply", async (req, res, next) => {
+  const userId = req.authUid;
+  const { expectedFingerprint, confirmation } = req.body || {};
+
+  try {
+    if (!userId) {
+      return next(createError.unauthorized('Authentication is required'));
+    }
+
+    if (confirmation !== 'ARCHIVE STALE BILLS') {
+      return res.status(400).json({
+        success: false,
+        code: 'STALE_BILL_ARCHIVE_CONFIRMATION_REQUIRED',
+        message: 'Type ARCHIVE STALE BILLS exactly to confirm.'
+      });
+    }
+
+    const userRef = db.collection('users').doc(userId);
+    const billsRef = userRef.collection('financialEvents');
+    const cutoff = new Date();
+    cutoff.setDate(cutoff.getDate() - 180);
+    const cutoffStr = cutoff.toISOString().slice(0, 10);
+
+    const [billsSnap, transactionsSnap, patternsSnap] = await Promise.all([
+      billsRef
+        .where('type', '==', 'bill')
+        .where('isPaid', '==', false)
+        .get(),
+      userRef.collection('transactions')
+        .where('date', '>=', cutoffStr)
+        .get(),
+      userRef.collection('recurringPatterns').get()
+    ]);
+
+    const docs = snapshot => snapshot.docs.map(docSnap => ({
+      id: docSnap.id,
+      ...docSnap.data()
+    }));
+
+    const bills = docs(billsSnap);
+    const liveFingerprint = fingerprintBills(bills);
+
+    if (!expectedFingerprint || expectedFingerprint !== liveFingerprint) {
+      return res.status(409).json({
+        success: false,
+        code: 'STALE_BILL_ARCHIVE_DRIFTED',
+        message: 'Bills changed after preview. Run the stale-bill archive preview again.'
+      });
+    }
+
+    const report = auditPriorMonthUnpaidBills({
+      bills,
+      transactions: docs(transactionsSnap),
+      recurringPatterns: docs(patternsSnap),
+      referenceDate: new Date().toISOString().slice(0, 10)
+    });
+
+    const archiveCandidates = report.items.filter(
+      item =>
+        item.classification === 'LIKELY_STALE_ORPHAN' &&
+        item.recommendation === 'ARCHIVE_REVIEW' &&
+        item.directPaymentEvidence === false &&
+        !item.bestMatch &&
+        item.patternAdvanced === true
+    );
+
+    const blockedItems = report.items.filter(
+      item => !archiveCandidates.some(candidate => candidate.billId === item.billId)
+    );
+
+    if (archiveCandidates.length === 0 || blockedItems.length > 0) {
+      return res.status(409).json({
+        success: false,
+        code: 'STALE_BILL_ARCHIVE_NOT_SAFE',
+        message: 'At least one prior-month bill no longer qualifies for automatic stale archival.',
+        summary: {
+          archiveCandidates: archiveCandidates.length,
+          blocked: blockedItems.length
+        },
+        blockedItems
+      });
+    }
+
+    const batch = db.batch();
+    const timestamp = admin.firestore.FieldValue.serverTimestamp();
+    const backupId = `stale_bill_archive_${Date.now()}`;
+    const backupRef = userRef.collection('billCleanupBackups').doc(backupId);
+    const backupBillsRef = backupRef.collection('bills');
+
+    batch.set(backupRef, {
+      id: backupId,
+      cleanupType: 'prior-month-stale-archive',
+      createdAt: timestamp,
+      liveFingerprint,
+      archivedCount: archiveCandidates.length
+    });
+
+    for (const candidate of archiveCandidates) {
+      const liveBill = bills.find(bill => bill.id === candidate.billId);
+      if (!liveBill) {
+        return res.status(409).json({
+          success: false,
+          code: 'STALE_BILL_ARCHIVE_MISSING_BILL',
+          message: `Bill ${candidate.billId} disappeared before archive.`
+        });
+      }
+
+      const { id, ...billData } = liveBill;
+
+      batch.set(backupBillsRef.doc(id), {
+        originalId: id,
+        ...billData
+      });
+
+      batch.set(billsRef.doc(id), {
+        hiddenFromBills: true,
+        archivedStale: true,
+        staleArchiveReason: candidate.reason,
+        staleArchivedAt: timestamp,
+        staleArchiveBackupId: backupId,
+        status: 'stale-archived',
+        updatedAt: timestamp
+      }, { merge: true });
+    }
+
+    await batch.commit();
+
+    return res.json({
+      success: true,
+      backupId,
+      archived: archiveCandidates.length,
+      archivedBillIds: archiveCandidates.map(item => item.billId)
+    });
+  } catch (error) {
+    logger.error('PRIOR_MONTH_ARCHIVE_APPLY', 'Stale bill archive apply failed', error, {});
+    if (error.statusCode) return next(error);
+    return next(createError.firebaseError(
+      error.message || 'Unable to archive stale prior-month bills'
+    ));
+  }
+});
+
+/**
  * GET /api/bills/duplicate-cleanup/preview
  *
  * Read-only preview of exact unpaid duplicate bill occurrences.

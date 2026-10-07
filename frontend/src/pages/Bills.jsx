@@ -98,6 +98,10 @@ export default function Bills() {
   const [applyingDuplicateCleanup, setApplyingDuplicateCleanup] = useState(false);
   const [priorMonthAudit, setPriorMonthAudit] = useState(null);
   const [loadingPriorMonthAudit, setLoadingPriorMonthAudit] = useState(false);
+  const [staleArchivePreview, setStaleArchivePreview] = useState(null);
+  const [staleArchiveConfirmation, setStaleArchiveConfirmation] = useState('');
+  const [preparingStaleArchive, setPreparingStaleArchive] = useState(false);
+  const [applyingStaleArchive, setApplyingStaleArchive] = useState(false);
 
   // ✅ UPDATED: Load bills from financialEvents collection (one source of truth)
   const loadBills = async () => {
@@ -345,6 +349,116 @@ export default function Bills() {
       );
     } finally {
       setLoadingPriorMonthAudit(false);
+    }
+  };
+
+  const handlePrepareStaleArchive = async () => {
+    if (!currentUser) return;
+
+    try {
+      setPreparingStaleArchive(true);
+      setStaleArchivePreview(null);
+      setStaleArchiveConfirmation('');
+
+      const apiUrl =
+        import.meta.env.VITE_API_URL ||
+        'https://smart-money-tracker-09ks.onrender.com';
+
+      const response = await fetch(
+        `${apiUrl}/api/bills/prior-month-archive/preview?userId=${currentUser.uid}&_t=${Date.now()}`,
+        {
+          headers: {
+            'Content-Type': 'application/json'
+          }
+        }
+      );
+
+      const data = await response.json();
+
+      if (!response.ok || !data.success) {
+        throw new Error(data.message || 'Unable to prepare stale bill archive preview.');
+      }
+
+      setStaleArchivePreview(data);
+
+      if (data.canApply) {
+        NotificationManager.showSuccess(
+          `Stale bill archive preview ready: ${data.summary.archiveCandidates} bill(s) qualify, ${data.summary.blocked} blocked.`
+        );
+      } else {
+        NotificationManager.showWarning(
+          `Stale bill archive is blocked: ${data.summary.blocked} bill(s) need review.`
+        );
+      }
+    } catch (error) {
+      console.error('Error preparing stale bill archive:', error);
+      NotificationManager.showError(
+        'Stale bill archive preview failed',
+        error.message
+      );
+    } finally {
+      setPreparingStaleArchive(false);
+    }
+  };
+
+  const handleApplyStaleArchive = async () => {
+    if (!currentUser || !staleArchivePreview?.fingerprint) {
+      NotificationManager.showWarning('Run the stale bill archive preview first.');
+      return;
+    }
+
+    if (staleArchiveConfirmation !== 'ARCHIVE STALE BILLS') {
+      NotificationManager.showWarning('Type ARCHIVE STALE BILLS exactly before applying.');
+      return;
+    }
+
+    try {
+      setApplyingStaleArchive(true);
+
+      const apiUrl =
+        import.meta.env.VITE_API_URL ||
+        'https://smart-money-tracker-09ks.onrender.com';
+
+      const response = await fetch(
+        `${apiUrl}/api/bills/prior-month-archive/apply?userId=${currentUser.uid}`,
+        {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify({
+            expectedFingerprint: staleArchivePreview.fingerprint,
+            confirmation: staleArchiveConfirmation
+          })
+        }
+      );
+
+      const data = await response.json();
+
+      if (!response.ok || !data.success) {
+        if (data.code === 'STALE_BILL_ARCHIVE_DRIFTED') {
+          setStaleArchivePreview(null);
+          setStaleArchiveConfirmation('');
+        }
+        throw new Error(data.message || 'Unable to archive stale bills.');
+      }
+
+      await loadBills();
+      setPriorMonthAudit(null);
+      setStaleArchivePreview(null);
+      setStaleArchiveConfirmation('');
+
+      NotificationManager.showSuccess(
+        `Archived ${data.archived} stale bill(s). Backup: ${data.backupId}.`
+      );
+    } catch (error) {
+      console.error('Error applying stale bill archive:', error);
+      NotificationManager.showError(
+        'Stale bill archive failed',
+        error.message
+      );
+    } finally {
+      setApplyingStaleArchive(false);
     }
   };
 
@@ -1582,6 +1696,17 @@ const refreshPlaidTransactions = async () => {
           loading={loadingPriorMonthAudit}
           onRun={handleRunPriorMonthAudit}
           formatCurrency={formatCurrency}
+          archivePreview={staleArchivePreview}
+          archiveConfirmation={staleArchiveConfirmation}
+          preparingArchive={preparingStaleArchive}
+          applyingArchive={applyingStaleArchive}
+          onPrepareArchive={handlePrepareStaleArchive}
+          onCancelArchive={() => {
+            setStaleArchivePreview(null);
+            setStaleArchiveConfirmation('');
+          }}
+          onArchiveConfirmationChange={setStaleArchiveConfirmation}
+          onApplyArchive={handleApplyStaleArchive}
         />
       </div>
 

@@ -1883,3 +1883,85 @@ html body .layout .main-content .bills-container button[class*="delete"] {
     flex-direction: column;
   }
 }
+
+
+/* ===== Guarded stale prior-month archive ===== */
+.prior-month-archive-controls {
+  margin-top: 14px;
+}
+
+.prior-month-archive-preview-btn,
+.prior-month-archive-apply-btn,
+.prior-month-archive-actions button {
+  min-height: 42px;
+  border-radius: 8px;
+  border: 1px solid #8b5cf6;
+  padding: 10px 14px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.prior-month-archive-preview-btn {
+  background: #6d28d9;
+  color: #fff;
+}
+
+.prior-month-archive-preview {
+  margin-top: 12px;
+  padding: 14px;
+  border: 1px solid #8b5cf6;
+  border-radius: 8px;
+  background: rgba(109, 40, 217, 0.08);
+}
+
+.prior-month-archive-item {
+  margin-top: 8px;
+  padding: 10px;
+  border-radius: 7px;
+  background: rgba(255,255,255,0.04);
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+
+.prior-month-archive-confirm {
+  margin-top: 14px;
+  padding: 12px;
+  border: 1px solid #b02a37;
+  border-radius: 8px;
+  background: rgba(176,42,55,0.1);
+}
+
+.prior-month-archive-confirm input {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 10px;
+  margin: 8px 0 10px;
+  background: #111;
+  color: #fff;
+  border: 1px solid #555;
+  border-radius: 6px;
+}
+
+.prior-month-archive-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.prior-month-archive-apply-btn {
+  background: #b02a37;
+  color: #fff;
+  border-color: #d13a49;
+}
+
+@media (max-width: 700px) {
+  .prior-month-archive-preview-btn,
+  .prior-month-archive-actions button {
+    width: 100%;
+  }
+
+  .prior-month-archive-actions {
+    flex-direction: column;
+  }
+}
