@@ -686,3 +686,47 @@ html body .accounts-container .account-balance,
 html body .accounts-container .summary-value { color: var(--smt-theme-accent) !important; }
 html body .accounts-container button { border-radius: 10px !important; }
 @media(max-width:700px){ html body .accounts-container{padding:18px 14px 30px;} }
+
+
+/* ===== Premium QA: Accounts theme residue cleanup ===== */
+html body .accounts-container .account-type,
+html body .accounts-container .account-number,
+html body .accounts-container .account-institution,
+html body .accounts-container .summary-label,
+html body .accounts-container .help-text {
+  color: var(--smt-text-3) !important;
+}
+
+html body .accounts-container .account-card,
+html body .accounts-container .summary-card,
+html body .accounts-container .help-section {
+  box-shadow:
+    0 10px 28px rgba(0,0,0,.18),
+    inset 0 1px 0 var(--smt-theme-metal) !important;
+}
+
+html body .accounts-container .account-card:hover {
+  transform: translateY(-1px);
+  box-shadow:
+    0 12px 30px rgba(0,0,0,.22),
+    inset 0 1px 0 var(--smt-theme-metal) !important;
+}
+
+html body .accounts-container .account-balance,
+html body .accounts-container .summary-value,
+html body .accounts-container .positive {
+  color: var(--smt-theme-accent) !important;
+  text-shadow: none !important;
+}
+
+html body .accounts-container button:not(.danger-btn),
+html body .accounts-container .balance-toggle button {
+  border-color: var(--smt-border) !important;
+  box-shadow: none !important;
+  text-shadow: none !important;
+}
+
+html body .accounts-container button:not(.danger-btn):hover,
+html body .accounts-container .balance-toggle button:hover {
+  border-color: var(--smt-border-strong) !important;
+}
