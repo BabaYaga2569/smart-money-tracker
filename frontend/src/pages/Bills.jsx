@@ -86,8 +86,6 @@ export default function Bills() {
   const [refreshingTransactions, setRefreshingTransactions] = useState(false);
   const [paidThisMonth, setPaidThisMonth] = useState(0);
   const [paidBillsCount, setPaidBillsCount] = useState(0);
-  const [recurringBills, setRecurringBills] = useState([]);
-  const [showRecurringBills, setShowRecurringBills] = useState(false);
   const [showPaidBills, setShowPaidBills] = useState(false);
   const [paidBills, setPaidBills] = useState([]);
   const [showLinker, setShowLinker] = useState(false);
@@ -554,38 +552,6 @@ const refreshPlaidTransactions = async () => {
   }
 };
 
-  // Auto-generate bill instance from recurring template
-  // Load recurring templates for display only. Bills must never generate or
-  // mutate bill occurrences merely because the page was opened.
-  useEffect(() => {
-    if (!currentUser) return;
-
-    const loadRecurringTemplatesForDisplay = async () => {
-      try {
-        const recurringPatternsRef = collection(
-          db,
-          'users',
-          currentUser.uid,
-          'recurringPatterns'
-        );
-        const snapshot = await getDocs(recurringPatternsRef);
-        const patterns = snapshot.docs.map(doc => ({
-          id: doc.id,
-          ...doc.data()
-        }));
-
-        setRecurringBills(
-          patterns.filter(pattern => pattern.status === 'active')
-        );
-      } catch (error) {
-        console.error('Error loading recurring bills:', error);
-        setRecurringBills([]);
-      }
-    };
-
-    loadRecurringTemplatesForDisplay();
-  }, [currentUser]);
-
   // Load bills on mount - ADDED
   useEffect(() => {
     if (currentUser) {
@@ -837,9 +803,9 @@ const refreshPlaidTransactions = async () => {
         matchesStatus = bill.status === filterStatus;
       }
       
-      const matchesRecurring = filterRecurring === 'all' || 
-                              (filterRecurring === 'recurring' && bill.recurringTemplateId) ||
-                              (filterRecurring === 'manual' && !bill.recurringTemplateId);
+      const matchesRecurring = filterRecurring === 'all' ||
+                              (filterRecurring === 'recurring' && bill.recurringPatternId) ||
+                              (filterRecurring === 'manual' && !bill.recurringPatternId);
       return matchesSearch && matchesCategory && matchesStatus && matchesRecurring;
     });
 
@@ -1279,8 +1245,8 @@ const refreshPlaidTransactions = async () => {
     return (
       <div className="bills-container">
         <div className="page-header">
-          <h2>🧾 Bills Management</h2>
-          <p>Loading your bills...</p>
+          <h2>🧾 Bills</h2>
+          <p>Loading bill occurrences...</p>
         </div>
       </div>
     );
@@ -1386,8 +1352,8 @@ const refreshPlaidTransactions = async () => {
       <div className="page-header">
         <div className="header-content">
           <div>
-            <h2>🧾 Bills Management</h2>
-            <p>Complete bill lifecycle management and automation</p>
+            <h2>🧾 Bills</h2>
+            <p>What is actually due, overdue, upcoming, or paid this billing cycle</p>
           </div>
           <div style={{ display: 'flex', gap: '12px' }}>
             <button 
@@ -1588,9 +1554,9 @@ const refreshPlaidTransactions = async () => {
             className="filter-select"
             title="Filter by bill source"
           >
-            <option value="all">All Bills</option>
-            <option value="recurring">🔄 Auto-Generated</option>
-            <option value="manual">✋ Manual Bills</option>
+            <option value="all">All Bill Occurrences</option>
+            <option value="recurring">🔄 Recurring Occurrences</option>
+            <option value="manual">✋ One-Time Bills</option>
           </select>
         </div>
         
@@ -2039,109 +2005,6 @@ const refreshPlaidTransactions = async () => {
         )}
       </div>
 
-      {/* Recurring Bills Section */}
-      {recurringBills.length > 0 && (
-        <div className="bills-list-section" style={{ marginTop: '40px' }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
-            <h3>🔄 Auto-Detected Recurring Bills ({recurringBills.length})</h3>
-            <button 
-              onClick={() => setShowRecurringBills(!showRecurringBills)}
-              style={{
-                background: 'rgba(138, 43, 226, 0.2)',
-                color: '#ba68c8',
-                border: '1px solid #ba68c8',
-                borderRadius: '6px',
-                padding: '8px 16px',
-                fontSize: '13px',
-                fontWeight: '600',
-                cursor: 'pointer'
-              }}
-            >
-              {showRecurringBills ? '▼ Hide' : '▶ Show'}
-            </button>
-          </div>
-          
-          {showRecurringBills && (
-            <>
-              <div style={{
-                padding: '16px',
-                background: 'rgba(138, 43, 226, 0.1)',
-                borderRadius: '8px',
-                marginBottom: '20px',
-                border: '1px solid rgba(138, 43, 226, 0.3)'
-              }}>
-                <p style={{ margin: 0, fontSize: '14px', color: '#ba68c8' }}>
-                  <strong>ℹ️ These bills were automatically detected from your transactions.</strong><br/>
-                  These are utilities, rent, insurance, and other recurring bills that were identified based on transaction patterns.
-                  They are tracked separately from entertainment subscriptions (Netflix, Spotify, etc.).
-                </p>
-              </div>
-
-              <div className="bills-list">
-                {recurringBills.map((bill, index) => (
-                  <div 
-                    key={bill.id || index}
-                    className="bill-item"
-                    style={{
-                      background: 'rgba(138, 43, 226, 0.05)',
-                      border: '2px solid rgba(138, 43, 226, 0.3)'
-                    }}
-                  >
-                    <div className="bill-main-info">
-                      <div className="bill-icon">
-                        {getCategoryIcon(bill.category)}
-                      </div>
-                      <div className="bill-details">
-                        <h4>
-                          {bill.name}
-                          <span 
-                            className="recurring-badge" 
-                            title="Auto-detected from transactions"
-                            style={{
-                              marginLeft: '8px',
-                              padding: '2px 8px',
-                              fontSize: '11px',
-                              background: 'rgba(138, 43, 226, 0.3)',
-                              color: '#ba68c8',
-                              borderRadius: '4px',
-                              fontWeight: 'normal'
-                            }}
-                          >
-                            🤖 Auto-Detected
-                          </span>
-                        </h4>
-                        <div className="bill-meta">
-                          <span className="bill-category">{bill.category}</span>
-                          <span className="bill-frequency">{bill.billingCycle}</span>
-                          {bill.essential && <span style={{ color: '#ffdd00' }}>⭐ Essential</span>}
-                        </div>
-                        {bill.notes && (
-                          <div style={{ fontSize: '12px', color: '#888', marginTop: '4px' }}>
-                            {bill.notes}
-                          </div>
-                        )}
-                      </div>
-                    </div>
-                    
-                    <div className="bill-amount-section">
-                      <div className="bill-amount">{formatCurrency(bill.cost || bill.amount || 0)}</div>
-                      <div className="bill-due-date">
-                        Next: {formatBillDate(bill.nextRenewal || bill.nextOccurrence)}
-                      </div>
-                      {bill.paymentMethod && (
-                        <div style={{ fontSize: '11px', color: '#888', marginTop: '4px' }}>
-                          Payment: {bill.paymentMethod}
-                        </div>
-                      )}
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </>
-          )}
-        </div>
-      )}
-
       {/* Bill Edit/Add Modal */}
       {showModal && (
         <div 
@@ -2400,7 +2263,7 @@ const refreshPlaidTransactions = async () => {
               <ul style={{ paddingLeft: '20px' }}>
                 <li>Connect Plaid to automatically match bank transactions with bills</li>
                 <li>Use "Match Transactions" to sync and auto-pay bills</li>
-                <li>Bills with 🔄 Auto badge are generated from recurring templates</li>
+                <li>Recurring schedules are managed on the Recurring page; this page shows the actual bill occurrences they create</li>
               </ul>
 
               <h4 style={{ color: '#00ff88', marginTop: '16px' }}>Importing & Exporting</h4>
