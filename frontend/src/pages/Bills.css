@@ -1788,3 +1788,98 @@ html body .layout .main-content .bills-container button[class*="delete"] {
     flex-direction: column;
   }
 }
+
+
+/* ===== Prior-month unpaid bill audit ===== */
+.prior-month-audit-controls {
+  margin-top: 12px;
+}
+
+.prior-month-audit-btn {
+  min-height: 42px;
+  border-radius: 8px;
+  border: 1px solid #7c3aed;
+  padding: 10px 14px;
+  background: #5b21b6;
+  color: #fff;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.prior-month-audit-panel {
+  margin-top: 14px;
+  padding: 14px;
+  border: 1px solid #7c3aed;
+  border-radius: 8px;
+  background: rgba(124, 58, 237, 0.08);
+}
+
+.prior-month-audit-summary {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-bottom: 12px;
+}
+
+.prior-month-audit-item {
+  margin-top: 10px;
+  padding: 12px;
+  border: 1px solid #444;
+  border-radius: 8px;
+  background: rgba(255,255,255,0.03);
+}
+
+.prior-month-audit-title {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.prior-month-audit-recommendation {
+  margin-top: 6px;
+  font-weight: 800;
+  color: #ffd166;
+}
+
+.prior-month-audit-reason {
+  margin-top: 6px;
+  color: #ddd;
+}
+
+.prior-month-audit-meta {
+  display: grid;
+  gap: 3px;
+  margin-top: 8px;
+  color: #999;
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+
+.prior-month-audit-match {
+  margin-top: 10px;
+  padding: 10px;
+  border-radius: 6px;
+  background: rgba(59, 130, 246, 0.1);
+  border: 1px solid #3b82f6;
+  font-size: 12px;
+}
+
+.prior-month-audit-note {
+  margin-top: 12px;
+  color: #aaa;
+  font-size: 12px;
+  font-style: italic;
+}
+
+@media (max-width: 700px) {
+  .prior-month-audit-btn {
+    width: 100%;
+  }
+
+  .prior-month-audit-title {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+}

@@ -16,6 +16,7 @@ import { getLocalMidnight, parseDueDateLocal, getRelativeDateString } from '../u
 import { TRANSACTION_CATEGORIES, CATEGORY_ICONS, getCategoryIcon, migrateLegacyCategory } from '../constants/categories';
 import NotificationSystem from '../components/NotificationSystem';
 import BillDuplicateCleanupPanel from '../components/BillDuplicateCleanupPanel';
+import PriorMonthBillAuditPanel from '../components/PriorMonthBillAuditPanel';
 import { getCanonicalDisplayBalance, getVisiblePlaidAccounts } from '../utils/accountVisibility';
 import { visibleBillOccurrences } from '../utils/billVisibility';
 import "./Bills.css";
@@ -95,6 +96,8 @@ export default function Bills() {
   const [duplicateCleanupConfirmation, setDuplicateCleanupConfirmation] = useState('');
   const [preparingDuplicateCleanup, setPreparingDuplicateCleanup] = useState(false);
   const [applyingDuplicateCleanup, setApplyingDuplicateCleanup] = useState(false);
+  const [priorMonthAudit, setPriorMonthAudit] = useState(null);
+  const [loadingPriorMonthAudit, setLoadingPriorMonthAudit] = useState(false);
 
   // ✅ UPDATED: Load bills from financialEvents collection (one source of truth)
   const loadBills = async () => {
@@ -301,6 +304,47 @@ export default function Bills() {
       NotificationManager.showError('Duplicate cleanup failed', error.message);
     } finally {
       setApplyingDuplicateCleanup(false);
+    }
+  };
+
+  const handleRunPriorMonthAudit = async () => {
+    if (!currentUser) return;
+
+    try {
+      setLoadingPriorMonthAudit(true);
+      setPriorMonthAudit(null);
+
+      const apiUrl =
+        import.meta.env.VITE_API_URL ||
+        'https://smart-money-tracker-09ks.onrender.com';
+
+      const response = await fetch(
+        `${apiUrl}/api/bills/prior-month-audit?userId=${currentUser.uid}&_t=${Date.now()}`,
+        {
+          headers: {
+            'Content-Type': 'application/json'
+          }
+        }
+      );
+
+      const data = await response.json();
+
+      if (!response.ok || !data.success) {
+        throw new Error(data.message || 'Unable to audit prior-month unpaid bills.');
+      }
+
+      setPriorMonthAudit(data.report);
+      NotificationManager.showSuccess(
+        `Prior-month audit complete: ${data.report.summary.total} old unpaid bill(s) reviewed.`
+      );
+    } catch (error) {
+      console.error('Error auditing prior-month bills:', error);
+      NotificationManager.showError(
+        'Prior-month bill audit failed',
+        error.message
+      );
+    } finally {
+      setLoadingPriorMonthAudit(false);
     }
   };
 
@@ -1530,6 +1574,13 @@ const refreshPlaidTransactions = async () => {
           }}
           onConfirmationChange={setDuplicateCleanupConfirmation}
           onApply={handleApplyDuplicateCleanup}
+          formatCurrency={formatCurrency}
+        />
+
+        <PriorMonthBillAuditPanel
+          report={priorMonthAudit}
+          loading={loadingPriorMonthAudit}
+          onRun={handleRunPriorMonthAudit}
           formatCurrency={formatCurrency}
         />
       </div>
