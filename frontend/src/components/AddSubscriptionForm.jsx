@@ -118,7 +118,7 @@ const AddSubscriptionForm = ({ subscription, accounts, onSave, onCancel }) => {
     <div className="modal-overlay">
       <div className="modal subscription-form-modal">
         <div className="modal-header">
-          <h3>{subscription ? 'Edit Recurring Bill' : 'Add New Recurring Bill'}</h3>
+          <h3>{subscription ? 'Edit Subscription' : 'Add New Subscription'}</h3>
           <button className="close-btn" onClick={onCancel}>&times;</button>
         </div>
         
@@ -132,7 +132,7 @@ const AddSubscriptionForm = ({ subscription, accounts, onSave, onCancel }) => {
                 name="name"
                 value={formData.name}
                 onChange={handleChange}
-                placeholder="e.g., Electric Bill, Car Payment"
+                placeholder="e.g., Netflix, Spotify, Adobe"
               />
               {errors.name && <span className="error-text">{errors.name}</span>}
             </div>
@@ -150,7 +150,7 @@ const AddSubscriptionForm = ({ subscription, accounts, onSave, onCancel }) => {
                     <option key={cat} value={cat}>{cat}</option>
                   ))}
                 </optgroup>
-                <optgroup label="Recurring Bills">
+                <optgroup label="Other Recurring Charges">
                   {RECURRING_BILL_CATEGORIES.map(cat => (
                     <option key={cat} value={cat}>{cat}</option>
                   ))}
@@ -271,7 +271,7 @@ const AddSubscriptionForm = ({ subscription, accounts, onSave, onCancel }) => {
                 Cancel
               </button>
               <button type="submit" className="btn-primary">
-                {subscription ? 'Update' : 'Add'} Recurring Bill
+                {subscription ? 'Update' : 'Add'} Subscription
               </button>
             </div>
           </form>
