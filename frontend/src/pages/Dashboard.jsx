@@ -10,6 +10,7 @@ import DashboardTileCreditCard from "../components/DashboardTileCreditCard";
 import { useTransactionsQuery } from '../hooks/useFirebaseQuery';
 import HealthStatus from '../components/HealthStatus';
 import { getVisiblePlaidAccounts, isDepositoryAccount } from '../utils/accountVisibility';
+import { visibleBillOccurrences } from '../utils/billVisibility';
 
 
 const Dashboard = () => {
@@ -150,7 +151,9 @@ const [billsSnapshot, recurringPatternsSnapshot] = await Promise.all([
   getDocs(recurringPatternsRef)
 ]);
 
-const bills = billsSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+const bills = visibleBillOccurrences(
+  billsSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }))
+);
 const recurringPatterns = recurringPatternsSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
 
 const billsDueSoon = bills.length;
@@ -380,8 +383,8 @@ setDashboardData({
     {
       title: 'Bills',
       icon: '🧾',
-      value: `${dashboardData.billsDueSoon} due soon`,
-      subtitle: 'Upcoming bills',
+      value: `${dashboardData.billsDueSoon} open bills`,
+      subtitle: 'Due, overdue & upcoming',
       path: '/bills',
       color: 'red'
     },
