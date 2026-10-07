@@ -625,6 +625,10 @@ const refreshPlaidTransactions = async () => {
   };
 
   const determineBillStatus = (bill) => {
+    if (bill.pendingPayment === true) {
+      return 'pending-payment';
+    }
+
     if (bill.status === 'skipped') {
       return 'skipped';
     }
@@ -759,7 +763,7 @@ const refreshPlaidTransactions = async () => {
       if (filterStatus === 'all') {
         matchesStatus = true;
       } else if (filterStatus === 'upcoming') {
-        matchesStatus = ['pending', 'urgent', 'due-today', 'this-week'].includes(bill.status);
+        matchesStatus = ['pending', 'urgent', 'due-today', 'this-week', 'pending-payment'].includes(bill.status);
       } else {
         matchesStatus = bill.status === filterStatus;
       }
@@ -1613,6 +1617,23 @@ const refreshPlaidTransactions = async () => {
                     <div className="bill-title-row" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                       <h4 style={{ margin: 0 }}>
                         {bill.name}
+                        {bill.pendingPayment === true && (
+                          <span
+                            title="A matching Plaid transaction is pending. This bill remains officially unpaid until the transaction posts."
+                            style={{
+                              marginLeft: '8px',
+                              padding: '2px 8px',
+                              fontSize: '11px',
+                              background: 'rgba(0, 180, 255, 0.16)',
+                              color: '#6fdcff',
+                              border: '1px solid rgba(0, 180, 255, 0.4)',
+                              borderRadius: '4px',
+                              fontWeight: '700'
+                            }}
+                          >
+                            ⏳ Pending Payment
+                          </span>
+                        )}
                         {bill.recurringPatternId && (
                           <span 
                             className="recurring-badge" 
@@ -1704,7 +1725,24 @@ const refreshPlaidTransactions = async () => {
                     </div>
                   </div>
                   
-                  {bill.status === 'overdue' && (
+                  {bill.pendingPayment === true && (
+                    <div
+                      style={{
+                        marginTop: '8px',
+                        padding: '6px 10px',
+                        background: 'rgba(0, 180, 255, 0.10)',
+                        borderRadius: '6px',
+                        border: '1px solid rgba(0, 180, 255, 0.35)',
+                        fontSize: '11px',
+                        color: '#6fdcff',
+                        fontWeight: '700',
+                        textAlign: 'center'
+                      }}
+                    >
+                      ⏳ BANK TRANSACTION PENDING — WILL AUTO-CLEAR WHEN POSTED
+                    </div>
+                  )}
+                  {bill.pendingPayment !== true && bill.status === 'overdue' && (
                     <div className="overdue-warning" style={{
                       marginTop: '8px',
                       padding: '6px 10px',
@@ -2059,6 +2097,7 @@ const refreshPlaidTransactions = async () => {
                 <li>📅 <span style={{ color: '#ff6b00' }}>DUE TODAY</span> - Due today</li>
                 <li>⚠️ <span style={{ color: '#ffdd00' }}>URGENT</span> - Due in 3 days or less</li>
                 <li>📆 <span style={{ color: '#00b4ff' }}>THIS WEEK</span> - Due within 7 days</li>
+                <li>⏳ <span style={{ color: '#6fdcff' }}>PENDING PAYMENT</span> - Matching bank transaction is pending; bill remains officially unpaid until posted</li>
                 <li>✅ <span style={{ color: '#00ff88' }}>PAID</span> - Already paid</li>
                 <li>⏭️ <span style={{ color: '#ba68c8' }}>SKIPPED</span> - Skipped for this cycle</li>
               </ul>

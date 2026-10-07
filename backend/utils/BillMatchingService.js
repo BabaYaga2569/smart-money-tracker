@@ -338,6 +338,131 @@ export function matchTransactionsToBills(transactions, bills) {
   return matches.sort((a, b) => b.confidence - a.confidence);
 }
 
+
+/**
+ * Match pending Plaid transactions to unpaid bills without clearing them.
+ * This uses the same canonical match criteria as posted-payment matching.
+ */
+export function matchPendingTransactionsToBills(transactions, bills) {
+  if (!transactions || !bills) return [];
+
+  const pendingTransactions = transactions.filter(transaction =>
+    transaction?.pending === true ||
+    transaction?.pending === 'true' ||
+    String(transaction?.status || '').toLowerCase() === 'pending'
+  );
+
+  const matches = [];
+  const matchedTransactionIds = new Set();
+  const matchedBillIds = new Set();
+
+  const sortedBills = [...bills].sort((a, b) => {
+    const dateA = parseDueDateLocal(a.dueDate);
+    const dateB = parseDueDateLocal(b.dueDate);
+    if (!dateA || !dateB) return 0;
+    return dateA - dateB;
+  });
+
+  for (const bill of sortedBills) {
+    if (bill?.isPaid || bill?.status === 'paid' || bill?.status === 'skipped') continue;
+    if (matchedBillIds.has(bill.id)) continue;
+
+    let bestMatch = null;
+    let bestConfidence = 0;
+
+    for (const transaction of pendingTransactions) {
+      const txId = transaction.id || transaction.transaction_id;
+      if (!txId || matchedTransactionIds.has(txId)) continue;
+
+      const match = matchTransactionToBill(transaction, bill);
+      if (match && match.confidence > bestConfidence) {
+        bestMatch = match;
+        bestConfidence = match.confidence;
+      }
+    }
+
+    if (bestMatch) {
+      matches.push(bestMatch);
+      matchedBillIds.add(bill.id);
+      matchedTransactionIds.add(
+        bestMatch.transaction.id || bestMatch.transaction.transaction_id
+      );
+    }
+  }
+
+  return matches.sort((a, b) => b.confidence - a.confidence);
+}
+
+/**
+ * Persist transient Pending Payment metadata on financialEvents.
+ * These fields never mark a bill paid or advance a recurring pattern.
+ * They are removed automatically when the pending transaction disappears.
+ */
+export async function reconcilePendingPaymentMatches(db, userId, transactions, bills) {
+  const matches = matchPendingTransactionsToBills(transactions, bills);
+  const byBillId = new Map(matches.map(match => [match.bill.id, match]));
+  const batch = db.batch();
+  let writes = 0;
+  let pendingMarked = 0;
+  let pendingCleared = 0;
+
+  for (const bill of bills) {
+    if (!bill?.id || bill.isPaid || bill.status === 'paid' || bill.status === 'skipped') {
+      continue;
+    }
+
+    const billRef = db.collection('users').doc(userId)
+      .collection('financialEvents').doc(bill.id);
+    const match = byBillId.get(bill.id);
+
+    if (match) {
+      const transaction = match.transaction;
+      const transactionId = transaction.id || transaction.transaction_id;
+
+      batch.set(billRef, {
+        pendingPayment: true,
+        pendingPaymentTransactionId: transactionId,
+        pendingPaymentDate: transaction.date || null,
+        pendingPaymentAmount: Math.abs(Number(transaction.amount) || 0),
+        pendingPaymentName: transaction.name || transaction.merchant_name || null,
+        pendingPaymentConfidence: match.confidence,
+        pendingPaymentMatchedAt: FieldValue.serverTimestamp(),
+        updatedAt: FieldValue.serverTimestamp()
+      }, { merge: true });
+      writes++;
+      pendingMarked++;
+    } else if (
+      bill.pendingPayment === true ||
+      bill.pendingPaymentTransactionId ||
+      bill.pendingPaymentDate ||
+      bill.pendingPaymentAmount
+    ) {
+      batch.set(billRef, {
+        pendingPayment: FieldValue.delete(),
+        pendingPaymentTransactionId: FieldValue.delete(),
+        pendingPaymentDate: FieldValue.delete(),
+        pendingPaymentAmount: FieldValue.delete(),
+        pendingPaymentName: FieldValue.delete(),
+        pendingPaymentConfidence: FieldValue.delete(),
+        pendingPaymentMatchedAt: FieldValue.delete(),
+        updatedAt: FieldValue.serverTimestamp()
+      }, { merge: true });
+      writes++;
+      pendingCleared++;
+    }
+  }
+
+  if (writes > 0) {
+    await batch.commit();
+  }
+
+  return {
+    matches,
+    pendingMarked,
+    pendingCleared
+  };
+}
+
 // ===== BILL OPERATIONS =====
 
 /**
@@ -673,6 +798,13 @@ async function applyBillPaymentLifecycle(db, userId, billId, payment) {
         : null,
       lifecycleNextOccurrence: nextOccurrence,
       lifecycleNextBillId: nextBillRef?.id || null,
+      pendingPayment: FieldValue.delete(),
+      pendingPaymentTransactionId: FieldValue.delete(),
+      pendingPaymentDate: FieldValue.delete(),
+      pendingPaymentAmount: FieldValue.delete(),
+      pendingPaymentName: FieldValue.delete(),
+      pendingPaymentConfidence: FieldValue.delete(),
+      pendingPaymentMatchedAt: FieldValue.delete(),
       updatedAt: FieldValue.serverTimestamp()
     });
 
@@ -987,16 +1119,25 @@ export async function runBillMatching(db, userId, transactions, bills) {
     
     console.log(`📊 [AutoClear] Analyzing ${transactions.length} transactions against ${enrichedBills.length} unpaid bills`);
     
-    // Run matching
+    // Posted transactions can clear bills. Pending transactions only create
+    // a transient Pending Payment state so Spendability does not reserve twice.
     const matches = matchTransactionsToBills(transactions, enrichedBills);
-    
+    const pendingResult = await reconcilePendingPaymentMatches(
+      db,
+      userId,
+      transactions,
+      enrichedBills
+    );
+
     if (matches.length === 0) {
-      console.log('❌ [AutoClear] No matches found');
+      console.log('ℹ️ [AutoClear] No posted bill matches found');
       return {
         success: true,
         cleared: 0,
         advanced: 0,
-        generated: 0
+        generated: 0,
+        pendingMarked: pendingResult.pendingMarked,
+        pendingCleared: pendingResult.pendingCleared
       };
     }
     
@@ -1044,7 +1185,9 @@ export async function runBillMatching(db, userId, transactions, bills) {
       success: true,
       cleared,
       advanced,
-      generated
+      generated,
+      pendingMarked: pendingResult.pendingMarked,
+      pendingCleared: pendingResult.pendingCleared
     };
   } catch (error) {
     console.error('❌ [AutoClear] Error:', error);
@@ -1053,7 +1196,9 @@ export async function runBillMatching(db, userId, transactions, bills) {
       error: error.message,
       cleared: 0,
       advanced: 0,
-      generated: 0
+      generated: 0,
+      pendingMarked: 0,
+      pendingCleared: 0
     };
   }
 }
