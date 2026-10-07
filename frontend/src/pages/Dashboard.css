@@ -61,9 +61,9 @@
 }
 
 .connection-pill.healthy {
-  color: #85e9c0;
-  border-color: rgba(50,210,150,.16);
-  background: rgba(50,210,150,.07);
+  color: var(--smt-theme-secondary);
+  border-color: rgba(var(--smt-theme-primary-rgb), .16);
+  background: rgba(var(--smt-theme-primary-rgb), .07);
 }
 
 .connection-pill.warning {
@@ -110,11 +110,11 @@
   min-height: 260px;
   overflow: hidden;
   padding: 28px;
-  border: 1px solid rgba(50,210,150,.16);
+  border: 1px solid rgba(var(--smt-theme-primary-rgb), .16);
   border-radius: var(--smt-radius-lg);
   background:
-    radial-gradient(circle at 85% 25%, rgba(50,210,150,.16), transparent 16rem),
-    linear-gradient(150deg, #18251f 0%, #151a20 64%);
+    radial-gradient(circle at 85% 25%, rgba(var(--smt-theme-primary-rgb), .16), transparent 16rem),
+    linear-gradient(150deg, var(--smt-theme-hero-start) 0%, var(--smt-theme-hero-end) 64%);
   color: var(--smt-text);
   text-align: left;
   box-shadow: var(--smt-shadow);
@@ -124,7 +124,7 @@
 
 .dashboard-safe-card:hover {
   transform: translateY(-2px);
-  border-color: rgba(50,210,150,.3);
+  border-color: rgba(var(--smt-theme-primary-rgb), .3);
 }
 
 .dashboard-card-kicker,
@@ -138,7 +138,7 @@
 
 .dashboard-safe-value {
   margin-top: 18px;
-  color: #7fe8ba;
+  color: var(--smt-theme-primary);
   font-size: clamp(42px, 6vw, 68px);
   font-weight: 850;
   line-height: .95;
@@ -478,7 +478,7 @@
 }
 
 .dashboard-shortcut-arrow {
-  color: #65707e;
+  color: var(--smt-theme-secondary);
   font-size: 17px;
 }
 
@@ -497,7 +497,7 @@
 }
 
 .notification.success {
-  border-color: rgba(50,210,150,.25);
+  border-color: rgba(var(--smt-theme-primary-rgb), .25);
 }
 
 .notification.error {
