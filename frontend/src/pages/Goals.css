@@ -569,3 +569,19 @@
 .sub-field input {
   width: 100%;
 }
+
+/* ===== Premium themed Goals foundation ===== */
+html body .goals-container {
+  width:100%; max-width:var(--smt-content-max); margin:0 auto;
+  padding:28px var(--smt-page-gutter) 42px; background:transparent!important; color:var(--smt-text);
+}
+html body .goals-container .page-header h2 { color:var(--smt-text)!important; font-size:clamp(25px,2.4vw,32px); letter-spacing:-.03em; }
+html body .goals-container .goals-grid { gap:10px!important; }
+html body .goals-container .goal-card {
+  background:var(--smt-surface)!important; border:1px solid var(--smt-border)!important;
+  border-radius:14px!important; box-shadow:none!important;
+}
+html body .goals-container .goal-card:hover { background:var(--smt-surface-2)!important; border-color:var(--smt-border-strong)!important; }
+html body .goals-container .goal-header h3 { color:var(--smt-text)!important; }
+html body .goals-container .progress-bar-container { background:var(--smt-surface-2)!important; }
+@media(max-width:700px){ html body .goals-container{padding:18px 14px 30px;} }
