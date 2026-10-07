@@ -5,6 +5,7 @@ import { PaycycleManager } from '../utils/PaycycleManager';
 import { PayCycleCalculator } from '../utils/PayCycleCalculator';
 import { useAuth } from '../contexts/AuthContext';
 import { getLocalMidnight, parseDueDateLocal } from '../utils/dateHelpers';
+import { getDaysUntilDateInPacific } from '../utils/DateUtils';
 import {
   IncomeTimelineChart,
   CashFlowForecastChart,
@@ -91,7 +92,7 @@ const PayCycle = () => {
 
       if (nextRefill.date) {
         setNextPayday(nextRefill.date);
-        setDaysUntilPayday(PayCycleCalculator.getDaysUntilPayday(nextRefill.date));
+        setDaysUntilPayday(getDaysUntilDateInPacific(nextRefill.date));
       }
 
       // Check for Plaid accounts
@@ -183,7 +184,7 @@ const PayCycle = () => {
 
       if (nextRefill.date) {
         setNextPayday(nextRefill.date);
-        setDaysUntilPayday(PayCycleCalculator.getDaysUntilPayday(nextRefill.date));
+        setDaysUntilPayday(getDaysUntilDateInPacific(nextRefill.date));
       }
     } catch (error) {
       console.error('Error loading pay cycle info:', error);
