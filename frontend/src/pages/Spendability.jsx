@@ -74,14 +74,27 @@ const SpendabilityV2 = () => {
       const payCycleDocRef = doc(db, 'users', currentUser.uid, 'financial', 'payCycle');
       const apiUrl = import.meta.env.VITE_API_URL || 'https://smart-money-tracker-09ks.onrender.com';
       
+      // Do not let a slow/cold backend block the entire Spendability page.
+      // If live balances do not answer quickly, render from the last cached
+      // Plaid balances in Settings and let the user refresh when the API is warm.
+      const accountsController = new AbortController();
+      const accountsTimeout = setTimeout(() => accountsController.abort(), 5000);
+
       const [settingsDocSnap, payCycleDocSnap, accountsResponse] = await Promise.all([
         getDoc(settingsDocRef),
         getDoc(payCycleDocRef),
-        fetch(`${apiUrl}/api/accounts?userId=${currentUser.uid}&_t=${Date.now()}`).catch(err => {
-          console.error('[Spendability] Backend API error, will use Firebase cache as fallback:', err);
+        fetch(`${apiUrl}/api/accounts?userId=${currentUser.uid}&_t=${Date.now()}`, {
+          signal: accountsController.signal
+        }).catch(err => {
+          if (err?.name === 'AbortError') {
+            console.warn('[Spendability] Live account request timed out after 5s; using Firebase cache');
+          } else {
+            console.error('[Spendability] Backend API error, will use Firebase cache as fallback:', err);
+          }
           return null;
         })
       ]);
+      clearTimeout(accountsTimeout);
 
       if (!settingsDocSnap.exists()) {
         throw new Error('No financial data found. Please set up your Settings first.');
@@ -250,9 +263,7 @@ const SpendabilityV2 = () => {
       } 
      // Get pay cycle data
 let nextPayday, daysUntilPayday;
-const todayPayCycleStr = new Intl.DateTimeFormat('en-CA', {
-  timeZone: 'America/Los_Angeles'
-}).format(new Date());
+const todayPayCycleStr = formatDateForInput(getPacificTime());
 const isStrictFuturePayday = (value) =>
   String(value || '').slice(0, 10) > todayPayCycleStr;
 
@@ -529,9 +540,7 @@ console.log('🔍 PAYDAY CALCULATION DEBUG:', {
       // Production-sheet semantics: Safe to Spend covers bills until the next
       // household refill. Money arriving today is already reflected in the live
       // bank balance, so only strictly-future pay events can end the cycle.
-      const todayStrProj = new Intl.DateTimeFormat('en-CA', {
-        timeZone: 'America/Los_Angeles'
-      }).format(new Date());
+      const todayStrProj = formatDateForInput(getPacificTime());
 
       const futureRefillDates = (paydays || [])
         .map(p => String(p.date || '').slice(0, 10))
