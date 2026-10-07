@@ -271,7 +271,15 @@ function matchTransactionToBill(transaction, bill) {
   // Calculate confidence
   const confidence = matchCount / 3;
   
-  // Require date + at least one of name/amount
+  // MONEY SAFETY RULE:
+  // A concrete bill occurrence may never be auto-cleared unless the posted
+  // transaction amount matches the bill amount within the configured tolerance.
+  // Name + date alone is not enough (e.g. a $28.15 Walmart purchase must not
+  // clear a $200 Walmart Card bill).
+  if (!amountMatch) return null;
+
+  // Date proximity is already mandatory above. Name similarity is useful for
+  // confidence/ranking, but cannot override a dollar mismatch.
   if (matchCount < MINIMUM_MATCH_COUNT) return null;
   
   return {
