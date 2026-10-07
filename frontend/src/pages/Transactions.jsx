@@ -1881,7 +1881,7 @@ useEffect(() => {
     <div className="transactions-container">
       <div className="page-header">
         <h2>💰 Transactions</h2>
-        <p>Complete transaction management and financial analytics</p>
+        <p>Search, review, and understand what actually hit your accounts</p>
       </div>
 
       {/* Connection Health Warning Banner */}
