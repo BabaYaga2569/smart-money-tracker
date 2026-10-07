@@ -110,8 +110,10 @@ const Goals = () => {
     } catch (error) {
       console.error('Error loading goals:', error);
       // Never substitute demo financial data for a failed/empty real-data load.
+      // Keep the UI honest without turning a successful create/update/delete
+      // into a false mutation failure when only the follow-up refresh fails.
       setGoals([]);
-      throw error;
+      return false;
     }
   };
 
