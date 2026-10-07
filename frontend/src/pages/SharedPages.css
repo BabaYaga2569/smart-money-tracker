@@ -585,3 +585,163 @@ html body .layout .main-content .metric-text-container {
     padding: 20px 15px;
   }
 }
+
+
+/* ===== Premium theme compatibility layer =====
+   Keeps legacy shared selectors from fighting the new design system. */
+:root {
+  --electric-green: var(--smt-theme-primary);
+  --electric-blue: var(--smt-theme-secondary);
+  --electric-yellow: var(--smt-theme-accent);
+  --electric-red: var(--smt-danger);
+  --electric-purple: var(--smt-theme-secondary);
+  --neon-cyan: var(--smt-theme-primary);
+  --text-bright: var(--smt-text);
+  --text-electric: var(--smt-theme-primary);
+  --text-accent: var(--smt-theme-secondary);
+  --text-warning: var(--smt-theme-accent);
+}
+
+.dashboard-container,
+.accounts-container,
+.transactions-container,
+.spendability-container,
+.bills-container,
+.recurring-container,
+.goals-container,
+.categories-container,
+.cashflow-container,
+.paycycle-container,
+.settings-container {
+  background: transparent !important;
+  color: var(--smt-text) !important;
+}
+
+.page-header h2 {
+  color: var(--smt-text) !important;
+  text-shadow: none !important;
+}
+
+.page-header p {
+  color: var(--smt-text-3) !important;
+}
+
+.summary-card,
+.dashboard-tile,
+.coming-soon {
+  background: var(--smt-surface) !important;
+  border-color: var(--smt-border) !important;
+  box-shadow: none !important;
+}
+
+.summary-card:hover,
+.dashboard-tile:hover {
+  border-color: var(--smt-border-strong) !important;
+  background: var(--smt-surface-2) !important;
+  box-shadow: none !important;
+}
+
+.summary-card h3,
+.tile-header h3 {
+  color: var(--smt-text-2) !important;
+  text-shadow: none !important;
+}
+
+.total-amount,
+.summary-card .value,
+.tile-value {
+  color: var(--smt-text) !important;
+  text-shadow: none !important;
+}
+
+.total-amount.positive,
+.tile-amount {
+  color: var(--smt-theme-primary) !important;
+  text-shadow: none !important;
+}
+
+.total-amount.attention {
+  color: var(--smt-theme-accent) !important;
+  text-shadow: none !important;
+}
+
+.summary-card small,
+.tile-description {
+  color: var(--smt-text-3) !important;
+  text-shadow: none !important;
+}
+
+.btn-primary,
+.tile-button {
+  background: var(--smt-theme-primary) !important;
+  color: #08110d !important;
+  border-color: transparent !important;
+}
+
+.btn-primary:hover,
+.tile-button:hover {
+  background: var(--smt-theme-secondary) !important;
+}
+
+.btn-secondary {
+  background: var(--smt-surface-2) !important;
+  color: var(--smt-text-2) !important;
+  border-color: var(--smt-border) !important;
+}
+
+.btn-secondary:hover {
+  background: var(--smt-surface-hover) !important;
+  color: var(--smt-text) !important;
+  border-color: var(--smt-border-strong) !important;
+}
+
+/* Neutralize the old high-specificity "nuclear" card sizing. */
+html body .layout .main-content .summary-card,
+html body .layout .main-content .metric-card {
+  min-width: 0 !important;
+  max-width: none !important;
+  min-height: 0 !important;
+  padding: 16px !important;
+  overflow: hidden !important;
+  box-shadow: none !important;
+}
+
+html body .layout .main-content .summary-card .metric-label,
+html body .layout .main-content .category-metric .metric-label,
+html body .layout .main-content .summary-card h3 {
+  color: var(--smt-text-3) !important;
+  font-size: 10px !important;
+  text-shadow: none !important;
+}
+
+html body .layout .main-content .summary-card .metric-value,
+html body .layout .main-content .category-metric .metric-value,
+html body .layout .main-content .summary-card .total-amount {
+  color: var(--smt-text) !important;
+  font-size: 22px !important;
+  text-shadow: none !important;
+}
+
+html body .layout .main-content .summary-card .metric-subtitle,
+html body .layout .main-content .category-metric .metric-subtitle,
+html body .layout .main-content .summary-card small {
+  color: var(--smt-text-3) !important;
+  font-size: 10px !important;
+  text-shadow: none !important;
+}
+
+html body .layout .main-content .metric-label,
+html body .layout .main-content .metric-value,
+html body .layout .main-content .metric-subtitle {
+  white-space: normal !important;
+  overflow: visible !important;
+}
+
+@media (max-width: 768px) {
+  .summary-card {
+    min-width: 0 !important;
+    max-width: none !important;
+    min-height: 0 !important;
+    padding: 14px !important;
+  }
+}
