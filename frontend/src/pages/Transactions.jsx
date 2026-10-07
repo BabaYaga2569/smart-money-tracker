@@ -1794,10 +1794,9 @@ useEffect(() => {
         totalIncome += t.amount;
       } else {
         totalExpenses += Math.abs(t.amount);
+        categoryBreakdown[category] =
+          (categoryBreakdown[category] || 0) + Math.abs(t.amount);
       }
-
-      categoryBreakdown[category] =
-        (categoryBreakdown[category] || 0) + Math.abs(t.amount);
     });
     
     const topCategories = Object.entries(categoryBreakdown)
