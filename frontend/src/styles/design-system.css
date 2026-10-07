@@ -275,3 +275,43 @@ body {
     0 8px 22px rgba(var(--smt-theme-primary-rgb), .16),
     inset 0 1px 0 rgba(255,255,255,.16);
 }
+
+
+/* ===== Premium QA: shared interaction accessibility ===== */
+:where(
+  button,
+  a,
+  input,
+  select,
+  textarea,
+  [role="button"],
+  [tabindex]:not([tabindex="-1"])
+):focus-visible {
+  outline: 2px solid var(--smt-theme-secondary);
+  outline-offset: 3px;
+  box-shadow: 0 0 0 4px rgba(var(--smt-theme-primary-rgb), .14);
+}
+
+:where(button, a, input, select, textarea):disabled {
+  cursor: not-allowed;
+}
+
+::selection {
+  background: rgba(var(--smt-theme-primary-rgb), .28);
+  color: var(--smt-text);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html {
+    scroll-behavior: auto !important;
+  }
+
+  *,
+  *::before,
+  *::after {
+    scroll-behavior: auto !important;
+    animation-duration: .01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: .01ms !important;
+  }
+}
