@@ -1791,7 +1791,7 @@ app.post("/api/plaid/sync_transactions", async (req, res, next) => {
       failedItemCount: failedItems.length
     }, { merge: true });
 
-    if (totals.added > 0 || totals.updated > 0 || totals.pendingReplaced > 0) {
+    if (totals.added > 0 || totals.updated > 0 || totals.pendingReplaced > 0 || totals.removed > 0) {
       try {
         const billResults = await runCanonicalBillEngine({ db, userId, log: logger });
         if (!billResults.success) {
@@ -2246,7 +2246,7 @@ app.post("/api/plaid/webhook", async (req, res) => {
           }, { merge: true });
 
         let billEngineResult = null;
-        if (result.added > 0 || result.updated > 0 || result.pendingReplaced > 0) {
+        if (result.added > 0 || result.updated > 0 || result.pendingReplaced > 0 || result.removed > 0) {
           try {
             billEngineResult = await runCanonicalBillEngine({ db, userId, log: logger });
             if (!billEngineResult.success) {
