@@ -245,8 +245,8 @@ try {
 
 // Calculate spendability using the same canonical occurrence/pay-cycle rules
 // as Spendability. No cached payday document and no recurrence re-processing.
-let calculatedSafeToSpend = 0;
-let calculatedDaysUntilPayday = 0;
+let calculatedSafeToSpend = null;
+let calculatedDaysUntilPayday = null;
 try {
   const { getDaysUntilDateInPacific } = await import('../utils/DateUtils');
   const householdPayEvents = buildHouseholdPayEvents(data, { horizonDays: 45 });
@@ -255,28 +255,27 @@ try {
 
   if (nextRefillDate) {
     calculatedDaysUntilPayday = getDaysUntilDateInPacific(nextRefillDate);
+
+    const visibleUnpaidBills = visibleBillOccurrences(bills)
+      .filter(bill => bill.status !== 'skipped' && bill.pendingPayment !== true);
+
+    const billsDueBeforeRefill = visibleUnpaidBills.filter(bill => {
+      const due = String(bill.dueDate || bill.nextDueDate || '').slice(0, 10);
+      return due && due < nextRefillDate;
+    });
+
+    const totalBillsDue = billsDueBeforeRefill.reduce(
+      (sum, bill) => sum + (parseFloat(bill.amount || bill.cost) || 0),
+      0
+    );
+
+    // Safe-to-Spend must start from the same current available bank balance
+    // as Spendability. Projected cash is a separate forecast metric and can
+    // double-count transaction activity already reflected in Plaid balances.
+    calculatedSafeToSpend = totalBalance - totalBillsDue;
+  } else {
+    console.warn('Dashboard spendability unavailable: no household refill date resolved');
   }
-
-  const visibleUnpaidBills = visibleBillOccurrences(bills)
-    .filter(bill => bill.status !== 'skipped' && bill.pendingPayment !== true);
-
-  const billsDueBeforeRefill = nextRefillDate
-    ? visibleUnpaidBills.filter(bill => {
-        const due = String(bill.dueDate || bill.nextDueDate || '').slice(0, 10);
-        return due && due < nextRefillDate;
-      })
-    : visibleUnpaidBills;
-
-  const totalBillsDue = billsDueBeforeRefill.reduce(
-    (sum, bill) => sum + (parseFloat(bill.amount || bill.cost) || 0),
-    0
-  );
-
-  // Safe-to-Spend must start from the same current available bank balance
-  // as Spendability. Projected cash is a separate forecast metric and can
-  // double-count transaction activity already reflected in Plaid balances.
-  calculatedSafeToSpend =
-    totalBalance - totalBillsDue;
 } catch (error) {
   console.error('Error calculating dashboard spendability:', error);
   calculatedSafeToSpend = 0;
@@ -493,12 +492,14 @@ setDashboardData({
         >
           <div className="dashboard-card-kicker">Safe to spend</div>
           <div className="dashboard-safe-value">
-            {loading ? '—' : formatCurrency(dashboardData.safeToSpend)}
+            {loading || dashboardData.safeToSpend == null ? '—' : formatCurrency(dashboardData.safeToSpend)}
           </div>
           <div className="dashboard-safe-caption">
-            {dashboardData.daysUntilPayday > 0
-              ? `Available until payday in ${dashboardData.daysUntilPayday} day${dashboardData.daysUntilPayday === 1 ? '' : 's'}`
-              : 'Available after upcoming obligations'}
+            {dashboardData.daysUntilPayday == null
+              ? 'Pay schedule unavailable'
+              : dashboardData.daysUntilPayday > 0
+                ? `Available until payday in ${dashboardData.daysUntilPayday} day${dashboardData.daysUntilPayday === 1 ? '' : 's'}`
+                : 'Available after upcoming obligations'}
           </div>
           <div className="dashboard-safe-link">Open Spendability <span>→</span></div>
         </button>
@@ -519,7 +520,13 @@ setDashboardData({
           <button type="button" className="dashboard-metric-card" onClick={() => navigate('/paycycle')}>
             <span>Next payday</span>
             <strong>
-              {loading ? '—' : dashboardData.daysUntilPayday === 0 ? 'Today / due' : `${dashboardData.daysUntilPayday} days`}
+              {loading
+                ? '—'
+                : dashboardData.daysUntilPayday == null
+                  ? 'Schedule unavailable'
+                  : dashboardData.daysUntilPayday === 0
+                    ? 'Today / due'
+                    : `${dashboardData.daysUntilPayday} days`}
             </strong>
             <small>Pay-cycle planning</small>
           </button>
