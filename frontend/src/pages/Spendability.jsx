@@ -10,11 +10,6 @@ import { SettingsSchemaManager } from '../utils/SettingsSchemaManager';
 import { buildFinancialCycle, normalizeFinancialSettings } from '../utils/financialCycleEngine';
 import { getVisiblePlaidAccounts, isDepositoryAccount } from '../utils/accountVisibility';
 import { visibleBillOccurrences } from '../utils/billVisibility';
-import {
-  buildHouseholdPayEvents,
-  summarizeNextHouseholdRefill,
-  nextMainPaydayDate
-} from '../utils/householdPayEvents';
 import { buildSpendabilityReconciliation } from '../utils/spendabilityReconciliation';
 import './Spendability.css';
 import { useAuth } from '../contexts/AuthContext';
@@ -350,32 +345,8 @@ console.log('🔍 PAYDAY CALCULATION DEBUG:', {
 });
 }      
  
-      // Canonical household pay events from Settings.
-      // This includes spouse paydays plus your early-deposit split and main payday.
-      const householdPayEvents = buildHouseholdPayEvents(settingsData, { horizonDays: 45 });
-      const nextRefill = summarizeNextHouseholdRefill(householdPayEvents);
-
-      if (nextRefill.date) {
-        nextPayday = nextRefill.date;
-        daysUntilPayday = getDaysUntilDateInPacific(nextPayday);
-      }
-
-      const nextYourMainPayday = nextMainPaydayDate(householdPayEvents, 'yours');
-      const futureWindowEnd = nextYourMainPayday || nextPayday;
-
-      // Show every household deposit through your next main payday so a same-day
-      // spouse deposit + early SoFi deposit and the following-day remainder are
-      // all visible in the projection.
-      const paydays = householdPayEvents.filter(event =>
-        event.date >= formatDateForInput(getPacificTime()) &&
-        (!futureWindowEnd || event.date <= futureWindowEnd)
-      );
-
-      const totalPaydayAmount = paydays.reduce(
-        (sum, event) => sum + Number(event.amount || 0),
-        0
-      );
-      const lastPaydayDate = paydays[paydays.length - 1]?.date || nextPayday;
+      // Household refill, deposit window, and reserve math are resolved below
+      // by the canonical financialCycleEngine after bill occurrences are loaded.
 
       // Load canonical unpaid bill occurrences plus recurring patterns for
       // the read-only reconciliation audit.
