@@ -272,15 +272,13 @@ function matchTransactionToBill(transaction, bill) {
   const confidence = matchCount / 3;
   
   // MONEY SAFETY RULE:
-  // A concrete bill occurrence may never be auto-cleared unless the posted
-  // transaction amount matches the bill amount within the configured tolerance.
-  // Name + date alone is not enough (e.g. a $28.15 Walmart purchase must not
-  // clear a $200 Walmart Card bill).
-  if (!amountMatch) return null;
+  // Automatic and pending bill matching is deliberately conservative.
+  // A transaction must match merchant/name, amount, AND date proximity.
+  // Amount+date alone is unsafe: a $40 Zelle must never become a $40
+  // Optimum Internet payment just because the numbers line up.
+  if (!nameMatch || !amountMatch || !dateMatch) return null;
 
-  // Date proximity is already mandatory above. Name similarity is useful for
-  // confidence/ranking, but cannot override a dollar mismatch.
-  if (matchCount < MINIMUM_MATCH_COUNT) return null;
+  if (matchCount < 3) return null;
   
   return {
     transaction,
