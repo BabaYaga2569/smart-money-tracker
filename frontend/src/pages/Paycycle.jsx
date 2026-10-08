@@ -13,7 +13,7 @@ import {
   IncomeSourcesChart,
   PayFrequencyChart
 } from '../components/charts/PaycycleCharts';
-import { getVisiblePlaidAccounts, isDepositoryAccount } from '../utils/accountVisibility';
+import { loadCanonicalFinancialAccounts } from '../utils/financialAccounts';
 import { buildFinancialCycle, normalizeFinancialSettings } from '../utils/financialCycleEngine';
 import { visibleBillOccurrences } from '../utils/billVisibility';
 import './Paycycle.css';
@@ -123,18 +123,20 @@ const PayCycle = () => {
       
       if (!settingsSnap.exists()) return { totalBalance: 0, accounts: [] };
       
-      const settings = settingsSnap.data() || {};
-      const allPlaidAccounts = getVisiblePlaidAccounts(settings.plaidAccounts || [], settings);
-      const depositoryAccounts = allPlaidAccounts.filter(isDepositoryAccount);
+      const settings = normalizeFinancialSettings(settingsSnap.data() || {});
+      const canonicalAccounts = await loadCanonicalFinancialAccounts({
+        userId: currentUser.uid,
+        settings,
+        timeoutMs: 5000
+      });
+      const totalBalance = canonicalAccounts.totalAvailable;
       
-      const totalBalance = depositoryAccounts.reduce((sum, account) => 
-        sum + (parseFloat(account.balance) || 0), 0
+      console.log(
+        `✅ Synced canonical balance from ${canonicalAccounts.depositoryAccounts.length} accounts: ${totalBalance.toFixed(2)}`
       );
       
-      console.log(`✅ Synced balance from ${depositoryAccounts.length} accounts: $${totalBalance.toFixed(2)}`);
-      
       setCurrentBalance(totalBalance);
-      return { totalBalance, accounts: depositoryAccounts };
+      return { totalBalance, accounts: canonicalAccounts.depositoryAccounts };
       
     } catch (error) {
       console.error('Error syncing balances from accounts:', error);
