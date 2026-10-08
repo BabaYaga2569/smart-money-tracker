@@ -596,18 +596,21 @@ function familyFinancesFindVerifiedCandidate_(monthSheet, txDate, merchant, amou
 }
 
 
-function familyFinancesFindPendingForecastRow_(monthSheet, transactionId) {
+function familyFinancesFindPendingForecastRow_(monthSheet, transactionId, amount) {
   if (!monthSheet || !transactionId || monthSheet.getLastRow() < 2) return null;
 
   const marker = 'PLAID_PENDING:' + String(transactionId);
-  const notes = monthSheet
-    .getRange(2, 9, monthSheet.getLastRow() - 1, 1)
-    .getValues();
+  const rowCount = monthSheet.getLastRow() - 1;
+  const values = monthSheet.getRange(2, 3, rowCount, 7).getValues();
 
-  for (let i = 0; i < notes.length; i++) {
-    if (String(notes[i][0] || '').includes(marker)) {
-      return i + 2;
-    }
+  for (let i = 0; i < values.length; i++) {
+    const forecast = values[i][0]; // Column C
+    const notes = values[i][6];    // Column I
+
+    if (!String(notes || '').includes(marker)) continue;
+    if (!familyFinancesAmountsEqual_(forecast, amount)) continue;
+
+    return i + 2;
   }
 
   return null;
@@ -1039,6 +1042,125 @@ function familyFinancesFindExistingPendingCandidate_(
 }
 
 
+
+function familyFinancesRemovePendingMarker_(monthSheet, rowNumber, transactionId) {
+  const cell = monthSheet.getRange(rowNumber, 9);
+  const current = String(cell.getValue() || '').trim();
+  if (!current) return false;
+
+  const marker = 'PLAID_PENDING:' + String(transactionId);
+  const parts = current
+    .split(';')
+    .map(function(part) { return String(part || '').trim(); })
+    .filter(function(part) { return part && part !== marker; });
+
+  if (parts.join('; ') === current) return false;
+
+  cell.setValue(parts.join('; '));
+  return true;
+}
+
+function familyFinancesRepairPendingMarkerCollisions_(ss, txSheet) {
+  if (!txSheet || txSheet.getLastRow() < 2) {
+    return { repairedMarkers: 0, reprocessed: 0 };
+  }
+
+  const rows = txSheet
+    .getRange(2, 1, txSheet.getLastRow() - 1, 11)
+    .getValues();
+
+  let repairedMarkers = 0;
+  let reprocessed = 0;
+
+  rows.forEach(function(row, index) {
+    const transactionId = String(row[0] || '').trim();
+    const dateValue = row[1];
+    const merchant = String(row[2] || '').trim();
+    const amount = Number(row[3]);
+    const bank = String(row[4] || '').trim();
+    const category = String(row[5] || '').trim();
+    const pending = familyFinancesIsPending_(row[6]);
+    const status = String(row[7] || '').trim().toUpperCase();
+    const notes = String(row[10] || '');
+    const lowerNotes = notes.toLowerCase();
+    const sheetRow = index + 2;
+
+    if (!transactionId || !pending || status !== 'REVIEW') return;
+    if (!(dateValue instanceof Date) || isNaN(dateValue.getTime())) return;
+    if (!Number.isFinite(amount) || !bank) return;
+    if (!lowerNotes.includes('legacy pending recovery v3 complete')) return;
+    if (lowerNotes.includes('pending collision repair v4 complete')) return;
+
+    const monthlyTab = familyFinancesMonthTabName_(dateValue);
+    const monthSheet = ss.getSheetByName(monthlyTab);
+    if (!monthSheet) return;
+
+    const marker = 'PLAID_PENDING:' + transactionId;
+    const rowCount = Math.max(0, monthSheet.getLastRow() - 1);
+
+    if (rowCount > 0) {
+      const monthly = monthSheet.getRange(2, 3, rowCount, 7).getValues();
+
+      monthly.forEach(function(monthRow, monthIndex) {
+        const forecast = monthRow[0];
+        const markerCell = String(monthRow[6] || '');
+
+        if (!markerCell.includes(marker)) return;
+        if (familyFinancesAmountsEqual_(forecast, amount)) return;
+
+        if (familyFinancesRemovePendingMarker_(
+          monthSheet,
+          monthIndex + 2,
+          transactionId
+        )) {
+          repairedMarkers++;
+        }
+      });
+    }
+
+    const result = familyFinancesInsertPendingForecast_(
+      ss,
+      monthSheet,
+      transactionId,
+      dateValue,
+      merchant,
+      amount,
+      bank,
+      category || 'Needs Review'
+    );
+
+    if (result.inserted || result.existing) {
+      txSheet.getRange(sheetRow, 9, 1, 2).setValues([[
+        monthlyTab,
+        result.rowNumber
+      ]]);
+
+      txSheet.getRange(sheetRow, 11).setValue(
+        familyFinancesAppendMarker_(
+          notes,
+          'pending collision repair v4 complete; pending amount is represented in ' +
+          monthlyTab + ' row ' + result.rowNumber + '.'
+        )
+      );
+      reprocessed++;
+      return;
+    }
+
+    txSheet.getRange(sheetRow, 11).setValue(
+      familyFinancesAppendMarker_(
+        notes,
+        'pending collision repair v4 complete; still not represented: ' +
+        String(result.reason || 'no safe monthly target found') + '.'
+      )
+    );
+  });
+
+  return {
+    repairedMarkers: repairedMarkers,
+    reprocessed: reprocessed
+  };
+}
+
 function familyFinancesRecoverLegacyPending_(ss, txSheet) {
   if (!txSheet || txSheet.getLastRow() < 2) return 0;
 
@@ -1135,7 +1257,7 @@ function familyFinancesInsertPendingForecast_(
 ) {
   if (!monthSheet) return { inserted: false, reason: 'monthly tab not found' };
 
-  const existingRow = familyFinancesFindPendingForecastRow_(monthSheet, transactionId);
+  const existingRow = familyFinancesFindPendingForecastRow_(monthSheet, transactionId, amount);
   if (existingRow) {
     return { inserted: false, existing: true, rowNumber: existingRow };
   }
@@ -1741,6 +1863,7 @@ function runFamilyFinancesSheetSync(processReviewQueue) {
   let archivedReview = 0;
   let readyRecovered = 0;
   let legacyPendingRecovered = 0;
+  let collisionRepair = { repairedMarkers: 0, reprocessed: 0 };
   let reviewEditTrigger = 'not checked';
 
   try {
@@ -1751,6 +1874,11 @@ function runFamilyFinancesSheetSync(processReviewQueue) {
     // Recover transactions stranded by the legacy proposed-row pipeline before
     // processing newly imported bank activity.
     readyRecovered = familyFinancesRecoverReadyToInsert_(ss, txSheet);
+
+    // Repair bad legacy marker associations before any pending recovery.
+    // This specifically prevents a prior wrong marker from overriding the
+    // exact-amount protections now used by the pending matcher.
+    collisionRepair = familyFinancesRepairPendingMarkerCollisions_(ss, txSheet);
 
     // One-time catch-up for pending rows stranded by the old pay-cycle planner.
     // Each legacy failure is stamped after this attempt so normal 15-minute
@@ -2253,6 +2381,8 @@ function runFamilyFinancesSheetSync(processReviewQueue) {
       'Recovered approvals: ' + recoveredApprovals + '. ' +
       'Recovered READY_TO_INSERT: ' + readyRecovered + '. ' +
       'Recovered legacy pending: ' + legacyPendingRecovered + '. ' +
+      'Repaired pending markers: ' + collisionRepair.repairedMarkers + '. ' +
+      'Reprocessed collision rows: ' + collisionRepair.reprocessed + '. ' +
       'Closed stale review: ' + closedReview + '. ' +
       'Archived resolved review: ' + archivedReview + '. ' +
       'Review edit trigger: ' + reviewEditTrigger + '. ' +
@@ -2281,6 +2411,7 @@ function runFamilyFinancesSheetSync(processReviewQueue) {
       recoveredApprovals: recoveredApprovals,
       readyRecovered: readyRecovered,
       legacyPendingRecovered: legacyPendingRecovered,
+      collisionRepair: collisionRepair,
       closedReview: closedReview,
       archivedReview: archivedReview,
       reviewEditTrigger: reviewEditTrigger
