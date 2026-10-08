@@ -271,7 +271,15 @@ function matchTransactionToBill(transaction, bill) {
   // Calculate confidence
   const confidence = matchCount / 3;
   
-  // Require date + at least one of name/amount
+  // MONEY SAFETY RULE:
+  // A concrete bill occurrence may never be auto-cleared unless the posted
+  // transaction amount matches the bill amount within the configured tolerance.
+  // Name + date alone is not enough (e.g. a $28.15 Walmart purchase must not
+  // clear a $200 Walmart Card bill).
+  if (!amountMatch) return null;
+
+  // Date proximity is already mandatory above. Name similarity is useful for
+  // confidence/ranking, but cannot override a dollar mismatch.
   if (matchCount < MINIMUM_MATCH_COUNT) return null;
   
   return {
@@ -962,7 +970,7 @@ export async function applyManualBillPayment(db, userId, billId, options = {}) {
   });
 }
 
-export async function unmarkManualBillPayment(db, userId, billId) {
+async function reverseCanonicalBillPayment(db, userId, billId, expectedMarkedVia) {
   const userRef = db.collection('users').doc(userId);
   const billRef = userRef.collection('financialEvents').doc(billId);
 
@@ -978,11 +986,13 @@ export async function unmarkManualBillPayment(db, userId, billId) {
       return { success: true, idempotent: true, unmarked: false };
     }
 
-    if (liveBill.markedVia !== 'manual-payment' || !liveBill.paymentRecordId) {
+    if (liveBill.markedVia !== expectedMarkedVia || !liveBill.paymentRecordId) {
       return {
         success: false,
         skipped: true,
-        reason: 'ONLY_CANONICAL_MANUAL_PAYMENTS_CAN_BE_UNMARKED'
+        reason: 'PAYMENT_REVERSAL_MARKED_VIA_MISMATCH',
+        expectedMarkedVia,
+        actualMarkedVia: liveBill.markedVia || null
       };
     }
 
@@ -1107,6 +1117,14 @@ export async function unmarkManualBillPayment(db, userId, billId) {
 
     return { success: true, idempotent: false, unmarked: true };
   });
+}
+
+export async function unmarkManualBillPayment(db, userId, billId) {
+  return reverseCanonicalBillPayment(db, userId, billId, 'manual-payment');
+}
+
+export async function reverseIncorrectAutoBillMatch(db, userId, billId) {
+  return reverseCanonicalBillPayment(db, userId, billId, 'auto-plaid-match');
 }
 
 /**
