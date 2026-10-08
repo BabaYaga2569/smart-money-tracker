@@ -1368,6 +1368,199 @@ function familyFinancesInsertPendingForecast_(
   );
 }
 
+
+function familyFinancesPendingSourceIdFromNotes_(notes) {
+  const text = String(notes || '');
+  const match = text.match(/Posted from pending transaction\s+([^;\s]+)/i);
+  return match ? String(match[1] || '').trim() : '';
+}
+
+function familyFinancesFindPendingMarkerCandidate_(
+  monthSheet,
+  pendingTransactionId,
+  amount,
+  bank
+) {
+  if (
+    !monthSheet ||
+    !pendingTransactionId ||
+    monthSheet.getLastRow() < 2
+  ) {
+    return { status: 'NONE', candidates: [] };
+  }
+
+  const marker = 'PLAID_PENDING:' + String(pendingTransactionId);
+  const wantedBank = familyFinancesNorm_(bank);
+  const rows = monthSheet
+    .getRange(2, 1, monthSheet.getLastRow() - 1, 9)
+    .getValues();
+
+  const candidates = [];
+
+  rows.forEach(function(row, index) {
+    const forecast = row[2];
+    const actual = row[3];
+    const rowBank = row[4];
+    const notes = String(row[8] || '');
+
+    if (!notes.includes(marker)) return;
+    if (!familyFinancesAmountsEqual_(forecast, amount)) return;
+
+    const rowBankNorm = familyFinancesNorm_(rowBank);
+    if (rowBankNorm && wantedBank && rowBankNorm !== wantedBank) return;
+
+    if (
+      actual !== '' &&
+      actual !== null &&
+      !familyFinancesAmountsEqual_(actual, amount)
+    ) {
+      return;
+    }
+
+    candidates.push({
+      rowNumber: index + 2,
+      values: row
+    });
+  });
+
+  if (candidates.length === 0) {
+    return { status: 'NONE', candidates: candidates };
+  }
+  if (candidates.length > 1) {
+    return { status: 'MULTIPLE', candidates: candidates };
+  }
+
+  return { status: 'ONE', candidates: candidates };
+}
+
+function familyFinancesResolvePostedFromPending_(
+  monthSheet,
+  postedTransactionId,
+  pendingTransactionId,
+  amount,
+  bank,
+  category
+) {
+  const result = familyFinancesFindPendingMarkerCandidate_(
+    monthSheet,
+    pendingTransactionId,
+    amount,
+    bank
+  );
+
+  if (result.status !== 'ONE') return result;
+
+  const candidate = result.candidates[0];
+  const rowNumber = candidate.rowNumber;
+  const actual = candidate.values[3];
+
+  if (actual === '' || actual === null) {
+    monthSheet.getRange(rowNumber, 4).setValue(amount);
+  }
+
+  if (!String(candidate.values[4] || '').trim() && bank) {
+    monthSheet.getRange(rowNumber, 5).setValue(bank);
+  }
+
+  if (
+    !String(candidate.values[5] || '').trim() &&
+    category &&
+    String(category).trim().toLowerCase() !== 'needs review'
+  ) {
+    monthSheet.getRange(rowNumber, 6).setValue(category);
+  }
+
+  const noteCell = monthSheet.getRange(rowNumber, 9);
+  const current = String(noteCell.getValue() || '').trim();
+  const postedMarker = 'PLAID_TX:' + String(postedTransactionId);
+
+  if (!current.includes(postedMarker)) {
+    noteCell.setValue(current ? current + '; ' + postedMarker : postedMarker);
+  }
+
+  return {
+    status: 'ONE',
+    candidates: result.candidates,
+    rowNumber: rowNumber
+  };
+}
+
+function familyFinancesRecoverPostedFromPending_(ss, txSheet) {
+  if (!txSheet || txSheet.getLastRow() < 2) return 0;
+
+  const rows = txSheet
+    .getRange(2, 1, txSheet.getLastRow() - 1, 11)
+    .getValues();
+
+  let recovered = 0;
+
+  rows.forEach(function(row, index) {
+    const transactionId = String(row[0] || '').trim();
+    const dateValue = row[1];
+    const amount = Number(row[3]);
+    const bank = String(row[4] || '').trim();
+    const category = String(row[5] || '').trim();
+    const pending = familyFinancesIsPending_(row[6]);
+    const status = String(row[7] || '').trim().toUpperCase();
+    const notes = String(row[10] || '');
+    const lowerNotes = notes.toLowerCase();
+    const sheetRow = index + 2;
+
+    if (!transactionId || pending || status !== 'REVIEW') return;
+    if (lowerNotes.includes('posted-from-pending recovery v1 complete')) return;
+    if (!(dateValue instanceof Date) || isNaN(dateValue.getTime())) return;
+    if (!Number.isFinite(amount) || !bank) return;
+
+    const pendingTransactionId = familyFinancesPendingSourceIdFromNotes_(notes);
+    if (!pendingTransactionId) return;
+
+    const monthlyTab = familyFinancesMonthTabName_(dateValue);
+    const monthSheet = ss.getSheetByName(monthlyTab);
+    if (!monthSheet) return;
+
+    const result = familyFinancesResolvePostedFromPending_(
+      monthSheet,
+      transactionId,
+      pendingTransactionId,
+      amount,
+      bank,
+      category
+    );
+
+    if (result.status === 'ONE') {
+      txSheet.getRange(sheetRow, 8, 1, 3).setValues([[
+        'MATCH_FOUND',
+        monthlyTab,
+        result.rowNumber
+      ]]);
+
+      txSheet.getRange(sheetRow, 11).setValue(
+        familyFinancesAppendMarker_(
+          notes,
+          'posted-from-pending recovery v1 complete; cleared monthly row ' +
+          result.rowNumber +
+          ' using exact predecessor pending marker + exact amount + bank.'
+        )
+      );
+
+      recovered++;
+      return;
+    }
+
+    txSheet.getRange(sheetRow, 11).setValue(
+      familyFinancesAppendMarker_(
+        notes,
+        'posted-from-pending recovery v1 complete; ' +
+        (result.status === 'MULTIPLE'
+          ? 'multiple monthly rows carried the predecessor pending marker.'
+          : 'no exact predecessor pending row found.')
+      )
+    );
+  });
+
+  return recovered;
+}
+
 function familyFinancesQueueReview_(
   reviewSheet,
   existingReviewIds,
@@ -1864,6 +2057,7 @@ function runFamilyFinancesSheetSync(processReviewQueue) {
   let readyRecovered = 0;
   let legacyPendingRecovered = 0;
   let collisionRepair = { repairedMarkers: 0, reprocessed: 0 };
+  let postedPendingRecovered = 0;
   let reviewEditTrigger = 'not checked';
 
   try {
@@ -1884,6 +2078,10 @@ function runFamilyFinancesSheetSync(processReviewQueue) {
     // Each legacy failure is stamped after this attempt so normal 15-minute
     // syncs do not churn the same row forever.
     legacyPendingRecovered = familyFinancesRecoverLegacyPending_(ss, txSheet);
+
+    // Resolve posted replacements against the exact pending transaction they
+    // replaced. This safely removes many Amazon/Walmart/etc. items from Review.
+    postedPendingRecovered = familyFinancesRecoverPostedFromPending_(ss, txSheet);
 
     const lastRow = txSheet.getLastRow();
 
@@ -1982,6 +2180,52 @@ function runFamilyFinancesSheetSync(processReviewQueue) {
 
           pending++;
           continue;
+        }
+
+        // Posted replacements are safest when Plaid tells us exactly which
+        // pending transaction they replaced. This works even for mixed
+        // merchants such as Amazon/Walmart because identity comes from the
+        // predecessor pending ID, while amount + bank still must match.
+        const pendingSourceId = familyFinancesPendingSourceIdFromNotes_(originalNotes);
+
+        if (pendingSourceId && monthSheet) {
+          const postedPendingResult = familyFinancesResolvePostedFromPending_(
+            monthSheet,
+            transactionId,
+            pendingSourceId,
+            amount,
+            bank,
+            suggestion.category
+          );
+
+          if (postedPendingResult.status === 'ONE') {
+            const matchedRow = postedPendingResult.rowNumber;
+            const matchedCategory = String(
+              monthSheet.getRange(matchedRow, 6).getValue() || ''
+            ).trim();
+
+            if (matchedCategory) {
+              txSheet.getRange(sheetRow, 6).setValue(matchedCategory);
+            }
+
+            txSheet.getRange(sheetRow, 8, 1, 3).setValues([[
+              'MATCH_FOUND',
+              monthlyTab,
+              matchedRow
+            ]]);
+
+            txSheet.getRange(sheetRow, 11).setValue(
+              familyFinancesAppendMarker_(
+                originalNotes,
+                'posted replacement cleared ' + monthlyTab +
+                ' row ' + matchedRow +
+                ' using exact predecessor pending marker + exact amount + bank.'
+              )
+            );
+
+            cleared++;
+            continue;
+          }
         }
 
         // First, protect rows Steve already entered manually. This check is
@@ -2383,6 +2627,7 @@ function runFamilyFinancesSheetSync(processReviewQueue) {
       'Recovered legacy pending: ' + legacyPendingRecovered + '. ' +
       'Repaired pending markers: ' + collisionRepair.repairedMarkers + '. ' +
       'Reprocessed collision rows: ' + collisionRepair.reprocessed + '. ' +
+      'Recovered posted-from-pending: ' + postedPendingRecovered + '. ' +
       'Closed stale review: ' + closedReview + '. ' +
       'Archived resolved review: ' + archivedReview + '. ' +
       'Review edit trigger: ' + reviewEditTrigger + '. ' +
@@ -2412,6 +2657,7 @@ function runFamilyFinancesSheetSync(processReviewQueue) {
       readyRecovered: readyRecovered,
       legacyPendingRecovered: legacyPendingRecovered,
       collisionRepair: collisionRepair,
+      postedPendingRecovered: postedPendingRecovered,
       closedReview: closedReview,
       archivedReview: archivedReview,
       reviewEditTrigger: reviewEditTrigger
