@@ -1828,6 +1828,7 @@ function installFamilyFinancesSheetSyncTriggers() {
 
   const handlers = new Set([
     'runFamilyFinancesSheetSync',
+    'runFamilyFinancesScheduledSync',
     'familyFinancesOnEdit'
   ]);
 
@@ -1839,12 +1840,12 @@ function installFamilyFinancesSheetSyncTriggers() {
       ScriptApp.deleteTrigger(trigger);
     });
 
-  ScriptApp.newTrigger('runFamilyFinancesSheetSync')
+  ScriptApp.newTrigger('runFamilyFinancesScheduledSync')
     .timeBased()
     .everyMinutes(15)
     .create();
 
-  ScriptApp.newTrigger('runFamilyFinancesSheetSync')
+  ScriptApp.newTrigger('runFamilyFinancesScheduledSync')
     .forSpreadsheet(ss)
     .onOpen()
     .create();
@@ -1874,12 +1875,15 @@ function installFamilyFinancesSheetSyncTriggers() {
 }
 
 function removeFamilyFinancesSheetSyncTriggers() {
-  const handler = 'runFamilyFinancesSheetSync';
+  const handlers = new Set([
+    'runFamilyFinancesSheetSync',
+    'runFamilyFinancesScheduledSync'
+  ]);
   let removed = 0;
 
   ScriptApp.getProjectTriggers()
     .filter(function(trigger) {
-      return trigger.getHandlerFunction() === handler;
+      return handlers.has(trigger.getHandlerFunction());
     })
     .forEach(function(trigger) {
       ScriptApp.deleteTrigger(trigger);
