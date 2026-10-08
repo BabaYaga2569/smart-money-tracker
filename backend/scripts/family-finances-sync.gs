@@ -609,6 +609,61 @@ function familyFinancesFindPendingForecastRow_(monthSheet, transactionId) {
   return null;
 }
 
+function familyFinancesTagPendingRow_(monthSheet, rowNumber, transactionId) {
+  const noteCell = monthSheet.getRange(rowNumber, 9);
+  const current = String(noteCell.getValue() || '').trim();
+  const marker = 'PLAID_PENDING:' + String(transactionId);
+
+  if (!current.includes(marker)) {
+    noteCell.setValue(current ? current + '; ' + marker : marker);
+  }
+}
+
+function familyFinancesFindPendingMerchantCandidate_(
+  monthSheet,
+  dateValue,
+  merchant,
+  bank
+) {
+  if (!monthSheet || monthSheet.getLastRow() < 2) {
+    return { status: 'NONE', candidates: [] };
+  }
+
+  const txDate = new Date(dateValue);
+  const rows = monthSheet.getRange(2, 1, monthSheet.getLastRow() - 1, 6).getValues();
+  const candidates = [];
+
+  rows.forEach(function(row, index) {
+    const rowDate = row[0];
+    const rowMerchant = String(row[1] || '').trim();
+    const forecast = row[2];
+    const actual = row[3];
+    const rowBank = String(row[4] || '').trim();
+
+    if (!(rowDate instanceof Date) || isNaN(rowDate.getTime())) return;
+    if (rowBank !== bank) return;
+    if (actual !== '' && actual !== null) return;
+    if (forecast === '' || forecast === null) return;
+    if (!familyFinancesMerchantSharesCoreIdentity_(merchant, rowMerchant)) return;
+
+    const dayDifference = Math.abs(
+      Math.round((txDate.getTime() - rowDate.getTime()) / 86400000)
+    );
+
+    if (dayDifference > 7) return;
+
+    candidates.push({
+      rowNumber: index + 2,
+      values: row,
+      dayDifference: dayDifference
+    });
+  });
+
+  if (candidates.length === 0) return { status: 'NONE', candidates: candidates };
+  if (candidates.length > 1) return { status: 'MULTIPLE', candidates: candidates };
+  return { status: 'ONE', candidates: candidates };
+}
+
 function familyFinancesInsertPendingForecast_(
   ss,
   monthSheet,
@@ -624,6 +679,56 @@ function familyFinancesInsertPendingForecast_(
   const existingRow = familyFinancesFindPendingForecastRow_(monthSheet, transactionId);
   if (existingRow) {
     return { inserted: false, existing: true, rowNumber: existingRow };
+  }
+
+  // Before inserting anything, reconcile against an exact manually-entered
+  // row. This prevents pending bank activity from duplicating rows Steve
+  // already entered himself.
+  const exactResult = familyFinancesFindExactBankAmountDateCandidate_(
+    monthSheet,
+    dateValue,
+    amount,
+    bank
+  );
+
+  if (exactResult.status === 'ONE') {
+    const candidate = exactResult.candidates[0];
+    familyFinancesTagPendingRow_(monthSheet, candidate.rowNumber, transactionId);
+    return {
+      inserted: false,
+      existing: true,
+      rowNumber: candidate.rowNumber,
+      matchedExisting: true
+    };
+  }
+
+  // Recurring merchants can legitimately change amount (Starlink was the
+  // first live example). If there is exactly one nearby planned row for the
+  // same bank + merchant, update Forecast C to the pending amount instead of
+  // inserting a second row.
+  const merchantResult = familyFinancesFindPendingMerchantCandidate_(
+    monthSheet,
+    dateValue,
+    merchant,
+    bank
+  );
+
+  if (merchantResult.status === 'ONE') {
+    const candidate = merchantResult.candidates[0];
+    monthSheet.getRange(candidate.rowNumber, 3).setValue(amount);
+
+    if (!String(candidate.values[5] || '').trim() && category) {
+      monthSheet.getRange(candidate.rowNumber, 6).setValue(category);
+    }
+
+    familyFinancesTagPendingRow_(monthSheet, candidate.rowNumber, transactionId);
+
+    return {
+      inserted: false,
+      existing: true,
+      rowNumber: candidate.rowNumber,
+      matchedPlanned: true
+    };
   }
 
   const paySheet = ss.getSheetByName('Pay Calendar');
@@ -674,9 +779,7 @@ function familyFinancesInsertPendingForecast_(
     category || 'Needs Review'
   ]]);
 
-  // Persist the Plaid transaction id on the monthly row so repeated syncs are
-  // idempotent even if a run fails later. Column I is the monthly Notes field.
-  monthSheet.getRange(insertRow, 9).setValue('PLAID_PENDING:' + String(transactionId));
+  familyFinancesTagPendingRow_(monthSheet, insertRow, transactionId);
 
   const formatSourceRow = insertRow + 1;
   if (formatSourceRow <= monthSheet.getMaxRows()) {
@@ -1707,6 +1810,13 @@ function runFamilyFinancesSheetSync(processReviewQueue) {
   } finally {
     lock.releaseLock();
   }
+}
+
+function runFamilyFinancesScheduledSync() {
+  // Time-based/on-open automation must complete the review pipeline too.
+  // This keeps TEST unattended: fresh imports are matched, safe auto-approved
+  // transactions are inserted, and approved review items are finalized.
+  return runFamilyFinancesSheetSync(true);
 }
 
 function installFamilyFinancesSheetSyncTriggers() {
