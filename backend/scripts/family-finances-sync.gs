@@ -966,6 +966,139 @@ function familyFinancesRecoverReadyToInsert_(ss, txSheet) {
   return recovered;
 }
 
+
+function familyFinancesFindExistingPendingCandidate_(
+  monthSheet,
+  dateValue,
+  merchant,
+  amount,
+  bank
+) {
+  if (!monthSheet || monthSheet.getLastRow() < 2) {
+    return { status: 'NONE', candidates: [] };
+  }
+
+  const txDate = new Date(dateValue);
+  const wantedBank = familyFinancesNorm_(bank);
+  const rows = monthSheet.getRange(2, 1, monthSheet.getLastRow() - 1, 6).getValues();
+  const candidates = [];
+
+  rows.forEach(function(row, index) {
+    const rowDate = row[0];
+    const rowMerchant = String(row[1] || '').trim();
+    const rowForecast = row[2];
+    const rowActual = row[3];
+    const rowBank = String(row[4] || '').trim();
+
+    if (!(rowDate instanceof Date) || isNaN(rowDate.getTime())) return;
+    if (rowActual !== '' && rowActual !== null) return;
+    if (!familyFinancesAmountsEqual_(rowForecast, amount)) return;
+
+    const rowBankNorm = familyFinancesNorm_(rowBank);
+    if (rowBankNorm && wantedBank && rowBankNorm !== wantedBank) return;
+
+    if (!familyFinancesMerchantSharesCoreIdentity_(merchant, rowMerchant)) return;
+
+    const dayDifference = Math.abs(
+      (rowDate.getTime() - txDate.getTime()) / 86400000
+    );
+
+    if (dayDifference > 4) return;
+
+    candidates.push({
+      rowNumber: index + 2,
+      values: row,
+      dayDifference: dayDifference
+    });
+  });
+
+  if (candidates.length === 0) return { status: 'NONE', candidates: candidates };
+  if (candidates.length > 1) return { status: 'MULTIPLE', candidates: candidates };
+  return { status: 'ONE', candidates: candidates };
+}
+
+
+function familyFinancesRecoverLegacyPending_(ss, txSheet) {
+  if (!txSheet || txSheet.getLastRow() < 2) return 0;
+
+  const rows = txSheet
+    .getRange(2, 1, txSheet.getLastRow() - 1, 11)
+    .getValues();
+
+  let recovered = 0;
+
+  rows.forEach(function(row, index) {
+    const transactionId = String(row[0] || '').trim();
+    const dateValue = row[1];
+    const merchant = String(row[2] || '').trim();
+    const amount = Number(row[3]);
+    const bank = String(row[4] || '').trim();
+    const category = String(row[5] || '').trim();
+    const pending = familyFinancesIsPending_(row[6]);
+    const status = String(row[7] || '').trim().toUpperCase();
+    const notes = String(row[10] || '');
+    const lowerNotes = notes.toLowerCase();
+    const sheetRow = index + 2;
+
+    if (!transactionId || status !== 'REVIEW' || !pending) return;
+    if (!lowerNotes.includes('pending bank item could not be added to forecast')) return;
+    if (lowerNotes.includes('legacy pending recovery v2 complete')) return;
+    if (!(dateValue instanceof Date) || isNaN(dateValue.getTime())) return;
+    if (!Number.isFinite(amount) || !bank) return;
+
+    const monthlyTab = familyFinancesMonthTabName_(dateValue);
+    const monthSheet = ss.getSheetByName(monthlyTab);
+
+    if (!monthSheet) {
+      txSheet.getRange(sheetRow, 11).setValue(
+        familyFinancesAppendMarker_(
+          notes,
+          'legacy pending recovery v2 complete; monthly tab not found.'
+        )
+      );
+      return;
+    }
+
+    const result = familyFinancesInsertPendingForecast_(
+      ss,
+      monthSheet,
+      transactionId,
+      dateValue,
+      merchant,
+      amount,
+      bank,
+      category || 'Needs Review'
+    );
+
+    if (result.inserted || result.existing) {
+      txSheet.getRange(sheetRow, 9, 1, 2).setValues([[
+        monthlyTab,
+        result.rowNumber
+      ]]);
+
+      txSheet.getRange(sheetRow, 11).setValue(
+        familyFinancesAppendMarker_(
+          notes,
+          'legacy pending recovery v2 complete; pending amount is represented in ' +
+          monthlyTab + ' row ' + result.rowNumber + '.'
+        )
+      );
+      recovered++;
+      return;
+    }
+
+    txSheet.getRange(sheetRow, 11).setValue(
+      familyFinancesAppendMarker_(
+        notes,
+        'legacy pending recovery v2 complete; still not represented: ' +
+        String(result.reason || 'no safe monthly target found') + '.'
+      )
+    );
+  });
+
+  return recovered;
+}
+
 function familyFinancesInsertPendingForecast_(
   ss,
   monthSheet,
@@ -981,6 +1114,38 @@ function familyFinancesInsertPendingForecast_(
   const existingRow = familyFinancesFindPendingForecastRow_(monthSheet, transactionId);
   if (existingRow) {
     return { inserted: false, existing: true, rowNumber: existingRow };
+  }
+
+  // A legacy retry or duplicate Plaid pending id can point at the same
+  // underlying purchase. Reuse an existing monthly pending forecast when
+  // bank + amount + merchant + nearby date identify exactly one row.
+  const existingPendingResult = familyFinancesFindExistingPendingCandidate_(
+    monthSheet,
+    dateValue,
+    merchant,
+    amount,
+    bank
+  );
+
+  if (existingPendingResult.status === 'ONE') {
+    const candidate = existingPendingResult.candidates[0];
+
+    if (!String(candidate.values[4] || '').trim() && bank) {
+      monthSheet.getRange(candidate.rowNumber, 5).setValue(bank);
+    }
+    if (!String(candidate.values[5] || '').trim() && category &&
+        String(category).trim().toLowerCase() !== 'needs review') {
+      monthSheet.getRange(candidate.rowNumber, 6).setValue(category);
+    }
+
+    familyFinancesTagPendingRow_(monthSheet, candidate.rowNumber, transactionId);
+
+    return {
+      inserted: false,
+      existing: true,
+      rowNumber: candidate.rowNumber,
+      matchedPending: true
+    };
   }
 
   // Before inserting anything, reconcile against an exact manually-entered
@@ -1539,6 +1704,7 @@ function runFamilyFinancesSheetSync(processReviewQueue) {
   let recoveredApprovals = 0;
   let archivedReview = 0;
   let readyRecovered = 0;
+  let legacyPendingRecovered = 0;
   let reviewEditTrigger = 'not checked';
 
   try {
@@ -1549,6 +1715,11 @@ function runFamilyFinancesSheetSync(processReviewQueue) {
     // Recover transactions stranded by the legacy proposed-row pipeline before
     // processing newly imported bank activity.
     readyRecovered = familyFinancesRecoverReadyToInsert_(ss, txSheet);
+
+    // One-time catch-up for pending rows stranded by the old pay-cycle planner.
+    // Each legacy failure is stamped after this attempt so normal 15-minute
+    // syncs do not churn the same row forever.
+    legacyPendingRecovered = familyFinancesRecoverLegacyPending_(ss, txSheet);
 
     const lastRow = txSheet.getLastRow();
 
@@ -2045,6 +2216,7 @@ function runFamilyFinancesSheetSync(processReviewQueue) {
       'Repaired month tabs: ' + repairedMonthTabs + '. ' +
       'Recovered approvals: ' + recoveredApprovals + '. ' +
       'Recovered READY_TO_INSERT: ' + readyRecovered + '. ' +
+      'Recovered legacy pending: ' + legacyPendingRecovered + '. ' +
       'Closed stale review: ' + closedReview + '. ' +
       'Archived resolved review: ' + archivedReview + '. ' +
       'Review edit trigger: ' + reviewEditTrigger + '. ' +
@@ -2072,6 +2244,7 @@ function runFamilyFinancesSheetSync(processReviewQueue) {
       repairedMonthTabs: repairedMonthTabs,
       recoveredApprovals: recoveredApprovals,
       readyRecovered: readyRecovered,
+      legacyPendingRecovered: legacyPendingRecovered,
       closedReview: closedReview,
       archivedReview: archivedReview,
       reviewEditTrigger: reviewEditTrigger
