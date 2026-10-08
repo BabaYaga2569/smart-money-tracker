@@ -104,6 +104,15 @@ export function buildFinancialCycle({
       })
     : [];
 
+  const pendingBillsBeforeRefill = nextRefillDate
+    ? pendingBills.filter(bill => {
+        const due = toDateOnly(bill.dueDate || bill.nextDueDate || bill.nextOccurrence);
+        return due && due <= cycleEndDate;
+      })
+    : [];
+
+  const currentCycleBills = [...reservedBills, ...pendingBillsBeforeRefill];
+
   const laterBills = nextRefillDate
     ? unpaidBills.filter(bill => {
         const due = toDateOnly(bill.dueDate || bill.nextDueDate || bill.nextOccurrence);
@@ -150,6 +159,8 @@ export function buildFinancialCycle({
     nextYourMainPayday,
     canonicalBills,
     pendingBills,
+    pendingBillsBeforeRefill,
+    currentCycleBills,
     unpaidBills,
     reservedBills,
     laterBills,
