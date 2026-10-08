@@ -623,11 +623,25 @@ function familyFinancesTagPendingRow_(monthSheet, rowNumber, transactionId) {
   }
 }
 
+function familyFinancesPendingAmountMayVary_(merchant, category) {
+  // Only strong recurring-bill types may reuse a nearby planned row when
+  // the bank amount changed. Mixed merchants such as Amazon/Walmart/Sam's/Zelle
+  // must NEVER merge different amounts.
+  if (familyFinancesIsMixedMerchant_(merchant)) return false;
+
+  const normalizedCategory = String(category || '').trim().toLowerCase();
+  return normalizedCategory === 'utilities' ||
+    normalizedCategory === 'subscriptions' ||
+    normalizedCategory === 'insurance';
+}
+
 function familyFinancesFindPendingMerchantCandidate_(
   monthSheet,
   dateValue,
   merchant,
-  bank
+  amount,
+  bank,
+  category
 ) {
   if (!monthSheet || monthSheet.getLastRow() < 2) {
     return { status: 'NONE', candidates: [] };
@@ -636,6 +650,7 @@ function familyFinancesFindPendingMerchantCandidate_(
   const txDate = new Date(dateValue);
   const rows = monthSheet.getRange(2, 1, monthSheet.getLastRow() - 1, 6).getValues();
   const candidates = [];
+  const allowAmountVariance = familyFinancesPendingAmountMayVary_(merchant, category);
 
   rows.forEach(function(row, index) {
     const rowDate = row[0];
@@ -645,12 +660,18 @@ function familyFinancesFindPendingMerchantCandidate_(
     const rowBank = String(row[4] || '').trim();
 
     if (!(rowDate instanceof Date) || isNaN(rowDate.getTime())) return;
+
     const rowBankNorm = familyFinancesNorm_(rowBank);
     const bankNorm = familyFinancesNorm_(bank);
     if (rowBankNorm && bankNorm && rowBankNorm !== bankNorm) return;
+
     if (actual !== '' && actual !== null) return;
     if (forecast === '' || forecast === null) return;
     if (!familyFinancesMerchantSharesCoreIdentity_(merchant, rowMerchant)) return;
+
+    // Exact amount is required for ordinary/mixed merchants. Only a strong
+    // recurring-bill category may reuse the row when the amount changed.
+    if (!familyFinancesAmountsEqual_(forecast, amount) && !allowAmountVariance) return;
 
     const dayDifference = Math.abs(
       Math.round((txDate.getTime() - rowDate.getTime()) / 86400000)
@@ -661,7 +682,8 @@ function familyFinancesFindPendingMerchantCandidate_(
     candidates.push({
       rowNumber: index + 2,
       values: row,
-      dayDifference: dayDifference
+      dayDifference: dayDifference,
+      amountVariance: !familyFinancesAmountsEqual_(forecast, amount)
     });
   });
 
@@ -669,7 +691,6 @@ function familyFinancesFindPendingMerchantCandidate_(
   if (candidates.length > 1) return { status: 'MULTIPLE', candidates: candidates };
   return { status: 'ONE', candidates: candidates };
 }
-
 
 function familyFinancesCycleSubtotalRows_(monthSheet) {
   const lastRow = monthSheet.getLastRow();
@@ -1041,8 +1062,11 @@ function familyFinancesRecoverLegacyPending_(ss, txSheet) {
     const sheetRow = index + 2;
 
     if (!transactionId || status !== 'REVIEW' || !pending) return;
-    if (!lowerNotes.includes('pending bank item could not be added to forecast')) return;
-    if (lowerNotes.includes('legacy pending recovery v2 complete')) return;
+    if (
+      !lowerNotes.includes('pending bank item could not be added to forecast') &&
+      !lowerNotes.includes('legacy pending recovery v2 complete')
+    ) return;
+    if (lowerNotes.includes('legacy pending recovery v3 complete')) return;
     if (!(dateValue instanceof Date) || isNaN(dateValue.getTime())) return;
     if (!Number.isFinite(amount) || !bank) return;
 
@@ -1053,7 +1077,7 @@ function familyFinancesRecoverLegacyPending_(ss, txSheet) {
       txSheet.getRange(sheetRow, 11).setValue(
         familyFinancesAppendMarker_(
           notes,
-          'legacy pending recovery v2 complete; monthly tab not found.'
+          'legacy pending recovery v3 complete; monthly tab not found.'
         )
       );
       return;
@@ -1079,7 +1103,7 @@ function familyFinancesRecoverLegacyPending_(ss, txSheet) {
       txSheet.getRange(sheetRow, 11).setValue(
         familyFinancesAppendMarker_(
           notes,
-          'legacy pending recovery v2 complete; pending amount is represented in ' +
+          'legacy pending recovery v3 complete; pending amount is represented in ' +
           monthlyTab + ' row ' + result.rowNumber + '.'
         )
       );
@@ -1090,7 +1114,7 @@ function familyFinancesRecoverLegacyPending_(ss, txSheet) {
     txSheet.getRange(sheetRow, 11).setValue(
       familyFinancesAppendMarker_(
         notes,
-        'legacy pending recovery v2 complete; still not represented: ' +
+        'legacy pending recovery v3 complete; still not represented: ' +
         String(result.reason || 'no safe monthly target found') + '.'
       )
     );
@@ -1177,14 +1201,26 @@ function familyFinancesInsertPendingForecast_(
     monthSheet,
     dateValue,
     merchant,
-    bank
+    amount,
+    bank,
+    category
   );
 
   if (merchantResult.status === 'ONE') {
     const candidate = merchantResult.candidates[0];
-    monthSheet.getRange(candidate.rowNumber, 3).setValue(amount);
 
-    if (!String(candidate.values[5] || '').trim() && category) {
+    if (candidate.amountVariance && familyFinancesIsMixedMerchant_(merchant)) {
+      return {
+        inserted: false,
+        reason: 'mixed merchant amount differs from existing pending forecast'
+      };
+    }
+    if (candidate.amountVariance) {
+      monthSheet.getRange(candidate.rowNumber, 3).setValue(amount);
+    }
+
+    if (!String(candidate.values[5] || '').trim() && category &&
+        String(category).trim().toLowerCase() !== 'needs review') {
       monthSheet.getRange(candidate.rowNumber, 6).setValue(category);
     }
 
