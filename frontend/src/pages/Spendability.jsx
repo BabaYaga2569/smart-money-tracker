@@ -8,7 +8,8 @@ import { formatDateForDisplay, formatDateForInput, getDaysUntilDateInPacific, ge
 import { getPacificTime } from '../utils/timezoneHelpers';
 import { SettingsSchemaManager } from '../utils/SettingsSchemaManager';
 import { buildFinancialCycle, normalizeFinancialSettings } from '../utils/financialCycleEngine';
-import { getVisiblePlaidAccounts, isDepositoryAccount } from '../utils/accountVisibility';
+import { isDepositoryAccount } from '../utils/accountVisibility';
+import { loadCanonicalFinancialAccounts } from '../utils/financialAccounts';
 import { visibleBillOccurrences } from '../utils/billVisibility';
 import { buildSpendabilityReconciliation } from '../utils/spendabilityReconciliation';
 import './Spendability.css';
@@ -81,24 +82,10 @@ const SpendabilityV2 = () => {
       // Do not let a slow/cold backend block the entire Spendability page.
       // If live balances do not answer quickly, render from the last cached
       // Plaid balances in Settings and let the user refresh when the API is warm.
-      const accountsController = new AbortController();
-      const accountsTimeout = setTimeout(() => accountsController.abort(), 5000);
-
-      const [settingsDocSnap, payCycleDocSnap, accountsResponse] = await Promise.all([
+      const [settingsDocSnap, payCycleDocSnap] = await Promise.all([
         getDoc(settingsDocRef),
-        getDoc(payCycleDocRef),
-        fetch(`${apiUrl}/api/accounts?userId=${currentUser.uid}&_t=${Date.now()}`, {
-          signal: accountsController.signal
-        }).catch(err => {
-          if (err?.name === 'AbortError') {
-            console.warn('[Spendability] Live account request timed out after 5s; using Firebase cache');
-          } else {
-            console.error('[Spendability] Backend API error, will use Firebase cache as fallback:', err);
-          }
-          return null;
-        })
+        getDoc(payCycleDocRef)
       ]);
-      clearTimeout(accountsTimeout);
 
       if (!settingsDocSnap.exists()) {
         throw new Error('No financial data found. Please set up your Settings first.');
@@ -113,62 +100,17 @@ const SpendabilityV2 = () => {
       // Safety freeze: payday state is not advanced or persisted simply by
       // opening Spendability. The existing stored schedule is used as-is.
 
-  // ✅ FIX: Load FRESH balances from backend API like Accounts page does
-  let allPlaidAccounts = [];
-  try {
-    if (import.meta.env.DEV) {
-      console.log('[Spendability] Fetching fresh balances from backend API...');
-    }
-    
-    if (accountsResponse && accountsResponse.ok) {
-      const data = await accountsResponse.json();
-
-      if (data.success && data.accounts && data.accounts.length > 0) {
-        // Format backend accounts using the same logic as Accounts page
-        allPlaidAccounts = data.accounts.map(account => {
-          const { currentBalance, availableBalance, liveBalance, pendingAdjustment } = extractBalances(account);
-
-          return {
-            account_id: account.account_id ?? '',
-            name: account.name ?? 'Unknown Account',
-            official_name: account.official_name ?? account.name ?? 'Unknown Account',
-            type: account.subtype || account.type || 'checking',
-            balance: liveBalance.toFixed(2), // ✅ main displayed balance (uses available_balance)
-            available: availableBalance.toFixed(2),
-            current: currentBalance.toFixed(2),
-            pending_adjustment: pendingAdjustment.toFixed(2),
-            mask: account.mask ?? '',
-            isPlaid: true,
-            item_id: account.item_id ?? '',
-            institution_name: account.institution_name ?? data?.institution_name ?? '',
-            institution_id: account.institution_id ?? '',
-            // Store original type and subtype for filtering
-            originalType: account.type,
-            originalSubtype: account.subtype,
-            subtype: account.subtype // Keep subtype for filtering logic
-          };
-        });
-        if (import.meta.env.DEV) {
-          console.log('[Spendability] ✅ Loaded', allPlaidAccounts.length, 'fresh accounts from backend API');
-        }
-      } else {
-        console.warn('[Spendability] ⚠️ Backend returned no accounts, falling back to Firebase cache');
-        allPlaidAccounts = getVisiblePlaidAccounts(settingsData.plaidAccounts || [], settingsData);
-      }
-    } else {
-      console.warn('[Spendability] ⚠️ Backend API unavailable, falling back to Firebase cache');
-      allPlaidAccounts = getVisiblePlaidAccounts(settingsData.plaidAccounts || [], settingsData);
-    }
-  } catch (error) {
-    console.error('[Spendability] ❌ Error loading from backend API:', error);
-    if (import.meta.env.DEV) {
-      console.log('[Spendability] Falling back to Firebase cache');
-    }
-    allPlaidAccounts = getVisiblePlaidAccounts(settingsData.plaidAccounts || [], settingsData);
-  }
+      // Canonical account loader shared by Dashboard, Spendability, and Pay Cycle.
+      const canonicalAccounts = await loadCanonicalFinancialAccounts({
+        userId: currentUser.uid,
+        settings: settingsData,
+        apiUrl,
+        timeoutMs: 5000
+      });
+      const allPlaidAccounts = canonicalAccounts.visibleAccounts;
+      const depositoryAccounts = canonicalAccounts.depositoryAccounts;
 
       // Safe-to-Spend only uses visible cash/depository accounts.
-      const depositoryAccounts = allPlaidAccounts.filter(isDepositoryAccount);
 
       if (import.meta.env.DEV) {
         console.log(`[Spendability] Filtered ${allPlaidAccounts.length} accounts to ${depositoryAccounts.length} depository accounts (excluded credit cards)`);
@@ -202,11 +144,7 @@ const SpendabilityV2 = () => {
 
       // For Plaid accounts, available_balance is ALREADY the correct spendable amount
       // The bank has already subtracted pending transactions from current balance
-      const totalAvailable = depositoryAccounts.reduce((sum, account) => {
-        // Use available balance directly - it's already "projected" by the bank
-        const availableBalance = parseFloat(account.available || account.balance) || 0;
-        return sum + availableBalance;
-      }, 0);
+      const totalAvailable = canonicalAccounts.totalAvailable;
 
       if (import.meta.env.DEV) {
         console.log('Spendability: Balance calculation', {
@@ -542,7 +480,7 @@ console.log('🔍 PAYDAY CALCULATION DEBUG:', {
 
       // ✅ FIXED: For Plaid accounts, available balance already includes pending transactions
       const checkingTotal = checkingAccounts.reduce((sum, account) => {
-        const balance = parseFloat(account.available || account.balance) || 0;
+        const balance = parseFloat(account.available_balance ?? account.available ?? account.balances?.available ?? account.current_balance ?? account.current ?? account.balance) || 0;
         console.log(`[Spendability] ${account.name}: balance=${balance.toFixed(2)} (using available directly)`);
         return sum + balance;
       }, 0);
@@ -557,7 +495,7 @@ console.log('🔍 PAYDAY CALCULATION DEBUG:', {
 
       // ✅ FIXED: Apply same logic to savings - available balance already includes pending
       const savingsTotal = savingsAccounts.reduce((sum, account) => {
-        const balance = parseFloat(account.available || account.balance) || 0;
+        const balance = parseFloat(account.available_balance ?? account.available ?? account.balances?.available ?? account.current_balance ?? account.current ?? account.balance) || 0;
         return sum + balance;
       }, 0);
 
