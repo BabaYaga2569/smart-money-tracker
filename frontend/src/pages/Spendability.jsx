@@ -7,6 +7,7 @@ import { projectCashFlow, addDays } from '../utils/CashFlowProjection';
 import { formatDateForDisplay, formatDateForInput, getDaysUntilDateInPacific, getManualPacificDaysUntilPayday } from '../utils/DateUtils';
 import { getPacificTime } from '../utils/timezoneHelpers';
 import { SettingsSchemaManager } from '../utils/SettingsSchemaManager';
+import { buildFinancialCycle, normalizeFinancialSettings } from '../utils/financialCycleEngine';
 import { getVisiblePlaidAccounts, isDepositoryAccount } from '../utils/accountVisibility';
 import { visibleBillOccurrences } from '../utils/billVisibility';
 import {
@@ -108,25 +109,9 @@ const SpendabilityV2 = () => {
         throw new Error('No financial data found. Please set up your Settings first.');
       }
 
-      let settingsData = settingsDocSnap.data();
-      
-      // ✅ Validate and migrate if needed
-      if (!settingsData.schemaVersion || settingsData.schemaVersion < SettingsSchemaManager.CURRENT_SCHEMA_VERSION) {
-        console.log('🔄 Spendability: Migrating settings from v', settingsData.schemaVersion || 1, 'to v', SettingsSchemaManager.CURRENT_SCHEMA_VERSION);
-        settingsData = SettingsSchemaManager.migrateSettings(settingsData);
-        
-        // Use the migrated shape in memory only. Persisting schema changes from a
-        // read-only view is intentionally disabled during the safety freeze.
-        console.log('✅ Spendability: Using migrated settings in memory');
-      }
-      
-      const validation = SettingsSchemaManager.validateSettings(settingsData);
-      if (!validation.valid) {
-        console.error('⚠️ Settings validation failed in Spendability:', validation.errors);
-        // Use safe defaults for missing fields
-        settingsData = SettingsSchemaManager.ensureRequiredFields(settingsData);
-        console.log('✅ Spendability: Required fields ensured with defaults');
-      }
+      // Canonical read-only normalization shared with Dashboard and Pay Cycle.
+      // Never persist migrations from a view.
+      let settingsData = normalizeFinancialSettings(settingsDocSnap.data());
       
       let payCycleData = payCycleDocSnap.exists() ? payCycleDocSnap.data() : null;
 	  let paydayCalcResult = null;
@@ -449,161 +434,95 @@ console.log('🔍 PAYDAY CALCULATION DEBUG:', {
         nextDueDate: String(bill.dueDate || bill.nextDueDate || '').slice(0, 10)
       }));
 
-      // Production-sheet semantics: Safe to Spend covers bills until the next
-      // household refill. Money arriving today is already reflected in the live
-      // bank balance, so only strictly-future pay events can end the cycle.
-      const todayStrProj = formatDateForInput(getPacificTime());
-
-      const futureRefillDates = (paydays || [])
-        .map(p => String(p.date || '').slice(0, 10))
-        .filter(date => date && date > todayStrProj)
-        .sort();
-
-      const nextRefillDate =
-        futureRefillDates[0] ||
-        (String(nextPayday || '').slice(0, 10) > todayStrProj
-          ? String(nextPayday).slice(0, 10)
-          : null);
-
-      const cycleEndStr = nextRefillDate
-        ? addDays(nextRefillDate, -1)
-        : todayStrProj;
-
-      const billsBeforePaydayRaw = [];
-      const billsAfterPaydayRaw = [];
-
-      processedBills.forEach(bill => {
-        const dueDateStr = String(bill.nextDueDate || bill.dueDate || '').slice(0, 10);
-        if (!dueDateStr) return;
-
-        // Overdue bills and bills due through the cycle end belong in the
-        // current Safe-to-Spend window. Everything later is after the refill.
-        if (dueDateStr <= cycleEndStr || dueDateStr < todayStrProj) {
-          billsBeforePaydayRaw.push(bill);
-          console.log(`📌 Bill in current spendability cycle: ${bill.name} (due ${dueDateStr})`);
-        } else {
-          billsAfterPaydayRaw.push(bill);
-          console.log(`📅 Bill after current spendability cycle: ${bill.name} (due ${dueDateStr})`);
-        }
+      // Canonical cycle engine owns refill boundary, bill reserve, and
+      // Safe-to-Spend. No page-specific payday or reserve math below this point.
+      const canonicalCycle = buildFinancialCycle({
+        settings: settingsData,
+        bills: processedBills,
+        currentAvailableBalance: totalAvailable,
+        horizonDays: 45
       });
 
-      console.log(
-        `✅ Spendability: Split ${processedBills.length} canonical bills into ` +
-        `${billsBeforePaydayRaw.length} current-cycle and ${billsAfterPaydayRaw.length} later bills ` +
-        `using cycle end ${cycleEndStr}`
-      );
+      const todayStrProj = canonicalCycle.today;
+      const nextRefillDate = canonicalCycle.nextRefillDate;
+      const cycleEndStr = canonicalCycle.cycleEndDate;
+      nextPayday = canonicalCycle.nextRefillDate;
+      daysUntilPayday = canonicalCycle.daysUntilRefill;
+      const paydays = canonicalCycle.upcomingIncome;
+      const totalPaydayAmount = canonicalCycle.upcomingIncomeTotal;
 
-      // Add status info to bills before payday and sort by priority (overdue bills first)
-      const billsDueBeforePayday = billsBeforePaydayRaw
+      const billsDueBeforePayday = canonicalCycle.currentCycleBills
         .map(bill => ({
           ...bill,
           statusInfo: RecurringBillManager.determineBillStatus(bill)
         }))
         .sort((a, b) => {
-          // Overdue bills ALWAYS at top
           if (a.statusInfo.priority !== b.statusInfo.priority) {
             return b.statusInfo.priority - a.statusInfo.priority;
           }
-          // Then by due date
-          return new Date(a.nextDueDate) - new Date(b.nextDueDate);
+          return new Date(a.nextDueDate || a.dueDate) - new Date(b.nextDueDate || b.dueDate);
         });
-      
-      // Add status info to bills after payday and sort by due date
-      const billsDueAfterPayday = billsAfterPaydayRaw
+
+      const billsDueAfterPayday = canonicalCycle.laterBills
         .map(bill => ({
           ...bill,
           statusInfo: RecurringBillManager.determineBillStatus(bill)
         }))
-        .sort((a, b) => {
-          // Sort by due date
-          return new Date(a.nextDueDate) - new Date(b.nextDueDate);
-        });
-      
-      // financialEvents has already been filtered to canonical unpaid,
-      // non-skipped bill occurrences. Do not second-guess that state by
-      // re-matching bank transactions in the browser.
-      const pendingPaymentBillsBeforePayday = billsDueBeforePayday.filter(
-        bill => bill.pendingPayment === true
-      );
-      const unpaidBillsBeforePayday = billsDueBeforePayday.filter(
-        bill => bill.pendingPayment !== true
-      );
-      const unpaidBillsAfterPayday = billsDueAfterPayday.filter(
-        bill => bill.pendingPayment !== true
-      );
+        .sort((a, b) =>
+          new Date(a.nextDueDate || a.dueDate) - new Date(b.nextDueDate || b.dueDate)
+        );
 
-      const totalUnpaidBills = unpaidBillsBeforePayday.reduce((sum, bill) => {
-        return sum + (Number(bill.amount ?? bill.cost) || 0);
-      }, 0);
+      const pendingPaymentBillsBeforePayday = canonicalCycle.pendingBillsBeforeRefill;
+      const unpaidBillsBeforePayday = canonicalCycle.reservedBills;
+      const unpaidBillsAfterPayday = canonicalCycle.laterBills;
 
-      const totalBillsDue = totalUnpaidBills;
+      const totalUnpaidBills = canonicalCycle.totalReserved;
+      const totalBillsDue = canonicalCycle.totalReserved;
       const paidBillsCount = 0;
-      const pendingPaymentBillsCount = pendingPaymentBillsBeforePayday.length;
+      const pendingPaymentBillsCount = canonicalCycle.pendingBillsBeforeRefill.length;
       const totalBillsDueLegacy = totalUnpaidBills;
 
       const preferences = settingsData.preferences || {};
       const weeklyEssentials = preferences.weeklyEssentials || 0;
       const safetyBuffer = preferences.safetyBuffer || 0;
-      const weeksUntilPayday = Math.ceil(daysUntilPayday / 7);
+      const weeksUntilPayday = Math.ceil((canonicalCycle.daysUntilRefill || 0) / 7);
       const essentialsNeeded = weeklyEssentials * weeksUntilPayday;
 
-      // ═══════════ PAY-CYCLE PROJECTION ENGINE ═══════════
-      // Match the production spreadsheet: current live balance minus unpaid
-      // obligations through the day before the next household refill.
-      // Synthetic cushions remain optional information and do not redefine the
-      // headline Safe-to-Spend number.
-      const cycleIncomes = [];
-
-      const allUnpaidCycleBills = [
-        ...(unpaidBillsBeforePayday || []),
-        ...(unpaidBillsAfterPayday || []),
-      ];
-
-      const projection = projectCashFlow({
-        startingBalance: totalAvailable,
-        todayStr: todayStrProj,
-        cycleEndStr,
-        incomes: cycleIncomes,
-        bills: allUnpaidCycleBills,
-        weeklyEssentials: 0,
-        safetyBuffer: 0,
-      });
-
-      console.log('📈 PAY-CYCLE PROJECTION:', {
-        cycle: `${todayStrProj} → ${cycleEndStr} (${projection.daysInCycle} days)`,
-        nextRefill: nextRefillDate,
-        cycleIncome: projection.totalIncome,
-        cycleBills: projection.totalBills,
-        lowestPoint: `$${projection.minBalance} on ${projection.minDate}`,
-        safeToSpend: projection.safeToSpend,
-      });
-
-      const safeToSpendToday = projection.safeToSpend;
-      const protectedSafeToSpend =
-        safeToSpendToday - (Number(safetyBuffer) || 0) - (Number(essentialsNeeded) || 0);
-      
-      // Calculate what will be available AFTER all deposits arrive (projection)
-      const availableAfterPayday = 
-        totalAvailable +
-        totalPaydayAmount -        // All future deposits
-        totalBillsDue;
-      
-      // Legacy field for backward compatibility (now points to "safe to spend today")
+      const safeToSpendToday = canonicalCycle.safeToSpend;
+      const protectedSafeToSpend = safeToSpendToday == null
+        ? null
+        : safeToSpendToday - (Number(safetyBuffer) || 0) - (Number(essentialsNeeded) || 0);
+      const availableAfterPayday = canonicalCycle.afterDeposits;
       const safeToSpend = safeToSpendToday;
-      
-      console.log('💰 Safe to Spend Calculation:', {
-        totalAvailable,
-        totalPaydayAmount,
-        totalBillsDue,
-        safetyBuffer,
-        essentialsNeeded,
+
+      // Keep the projection detail panel, but drive it from the same canonical
+      // cycle boundary and reserved-bill set.
+      const projection = nextRefillDate
+        ? projectCashFlow({
+            startingBalance: totalAvailable,
+            todayStr: todayStrProj,
+            cycleEndStr,
+            incomes: [],
+            bills: unpaidBillsBeforePayday,
+            weeklyEssentials: 0,
+            safetyBuffer: 0
+          })
+        : null;
+
+      console.log('💰 Canonical Financial Cycle:', {
+        today: canonicalCycle.today,
+        nextRefillDate,
+        cycleEndStr,
+        currentAvailable: totalAvailable,
+        reservedBills: canonicalCycle.totalReserved,
         safeToSpendToday,
-        protectedSafeToSpend,
-        availableAfterPayday,
-        paydays: paydays.map(p => ({ date: p.date, amount: p.amount, type: p.type, daysUntil: p.daysUntil }))
+        upcomingIncomeTotal: totalPaydayAmount,
+        availableAfterPayday
       });
 
-      const finalDaysUntilPayday = Math.max(0, daysUntilPayday);
+      const finalDaysUntilPayday = canonicalCycle.daysUntilRefill == null
+        ? 0
+        : Math.max(0, canonicalCycle.daysUntilRefill);
 
       const reconciliation = buildSpendabilityReconciliation({
         recurringPatterns,
@@ -722,14 +641,14 @@ console.log('🔍 PAYDAY CALCULATION DEBUG:', {
         safeToSpend,
         safeToSpendToday,  // Spreadsheet-equivalent Safe to Spend
         protectedSafeToSpend, // Optional cushion-adjusted amount
-        projection: {
+        projection: projection ? {
           cycleEnd: cycleEndStr,
           minDate: projection.minDate,
           minBalance: projection.minBalance,
           totalCycleBills: projection.totalBills,
           cycleIncome: projection.totalIncome,
           daysInCycle: projection.daysInCycle,
-        },
+        } : null,
         availableAfterPayday,  // NEW: What will be available after all deposits
         // depositsTodayAmount removed
         nextPayday,
