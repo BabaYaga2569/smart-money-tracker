@@ -7,7 +7,7 @@ import PlaidConnectionManager from '../utils/PlaidConnectionManager';
 import './Dashboard.css';
 import { useAuth } from '../contexts/AuthContext';
 import { useTransactionsQuery } from '../hooks/useFirebaseQuery';
-import { getVisiblePlaidAccounts, isDepositoryAccount } from '../utils/accountVisibility';
+import { loadCanonicalFinancialAccounts } from '../utils/financialAccounts';
 import { visibleBillOccurrences } from '../utils/billVisibility';
 import { buildFinancialCycle, normalizeFinancialSettings } from '../utils/financialCycleEngine';
 
@@ -103,30 +103,26 @@ const Dashboard = () => {
         // Safety freeze: Dashboard is a reader. It must not advance payday
         // state or delete cached financial data merely because it was opened.
         
-        // Calculate your real data here
-        // Prioritize Plaid accounts if they exist (fully automated flow)
+        // Canonical live account source shared with Spendability and Pay Cycle.
         const canonicalPlaidAccounts = data.plaidAccounts || [];
-        const plaidAccountsList = getVisiblePlaidAccounts(canonicalPlaidAccounts, data)
-          .filter(isDepositoryAccount);
+        const canonicalAccounts = await loadCanonicalFinancialAccounts({
+          userId: currentUser.uid,
+          settings: data,
+          timeoutMs: 5000
+        });
+        const plaidAccountsList = canonicalAccounts.depositoryAccounts;
         const bankAccounts = data.bankAccounts || {};
         
         // Connection state is based on canonical accounts, not visibility.
         PlaidConnectionManager.setPlaidAccounts(canonicalPlaidAccounts);
-        setHasPlaidAccounts(canonicalPlaidAccounts.length > 0);
+        setHasPlaidAccounts(canonicalPlaidAccounts.length > 0 || plaidAccountsList.length > 0);
         
-        let totalBalance = 0;
-        let accountCount = 0;
-        let accountsData = null;
+        let totalBalance = canonicalAccounts.totalAvailable;
+        let accountCount = plaidAccountsList.length;
+        let accountsData = plaidAccountsList;
         
-        if (plaidAccountsList.length > 0) {
-          // Use only Plaid accounts when they exist
-          totalBalance = plaidAccountsList.reduce((sum, account) => {
-            return sum + (parseFloat(account.balance) || 0);
-          }, 0);
-          accountCount = plaidAccountsList.length;
-          accountsData = plaidAccountsList;
-        } else {
-          // Fall back to manual accounts
+        if (plaidAccountsList.length === 0) {
+          // Manual-account fallback only when no Plaid depository accounts exist.
           totalBalance = Object.values(bankAccounts).reduce((sum, account) => {
             return sum + (parseFloat(account.balance) || 0);
           }, 0);
