@@ -14,6 +14,7 @@ import './PaidBillDetailsModal.css';
  * - Audit trail information
  * - "Unmark as Paid" functionality
  */
+// Frontend publish marker: ensures Netlify rebuilds the current canonical rollback UI.
 export default function PaidBillDetailsModal({ bill, onClose, onUnmark }) {
   const { currentUser } = useAuth();
   const [unmarking, setUnmarking] = useState(false);
