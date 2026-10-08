@@ -102,8 +102,12 @@ function familyFinancesIsFreshImport_(row) {
   // Those rows were marked "wait for posting" but never placed into Column C.
   // Reprocess them once so pending activity immediately affects the forecast.
   return pending &&
-    lowerNotes.includes('pending bank item; wait for posting') &&
-    !lowerNotes.includes('added to monthly forecast column c');
+    (
+      lowerNotes.includes('pending bank item; wait for posting') ||
+      lowerNotes.includes('pending bank item could not be added to forecast')
+    ) &&
+    !lowerNotes.includes('added to monthly forecast column c') &&
+    !lowerNotes.includes('already represented in monthly forecast column c');
 }
 
 function familyFinancesIsMixedMerchant_(merchant) {
@@ -641,7 +645,9 @@ function familyFinancesFindPendingMerchantCandidate_(
     const rowBank = String(row[4] || '').trim();
 
     if (!(rowDate instanceof Date) || isNaN(rowDate.getTime())) return;
-    if (rowBank !== bank) return;
+    const rowBankNorm = familyFinancesNorm_(rowBank);
+    const bankNorm = familyFinancesNorm_(bank);
+    if (rowBankNorm && bankNorm && rowBankNorm !== bankNorm) return;
     if (actual !== '' && actual !== null) return;
     if (forecast === '' || forecast === null) return;
     if (!familyFinancesMerchantSharesCoreIdentity_(merchant, rowMerchant)) return;
@@ -662,6 +668,302 @@ function familyFinancesFindPendingMerchantCandidate_(
   if (candidates.length === 0) return { status: 'NONE', candidates: candidates };
   if (candidates.length > 1) return { status: 'MULTIPLE', candidates: candidates };
   return { status: 'ONE', candidates: candidates };
+}
+
+
+function familyFinancesCycleSubtotalRows_(monthSheet) {
+  const lastRow = monthSheet.getLastRow();
+  if (lastRow < 2) return [];
+
+  const formulas = monthSheet.getRange(1, 3, lastRow, 2).getFormulas();
+  const rows = [];
+
+  formulas.forEach(function(pair, index) {
+    const cFormula = String(pair[0] || '').trim();
+    const dFormula = String(pair[1] || '').trim();
+
+    if (
+      /^=SUM\(C\d+:C\d+\)$/i.test(cFormula) &&
+      /^=SUM\(D\d+:D\d+\)$/i.test(dFormula)
+    ) {
+      rows.push(index + 1);
+    }
+  });
+
+  return rows;
+}
+
+function familyFinancesRepairCycleSubtotalFormulas_(monthSheet) {
+  const subtotalRows = familyFinancesCycleSubtotalRows_(monthSheet);
+
+  subtotalRows.forEach(function(rowNumber, index) {
+    const startRow = index === 0 ? 2 : subtotalRows[index - 1];
+    const endRow = rowNumber - 1;
+
+    monthSheet.getRange(rowNumber, 3).setFormula(
+      '=SUM(C' + startRow + ':C' + endRow + ')'
+    );
+    monthSheet.getRange(rowNumber, 4).setFormula(
+      '=SUM(D' + startRow + ':D' + endRow + ')'
+    );
+  });
+
+  return subtotalRows;
+}
+
+function familyFinancesFindCycleSubtotalRow_(monthSheet, dateValue) {
+  const subtotalRows = familyFinancesCycleSubtotalRows_(monthSheet);
+  if (!subtotalRows.length) return null;
+
+  const txTime = new Date(dateValue).getTime();
+
+  for (let i = 0; i < subtotalRows.length; i++) {
+    const subtotalRow = subtotalRows[i];
+    const sectionStart = i === 0 ? 2 : subtotalRows[i - 1] + 1;
+    const rowCount = Math.max(0, subtotalRow - sectionStart);
+
+    if (!rowCount) continue;
+
+    const dates = monthSheet
+      .getRange(sectionStart, 1, rowCount, 1)
+      .getValues();
+
+    let maxTime = null;
+
+    dates.forEach(function(row) {
+      const value = row[0];
+      if (!(value instanceof Date) || isNaN(value.getTime())) return;
+      const time = value.getTime();
+      if (maxTime === null || time > maxTime) maxTime = time;
+    });
+
+    if (maxTime !== null && txTime <= maxTime) {
+      return subtotalRow;
+    }
+  }
+
+  return subtotalRows[subtotalRows.length - 1];
+}
+
+function familyFinancesWriteMonthlyTransaction_(
+  monthSheet,
+  transactionId,
+  dateValue,
+  merchant,
+  amount,
+  bank,
+  category,
+  pending
+) {
+  if (!monthSheet) {
+    return { inserted: false, reason: 'monthly tab not found' };
+  }
+
+  let subtotalRow = familyFinancesFindCycleSubtotalRow_(monthSheet, dateValue);
+  if (!subtotalRow) {
+    return { inserted: false, reason: 'cycle subtotal rows not found' };
+  }
+
+  const subtotalRows = familyFinancesCycleSubtotalRows_(monthSheet);
+  const subtotalIndex = subtotalRows.indexOf(subtotalRow);
+  const sectionStart = subtotalIndex <= 0 ? 2 : subtotalRows[subtotalIndex - 1] + 1;
+  const rowCount = Math.max(0, subtotalRow - sectionStart);
+  let targetRow = null;
+
+  if (rowCount > 0) {
+    const rows = monthSheet
+      .getRange(sectionStart, 1, rowCount, 6)
+      .getValues();
+
+    for (let i = 0; i < rows.length; i++) {
+      const isBlank = rows[i].every(function(value) {
+        return value === '' || value === null;
+      });
+
+      if (isBlank) {
+        targetRow = sectionStart + i;
+        break;
+      }
+    }
+  }
+
+  if (!targetRow) {
+    // Add capacity only at the END of a pay-cycle section. This avoids
+    // shoving planned bills around inside the cycle. After the insert, rebuild
+    // the rolling subtotal formulas so all cycle totals remain correct.
+    monthSheet.insertRowsBefore(subtotalRow, 1);
+    targetRow = subtotalRow;
+
+    const sourceRow = Math.max(sectionStart, targetRow - 1);
+    if (sourceRow !== targetRow) {
+      const sourceRange = monthSheet.getRange(sourceRow, 1, 1, 9);
+      const targetRange = monthSheet.getRange(targetRow, 1, 1, 9);
+      sourceRange.copyTo(targetRange, SpreadsheetApp.CopyPasteType.PASTE_FORMAT, false);
+      sourceRange.copyTo(targetRange, SpreadsheetApp.CopyPasteType.PASTE_DATA_VALIDATION, false);
+    }
+
+    familyFinancesRepairCycleSubtotalFormulas_(monthSheet);
+  }
+
+  const safeCategory =
+    String(category || '').trim().toLowerCase() === 'needs review'
+      ? ''
+      : String(category || '').trim();
+
+  monthSheet.getRange(targetRow, 1, 1, 6).setValues([[
+    dateValue,
+    merchant,
+    amount,
+    pending ? '' : amount,
+    bank,
+    safeCategory
+  ]]);
+
+  const marker = (pending ? 'PLAID_PENDING:' : 'PLAID_TX:') + String(transactionId);
+  monthSheet.getRange(targetRow, 9).setValue(marker);
+
+  return {
+    inserted: true,
+    rowNumber: targetRow
+  };
+}
+
+function familyFinancesRecoverReadyToInsert_(ss, txSheet) {
+  if (!txSheet || txSheet.getLastRow() < 2) return 0;
+
+  const rows = txSheet
+    .getRange(2, 1, txSheet.getLastRow() - 1, 11)
+    .getValues();
+
+  let recovered = 0;
+
+  rows.forEach(function(row, index) {
+    const status = String(row[7] || '').trim().toUpperCase();
+    if (status !== 'READY_TO_INSERT') return;
+
+    const transactionId = String(row[0] || '').trim();
+    const dateValue = row[1];
+    const merchant = String(row[2] || '').trim();
+    const amount = Number(row[3]);
+    const bank = String(row[4] || '').trim();
+    const category = String(row[5] || '').trim();
+    const monthlyTab = familyFinancesNormalizeMonthlyTabValue_(row[8], dateValue);
+    const sheetRow = index + 2;
+
+    if (
+      !transactionId ||
+      !(dateValue instanceof Date) ||
+      isNaN(dateValue.getTime()) ||
+      !Number.isFinite(amount) ||
+      !bank ||
+      !monthlyTab
+    ) {
+      return;
+    }
+
+    const monthSheet = ss.getSheetByName(monthlyTab);
+    if (!monthSheet) return;
+
+    const exactResult = familyFinancesFindExactBankAmountDateCandidate_(
+      monthSheet,
+      dateValue,
+      amount,
+      bank
+    );
+
+    if (exactResult.status === 'ONE') {
+      const candidate = exactResult.candidates[0];
+      txSheet.getRange(sheetRow, 8, 1, 3).setValues([[
+        'MATCH_FOUND',
+        monthlyTab,
+        candidate.rowNumber
+      ]]);
+      txSheet.getRange(sheetRow, 11).setValue(
+        familyFinancesAppendMarker_(
+          row[10],
+          'recovered READY_TO_INSERT by matching existing monthly row ' +
+          candidate.rowNumber + '.'
+        )
+      );
+      recovered++;
+      return;
+    }
+
+    const plannedResult = familyFinancesFindPlannedCandidate_(
+      ss,
+      monthSheet,
+      dateValue,
+      merchant,
+      amount,
+      bank
+    );
+
+    if (plannedResult.status === 'ONE') {
+      const candidate = plannedResult.candidates[0];
+      const actual = candidate.values[3];
+
+      if (actual === '' || actual === null) {
+        monthSheet.getRange(candidate.rowNumber, 4).setValue(amount);
+
+        if (!String(candidate.values[4] || '').trim()) {
+          monthSheet.getRange(candidate.rowNumber, 5).setValue(bank);
+        }
+        if (!String(candidate.values[5] || '').trim() && category) {
+          monthSheet.getRange(candidate.rowNumber, 6).setValue(category);
+        }
+      }
+
+      txSheet.getRange(sheetRow, 8, 1, 3).setValues([[
+        'MATCH_FOUND',
+        monthlyTab,
+        candidate.rowNumber
+      ]]);
+      txSheet.getRange(sheetRow, 11).setValue(
+        familyFinancesAppendMarker_(
+          row[10],
+          'recovered READY_TO_INSERT by clearing planned monthly row ' +
+          candidate.rowNumber + '.'
+        )
+      );
+      recovered++;
+      return;
+    }
+
+    if (
+      amount < 0 &&
+      !familyFinancesIsMixedMerchant_(merchant) &&
+      familyFinancesIsAutoInsertCategory_(category)
+    ) {
+      const writeResult = familyFinancesWriteMonthlyTransaction_(
+        monthSheet,
+        transactionId,
+        dateValue,
+        merchant,
+        amount,
+        bank,
+        category,
+        false
+      );
+
+      if (writeResult.inserted) {
+        txSheet.getRange(sheetRow, 8, 1, 3).setValues([[
+          'INSERTED',
+          monthlyTab,
+          writeResult.rowNumber
+        ]]);
+        txSheet.getRange(sheetRow, 11).setValue(
+          familyFinancesAppendMarker_(
+            row[10],
+            'recovered READY_TO_INSERT directly into monthly row ' +
+            writeResult.rowNumber + '.'
+          )
+        );
+        recovered++;
+      }
+    }
+  });
+
+  return recovered;
 }
 
 function familyFinancesInsertPendingForecast_(
@@ -731,65 +1033,16 @@ function familyFinancesInsertPendingForecast_(
     };
   }
 
-  const paySheet = ss.getSheetByName('Pay Calendar');
-  if (!paySheet) return { inserted: false, reason: 'Pay Calendar not found' };
-
-  if (
-    typeof buildMarkerPlanFromPayCalendar_ !== 'function' ||
-    typeof findDateOrderedInsertRowInSection_ !== 'function' ||
-    typeof normalizeDateOnly_ !== 'function'
-  ) {
-    return { inserted: false, reason: 'date-order helper function missing' };
-  }
-
-  const markerPlan = buildMarkerPlanFromPayCalendar_(ss, monthSheet, paySheet);
-  if (!markerPlan || !markerPlan.length) {
-    return { inserted: false, reason: 'no pay-cycle marker plan found' };
-  }
-
-  const txDate = normalizeDateOnly_(new Date(dateValue));
-  const sectionIndex = markerPlan.findIndex(function(item) {
-    return txDate <= item.cutoffDate;
-  });
-
-  if (sectionIndex === -1) {
-    return { inserted: false, reason: 'no pay-cycle cutoff section found' };
-  }
-
-  const targetSection = markerPlan[sectionIndex];
-  const previousMarkerRow = sectionIndex === 0
-    ? 2
-    : markerPlan[sectionIndex - 1].markerRow + 1;
-
-  const insertRow = findDateOrderedInsertRowInSection_(
+  return familyFinancesWriteMonthlyTransaction_(
     monthSheet,
-    txDate,
-    previousMarkerRow,
-    targetSection.markerRow
-  );
-
-  monthSheet.insertRowsBefore(insertRow, 1);
-
-  monthSheet.getRange(insertRow, 1, 1, 6).setValues([[
+    transactionId,
     dateValue,
     merchant,
     amount,
-    '',
     bank,
-    category || 'Needs Review'
-  ]]);
-
-  familyFinancesTagPendingRow_(monthSheet, insertRow, transactionId);
-
-  const formatSourceRow = insertRow + 1;
-  if (formatSourceRow <= monthSheet.getMaxRows()) {
-    const sourceRange = monthSheet.getRange(formatSourceRow, 1, 1, 6);
-    const targetRange = monthSheet.getRange(insertRow, 1, 1, 6);
-    sourceRange.copyTo(targetRange, SpreadsheetApp.CopyPasteType.PASTE_FORMAT, false);
-    sourceRange.copyTo(targetRange, SpreadsheetApp.CopyPasteType.PASTE_DATA_VALIDATION, false);
-  }
-
-  return { inserted: true, rowNumber: insertRow };
+    category,
+    true
+  );
 }
 
 function familyFinancesQueueReview_(
@@ -1285,12 +1538,17 @@ function runFamilyFinancesSheetSync(processReviewQueue) {
   let repairedMonthTabs = 0;
   let recoveredApprovals = 0;
   let archivedReview = 0;
+  let readyRecovered = 0;
   let reviewEditTrigger = 'not checked';
 
   try {
     const autoUpdateMatched = familyFinancesSetting_('Auto Update Matched Rows', true);
     const autoInsertConfident = familyFinancesSetting_('Auto Insert Confident New Transactions', true);
     const reviewMixedMerchants = familyFinancesSetting_('Review Mixed Merchants', true);
+
+    // Recover transactions stranded by the legacy proposed-row pipeline before
+    // processing newly imported bank activity.
+    readyRecovered = familyFinancesRecoverReadyToInsert_(ss, txSheet);
 
     const lastRow = txSheet.getLastRow();
 
@@ -1640,29 +1898,47 @@ function runFamilyFinancesSheetSync(processReviewQueue) {
           }
           txSheet.getRange(sheetRow, 6).setValue(suggestion.category);
 
-          const autoApproved = familyFinancesQueueAutoApprove_(
-            reviewSheet,
-            existingReviewIds,
+          const writeResult = familyFinancesWriteMonthlyTransaction_(
+            monthSheet,
             transactionId,
             dateValue,
             suggestion.merchant || originalMerchant,
             amount,
             bank,
             suggestion.category,
-            monthlyTab,
-            originalNotes
+            false
           );
 
-          if (autoApproved) {
-            queued++;
+          if (writeResult.inserted) {
+            txSheet.getRange(sheetRow, 8, 1, 3).setValues([[
+              'INSERTED',
+              monthlyTab,
+              writeResult.rowNumber
+            ]]);
             txSheet.getRange(sheetRow, 11).setValue(
               familyFinancesAppendMarker_(
                 originalNotes,
-                'auto-approved for date-order insertion; posted ordinary transaction, confident category, bank preserved as ' + bank + '.'
+                'auto-inserted posted transaction directly into monthly row ' +
+                writeResult.rowNumber +
+                '; legacy proposed-row pipeline bypassed.'
               )
             );
           } else {
-            skipped++;
+            const added = familyFinancesQueueReview_(
+              reviewSheet,
+              existingReviewIds,
+              transactionId,
+              dateValue,
+              suggestion.merchant || originalMerchant,
+              amount,
+              bank,
+              suggestion.category,
+              monthlyTab,
+              'Automatic monthly write failed: ' + writeResult.reason,
+              originalNotes
+            );
+            if (added) queued++;
+            else skipped++;
           }
 
           continue;
@@ -1768,6 +2044,7 @@ function runFamilyFinancesSheetSync(processReviewQueue) {
       'Ignored reviews processed: ' + ignoresProcessed + '. ' +
       'Repaired month tabs: ' + repairedMonthTabs + '. ' +
       'Recovered approvals: ' + recoveredApprovals + '. ' +
+      'Recovered READY_TO_INSERT: ' + readyRecovered + '. ' +
       'Closed stale review: ' + closedReview + '. ' +
       'Archived resolved review: ' + archivedReview + '. ' +
       'Review edit trigger: ' + reviewEditTrigger + '. ' +
@@ -1794,6 +2071,7 @@ function runFamilyFinancesSheetSync(processReviewQueue) {
       ignoresProcessed: ignoresProcessed,
       repairedMonthTabs: repairedMonthTabs,
       recoveredApprovals: recoveredApprovals,
+      readyRecovered: readyRecovered,
       closedReview: closedReview,
       archivedReview: archivedReview,
       reviewEditTrigger: reviewEditTrigger
