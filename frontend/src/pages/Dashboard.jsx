@@ -9,6 +9,7 @@ import { useAuth } from '../contexts/AuthContext';
 import { useTransactionsQuery } from '../hooks/useFirebaseQuery';
 import { getVisiblePlaidAccounts, isDepositoryAccount } from '../utils/accountVisibility';
 import { visibleBillOccurrences } from '../utils/billVisibility';
+import { SettingsSchemaManager } from '../utils/SettingsSchemaManager';
 import {
   buildHouseholdPayEvents,
   summarizeNextHouseholdRefill
@@ -102,6 +103,18 @@ const Dashboard = () => {
       if (settingsDocSnap.exists()) {
         setFirebaseConnected(true);
         let data = settingsDocSnap.data();
+
+        // Match Spendability's read-only settings normalization so every page
+        // calculates household pay events from the same canonical shape.
+        // This is in-memory only: Dashboard never persists migrations.
+        if (!data.schemaVersion || data.schemaVersion < SettingsSchemaManager.CURRENT_SCHEMA_VERSION) {
+          data = SettingsSchemaManager.migrateSettings(data);
+        }
+
+        const settingsValidation = SettingsSchemaManager.validateSettings(data);
+        if (!settingsValidation.valid) {
+          data = SettingsSchemaManager.ensureRequiredFields(data);
+        }
         
         // Safety freeze: Dashboard is a reader. It must not advance payday
         // state or delete cached financial data merely because it was opened.
