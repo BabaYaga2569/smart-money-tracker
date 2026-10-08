@@ -14,10 +14,8 @@ import {
   PayFrequencyChart
 } from '../components/charts/PaycycleCharts';
 import { getVisiblePlaidAccounts, isDepositoryAccount } from '../utils/accountVisibility';
-import {
-  buildHouseholdPayEvents,
-  summarizeNextHouseholdRefill
-} from '../utils/householdPayEvents';
+import { buildFinancialCycle, normalizeFinancialSettings } from '../utils/financialCycleEngine';
+import { visibleBillOccurrences } from '../utils/billVisibility';
 import './Paycycle.css';
 
 const PayCycle = () => {
@@ -51,9 +49,15 @@ const PayCycle = () => {
         return [];
       }
       
-      const data = settingsSnap.data();
-      const payEvents = buildHouseholdPayEvents(data, { horizonDays: 60 });
-      const nextRefill = summarizeNextHouseholdRefill(payEvents);
+      const data = normalizeFinancialSettings(settingsSnap.data());
+      const cycle = buildFinancialCycle({
+        settings: data,
+        bills: [],
+        currentAvailableBalance: 0,
+        horizonDays: 60
+      });
+      const payEvents = cycle.futurePayEvents;
+      const nextRefill = cycle.nextRefill;
 
       // Group canonical pay events by owner/main payday so charts can still
       // display durable income sources without inventing separate schedules.
@@ -151,10 +155,12 @@ const PayCycle = () => {
       
       const billsSnap = await getDocs(billsQuery);
       
-      const bills = billsSnap.docs.map(doc => ({
-        id: doc.id,
-        ...doc.data()
-      }));
+      const bills = visibleBillOccurrences(
+        billsSnap.docs.map(doc => ({
+          id: doc.id,
+          ...doc.data()
+        }))
+      ).filter(bill => bill.status !== 'skipped');
       
       console.log(`✅ Synced ${bills.length} unpaid bills from financialEvents`);
       
@@ -178,13 +184,20 @@ const PayCycle = () => {
       const settingsSnap = await getDoc(settingsRef);
       if (!settingsSnap.exists()) return;
 
-      const data = settingsSnap.data();
-      const events = buildHouseholdPayEvents(data, { horizonDays: 45 });
-      const nextRefill = summarizeNextHouseholdRefill(events);
+      const data = normalizeFinancialSettings(settingsSnap.data());
+      const cycle = buildFinancialCycle({
+        settings: data,
+        bills: [],
+        currentAvailableBalance: 0,
+        horizonDays: 45
+      });
 
-      if (nextRefill.date) {
-        setNextPayday(nextRefill.date);
-        setDaysUntilPayday(getDaysUntilDateInPacific(nextRefill.date));
+      if (cycle.nextRefillDate) {
+        setNextPayday(cycle.nextRefillDate);
+        setDaysUntilPayday(cycle.daysUntilRefill);
+      } else {
+        setNextPayday(null);
+        setDaysUntilPayday(null);
       }
     } catch (error) {
       console.error('Error loading pay cycle info:', error);
