@@ -95,9 +95,9 @@ const Settings = () => {
           console.log('🔄 Migrating settings from v', data.schemaVersion || 1, 'to v', SettingsSchemaManager.CURRENT_SCHEMA_VERSION);
           data = SettingsSchemaManager.migrateSettings(data);
           
-          // Save migrated version back to Firebase
-          await setDoc(settingsDocRef, data);
-          console.log('✅ Migrated settings saved to Firebase');
+          // Read-only migration: never rewrite the entire settings document just
+          // because the Settings page was opened. Persist only on explicit Save.
+          console.log('✅ Migrated settings in memory (not written on page load)');
         }
         
         // ✅ Validate loaded settings
@@ -120,8 +120,15 @@ const Settings = () => {
         setPaySchedules({
           yours: {
             type: data.paySchedules?.yours?.type || 'bi-weekly',
-            amount: data.paySchedules?.yours?.amount || '',
-            lastPaydate: data.paySchedules?.yours?.lastPaydate || '',
+            amount: Number(data.paySchedules?.yours?.amount || 0) > 0
+              ? data.paySchedules.yours.amount
+              : (data.payAmount || data.yourPayAmount || ''),
+            lastPaydate:
+              data.paySchedules?.yours?.lastPaydate ||
+              data.paySchedules?.yours?.lastPayDate ||
+              data.lastPayDate ||
+              data.yoursSchedule?.lastPaydate ||
+              '',
             bankSplit: {
               fixedAmount: {
                 bank: data.paySchedules?.yours?.bankSplit?.fixedAmount?.bank || 'SoFi',
@@ -134,7 +141,9 @@ const Settings = () => {
           },
           spouse: {
             type: data.paySchedules?.spouse?.type || 'bi-monthly',
-            amount: data.paySchedules?.spouse?.amount || '',
+            amount: Number(data.paySchedules?.spouse?.amount || 0) > 0
+              ? data.paySchedules.spouse.amount
+              : (data.spousePayAmount || data.spouseSchedule?.amount || ''),
             dates: data.paySchedules?.spouse?.dates || [15, 30]
           }
         });
@@ -279,8 +288,8 @@ const Settings = () => {
 
       console.log('🔵 Settings data prepared with schema v', SettingsSchemaManager.CURRENT_SCHEMA_VERSION);
 
-      // ✅ Save with guaranteed data integrity
-      await setDoc(settingsDocRef, settingsData);
+      // Save explicitly edited settings without replacing unrelated fields.
+      await setDoc(settingsDocRef, settingsData, { merge: true });
 
       console.log('✅ Settings saved to Firebase with schema v', SettingsSchemaManager.CURRENT_SCHEMA_VERSION);
       console.log('🔵 Now calculating payday...');
