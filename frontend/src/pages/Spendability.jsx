@@ -1209,6 +1209,17 @@ console.log('🔍 PAYDAY CALCULATION DEBUG:', {
                 <div className="calc-note">
                   <small>These remain officially unpaid until posted, but are not reserved again because the bank available balance already reflects them.</small>
                 </div>
+                {financialData.reconciliation.reviewExcludedCount > 0 && (
+                  <>
+                    <div className="calc-item" style={{ marginTop: '8px' }}>
+                      <span>Changed-amount bank debits awaiting review ({financialData.reconciliation.reviewExcludedCount})</span>
+                      <span>{formatCurrency(financialData.reconciliation.reviewExcludedTotal)}</span>
+                    </div>
+                    <div className="calc-note">
+                      <small>Same merchant and due window, different amount. These are not marked paid automatically and do not change the recurring template.</small>
+                    </div>
+                  </>
+                )}
               </div>
 
               <div className="calc-section">
