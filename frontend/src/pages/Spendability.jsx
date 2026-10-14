@@ -885,15 +885,18 @@ console.log('🔍 PAYDAY CALCULATION DEBUG:', {
                   <div key={index} className={`payday-item payday-${payday.type}`}>
                     <div className="payday-header">
                       <span className="payday-icon">
-                        {payday.type === 'early' ? '⚡' : '💵'}
+                        {payday.type === 'early' ? '⚡' : payday.owner === 'spouse' ? '👤' : '💵'}
                       </span>
                       <span className="payday-label">
-                        {payday.type === 'early' ? 'Early Deposit' : 'Main Payday'}
+                        {payday.label || (payday.type === 'early' ? 'Early Deposit' : 'Main Payday')}
                       </span>
                     </div>
                     <div className="payday-item-date">{formatDate(payday.date)}</div>
                     <div className="payday-item-countdown">
-                      ({payday.daysUntil > 0 ? `${payday.daysUntil} days` : 'Today!'})
+                      {(() => {
+                        const days = getDaysUntilDateInPacific(payday.date);
+                        return days > 0 ? `(${days} day${days === 1 ? '' : 's'})` : '(Today!)';
+                      })()}
                     </div>
                     <div className="payday-amount">{formatCurrency(payday.amount)}</div>
                     <div className="payday-bank">→ {payday.bank}</div>
