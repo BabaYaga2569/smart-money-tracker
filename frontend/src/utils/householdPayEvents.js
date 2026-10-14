@@ -38,15 +38,29 @@ export function buildHouseholdPayEvents(settings = {}, options = {}) {
   const yours = settings.paySchedules?.yours || {};
   const spouse = settings.paySchedules?.spouse || {};
 
-  const yourAmount = Number(yours.amount ?? settings.payAmount ?? 0) || 0;
-  const lastPaydate = yours.lastPaydate || settings.lastPayDate || null;
+  const yourAmount = Number(
+    yours.amount ??
+    settings.payAmount ??
+    settings.yoursSchedule?.amount ??
+    0
+  ) || 0;
+  const lastPaydate =
+    yours.lastPaydate ||
+    yours.lastPayDate ||
+    settings.lastPayDate ||
+    settings.yoursSchedule?.lastPaydate ||
+    settings.yoursSchedule?.lastPayDate ||
+    null;
 
+  const splitFixedAmount = Number(yours.bankSplit?.fixedAmount?.amount ?? 0) || 0;
   const earlyEnabled =
     settings.earlyDeposit?.enabled === true ||
-    settings.enableEarlyDeposit === true;
+    settings.enableEarlyDeposit === true ||
+    splitFixedAmount > 0;
   const earlyAmount = Number(
     settings.earlyDeposit?.amount ??
     settings.earlyDepositAmount ??
+    splitFixedAmount ??
     0
   ) || 0;
   const daysBefore = Number(
@@ -58,10 +72,12 @@ export function buildHouseholdPayEvents(settings = {}, options = {}) {
   const earlyBank =
     settings.earlyDeposit?.bankName ||
     settings.earlyDepositBank ||
+    yours.bankSplit?.fixedAmount?.bank ||
     'Early Deposit Account';
   const remainderBank =
     settings.earlyDeposit?.remainderBank ||
     settings.remainderBank ||
+    yours.bankSplit?.remainder?.bank ||
     'Main Account';
 
   const anchor = parseDateOnly(lastPaydate);
@@ -82,7 +98,7 @@ export function buildHouseholdPayEvents(settings = {}, options = {}) {
             owner: 'yours',
             type: 'early',
             bank: earlyBank,
-            label: `Early Deposit — ${earlyBank}`,
+            label: `${settings.personalInfo?.yourName || 'Your'} Early Deposit`,
             mainPaydayDate: toDateOnly(mainDate)
           });
         }
@@ -95,7 +111,7 @@ export function buildHouseholdPayEvents(settings = {}, options = {}) {
             owner: 'yours',
             type: 'main',
             bank: remainderBank,
-            label: `Main Payday — ${remainderBank}`,
+            label: `${settings.personalInfo?.yourName || 'Your'} Main Payday`,
             mainPaydayDate: toDateOnly(mainDate)
           });
         }
@@ -119,6 +135,7 @@ export function buildHouseholdPayEvents(settings = {}, options = {}) {
   const spouseAmount = Number(
     spouse.amount ??
     settings.spousePayAmount ??
+    settings.spouseSchedule?.amount ??
     0
   ) || 0;
 
@@ -146,7 +163,7 @@ export function buildHouseholdPayEvents(settings = {}, options = {}) {
           owner: 'spouse',
           type: 'spouse',
           bank: 'Spouse Deposit',
-          label: 'Spouse Payday',
+          label: `${settings.personalInfo?.spouseName || 'Spouse'} Main Payday`,
           mainPaydayDate: spouseDateOnly
         });
       }
