@@ -46,6 +46,7 @@ const SpendabilityV2 = () => {
     safetyBuffer: 0,
     paidBillsCount: 0,
     pendingPaymentBillsCount: 0,
+    reviewCandidateBillsCount: 0,
     reconciliation: null,
     paydays: [] // Array of payday objects: { date, amount, bank, type }
   });
@@ -525,11 +526,14 @@ console.log('🔍 PAYDAY CALCULATION DEBUG:', {
       const pendingPaymentBillsBeforePayday = billsDueBeforePayday.filter(
         bill => bill.pendingPayment === true
       );
+      const reviewCandidateBillsBeforePayday = billsDueBeforePayday.filter(
+        bill => bill.pendingPayment !== true && bill.paymentReviewCandidate === true
+      );
       const unpaidBillsBeforePayday = billsDueBeforePayday.filter(
-        bill => bill.pendingPayment !== true
+        bill => bill.pendingPayment !== true && bill.paymentReviewCandidate !== true
       );
       const unpaidBillsAfterPayday = billsDueAfterPayday.filter(
-        bill => bill.pendingPayment !== true
+        bill => bill.pendingPayment !== true && bill.paymentReviewCandidate !== true
       );
 
       const totalUnpaidBills = unpaidBillsBeforePayday.reduce((sum, bill) => {
@@ -610,6 +614,7 @@ console.log('🔍 PAYDAY CALCULATION DEBUG:', {
         currentCycleBills: billsDueBeforePayday,
         reservedBills: unpaidBillsBeforePayday,
         pendingPaymentBills: pendingPaymentBillsBeforePayday,
+        reviewCandidateBills: reviewCandidateBillsBeforePayday,
         todayStr: todayStrProj,
         cycleEndStr,
         totalAvailable,
@@ -738,6 +743,7 @@ console.log('🔍 PAYDAY CALCULATION DEBUG:', {
         safetyBuffer,
         paidBillsCount: 0,
         pendingPaymentBillsCount,
+        reviewCandidateBillsCount: reviewCandidateBillsBeforePayday.length,
         reconciliation,
         paydays  // Array of payday objects
       });
@@ -1080,7 +1086,25 @@ console.log('🔍 PAYDAY CALCULATION DEBUG:', {
                         ⏳ PENDING PAYMENT — excluded from Safe-to-Spend reserve
                       </div>
                     )}
-                    {bill.pendingPayment !== true && bill.statusInfo?.status === 'overdue' && (
+                    {bill.pendingPayment !== true && bill.paymentReviewCandidate === true && (
+                      <div
+                        className="pending-payment-warning"
+                        title="A bank debit from the same merchant and due window was detected at a different amount. It is excluded from reserve to avoid double-counting, but the bill is not marked paid until reviewed."
+                        style={{
+                          marginTop: '8px',
+                          padding: '6px 10px',
+                          borderRadius: '6px',
+                          background: 'rgba(255, 184, 0, 0.12)',
+                          border: '1px solid rgba(255, 184, 0, 0.45)',
+                          color: '#ffcf66',
+                          fontWeight: '700'
+                        }}
+                      >
+                        ⚠️ AMOUNT CHANGED — review bank debit {formatCurrency(bill.paymentReviewActualAmount)}
+                        {' '}vs expected {formatCurrency(bill.paymentReviewExpectedAmount ?? bill.amount ?? bill.cost)}
+                      </div>
+                    )}
+                    {bill.pendingPayment !== true && bill.paymentReviewCandidate !== true && bill.statusInfo?.status === 'overdue' && (
                       <div className="overdue-warning">
                         🚨 OVERDUE by {bill.statusInfo.daysOverdue} day{bill.statusInfo.daysOverdue !== 1 ? 's' : ''} - LATE FEES MAY APPLY!
                       </div>
@@ -1098,6 +1122,11 @@ console.log('🔍 PAYDAY CALCULATION DEBUG:', {
             {financialData.pendingPaymentBillsCount > 0 && (
               <div className="paid-bills-info">
                 ⏳ {financialData.pendingPaymentBillsCount} bill(s) have pending bank payments and are not reserved again
+              </div>
+            )}
+            {financialData.reviewCandidateBillsCount > 0 && (
+              <div className="paid-bills-info">
+                ⚠️ {financialData.reviewCandidateBillsCount} bill(s) have changed-amount bank debits awaiting review and are not reserved again
               </div>
             )}
             {financialData.paidBillsCount > 0 && (
@@ -1180,6 +1209,17 @@ console.log('🔍 PAYDAY CALCULATION DEBUG:', {
                 <div className="calc-note">
                   <small>These remain officially unpaid until posted, but are not reserved again because the bank available balance already reflects them.</small>
                 </div>
+                {financialData.reconciliation.reviewExcludedCount > 0 && (
+                  <>
+                    <div className="calc-item" style={{ marginTop: '8px' }}>
+                      <span>Changed-amount bank debits awaiting review ({financialData.reconciliation.reviewExcludedCount})</span>
+                      <span>{formatCurrency(financialData.reconciliation.reviewExcludedTotal)}</span>
+                    </div>
+                    <div className="calc-note">
+                      <small>Same merchant and due window, different amount. These are not marked paid automatically and do not change the recurring template.</small>
+                    </div>
+                  </>
+                )}
               </div>
 
               <div className="calc-section">

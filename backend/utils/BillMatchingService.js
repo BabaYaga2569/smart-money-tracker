@@ -20,6 +20,12 @@ const AMOUNT_TOLERANCE = 0.50; // ±$0.50 tolerance for amount matching
 const DATE_TOLERANCE_DAYS = 7; // ±7 days tolerance for date matching
 const MINIMUM_MATCH_COUNT = 2; // Require 2 of 3 criteria (67% confidence)
 
+// Merchants that are too broad/ambiguous for changed-amount review matching.
+const AMBIGUOUS_CHANGED_AMOUNT_MERCHANTS = [
+  'walmart', 'amazon', 'target', 'costco', 'sams club',
+  'paypal', 'venmo', 'zelle', 'cash app'
+];
+
 // Skip words for significant word extraction
 const SKIP_WORDS = [
   'the', 'a', 'an', 'and', 'or', 'but', 'in', 'on', 'at', 'to', 'for', 
@@ -355,6 +361,138 @@ export function matchTransactionsToBills(transactions, bills) {
  * Match pending Plaid transactions to unpaid bills without clearing them.
  * This uses the same canonical match criteria as posted-payment matching.
  */
+function isAmbiguousChangedAmountMerchant(transaction, bill) {
+  const values = [
+    transaction?.merchant_name,
+    transaction?.merchantName,
+    transaction?.name,
+    bill?.name
+  ].map(normalizeString).filter(Boolean);
+
+  return AMBIGUOUS_CHANGED_AMOUNT_MERCHANTS.some(term =>
+    values.some(value => value.includes(term))
+  );
+}
+
+function isReasonableAmountChange(txAmount, billAmount) {
+  const tx = Math.abs(Number(txAmount) || 0);
+  const bill = Math.abs(Number(billAmount) || 0);
+  if (!tx || !bill) return false;
+
+  const delta = Math.abs(tx - bill);
+  const allowedDelta = Math.max(10, bill * 0.25);
+  return delta <= allowedDelta;
+}
+
+export function matchChangedAmountTransactionsToBills(transactions, bills) {
+  if (!transactions || !bills) return [];
+
+  const matches = [];
+  const usedTransactions = new Set();
+  const usedBills = new Set();
+
+  for (const bill of bills) {
+    if (!bill?.id || bill.isPaid || bill.status === 'paid' || bill.status === 'skipped') continue;
+    if (bill.pendingPayment === true) continue;
+    if (usedBills.has(bill.id)) continue;
+
+    let best = null;
+
+    for (const transaction of transactions) {
+      const txId = transaction.id || transaction.transaction_id;
+      if (!txId || usedTransactions.has(txId)) continue;
+      if (isAmbiguousChangedAmountMerchant(transaction, bill)) continue;
+
+      const txName = transaction.name || '';
+      const txMerchantName = transaction.merchant_name || transaction.merchantName || '';
+      const merchantNames = bill.merchantNames || [];
+      const nameMatch =
+        isNameMatch(txName, bill.name || '', merchantNames) ||
+        isNameMatch(txMerchantName, bill.name || '', merchantNames);
+      const dateMatch = isDateMatch(transaction.date, bill.dueDate);
+      const amountMatch = isAmountMatch(transaction.amount, bill.amount);
+
+      if (!nameMatch || !dateMatch || amountMatch) continue;
+      if (!isReasonableAmountChange(transaction.amount, bill.amount)) continue;
+
+      const billAmount = Math.abs(Number(bill.amount) || 0);
+      const txAmount = Math.abs(Number(transaction.amount) || 0);
+      const amountDelta = Math.abs(txAmount - billAmount);
+      const score = 1 - Math.min(1, amountDelta / Math.max(billAmount, 1));
+
+      if (!best || score > best.score) {
+        best = { transaction, bill, score, amountDelta };
+      }
+    }
+
+    if (best) {
+      matches.push(best);
+      usedBills.add(bill.id);
+      usedTransactions.add(best.transaction.id || best.transaction.transaction_id);
+    }
+  }
+
+  return matches;
+}
+
+export async function reconcileChangedAmountReviewCandidates(db, userId, transactions, bills) {
+  const matches = matchChangedAmountTransactionsToBills(transactions, bills);
+  const byBillId = new Map(matches.map(match => [match.bill.id, match]));
+  const batch = db.batch();
+  let writes = 0;
+  let reviewMarked = 0;
+  let reviewCleared = 0;
+
+  for (const bill of bills) {
+    if (!bill?.id || bill.isPaid || bill.status === 'paid' || bill.status === 'skipped') continue;
+
+    const billRef = db.collection('users').doc(userId)
+      .collection('financialEvents').doc(bill.id);
+    const match = byBillId.get(bill.id);
+
+    if (match) {
+      const tx = match.transaction;
+      batch.set(billRef, {
+        paymentReviewCandidate: true,
+        paymentReviewTransactionId: tx.id || tx.transaction_id,
+        paymentReviewDate: tx.date || null,
+        paymentReviewExpectedAmount: Math.abs(Number(bill.amount) || 0),
+        paymentReviewActualAmount: Math.abs(Number(tx.amount) || 0),
+        paymentReviewName: tx.merchant_name || tx.merchantName || tx.name || null,
+        paymentReviewPending: Boolean(tx.pending),
+        paymentReviewReason: 'AMOUNT_CHANGED',
+        paymentReviewDetectedAt: FieldValue.serverTimestamp(),
+        updatedAt: FieldValue.serverTimestamp()
+      }, { merge: true });
+      writes++;
+      reviewMarked++;
+    } else if (
+      bill.paymentReviewCandidate === true ||
+      bill.paymentReviewTransactionId ||
+      bill.paymentReviewReason
+    ) {
+      batch.set(billRef, {
+        paymentReviewCandidate: FieldValue.delete(),
+        paymentReviewTransactionId: FieldValue.delete(),
+        paymentReviewDate: FieldValue.delete(),
+        paymentReviewExpectedAmount: FieldValue.delete(),
+        paymentReviewActualAmount: FieldValue.delete(),
+        paymentReviewName: FieldValue.delete(),
+        paymentReviewPending: FieldValue.delete(),
+        paymentReviewReason: FieldValue.delete(),
+        paymentReviewDetectedAt: FieldValue.delete(),
+        updatedAt: FieldValue.serverTimestamp()
+      }, { merge: true });
+      writes++;
+      reviewCleared++;
+    }
+  }
+
+  if (writes > 0) await batch.commit();
+
+  return { matches, reviewMarked, reviewCleared };
+}
+
 export function matchPendingTransactionsToBills(transactions, bills) {
   if (!transactions || !bills) return [];
 
@@ -1158,6 +1296,12 @@ export async function runBillMatching(db, userId, transactions, bills) {
       transactions,
       enrichedBills
     );
+    const reviewResult = await reconcileChangedAmountReviewCandidates(
+      db,
+      userId,
+      transactions,
+      enrichedBills
+    );
 
     if (matches.length === 0) {
       console.log('ℹ️ [AutoClear] No posted bill matches found');
@@ -1167,7 +1311,9 @@ export async function runBillMatching(db, userId, transactions, bills) {
         advanced: 0,
         generated: 0,
         pendingMarked: pendingResult.pendingMarked,
-        pendingCleared: pendingResult.pendingCleared
+        pendingCleared: pendingResult.pendingCleared,
+        reviewMarked: reviewResult.reviewMarked,
+        reviewCleared: reviewResult.reviewCleared
       };
     }
     
@@ -1217,7 +1363,9 @@ export async function runBillMatching(db, userId, transactions, bills) {
       advanced,
       generated,
       pendingMarked: pendingResult.pendingMarked,
-      pendingCleared: pendingResult.pendingCleared
+      pendingCleared: pendingResult.pendingCleared,
+      reviewMarked: reviewResult.reviewMarked,
+      reviewCleared: reviewResult.reviewCleared
     };
   } catch (error) {
     console.error('❌ [AutoClear] Error:', error);
@@ -1228,7 +1376,9 @@ export async function runBillMatching(db, userId, transactions, bills) {
       advanced: 0,
       generated: 0,
       pendingMarked: 0,
-      pendingCleared: 0
+      pendingCleared: 0,
+      reviewMarked: 0,
+      reviewCleared: 0
     };
   }
 }
