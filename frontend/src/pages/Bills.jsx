@@ -679,20 +679,20 @@ const refreshPlaidTransactions = async () => {
     const totalMonthlyBills = processedBills.reduce((sum, bill) => sum + (parseFloat(bill.amount) || 0), 0);
     
     const upcomingBills = processedBills.filter(bill => {
-      if (bill.status === 'skipped') return false;
+      if (bill.status === 'skipped' || bill.paymentReviewCandidate === true) return false;
       const dueDate = parseDueDateLocal(bill.nextDueDate || bill.dueDate);
       const status = determineBillStatus(bill);
       return ['pending', 'this-week', 'urgent'].includes(status) && dueDate <= nextMonth;
     });
     
     const overdueBills = processedBills.filter(bill => {
-      if (bill.status === 'skipped') return false;
+      if (bill.status === 'skipped' || bill.paymentReviewCandidate === true) return false;
       return determineBillStatus(bill) === 'overdue';
     });
     
     const nextBillDue = processedBills
       .filter(bill => {
-        if (bill.status === 'skipped') return false;
+        if (bill.status === 'skipped' || bill.paymentReviewCandidate === true) return false;
         const status = determineBillStatus(bill);
         return ['pending', 'this-week', 'urgent', 'due-today'].includes(status);
       })
@@ -1471,6 +1471,7 @@ const refreshPlaidTransactions = async () => {
             <option value="upcoming">⏳ Show Upcoming</option>
             <option value="paid">✅ Paid</option>
             <option value="overdue">🚨 Overdue</option>
+            <option value="review">⚠️ Amount Changed</option>
             <option value="due-today">📅 Due Today</option>
             <option value="urgent">⚠️ Urgent (≤3 days)</option>
             <option value="this-week">📆 This Week</option>
@@ -1615,7 +1616,7 @@ const refreshPlaidTransactions = async () => {
                 id={`bill-${bill.name}-${bill.amount}`}
                 data-bill-id={`${bill.name}-${bill.amount}`}
                 data-status={bill.status}
-                className={`bill-item ${bill.urgencyInfo?.className || ''} ${bill.status} ${payingBill === bill.name ? 'bill-processing' : ''}`}
+                className={`bill-item ${bill.paymentReviewCandidate === true ? '' : (bill.urgencyInfo?.className || '')} ${bill.status} ${payingBill === bill.name ? 'bill-processing' : ''}`}
               >
                 <div className="bill-main-info">
                   <div className="bill-icon">
@@ -1716,8 +1717,17 @@ const refreshPlaidTransactions = async () => {
                     <div className="bill-meta">
                       <span className="bill-category">{bill.category}</span>
                       <span className="bill-frequency">{bill.recurrence}</span>
-                      {bill.urgencyInfo && (
+                      {bill.paymentReviewCandidate !== true && bill.urgencyInfo && (
                         <span className="urgency-indicator">{bill.urgencyInfo.indicator} {bill.urgencyInfo.label}</span>
+                      )}
+                      {bill.paymentReviewCandidate === true && (
+                        <span
+                          className="urgency-indicator"
+                          style={{ color: '#fbbf24' }}
+                          title="A same-merchant bank debit was detected in the due window at a different amount."
+                        >
+                          ⚠️ REVIEW BANK AMOUNT
+                        </span>
                       )}
                     </div>
                   </div>
@@ -1725,6 +1735,11 @@ const refreshPlaidTransactions = async () => {
                 
                 <div className="bill-amount-section">
                   <div className="bill-amount">{formatCurrency(bill.amount)}</div>
+                  {bill.paymentReviewCandidate === true && (
+                    <div style={{ marginTop: '4px', fontSize: '11px', color: '#fbbf24', fontWeight: 700 }}>
+                      Bank debit: {formatCurrency(bill.paymentReviewActualAmount)}
+                    </div>
+                  )}
                   <div className="bill-due-date">
                     {/* Show actual date */}
                     <div style={{ 
@@ -2119,6 +2134,7 @@ const refreshPlaidTransactions = async () => {
                 <li>⚠️ <span style={{ color: '#ffdd00' }}>URGENT</span> - Due in 3 days or less</li>
                 <li>📆 <span style={{ color: '#00b4ff' }}>THIS WEEK</span> - Due within 7 days</li>
                 <li>⏳ <span style={{ color: '#6fdcff' }}>PENDING PAYMENT</span> - Matching bank transaction is pending; bill remains officially unpaid until posted</li>
+                <li>⚠️ <span style={{ color: '#fbbf24' }}>AMOUNT CHANGED</span> - Same merchant/date window, different bank amount; excluded from reserve until reviewed</li>
                 <li>✅ <span style={{ color: '#00ff88' }}>PAID</span> - Already paid</li>
                 <li>⏭️ <span style={{ color: '#ba68c8' }}>SKIPPED</span> - Skipped for this cycle</li>
               </ul>
