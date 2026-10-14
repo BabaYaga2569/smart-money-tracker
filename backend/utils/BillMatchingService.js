@@ -243,6 +243,7 @@ function isDateMatch(txDate, billDueDate, daysTolerance = DATE_TOLERANCE_DAYS) {
  */
 function matchTransactionToBill(transaction, bill) {
   const txName = transaction.name || '';
+  const txMerchantName = transaction.merchant_name || transaction.merchantName || '';
   const txAmount = Math.abs(parseFloat(transaction.amount) || 0);
   const txDate = transaction.date;
   
@@ -251,7 +252,12 @@ function matchTransactionToBill(transaction, bill) {
   const billDueDate = bill.dueDate;
   const merchantNames = bill.merchantNames || [];
   
-  const nameMatch = isNameMatch(txName, billName, merchantNames);
+  // Plaid frequently preserves a noisy institution-supplied name while also
+  // providing a clean merchant_name. Either may establish the merchant/name
+  // criterion, but amount and date proximity are still mandatory.
+  const nameMatch =
+    isNameMatch(txName, billName, merchantNames) ||
+    isNameMatch(txMerchantName, billName, merchantNames);
   const amountMatch = isAmountMatch(txAmount, billAmount);
   const dateMatch = isDateMatch(txDate, billDueDate);
   
