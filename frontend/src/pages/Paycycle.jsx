@@ -6,6 +6,7 @@ import { PayCycleCalculator } from '../utils/PayCycleCalculator';
 import { useAuth } from '../contexts/AuthContext';
 import { getLocalMidnight, parseDueDateLocal } from '../utils/dateHelpers';
 import { getDaysUntilDateInPacific } from '../utils/DateUtils';
+import { SettingsSchemaManager } from '../utils/SettingsSchemaManager';
 import {
   IncomeTimelineChart,
   CashFlowForecastChart,
@@ -51,7 +52,14 @@ const PayCycle = () => {
         return [];
       }
       
-      const data = settingsSnap.data();
+      let data = settingsSnap.data();
+      if (!data.schemaVersion || data.schemaVersion < SettingsSchemaManager.CURRENT_SCHEMA_VERSION) {
+        data = SettingsSchemaManager.migrateSettings(data);
+      }
+      const validation = SettingsSchemaManager.validateSettings(data);
+      if (!validation.valid) {
+        data = SettingsSchemaManager.ensureRequiredFields(data);
+      }
       const payEvents = buildHouseholdPayEvents(data, { horizonDays: 60 });
       const nextRefill = summarizeNextHouseholdRefill(payEvents);
 
@@ -119,7 +127,14 @@ const PayCycle = () => {
       
       if (!settingsSnap.exists()) return { totalBalance: 0, accounts: [] };
       
-      const settings = settingsSnap.data() || {};
+      let settings = settingsSnap.data() || {};
+      if (!settings.schemaVersion || settings.schemaVersion < SettingsSchemaManager.CURRENT_SCHEMA_VERSION) {
+        settings = SettingsSchemaManager.migrateSettings(settings);
+      }
+      const settingsValidation = SettingsSchemaManager.validateSettings(settings);
+      if (!settingsValidation.valid) {
+        settings = SettingsSchemaManager.ensureRequiredFields(settings);
+      }
       const allPlaidAccounts = getVisiblePlaidAccounts(settings.plaidAccounts || [], settings);
       const depositoryAccounts = allPlaidAccounts.filter(isDepositoryAccount);
       
@@ -178,7 +193,14 @@ const PayCycle = () => {
       const settingsSnap = await getDoc(settingsRef);
       if (!settingsSnap.exists()) return;
 
-      const data = settingsSnap.data();
+      let data = settingsSnap.data();
+      if (!data.schemaVersion || data.schemaVersion < SettingsSchemaManager.CURRENT_SCHEMA_VERSION) {
+        data = SettingsSchemaManager.migrateSettings(data);
+      }
+      const validation = SettingsSchemaManager.validateSettings(data);
+      if (!validation.valid) {
+        data = SettingsSchemaManager.ensureRequiredFields(data);
+      }
       const events = buildHouseholdPayEvents(data, { horizonDays: 45 });
       const nextRefill = summarizeNextHouseholdRefill(events);
 
