@@ -10,6 +10,7 @@ export function buildSpendabilityReconciliation({
   currentCycleBills = [],
   reservedBills = [],
   pendingPaymentBills = [],
+  reviewCandidateBills = [],
   todayStr,
   cycleEndStr,
   totalAvailable = 0,
@@ -64,6 +65,7 @@ export function buildSpendabilityReconciliation({
 
   const reservedTotal = reservedBills.reduce((sum, bill) => sum + amountOf(bill), 0);
   const pendingExcludedTotal = pendingPaymentBills.reduce((sum, bill) => sum + amountOf(bill), 0);
+  const reviewExcludedTotal = reviewCandidateBills.reduce((sum, bill) => sum + amountOf(bill), 0);
 
   return {
     todayStr,
@@ -71,9 +73,11 @@ export function buildSpendabilityReconciliation({
     totalAvailable: Number(totalAvailable) || 0,
     reservedTotal,
     pendingExcludedTotal,
+    reviewExcludedTotal,
     safeToSpend: Number(safeToSpend) || 0,
     reservedCount: reservedBills.length,
     pendingExcludedCount: pendingPaymentBills.length,
+    reviewExcludedCount: reviewCandidateBills.length,
     expectedPatternCount: expectedPatterns.length,
     missingOccurrences,
     unlinkedOccurrences,
