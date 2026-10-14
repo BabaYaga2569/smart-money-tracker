@@ -1269,7 +1269,7 @@ export async function reverseIncorrectAutoBillMatch(db, userId, billId) {
   return reverseCanonicalBillPayment(db, userId, billId, 'auto-plaid-match');
 }
 
-async function filterCurrentRecurringOccurrences(db, userId, bills = []) {
+export async function filterCurrentRecurringOccurrences(db, userId, bills = []) {
   const recurringIds = [...new Set(
     bills
       .map(bill => bill?.recurringPatternId)
