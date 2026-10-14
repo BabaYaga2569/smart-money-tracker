@@ -6,6 +6,7 @@ import { PayCycleCalculator } from '../utils/PayCycleCalculator';
 import { useAuth } from '../contexts/AuthContext';
 import { getLocalMidnight, parseDueDateLocal } from '../utils/dateHelpers';
 import { getDaysUntilDateInPacific } from '../utils/DateUtils';
+import { SettingsSchemaManager } from '../utils/SettingsSchemaManager';
 import {
   IncomeTimelineChart,
   CashFlowForecastChart,
@@ -13,9 +14,11 @@ import {
   IncomeSourcesChart,
   PayFrequencyChart
 } from '../components/charts/PaycycleCharts';
-import { loadCanonicalFinancialAccounts } from '../utils/financialAccounts';
-import { buildFinancialCycle, normalizeFinancialSettings } from '../utils/financialCycleEngine';
-import { visibleBillOccurrences } from '../utils/billVisibility';
+import { getVisiblePlaidAccounts, isDepositoryAccount } from '../utils/accountVisibility';
+import {
+  buildHouseholdPayEvents,
+  summarizeNextHouseholdRefill
+} from '../utils/householdPayEvents';
 import './Paycycle.css';
 
 const PayCycle = () => {
@@ -49,15 +52,16 @@ const PayCycle = () => {
         return [];
       }
       
-      const data = normalizeFinancialSettings(settingsSnap.data());
-      const cycle = buildFinancialCycle({
-        settings: data,
-        bills: [],
-        currentAvailableBalance: 0,
-        horizonDays: 60
-      });
-      const payEvents = cycle.futurePayEvents;
-      const nextRefill = cycle.nextRefill;
+      let data = settingsSnap.data();
+      if (!data.schemaVersion || data.schemaVersion < SettingsSchemaManager.CURRENT_SCHEMA_VERSION) {
+        data = SettingsSchemaManager.migrateSettings(data);
+      }
+      const validation = SettingsSchemaManager.validateSettings(data);
+      if (!validation.valid) {
+        data = SettingsSchemaManager.ensureRequiredFields(data);
+      }
+      const payEvents = buildHouseholdPayEvents(data, { horizonDays: 60 });
+      const nextRefill = summarizeNextHouseholdRefill(payEvents);
 
       // Group canonical pay events by owner/main payday so charts can still
       // display durable income sources without inventing separate schedules.
@@ -123,20 +127,25 @@ const PayCycle = () => {
       
       if (!settingsSnap.exists()) return { totalBalance: 0, accounts: [] };
       
-      const settings = normalizeFinancialSettings(settingsSnap.data() || {});
-      const canonicalAccounts = await loadCanonicalFinancialAccounts({
-        userId: currentUser.uid,
-        settings,
-        timeoutMs: 5000
-      });
-      const totalBalance = canonicalAccounts.totalAvailable;
+      let settings = settingsSnap.data() || {};
+      if (!settings.schemaVersion || settings.schemaVersion < SettingsSchemaManager.CURRENT_SCHEMA_VERSION) {
+        settings = SettingsSchemaManager.migrateSettings(settings);
+      }
+      const settingsValidation = SettingsSchemaManager.validateSettings(settings);
+      if (!settingsValidation.valid) {
+        settings = SettingsSchemaManager.ensureRequiredFields(settings);
+      }
+      const allPlaidAccounts = getVisiblePlaidAccounts(settings.plaidAccounts || [], settings);
+      const depositoryAccounts = allPlaidAccounts.filter(isDepositoryAccount);
       
-      console.log(
-        `✅ Synced canonical balance from ${canonicalAccounts.depositoryAccounts.length} accounts: ${totalBalance.toFixed(2)}`
+      const totalBalance = depositoryAccounts.reduce((sum, account) => 
+        sum + (parseFloat(account.balance) || 0), 0
       );
       
+      console.log(`✅ Synced balance from ${depositoryAccounts.length} accounts: $${totalBalance.toFixed(2)}`);
+      
       setCurrentBalance(totalBalance);
-      return { totalBalance, accounts: canonicalAccounts.depositoryAccounts };
+      return { totalBalance, accounts: depositoryAccounts };
       
     } catch (error) {
       console.error('Error syncing balances from accounts:', error);
@@ -157,12 +166,10 @@ const PayCycle = () => {
       
       const billsSnap = await getDocs(billsQuery);
       
-      const bills = visibleBillOccurrences(
-        billsSnap.docs.map(doc => ({
-          id: doc.id,
-          ...doc.data()
-        }))
-      ).filter(bill => bill.status !== 'skipped');
+      const bills = billsSnap.docs.map(doc => ({
+        id: doc.id,
+        ...doc.data()
+      }));
       
       console.log(`✅ Synced ${bills.length} unpaid bills from financialEvents`);
       
@@ -186,20 +193,20 @@ const PayCycle = () => {
       const settingsSnap = await getDoc(settingsRef);
       if (!settingsSnap.exists()) return;
 
-      const data = normalizeFinancialSettings(settingsSnap.data());
-      const cycle = buildFinancialCycle({
-        settings: data,
-        bills: [],
-        currentAvailableBalance: 0,
-        horizonDays: 45
-      });
+      let data = settingsSnap.data();
+      if (!data.schemaVersion || data.schemaVersion < SettingsSchemaManager.CURRENT_SCHEMA_VERSION) {
+        data = SettingsSchemaManager.migrateSettings(data);
+      }
+      const validation = SettingsSchemaManager.validateSettings(data);
+      if (!validation.valid) {
+        data = SettingsSchemaManager.ensureRequiredFields(data);
+      }
+      const events = buildHouseholdPayEvents(data, { horizonDays: 45 });
+      const nextRefill = summarizeNextHouseholdRefill(events);
 
-      if (cycle.nextRefillDate) {
-        setNextPayday(cycle.nextRefillDate);
-        setDaysUntilPayday(cycle.daysUntilRefill);
-      } else {
-        setNextPayday(null);
-        setDaysUntilPayday(null);
+      if (nextRefill.date) {
+        setNextPayday(nextRefill.date);
+        setDaysUntilPayday(getDaysUntilDateInPacific(nextRefill.date));
       }
     } catch (error) {
       console.error('Error loading pay cycle info:', error);

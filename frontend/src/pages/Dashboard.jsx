@@ -7,9 +7,13 @@ import PlaidConnectionManager from '../utils/PlaidConnectionManager';
 import './Dashboard.css';
 import { useAuth } from '../contexts/AuthContext';
 import { useTransactionsQuery } from '../hooks/useFirebaseQuery';
-import { loadCanonicalFinancialAccounts } from '../utils/financialAccounts';
+import { getVisiblePlaidAccounts, isDepositoryAccount } from '../utils/accountVisibility';
 import { visibleBillOccurrences } from '../utils/billVisibility';
-import { buildFinancialCycle, normalizeFinancialSettings } from '../utils/financialCycleEngine';
+import { SettingsSchemaManager } from '../utils/SettingsSchemaManager';
+import {
+  buildHouseholdPayEvents,
+  summarizeNextHouseholdRefill
+} from '../utils/householdPayEvents';
 
 
 const Dashboard = () => {
@@ -98,31 +102,45 @@ const Dashboard = () => {
       
       if (settingsDocSnap.exists()) {
         setFirebaseConnected(true);
-        let data = normalizeFinancialSettings(settingsDocSnap.data());
+        let data = settingsDocSnap.data();
+
+        // Match Spendability's proven read-only normalization path.
+        // Never persist migrations from Dashboard.
+        if (!data.schemaVersion || data.schemaVersion < SettingsSchemaManager.CURRENT_SCHEMA_VERSION) {
+          data = SettingsSchemaManager.migrateSettings(data);
+        }
+        const validation = SettingsSchemaManager.validateSettings(data);
+        if (!validation.valid) {
+          data = SettingsSchemaManager.ensureRequiredFields(data);
+        }
         
         // Safety freeze: Dashboard is a reader. It must not advance payday
         // state or delete cached financial data merely because it was opened.
         
-        // Canonical live account source shared with Spendability and Pay Cycle.
+        // Calculate your real data here
+        // Prioritize Plaid accounts if they exist (fully automated flow)
         const canonicalPlaidAccounts = data.plaidAccounts || [];
-        const canonicalAccounts = await loadCanonicalFinancialAccounts({
-          userId: currentUser.uid,
-          settings: data,
-          timeoutMs: 5000
-        });
-        const plaidAccountsList = canonicalAccounts.depositoryAccounts;
+        const plaidAccountsList = getVisiblePlaidAccounts(canonicalPlaidAccounts, data)
+          .filter(isDepositoryAccount);
         const bankAccounts = data.bankAccounts || {};
         
         // Connection state is based on canonical accounts, not visibility.
         PlaidConnectionManager.setPlaidAccounts(canonicalPlaidAccounts);
-        setHasPlaidAccounts(canonicalPlaidAccounts.length > 0 || plaidAccountsList.length > 0);
+        setHasPlaidAccounts(canonicalPlaidAccounts.length > 0);
         
-        let totalBalance = canonicalAccounts.totalAvailable;
-        let accountCount = plaidAccountsList.length;
-        let accountsData = plaidAccountsList;
+        let totalBalance = 0;
+        let accountCount = 0;
+        let accountsData = null;
         
-        if (plaidAccountsList.length === 0) {
-          // Manual-account fallback only when no Plaid depository accounts exist.
+        if (plaidAccountsList.length > 0) {
+          // Use only Plaid accounts when they exist
+          totalBalance = plaidAccountsList.reduce((sum, account) => {
+            return sum + (parseFloat(account.balance) || 0);
+          }, 0);
+          accountCount = plaidAccountsList.length;
+          accountsData = plaidAccountsList;
+        } else {
+          // Fall back to manual accounts
           totalBalance = Object.values(bankAccounts).reduce((sum, account) => {
             return sum + (parseFloat(account.balance) || 0);
           }, 0);
@@ -236,28 +254,42 @@ try {
   console.error('Error loading subscriptions:', error);
 }
 
-// Canonical financial-cycle engine: this is the same calculation used by
-// Spendability and Pay Cycle. Dashboard does not interpret pay schedules itself.
+// Calculate spendability using the same canonical occurrence/pay-cycle rules
+// as Spendability. No cached payday document and no recurrence re-processing.
 let calculatedSafeToSpend = null;
 let calculatedDaysUntilPayday = null;
 try {
-  const cycle = buildFinancialCycle({
-    settings: data,
-    bills,
-    currentAvailableBalance: totalBalance,
-    horizonDays: 45
-  });
+  const { getDaysUntilDateInPacific } = await import('../utils/DateUtils');
+  const householdPayEvents = buildHouseholdPayEvents(data, { horizonDays: 45 });
+  const nextRefill = summarizeNextHouseholdRefill(householdPayEvents);
+  const nextRefillDate = nextRefill.date;
 
-  calculatedSafeToSpend = cycle.safeToSpend;
-  calculatedDaysUntilPayday = cycle.daysUntilRefill;
+  if (nextRefillDate) {
+    calculatedDaysUntilPayday = getDaysUntilDateInPacific(nextRefillDate);
 
-  if (!cycle.nextRefillDate) {
-    console.warn('Dashboard spendability unavailable: canonical cycle engine resolved no refill date');
+    const visibleUnpaidBills = visibleBillOccurrences(bills)
+      .filter(bill => bill.status !== 'skipped' && bill.pendingPayment !== true);
+
+    const billsDueBeforeRefill = visibleUnpaidBills.filter(bill => {
+      const due = String(bill.dueDate || bill.nextDueDate || '').slice(0, 10);
+      return due && due < nextRefillDate;
+    });
+
+    const totalBillsDue = billsDueBeforeRefill.reduce(
+      (sum, bill) => sum + (parseFloat(bill.amount || bill.cost) || 0),
+      0
+    );
+
+    // Safe-to-Spend must start from the same current available bank balance
+    // as Spendability. Projected cash is a separate forecast metric and can
+    // double-count transaction activity already reflected in Plaid balances.
+    calculatedSafeToSpend = totalBalance - totalBillsDue;
+  } else {
+    console.warn('Dashboard spendability unavailable: no household refill date resolved');
   }
 } catch (error) {
   console.error('Error calculating dashboard spendability:', error);
-  calculatedSafeToSpend = null;
-  calculatedDaysUntilPayday = null;
+  calculatedSafeToSpend = 0;
 }
 
 // Update with real Firebase data - NO FALLBACKS!
