@@ -122,7 +122,7 @@ export default function Bills() {
       // until they are explicitly paid, skipped, or otherwise resolved.
       const processed = allBills.map(bill => ({
         ...bill,
-        status: determineBillStatus(bill)
+        status: bill.paymentReviewCandidate === true ? 'review' : determineBillStatus(bill)
       }));
       
       console.log('✅ Loaded bills from financialEvents:', {
@@ -1625,7 +1625,20 @@ const refreshPlaidTransactions = async () => {
                     <div className="bill-title-row" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                       <h4 style={{ margin: 0 }}>
                         {bill.name}
-                        {bill.pendingPayment === true && (
+                        {bill.paymentReviewCandidate === true && (
+                      <span
+                        className="pending-payment-badge"
+                        title={`Bank debit detected at ${formatCurrency(bill.paymentReviewActualAmount)} vs expected ${formatCurrency(bill.paymentReviewExpectedAmount ?? bill.amount ?? bill.cost)}. Review before marking paid.`}
+                        style={{
+                          background: 'rgba(245, 158, 11, 0.16)',
+                          borderColor: 'rgba(245, 158, 11, 0.55)',
+                          color: '#fbbf24'
+                        }}
+                      >
+                        ⚠ Amount Changed
+                      </span>
+                    )}
+                    {bill.pendingPayment === true && (
                           <span
                             title="A matching Plaid transaction is pending. This bill remains officially unpaid until the transaction posts."
                             style={{
