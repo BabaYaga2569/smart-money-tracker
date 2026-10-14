@@ -38,12 +38,13 @@ export function buildHouseholdPayEvents(settings = {}, options = {}) {
   const yours = settings.paySchedules?.yours || {};
   const spouse = settings.paySchedules?.spouse || {};
 
-  const yourAmount = Number(
-    yours.amount ??
-    settings.payAmount ??
-    settings.yoursSchedule?.amount ??
-    0
-  ) || 0;
+  const yourAmountCandidates = [
+    yours.amount,
+    settings.payAmount,
+    settings.yourPayAmount,
+    settings.yoursSchedule?.amount
+  ].map(value => Number(value) || 0);
+  const yourAmount = yourAmountCandidates.find(value => value > 0) || 0;
   const lastPaydate =
     yours.lastPaydate ||
     yours.lastPayDate ||
@@ -57,12 +58,11 @@ export function buildHouseholdPayEvents(settings = {}, options = {}) {
     settings.earlyDeposit?.enabled === true ||
     settings.enableEarlyDeposit === true ||
     splitFixedAmount > 0;
-  const earlyAmount = Number(
-    settings.earlyDeposit?.amount ??
-    settings.earlyDepositAmount ??
-    splitFixedAmount ??
-    0
-  ) || 0;
+  const earlyAmount = [
+    settings.earlyDeposit?.amount,
+    settings.earlyDepositAmount,
+    splitFixedAmount
+  ].map(value => Number(value) || 0).find(value => value > 0) || 0;
   const daysBefore = Number(
     settings.earlyDeposit?.daysBefore ??
     settings.earlyDeposit?.daysBeforePayday ??
@@ -132,12 +132,11 @@ export function buildHouseholdPayEvents(settings = {}, options = {}) {
     }
   }
 
-  const spouseAmount = Number(
-    spouse.amount ??
-    settings.spousePayAmount ??
-    settings.spouseSchedule?.amount ??
-    0
-  ) || 0;
+  const spouseAmount = [
+    spouse.amount,
+    settings.spousePayAmount,
+    settings.spouseSchedule?.amount
+  ].map(value => Number(value) || 0).find(value => value > 0) || 0;
 
   if (spouseAmount > 0) {
     let cursor = new Date(today);
