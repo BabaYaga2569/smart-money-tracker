@@ -420,6 +420,42 @@ const ensureRequiredFields = (settings) => {
     }
   }
   
+  // Recover real pay values from backward-compatible root fields when
+  // schema defaults/placeholders left nested schedule fields blank or zero.
+  if (!ensured.paySchedules) ensured.paySchedules = {};
+  if (!ensured.paySchedules.yours) ensured.paySchedules.yours = {};
+  if (!ensured.paySchedules.spouse) ensured.paySchedules.spouse = {};
+
+  const nestedYourAmount = Number(ensured.paySchedules.yours.amount || 0);
+  const legacyYourAmount = Number(ensured.payAmount || ensured.yourPayAmount || 0);
+  if (nestedYourAmount <= 0 && legacyYourAmount > 0) {
+    ensured.paySchedules.yours.amount = legacyYourAmount;
+  }
+
+  const nestedYourLastPaydate =
+    ensured.paySchedules.yours.lastPaydate ||
+    ensured.paySchedules.yours.lastPayDate ||
+    '';
+  const legacyYourLastPaydate =
+    ensured.lastPayDate ||
+    ensured.yoursSchedule?.lastPaydate ||
+    ensured.yoursSchedule?.lastPayDate ||
+    '';
+  if (!nestedYourLastPaydate && legacyYourLastPaydate) {
+    ensured.paySchedules.yours.lastPaydate = legacyYourLastPaydate;
+  }
+
+  const nestedSpouseAmount = Number(ensured.paySchedules.spouse.amount || 0);
+  const legacySpouseAmount = Number(ensured.spousePayAmount || ensured.spouseSchedule?.amount || 0);
+  if (nestedSpouseAmount <= 0 && legacySpouseAmount > 0) {
+    ensured.paySchedules.spouse.amount = legacySpouseAmount;
+  }
+
+  // Preserve split-deposit compatibility when Settings stores it separately.
+  if (!ensured.paySchedules.yours.bankSplit && ensured.bankSplit) {
+    ensured.paySchedules.yours.bankSplit = deepClone(ensured.bankSplit);
+  }
+
   // Ensure critical structures exist
   if (!ensured.preferences) {
     ensured.preferences = { ...SCHEMA_V3.defaults.preferences };
