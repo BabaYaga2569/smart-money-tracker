@@ -1269,6 +1269,66 @@ export async function reverseIncorrectAutoBillMatch(db, userId, billId) {
   return reverseCanonicalBillPayment(db, userId, billId, 'auto-plaid-match');
 }
 
+export async function filterCurrentRecurringOccurrences(db, userId, bills = []) {
+  const recurringIds = [...new Set(
+    bills
+      .map(bill => bill?.recurringPatternId)
+      .filter(Boolean)
+  )];
+
+  const patternMap = new Map();
+  await Promise.all(recurringIds.map(async patternId => {
+    try {
+      const snap = await db.collection('users').doc(userId)
+        .collection('recurringPatterns').doc(patternId).get();
+      if (snap.exists) patternMap.set(patternId, snap.data());
+    } catch (error) {
+      console.warn(`[AutoClear] Unable to validate recurring pattern ${patternId}:`, error.message);
+    }
+  }));
+
+  const current = [];
+  const stale = [];
+
+  for (const bill of bills) {
+    if (!bill?.recurringPatternId) {
+      current.push(bill);
+      continue;
+    }
+
+    const pattern = patternMap.get(bill.recurringPatternId);
+    if (!pattern) {
+      current.push(bill);
+      continue;
+    }
+
+    const billDue = String(bill.dueDate || bill.nextDueDate || '').slice(0, 10);
+    const patternDue = String(pattern.nextOccurrence || '').slice(0, 10);
+
+    if (billDue && patternDue && billDue !== patternDue) {
+      stale.push({
+        id: bill.id,
+        name: bill.name,
+        billDue,
+        patternDue,
+        recurringPatternId: bill.recurringPatternId
+      });
+      continue;
+    }
+
+    current.push(bill);
+  }
+
+  if (stale.length > 0) {
+    console.warn(
+      `⚠️ [AutoClear] Ignoring ${stale.length} stale recurring occurrence(s) whose pattern already moved forward`,
+      stale
+    );
+  }
+
+  return { current, stale };
+}
+
 /**
  * Main bill matching and clearing function
  */
@@ -1279,11 +1339,14 @@ export async function runBillMatching(db, userId, transactions, bills) {
     // Load merchant aliases
     const merchantAliases = await loadMerchantAliases(db, userId);
     
-    // Filter to unpaid bills
+    // Filter to unpaid bills, then ignore stale recurring occurrences whose
+    // recurring pattern has already advanced to another due date.
     const unpaidBills = bills.filter(b => !b.isPaid && b.status !== 'paid' && b.status !== 'skipped');
+    const { current: currentUnpaidBills, stale: staleOccurrences } =
+      await filterCurrentRecurringOccurrences(db, userId, unpaidBills);
     
     // Enrich bills with aliases
-    const enrichedBills = enrichBillsWithAliases(unpaidBills, merchantAliases);
+    const enrichedBills = enrichBillsWithAliases(currentUnpaidBills, merchantAliases);
     
     console.log(`📊 [AutoClear] Analyzing ${transactions.length} transactions against ${enrichedBills.length} unpaid bills`);
     
@@ -1313,7 +1376,8 @@ export async function runBillMatching(db, userId, transactions, bills) {
         pendingMarked: pendingResult.pendingMarked,
         pendingCleared: pendingResult.pendingCleared,
         reviewMarked: reviewResult.reviewMarked,
-        reviewCleared: reviewResult.reviewCleared
+        reviewCleared: reviewResult.reviewCleared,
+        staleSkipped: staleOccurrences.length
       };
     }
     
@@ -1365,7 +1429,8 @@ export async function runBillMatching(db, userId, transactions, bills) {
       pendingMarked: pendingResult.pendingMarked,
       pendingCleared: pendingResult.pendingCleared,
       reviewMarked: reviewResult.reviewMarked,
-      reviewCleared: reviewResult.reviewCleared
+      reviewCleared: reviewResult.reviewCleared,
+      staleSkipped: staleOccurrences.length
     };
   } catch (error) {
     console.error('❌ [AutoClear] Error:', error);
@@ -1378,7 +1443,8 @@ export async function runBillMatching(db, userId, transactions, bills) {
       pendingMarked: 0,
       pendingCleared: 0,
       reviewMarked: 0,
-      reviewCleared: 0
+      reviewCleared: 0,
+      staleSkipped: 0
     };
   }
 }
