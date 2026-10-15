@@ -362,33 +362,43 @@ function familyFinancesFindExactForecastCandidate_(
   return { status: 'ONE', candidates: candidates };
 }
 
-function familyFinancesFindExactBankAmountDateCandidate_(monthSheet, txDate, amount, bank) {
+function familyFinancesFindExactBankAmountDateCandidate_(monthSheet, txDate, amount, bank, transactionId) {
   if (!monthSheet || monthSheet.getLastRow() < 2) {
     return { status: 'NONE', candidates: [] };
   }
 
-  const rows = monthSheet.getRange(2, 1, monthSheet.getLastRow() - 1, 6).getValues();
+  const rows = monthSheet.getRange(2, 1, monthSheet.getLastRow() - 1, 9).getValues();
   const candidates = [];
   const wantedBank = familyFinancesNorm_(bank);
+  const ownMarker = transactionId ? 'PLAID_TX:' + String(transactionId).trim() : '';
 
   rows.forEach(function(row, index) {
     const rowDate = row[0];
     const rowActual = row[3];
     const rowBank = row[4];
+    const rowMarkers = String(row[8] || '');
 
     if (!(rowDate instanceof Date) || isNaN(rowDate.getTime())) return;
     if (rowActual === '' || rowActual === null || !Number.isFinite(Number(rowActual))) return;
     if (familyFinancesNorm_(rowBank) !== wantedBank) return;
     if (!familyFinancesAmountsEqual_(rowActual, amount)) return;
 
+    // A cleared row already tagged to another Plaid transaction cannot satisfy
+    // a different transaction merely because amount/bank/date are identical.
+    // This is what prevents two separate $40 charges or recurring same-amount
+    // charges from collapsing onto one monthly row.
+    if (
+      ownMarker &&
+      rowMarkers.includes('PLAID_TX:') &&
+      !rowMarkers.includes(ownMarker)
+    ) {
+      return;
+    }
+
     const dayDifference = Math.abs(
       (rowDate.getTime() - txDate.getTime()) / (1000 * 60 * 60 * 24)
     );
 
-    // Banks commonly post one or more days after the user entered the purchase.
-    // Exact bank + exact cleared amount + a tight date window is strong enough
-    // to recognize an already-entered row even when the merchant/memo wording
-    // is completely different. If more than one row qualifies, never guess.
     if (dayDifference > 4) return;
 
     candidates.push({
@@ -1178,7 +1188,8 @@ function familyFinancesRecoverReadyToInsert_(ss, txSheet) {
       monthSheet,
       dateValue,
       amount,
-      bank
+      bank,
+      transactionId
     );
 
     if (exactResult.status === 'ONE') {
@@ -1205,7 +1216,8 @@ function familyFinancesRecoverReadyToInsert_(ss, txSheet) {
       dateValue,
       merchant,
       amount,
-      bank
+      bank,
+      transactionId
     );
 
     if (plannedResult.status === 'ONE') {
@@ -1885,7 +1897,8 @@ function familyFinancesRecoverExactForecastReviews_(ss, txSheet) {
       monthSheet,
       dateValue,
       amount,
-      bank
+      bank,
+      transactionId
     );
 
     if (alreadyActual.status !== 'NONE') {
@@ -1902,7 +1915,8 @@ function familyFinancesRecoverExactForecastReviews_(ss, txSheet) {
       monthSheet,
       dateValue,
       amount,
-      bank
+      bank,
+      transactionId
     );
 
     if (result.status !== 'ONE') {
@@ -2011,14 +2025,16 @@ function familyFinancesRecoverNewPostedOrdinary_(ss, txSheet, reviewSheet) {
       monthSheet,
       dateValue,
       amount,
-      bank
+      bank,
+      transactionId
     );
 
     const exactForecast = familyFinancesFindExactForecastCandidate_(
       monthSheet,
       dateValue,
       amount,
-      bank
+      bank,
+      transactionId
     );
 
     if (
