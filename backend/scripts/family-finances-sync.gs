@@ -696,6 +696,11 @@ function familyFinancesSafePostedSuggestion_(merchant, amount, currentSuggestion
     return suggestion;
   }
 
+  if (value < 0 && name.includes('disneyland resort express')) {
+    suggestion.category = 'Entertainment';
+    return suggestion;
+  }
+
   // Positive LifePoint entries are refunds in the user's ledger. Keep the
   // amount-direction guard so a future LifePoint debit is never auto-labeled
   // as a refund.
@@ -1599,7 +1604,8 @@ function familyFinancesInsertPendingForecast_(
     monthSheet,
     dateValue,
     amount,
-    bank
+    bank,
+    transactionId
   );
 
   if (exactResult.status === 'ONE') {
@@ -1977,6 +1983,113 @@ function familyFinancesRecoverExactForecastReviews_(ss, txSheet) {
   return recovered;
 }
 
+
+
+function familyFinancesRecoverCollapsedPostedMatches_(ss, txSheet) {
+  if (!txSheet || txSheet.getLastRow() < 2) return 0;
+
+  const rows = txSheet
+    .getRange(2, 1, txSheet.getLastRow() - 1, 11)
+    .getValues();
+
+  let recovered = 0;
+
+  rows.forEach(function(row, index) {
+    const transactionId = String(row[0] || '').trim();
+    const dateValue = row[1];
+    const merchant = String(row[2] || '').trim();
+    const amount = Number(row[3]);
+    const bank = String(row[4] || '').trim();
+    const currentCategory = String(row[5] || '').trim();
+    const pending = familyFinancesIsPending_(row[6]);
+    const status = String(row[7] || '').trim().toUpperCase();
+    const monthlyTab = String(row[8] || '').trim();
+    const matchedRow = Number(row[9]);
+    const notes = String(row[10] || '');
+    const lowerNotes = notes.toLowerCase();
+    const sheetRow = index + 2;
+
+    if (!transactionId || pending || status !== 'MATCH_FOUND') return;
+    if (lowerNotes.includes('collapsed posted match recovery v1 complete')) return;
+    if (!(dateValue instanceof Date) || isNaN(dateValue.getTime())) return;
+    if (!Number.isFinite(amount) || !bank || !monthlyTab || !matchedRow) return;
+
+    const monthSheet = ss.getSheetByName(monthlyTab);
+    if (!monthSheet || matchedRow > monthSheet.getLastRow()) return;
+
+    const marker = String(monthSheet.getRange(matchedRow, 9).getValue() || '');
+    const ownMarker = 'PLAID_TX:' + transactionId;
+
+    if (!marker.includes('PLAID_TX:') || marker.includes(ownMarker)) {
+      return;
+    }
+
+    let suggestion = familyFinancesMerchantSuggestion_(
+      ss,
+      merchant,
+      currentCategory
+    );
+
+    suggestion = familyFinancesSafePostedSuggestion_(
+      merchant,
+      amount,
+      suggestion
+    );
+
+    if (
+      !familyFinancesShouldAutoInsert_(
+        suggestion.merchant || merchant,
+        suggestion.category,
+        amount,
+        monthSheet,
+        []
+      )
+    ) {
+      txSheet.getRange(sheetRow, 8).setValue('REVIEW');
+      txSheet.getRange(sheetRow, 10).clearContent();
+      txSheet.getRange(sheetRow, 11).setValue(
+        familyFinancesAppendMarker_(
+          notes,
+          'collapsed posted match recovery v1 complete; prior monthly row belongs to a different Plaid transaction, so this item was returned to Review.'
+        )
+      );
+      return;
+    }
+
+    const writeResult = familyFinancesWriteMonthlyTransaction_(
+      monthSheet,
+      transactionId,
+      dateValue,
+      suggestion.merchant || merchant,
+      amount,
+      bank,
+      suggestion.category,
+      false
+    );
+
+    if (!writeResult.inserted) return;
+
+    if (suggestion.merchant && suggestion.merchant !== merchant) {
+      txSheet.getRange(sheetRow, 3).setValue(suggestion.merchant);
+    }
+    txSheet.getRange(sheetRow, 6).setValue(suggestion.category);
+    txSheet.getRange(sheetRow, 8, 1, 3).setValues([[
+      'INSERTED',
+      monthlyTab,
+      writeResult.rowNumber
+    ]]);
+    txSheet.getRange(sheetRow, 11).setValue(
+      familyFinancesAppendMarker_(
+        notes,
+        'collapsed posted match recovery v1 complete; inserted a separate monthly row because the prior row was tagged to another Plaid transaction.'
+      )
+    );
+
+    recovered++;
+  });
+
+  return recovered;
+}
 
 function familyFinancesRecoverNewPostedOrdinary_(ss, txSheet, reviewSheet) {
   if (!txSheet || txSheet.getLastRow() < 2) return 0;
@@ -2586,6 +2699,7 @@ function runFamilyFinancesSheetSync(processReviewQueue) {
   let postedPendingRecovered = 0;
   let exactForecastRecovered = 0;
   let newPostedOrdinaryRecovered = 0;
+  let collapsedPostedRecovered = 0;
   let reviewEditTrigger = 'not checked';
 
   try {
@@ -2622,6 +2736,11 @@ function runFamilyFinancesSheetSync(processReviewQueue) {
       ss,
       txSheet,
       reviewSheet
+    );
+
+    collapsedPostedRecovered = familyFinancesRecoverCollapsedPostedMatches_(
+      ss,
+      txSheet
     );
 
     const lastRow = txSheet.getLastRow();
@@ -2786,7 +2905,8 @@ function runFamilyFinancesSheetSync(processReviewQueue) {
             monthSheet,
             dateValue,
             amount,
-            bank
+            bank,
+            transactionId
           );
         }
 
@@ -3242,6 +3362,7 @@ function runFamilyFinancesSheetSync(processReviewQueue) {
       'Recovered posted-from-pending: ' + postedPendingRecovered + '. ' +
       'Recovered exact forecast reviews: ' + exactForecastRecovered + '. ' +
       'Recovered new posted ordinary: ' + newPostedOrdinaryRecovered + '. ' +
+      'Recovered collapsed posted matches: ' + collapsedPostedRecovered + '. ' +
       'Closed stale review: ' + closedReview + '. ' +
       'Archived resolved review: ' + archivedReview + '. ' +
       'Review edit trigger: ' + reviewEditTrigger + '. ' +
@@ -3274,6 +3395,7 @@ function runFamilyFinancesSheetSync(processReviewQueue) {
       postedPendingRecovered: postedPendingRecovered,
       exactForecastRecovered: exactForecastRecovered,
       newPostedOrdinaryRecovered: newPostedOrdinaryRecovered,
+      collapsedPostedRecovered: collapsedPostedRecovered,
       closedReview: closedReview,
       archivedReview: archivedReview,
       reviewEditTrigger: reviewEditTrigger
