@@ -147,7 +147,9 @@ function familyFinancesIsAutoInsertCategory_(category) {
     'home/garden',
     'bills/other',
     'fees',
-    'entertainment'
+    'entertainment',
+    'refund/credit',
+    'income/paycheck'
   ]);
 
   return allowed.has(normalized);
@@ -161,9 +163,26 @@ function familyFinancesShouldAutoInsert_(
   matchResults
 ) {
   if (!monthSheet) return false;
-  if (!Number.isFinite(Number(amount)) || Number(amount) >= 0) return false;
+
+  const numericAmount = Number(amount);
+  const normalizedCategory = String(category || '').trim().toLowerCase();
+
+  if (!Number.isFinite(numericAmount)) return false;
   if (familyFinancesIsMixedMerchant_(merchant)) return false;
-  if (!familyFinancesIsAutoInsertCategory_(category)) return false;
+
+  if (numericAmount < 0) {
+    if (!familyFinancesIsAutoInsertCategory_(category)) return false;
+  } else {
+    // Positive transactions are only safe unattended inserts when their
+    // accounting meaning is explicit. Transfers and ambiguous deposits stay
+    // in Review.
+    if (
+      normalizedCategory !== 'refund/credit' &&
+      normalizedCategory !== 'income/paycheck'
+    ) {
+      return false;
+    }
+  }
 
   const results = matchResults || [];
   if (results.some(function(result) {
@@ -464,6 +483,78 @@ function familyFinancesMerchantSuggestion_(ss, merchant, currentCategory) {
   return { merchant: cleanMerchant, category: category };
 }
 
+
+
+function familyFinancesSafePostedSuggestion_(merchant, amount, currentSuggestion) {
+  const suggestion = {
+    merchant: String(
+      currentSuggestion && currentSuggestion.merchant
+        ? currentSuggestion.merchant
+        : merchant || ''
+    ).trim(),
+    category: String(
+      currentSuggestion && currentSuggestion.category
+        ? currentSuggestion.category
+        : 'Needs Review'
+    ).trim()
+  };
+
+  const name = familyFinancesNorm_(merchant);
+  const value = Number(amount);
+
+  // Never override a confident existing category.
+  if (
+    suggestion.category &&
+    suggestion.category.toLowerCase() !== 'needs review' &&
+    suggestion.category.toLowerCase() !== 'uncategorized'
+  ) {
+    return suggestion;
+  }
+
+  // Safe, single-purpose merchants seen in the user's manually maintained
+  // ledger. These are intentionally narrow; mixed merchants stay in Review.
+  if (value < 0) {
+    if (
+      name.includes('dairy queen') ||
+      name.includes('olive garden') ||
+      name.includes('carls jr') ||
+      name.includes('carl s jr')
+    ) {
+      suggestion.category = 'Dining';
+      return suggestion;
+    }
+
+    if (name.includes('great clips')) {
+      suggestion.category = 'Bills/Other';
+      return suggestion;
+    }
+
+    if (name.includes('justad park')) {
+      suggestion.category = 'Entertainment';
+      return suggestion;
+    }
+
+    if (name.includes('mad hatter')) {
+      suggestion.category = 'Shopping';
+      return suggestion;
+    }
+
+    if (name.includes('csc serviceworks')) {
+      suggestion.category = 'Bills/Other';
+      return suggestion;
+    }
+  }
+
+  // Positive LifePoint entries are refunds in the user's ledger. Keep the
+  // amount-direction guard so a future LifePoint debit is never auto-labeled
+  // as a refund.
+  if (value > 0 && name.includes('lifepoint')) {
+    suggestion.category = 'Refund/Credit';
+    return suggestion;
+  }
+
+  return suggestion;
+}
 
 function familyFinancesAmountsEqual_(left, right) {
   const a = Number(left);
@@ -1731,6 +1822,114 @@ function familyFinancesRecoverExactForecastReviews_(ss, txSheet) {
   return recovered;
 }
 
+
+function familyFinancesRecoverNewPostedOrdinary_(ss, txSheet, reviewSheet) {
+  if (!txSheet || txSheet.getLastRow() < 2) return 0;
+
+  const rows = txSheet
+    .getRange(2, 1, txSheet.getLastRow() - 1, 11)
+    .getValues();
+
+  let recovered = 0;
+
+  rows.forEach(function(row, index) {
+    const transactionId = String(row[0] || '').trim();
+    const dateValue = row[1];
+    const originalMerchant = String(row[2] || '').trim();
+    const amount = Number(row[3]);
+    const bank = String(row[4] || '').trim();
+    const currentCategory = String(row[5] || '').trim();
+    const pending = familyFinancesIsPending_(row[6]);
+    const status = String(row[7] || '').trim().toUpperCase();
+    const notes = String(row[10] || '');
+    const lowerNotes = notes.toLowerCase();
+    const sheetRow = index + 2;
+
+    if (!transactionId || pending || status !== 'REVIEW') return;
+    if (lowerNotes.includes('new posted ordinary recovery v1 complete')) return;
+    if (!(dateValue instanceof Date) || isNaN(dateValue.getTime())) return;
+    if (!Number.isFinite(amount) || !bank) return;
+
+    const monthlyTab = familyFinancesMonthTabName_(dateValue);
+    const monthSheet = ss.getSheetByName(monthlyTab);
+    if (!monthSheet) return;
+
+    let suggestion = familyFinancesMerchantSuggestion_(
+      ss,
+      originalMerchant,
+      currentCategory
+    );
+
+    suggestion = familyFinancesSafePostedSuggestion_(
+      originalMerchant,
+      amount,
+      suggestion
+    );
+
+    const exactActual = familyFinancesFindExactBankAmountDateCandidate_(
+      monthSheet,
+      dateValue,
+      amount,
+      bank
+    );
+
+    const exactForecast = familyFinancesFindExactForecastCandidate_(
+      monthSheet,
+      dateValue,
+      amount,
+      bank
+    );
+
+    if (
+      !familyFinancesShouldAutoInsert_(
+        suggestion.merchant || originalMerchant,
+        suggestion.category,
+        amount,
+        monthSheet,
+        [exactActual, exactForecast]
+      )
+    ) {
+      return;
+    }
+
+    const writeResult = familyFinancesWriteMonthlyTransaction_(
+      monthSheet,
+      transactionId,
+      dateValue,
+      suggestion.merchant || originalMerchant,
+      amount,
+      bank,
+      suggestion.category,
+      false
+    );
+
+    if (!writeResult.inserted) return;
+
+    if (suggestion.merchant && suggestion.merchant !== originalMerchant) {
+      txSheet.getRange(sheetRow, 3).setValue(suggestion.merchant);
+    }
+    txSheet.getRange(sheetRow, 6).setValue(suggestion.category);
+    txSheet.getRange(sheetRow, 8, 1, 3).setValues([[
+      'INSERTED',
+      monthlyTab,
+      writeResult.rowNumber
+    ]]);
+
+    txSheet.getRange(sheetRow, 11).setValue(
+      familyFinancesAppendMarker_(
+        notes,
+        'new posted ordinary recovery v1 complete; auto-inserted into monthly row ' +
+        writeResult.rowNumber +
+        ' using a narrow safe merchant/category rule.'
+      )
+    );
+
+    recovered++;
+  });
+
+  return recovered;
+}
+
 function familyFinancesQueueReview_(
   reviewSheet,
   existingReviewIds,
@@ -2229,6 +2428,7 @@ function runFamilyFinancesSheetSync(processReviewQueue) {
   let collisionRepair = { repairedMarkers: 0, reprocessed: 0 };
   let postedPendingRecovered = 0;
   let exactForecastRecovered = 0;
+  let newPostedOrdinaryRecovered = 0;
   let reviewEditTrigger = 'not checked';
 
   try {
@@ -2257,6 +2457,15 @@ function runFamilyFinancesSheetSync(processReviewQueue) {
     // One-time cleanup of posted REVIEW items that already have exactly one
     // forecast-only monthly row with the same amount/bank/date window.
     exactForecastRecovered = familyFinancesRecoverExactForecastReviews_(ss, txSheet);
+
+    // Catch up safe ordinary posted transactions that had no pre-existing
+    // forecast row. Narrow merchant rules + sign-aware categories keep mixed
+    // merchants, transfers, and ambiguous deposits in Review.
+    newPostedOrdinaryRecovered = familyFinancesRecoverNewPostedOrdinary_(
+      ss,
+      txSheet,
+      reviewSheet
+    );
 
     const lastRow = txSheet.getLastRow();
 
@@ -2305,10 +2514,16 @@ function runFamilyFinancesSheetSync(processReviewQueue) {
         familyFinancesSetPlainText_(txSheet.getRange(sheetRow, 9), monthlyTab);
 
         const monthSheet = ss.getSheetByName(monthlyTab);
-        const suggestion = familyFinancesMerchantSuggestion_(
+        let suggestion = familyFinancesMerchantSuggestion_(
           ss,
           originalMerchant,
           currentCategory
+        );
+
+        suggestion = familyFinancesSafePostedSuggestion_(
+          originalMerchant,
+          amount,
+          suggestion
         );
 
         if (familyFinancesIsPending_(pendingValue)) {
@@ -2869,6 +3084,7 @@ function runFamilyFinancesSheetSync(processReviewQueue) {
       'Reprocessed collision rows: ' + collisionRepair.reprocessed + '. ' +
       'Recovered posted-from-pending: ' + postedPendingRecovered + '. ' +
       'Recovered exact forecast reviews: ' + exactForecastRecovered + '. ' +
+      'Recovered new posted ordinary: ' + newPostedOrdinaryRecovered + '. ' +
       'Closed stale review: ' + closedReview + '. ' +
       'Archived resolved review: ' + archivedReview + '. ' +
       'Review edit trigger: ' + reviewEditTrigger + '. ' +
@@ -2900,6 +3116,7 @@ function runFamilyFinancesSheetSync(processReviewQueue) {
       collisionRepair: collisionRepair,
       postedPendingRecovered: postedPendingRecovered,
       exactForecastRecovered: exactForecastRecovered,
+      newPostedOrdinaryRecovered: newPostedOrdinaryRecovered,
       closedReview: closedReview,
       archivedReview: archivedReview,
       reviewEditTrigger: reviewEditTrigger
