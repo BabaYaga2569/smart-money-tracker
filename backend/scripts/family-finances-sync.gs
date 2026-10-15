@@ -1012,6 +1012,45 @@ function familyFinancesPendingAmountMayVary_(merchant, category) {
     normalizedCategory === 'insurance';
 }
 
+function familyFinancesIsVerifiedPendingRecurringAlias_(
+  merchant,
+  plannedMerchant,
+  amount,
+  bank
+) {
+  const incoming = familyFinancesNorm_(merchant);
+  const planned = familyFinancesNorm_(plannedMerchant);
+  const value = Number(amount);
+  const bankNorm = familyFinancesNorm_(bank);
+
+  // User-verified tracker billing identity. LAS / Las Systems is the vendor
+  // wording used by the bank for the $8.95 vehicle tracker charge.
+  if (
+    familyFinancesAmountsEqual_(value, -8.95) &&
+    bankNorm === 'sofi' &&
+    (incoming === 'las' || incoming.includes('las systems')) &&
+    planned.includes('dodge ram tracker')
+  ) {
+    return true;
+  }
+
+  // User-verified side-by-side loan identity. America First's bank wording is
+  // different from the monthly plan label but the amount/bank are stable.
+  if (
+    familyFinancesAmountsEqual_(value, -295.36) &&
+    bankNorm === 'bofa' &&
+    incoming.includes('america first') &&
+    incoming.includes('loan') &&
+    planned.includes('side x side') &&
+    planned.includes('america 1st credit union')
+  ) {
+    return true;
+  }
+
+  return false;
+}
+
+
 function familyFinancesFindPendingMerchantCandidate_(
   monthSheet,
   dateValue,
@@ -1044,7 +1083,17 @@ function familyFinancesFindPendingMerchantCandidate_(
 
     if (actual !== '' && actual !== null) return;
     if (forecast === '' || forecast === null) return;
-    if (!familyFinancesMerchantSharesCoreIdentity_(merchant, rowMerchant)) return;
+
+    const merchantIdentityMatches =
+      familyFinancesMerchantSharesCoreIdentity_(merchant, rowMerchant) ||
+      familyFinancesIsVerifiedPendingRecurringAlias_(
+        merchant,
+        rowMerchant,
+        amount,
+        bank
+      );
+
+    if (!merchantIdentityMatches) return;
 
     // Exact amount is required for ordinary/mixed merchants. Only a strong
     // recurring-bill category may reuse the row when the amount changed.
