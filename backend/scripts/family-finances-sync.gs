@@ -249,6 +249,60 @@ function familyFinancesFindAlreadyEnteredCandidate_(monthSheet, merchant, amount
   return { status: 'ONE', candidates: candidates };
 }
 
+
+function familyFinancesFindExactForecastCandidate_(
+  monthSheet,
+  txDate,
+  amount,
+  bank
+) {
+  if (!monthSheet || monthSheet.getLastRow() < 2) {
+    return { status: 'NONE', candidates: [] };
+  }
+
+  const rows = monthSheet
+    .getRange(2, 1, monthSheet.getLastRow() - 1, 6)
+    .getValues();
+
+  const wantedBank = familyFinancesNorm_(bank);
+  const candidates = [];
+
+  rows.forEach(function(row, index) {
+    const rowDate = row[0];
+    const forecast = row[2];
+    const actual = row[3];
+    const rowBank = String(row[4] || '').trim();
+
+    if (!(rowDate instanceof Date) || isNaN(rowDate.getTime())) return;
+    if (!familyFinancesAmountsEqual_(forecast, amount)) return;
+    if (actual !== '' && actual !== null) return;
+
+    const rowBankNorm = familyFinancesNorm_(rowBank);
+    if (rowBankNorm && wantedBank && rowBankNorm !== wantedBank) return;
+
+    const dayDifference = Math.abs(
+      (rowDate.getTime() - txDate.getTime()) / 86400000
+    );
+
+    if (dayDifference > 4) return;
+
+    candidates.push({
+      rowNumber: index + 2,
+      values: row,
+      dayDifference: dayDifference
+    });
+  });
+
+  if (candidates.length === 0) {
+    return { status: 'NONE', candidates: candidates };
+  }
+  if (candidates.length > 1) {
+    return { status: 'MULTIPLE', candidates: candidates };
+  }
+
+  return { status: 'ONE', candidates: candidates };
+}
+
 function familyFinancesFindExactBankAmountDateCandidate_(monthSheet, txDate, amount, bank) {
   if (!monthSheet || monthSheet.getLastRow() < 2) {
     return { status: 'NONE', candidates: [] };
@@ -1561,6 +1615,122 @@ function familyFinancesRecoverPostedFromPending_(ss, txSheet) {
   return recovered;
 }
 
+
+function familyFinancesRecoverExactForecastReviews_(ss, txSheet) {
+  if (!txSheet || txSheet.getLastRow() < 2) return 0;
+
+  const rows = txSheet
+    .getRange(2, 1, txSheet.getLastRow() - 1, 11)
+    .getValues();
+
+  let recovered = 0;
+
+  rows.forEach(function(row, index) {
+    const transactionId = String(row[0] || '').trim();
+    const dateValue = row[1];
+    const amount = Number(row[3]);
+    const bank = String(row[4] || '').trim();
+    const category = String(row[5] || '').trim();
+    const pending = familyFinancesIsPending_(row[6]);
+    const status = String(row[7] || '').trim().toUpperCase();
+    const notes = String(row[10] || '');
+    const lowerNotes = notes.toLowerCase();
+    const sheetRow = index + 2;
+
+    if (!transactionId || pending || status !== 'REVIEW') return;
+    if (lowerNotes.includes('exact forecast recovery v1 complete')) return;
+    if (!(dateValue instanceof Date) || isNaN(dateValue.getTime())) return;
+    if (!Number.isFinite(amount) || !bank) return;
+
+    const monthlyTab = familyFinancesMonthTabName_(dateValue);
+    const monthSheet = ss.getSheetByName(monthlyTab);
+    if (!monthSheet) return;
+
+    // Never clear another forecast if this posted amount is already represented
+    // as an actual monthly transaction. That is how we avoid old duplicate
+    // McDonald's/Sam's forecast artifacts.
+    const alreadyActual = familyFinancesFindExactBankAmountDateCandidate_(
+      monthSheet,
+      dateValue,
+      amount,
+      bank
+    );
+
+    if (alreadyActual.status !== 'NONE') {
+      txSheet.getRange(sheetRow, 11).setValue(
+        familyFinancesAppendMarker_(
+          notes,
+          'exact forecast recovery v1 complete; skipped because an actual monthly row already represents this bank amount.'
+        )
+      );
+      return;
+    }
+
+    const result = familyFinancesFindExactForecastCandidate_(
+      monthSheet,
+      dateValue,
+      amount,
+      bank
+    );
+
+    if (result.status !== 'ONE') {
+      txSheet.getRange(sheetRow, 11).setValue(
+        familyFinancesAppendMarker_(
+          notes,
+          'exact forecast recovery v1 complete; ' +
+          (result.status === 'MULTIPLE'
+            ? 'multiple forecast rows matched exact amount/bank/date window.'
+            : 'no unique forecast row matched exact amount/bank/date window.')
+        )
+      );
+      return;
+    }
+
+    const candidate = result.candidates[0];
+    const rowNumber = candidate.rowNumber;
+
+    monthSheet.getRange(rowNumber, 4).setValue(amount);
+
+    if (!String(candidate.values[4] || '').trim() && bank) {
+      monthSheet.getRange(rowNumber, 5).setValue(bank);
+    }
+
+    if (
+      !String(candidate.values[5] || '').trim() &&
+      category &&
+      String(category).trim().toLowerCase() !== 'needs review'
+    ) {
+      monthSheet.getRange(rowNumber, 6).setValue(category);
+    }
+
+    const noteCell = monthSheet.getRange(rowNumber, 9);
+    const current = String(noteCell.getValue() || '').trim();
+    const postedMarker = 'PLAID_TX:' + transactionId;
+    if (!current.includes(postedMarker)) {
+      noteCell.setValue(current ? current + '; ' + postedMarker : postedMarker);
+    }
+
+    txSheet.getRange(sheetRow, 8, 1, 3).setValues([[
+      'MATCH_FOUND',
+      monthlyTab,
+      rowNumber
+    ]]);
+
+    txSheet.getRange(sheetRow, 11).setValue(
+      familyFinancesAppendMarker_(
+        notes,
+        'exact forecast recovery v1 complete; cleared monthly row ' +
+        rowNumber +
+        ' using one unique forecast-only row with exact amount + compatible bank + 4-day window.'
+      )
+    );
+
+    recovered++;
+  });
+
+  return recovered;
+}
+
 function familyFinancesQueueReview_(
   reviewSheet,
   existingReviewIds,
@@ -2058,6 +2228,7 @@ function runFamilyFinancesSheetSync(processReviewQueue) {
   let legacyPendingRecovered = 0;
   let collisionRepair = { repairedMarkers: 0, reprocessed: 0 };
   let postedPendingRecovered = 0;
+  let exactForecastRecovered = 0;
   let reviewEditTrigger = 'not checked';
 
   try {
@@ -2082,6 +2253,10 @@ function runFamilyFinancesSheetSync(processReviewQueue) {
     // Resolve posted replacements against the exact pending transaction they
     // replaced. This safely removes many Amazon/Walmart/etc. items from Review.
     postedPendingRecovered = familyFinancesRecoverPostedFromPending_(ss, txSheet);
+
+    // One-time cleanup of posted REVIEW items that already have exactly one
+    // forecast-only monthly row with the same amount/bank/date window.
+    exactForecastRecovered = familyFinancesRecoverExactForecastReviews_(ss, txSheet);
 
     const lastRow = txSheet.getLastRow();
 
@@ -2266,6 +2441,71 @@ function runFamilyFinancesSheetSync(processReviewQueue) {
           );
 
           alreadyEntered++;
+          continue;
+        }
+
+        // Next, clear a unique forecast-only row by exact amount + bank +
+        // tight date window. This is safe even for mixed merchants because we
+        // require exactly one candidate and refuse to guess when ambiguous.
+        let exactForecastResult = { status: 'NONE', candidates: [] };
+
+        if (monthSheet) {
+          exactForecastResult = familyFinancesFindExactForecastCandidate_(
+            monthSheet,
+            dateValue,
+            amount,
+            bank
+          );
+        }
+
+        if (
+          autoUpdateMatched &&
+          exactForecastResult.status === 'ONE'
+        ) {
+          const candidate = exactForecastResult.candidates[0];
+
+          monthSheet.getRange(candidate.rowNumber, 4).setValue(amount);
+
+          if (!String(candidate.values[4] || '').trim() && bank) {
+            monthSheet.getRange(candidate.rowNumber, 5).setValue(bank);
+          }
+
+          const matchedCategory = String(candidate.values[5] || '').trim();
+          if (matchedCategory) {
+            txSheet.getRange(sheetRow, 6).setValue(matchedCategory);
+          } else if (
+            suggestion.category &&
+            String(suggestion.category).trim().toLowerCase() !== 'needs review'
+          ) {
+            monthSheet.getRange(candidate.rowNumber, 6).setValue(suggestion.category);
+            txSheet.getRange(sheetRow, 6).setValue(suggestion.category);
+          }
+
+          const markerCell = monthSheet.getRange(candidate.rowNumber, 9);
+          const currentMarker = String(markerCell.getValue() || '').trim();
+          const postedMarker = 'PLAID_TX:' + transactionId;
+          if (!currentMarker.includes(postedMarker)) {
+            markerCell.setValue(
+              currentMarker ? currentMarker + '; ' + postedMarker : postedMarker
+            );
+          }
+
+          txSheet.getRange(sheetRow, 8, 1, 3).setValues([[
+            'MATCH_FOUND',
+            monthlyTab,
+            candidate.rowNumber
+          ]]);
+
+          txSheet.getRange(sheetRow, 11).setValue(
+            familyFinancesAppendMarker_(
+              originalNotes,
+              'unique forecast-only row cleared in ' + monthlyTab +
+              ' row ' + candidate.rowNumber +
+              ' using exact amount + compatible bank + 4-day posting window.'
+            )
+          );
+
+          cleared++;
           continue;
         }
 
@@ -2628,6 +2868,7 @@ function runFamilyFinancesSheetSync(processReviewQueue) {
       'Repaired pending markers: ' + collisionRepair.repairedMarkers + '. ' +
       'Reprocessed collision rows: ' + collisionRepair.reprocessed + '. ' +
       'Recovered posted-from-pending: ' + postedPendingRecovered + '. ' +
+      'Recovered exact forecast reviews: ' + exactForecastRecovered + '. ' +
       'Closed stale review: ' + closedReview + '. ' +
       'Archived resolved review: ' + archivedReview + '. ' +
       'Review edit trigger: ' + reviewEditTrigger + '. ' +
@@ -2658,6 +2899,7 @@ function runFamilyFinancesSheetSync(processReviewQueue) {
       legacyPendingRecovered: legacyPendingRecovered,
       collisionRepair: collisionRepair,
       postedPendingRecovered: postedPendingRecovered,
+      exactForecastRecovered: exactForecastRecovered,
       closedReview: closedReview,
       archivedReview: archivedReview,
       reviewEditTrigger: reviewEditTrigger
