@@ -3511,3 +3511,99 @@ function removeFamilyFinancesSheetSyncTriggers() {
     8
   );
 }
+
+
+function repairKnownOctoberCollapsedMatches() {
+  const ss = familyFinancesSpreadsheet_();
+
+  if (ss.getId() !== FAMILY_FINANCES_TEST_SHEET_ID) {
+    throw new Error('Repair is locked to the TEST spreadsheet.');
+  }
+
+  const txSheet = ss.getSheetByName('Plaid_Transactions');
+  if (!txSheet) throw new Error('Plaid_Transactions sheet not found.');
+
+  const repairs = {
+    'jNjRpXEOR1TL9dPMbDZ0hv6Vzy6nMgFQKbnLL': 'Subscriptions',
+    '48xrZ16LAqCQymyPDB1vcxLb3wwmw9UnJya6D': 'Entertainment'
+  };
+
+  const rows = txSheet
+    .getRange(2, 1, txSheet.getLastRow() - 1, 11)
+    .getValues();
+
+  const results = [];
+
+  rows.forEach(function(row, index) {
+    const transactionId = String(row[0] || '').trim();
+    if (!Object.prototype.hasOwnProperty.call(repairs, transactionId)) return;
+
+    const dateValue = row[1];
+    const merchant = String(row[2] || '').trim();
+    const amount = Number(row[3]);
+    const bank = String(row[4] || '').trim();
+    const monthlyTab = familyFinancesMonthTabName_(dateValue);
+    const monthSheet = ss.getSheetByName(monthlyTab);
+    const sheetRow = index + 2;
+
+    if (!monthSheet) {
+      results.push(transactionId + ': monthly tab missing');
+      return;
+    }
+
+    const marker = 'PLAID_TX:' + transactionId;
+    const markerValues = monthSheet
+      .getRange(1, 9, monthSheet.getLastRow(), 1)
+      .getValues();
+
+    const alreadyExists = markerValues.some(function(r) {
+      return String(r[0] || '').includes(marker);
+    });
+
+    if (alreadyExists) {
+      results.push(transactionId + ': already repaired');
+      return;
+    }
+
+    const writeResult = familyFinancesWriteMonthlyTransaction_(
+      monthSheet,
+      transactionId,
+      dateValue,
+      merchant,
+      amount,
+      bank,
+      repairs[transactionId],
+      false
+    );
+
+    if (!writeResult.inserted) {
+      results.push(transactionId + ': ' + writeResult.reason);
+      return;
+    }
+
+    txSheet.getRange(sheetRow, 6).setValue(repairs[transactionId]);
+    txSheet.getRange(sheetRow, 8, 1, 3).setValues([[
+      'INSERTED',
+      monthlyTab,
+      writeResult.rowNumber
+    ]]);
+
+    txSheet.getRange(sheetRow, 11).setValue(
+      familyFinancesAppendMarker_(
+        row[10],
+        'known October collapsed-match repair created separate monthly row ' +
+        writeResult.rowNumber + '.'
+      )
+    );
+
+    results.push(transactionId + ': repaired at row ' + writeResult.rowNumber);
+  });
+
+  ss.toast(
+    results.join(' | ') || 'No known October collapsed matches found.',
+    'Family Finances Repair',
+    10
+  );
+
+  return results;
+}
