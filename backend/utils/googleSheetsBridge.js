@@ -61,6 +61,18 @@ async function sheetsGet_(token, spreadsheetId, range) {
   return response.json();
 }
 
+async function sheetsGetUnformatted_(token, spreadsheetId, range) {
+  const id = encodeURIComponent(spreadsheetId);
+  const url =
+    `https://sheets.googleapis.com/v4/spreadsheets/${id}/values/${encodeURIComponent(range)}` +
+    '?valueRenderOption=UNFORMATTED_VALUE&dateTimeRenderOption=SERIAL_NUMBER';
+  const response = await fetch(url, { headers: { Authorization: `Bearer ${token}` } });
+  if (!response.ok) {
+    throw new Error(`Sheets GET failed (${response.status}): ${(await response.text()).slice(0, 250)}`);
+  }
+  return response.json();
+}
+
 async function sheetsPut_(token, spreadsheetId, range, values) {
   const id = encodeURIComponent(spreadsheetId);
   const url = `https://sheets.googleapis.com/v4/spreadsheets/${id}/values/${encodeURIComponent(range)}?valueInputOption=RAW`;
@@ -177,6 +189,27 @@ function buildRow_(transaction, account, institution, bank) {
   ];
 }
 
+
+function sheetBoolean_(value) {
+  if (typeof value === 'boolean') return value;
+  return String(value || '').trim().toLowerCase() === 'true';
+}
+
+function sourceFieldsDiffer_(existingRow, canonicalRow) {
+  const existingDate = Number(existingRow?.[1]);
+  const canonicalDate = Number(canonicalRow?.[1]);
+  const existingAmount = Number(existingRow?.[3]);
+  const canonicalAmount = Number(canonicalRow?.[3]);
+
+  if (!Number.isFinite(existingDate) || existingDate !== canonicalDate) return true;
+  if (String(existingRow?.[2] || '') !== String(canonicalRow?.[2] || '')) return true;
+  if (!Number.isFinite(existingAmount) || Math.abs(existingAmount - canonicalAmount) > 0.000001) return true;
+  if (String(existingRow?.[4] || '') !== String(canonicalRow?.[4] || '')) return true;
+  if (sheetBoolean_(existingRow?.[6]) !== Boolean(canonicalRow?.[6])) return true;
+
+  return false;
+}
+
 function resolveCutoff_() {
   const cutoff = process.env.SHEETS_START_DATE ||
     new Date(Date.now() - 35 * 86400000).toISOString().slice(0, 10);
@@ -223,7 +256,7 @@ export async function bridgeFirebaseTransactionsToSheets({
   const token = await sheetsToken_(serviceAccount);
 
   const [sheet, accountMapSheet, settingsDoc, txSnapshot] = await Promise.all([
-    sheetsGet_(token, spreadsheetId, `${sheetName}!A:K`),
+    sheetsGetUnformatted_(token, spreadsheetId, `${sheetName}!A:K`),
     sheetsGet_(token, spreadsheetId, 'Account_Map!A:D'),
     db.collection('users').doc(userId).collection('settings').doc('personal').get(),
     db.collection('users').doc(userId).collection('transactions').where('date', '>=', cutoff).get()
@@ -288,6 +321,7 @@ export async function bridgeFirebaseTransactionsToSheets({
 
   const staged = [];
   const replacements = [];
+  const existingRefreshes = [];
   const skipped = {
     manual: 0,
     nonChecking: 0,
@@ -384,11 +418,6 @@ export async function bridgeFirebaseTransactionsToSheets({
       continue;
     }
 
-    if (knownById.has(transactionId)) {
-      skipped.existing++;
-      continue;
-    }
-
     const account = accountById.get(accountId) || {
       account_id: accountId,
       name: 'Checking'
@@ -415,6 +444,49 @@ export async function bridgeFirebaseTransactionsToSheets({
         institution || 'Unknown bank',
         bank
       );
+
+      if (knownById.has(transactionId)) {
+        const existing = knownById.get(transactionId);
+        const primaryId = String(existing.row?.[0] || '').trim();
+
+        // A pending predecessor ID is also indexed as an alias of its posted
+        // replacement. Never let a stale Firestore predecessor overwrite the
+        // posted staging row that superseded it.
+        if (primaryId === transactionId && sourceFieldsDiffer_(existing.row, row)) {
+          existingRefreshes.push({
+            sheetRow: existing.sheetRow,
+            transactionId,
+            values: [
+              row[1],
+              row[2],
+              row[3],
+              row[4],
+              existing.row?.[5] ?? row[5],
+              row[6]
+            ]
+          });
+
+          knownById.set(transactionId, {
+            sheetRow: existing.sheetRow,
+            row: [
+              transactionId,
+              row[1],
+              row[2],
+              row[3],
+              row[4],
+              existing.row?.[5] ?? row[5],
+              row[6],
+              existing.row?.[7] ?? '',
+              existing.row?.[8] ?? '',
+              existing.row?.[9] ?? '',
+              existing.row?.[10] ?? ''
+            ]
+          });
+        }
+
+        skipped.existing++;
+        continue;
+      }
 
       if (!Boolean(tx.pending) && pendingId && knownById.has(pendingId)) {
         const existing = knownById.get(pendingId);
@@ -444,6 +516,7 @@ export async function bridgeFirebaseTransactionsToSheets({
     firestoreTransactionsScanned: transactions.length,
     totalNew: staged.length,
     totalPostedReplacements: replacements.length,
+    totalExistingRefreshed: existingRefreshes.length,
     skippedCounts: skipped
   };
 
@@ -466,10 +539,26 @@ export async function bridgeFirebaseTransactionsToSheets({
       amount: replacement.values[3],
       bank: replacement.values[4]
     }));
+    result.previewExistingRefreshes = existingRefreshes.map(refresh => ({
+      sheetRow: refresh.sheetRow,
+      transactionId: refresh.transactionId,
+      dateSerial: refresh.values[0],
+      merchant: refresh.values[1],
+      amount: refresh.values[2],
+      bank: refresh.values[3],
+      pending: refresh.values[5]
+    }));
     return result;
   }
 
   await formatDateColumn_(token, spreadsheetId, sheetName);
+
+  for (const refresh of existingRefreshes) {
+    // Refresh only bank-source fields B:G. Preserve the learned category in F,
+    // plus Apps Script reconciliation state in H:K.
+    const range = `${sheetName}!B${refresh.sheetRow}:G${refresh.sheetRow}`;
+    await sheetsPut_(token, spreadsheetId, range, [refresh.values]);
+  }
 
   for (const replacement of replacements) {
     const range = `${sheetName}!A${replacement.sheetRow}:K${replacement.sheetRow}`;
