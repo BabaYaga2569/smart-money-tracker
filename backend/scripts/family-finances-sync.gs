@@ -1874,6 +1874,7 @@ function familyFinancesRecoverPostedFromPending_(ss, txSheet) {
   rows.forEach(function(row, index) {
     const transactionId = String(row[0] || '').trim();
     const dateValue = row[1];
+    const merchant = String(row[2] || '').trim();
     const amount = Number(row[3]);
     const bank = String(row[4] || '').trim();
     const category = String(row[5] || '').trim();
@@ -1895,16 +1896,42 @@ function familyFinancesRecoverPostedFromPending_(ss, txSheet) {
     const monthSheet = ss.getSheetByName(monthlyTab);
     if (!monthSheet) return;
 
+    let suggestion = familyFinancesMerchantSuggestion_(
+      ss,
+      merchant,
+      category
+    );
+    suggestion = familyFinancesSafePostedSuggestion_(
+      merchant,
+      amount,
+      suggestion
+    );
+
+    const resolvedCategory = String(
+      suggestion && suggestion.category
+        ? suggestion.category
+        : category
+    ).trim();
+
     const result = familyFinancesResolvePostedFromPending_(
       monthSheet,
       transactionId,
       pendingTransactionId,
       amount,
       bank,
-      category
+      resolvedCategory
     );
 
     if (result.status === 'ONE') {
+      if (
+        resolvedCategory &&
+        resolvedCategory.toLowerCase() !== 'needs review' &&
+        resolvedCategory.toLowerCase() !== 'uncategorized' &&
+        familyFinancesNorm_(resolvedCategory) !== familyFinancesNorm_(category)
+      ) {
+        txSheet.getRange(sheetRow, 6).setValue(resolvedCategory);
+      }
+
       txSheet.getRange(sheetRow, 8, 1, 3).setValues([[
         'MATCH_FOUND',
         monthlyTab,
