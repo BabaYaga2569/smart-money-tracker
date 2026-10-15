@@ -760,6 +760,20 @@ function familyFinancesSafePostedSuggestion_(merchant, amount, currentSuggestion
     return suggestion;
   }
 
+  // Verified October hotel settlement: the original $360.07 authorization
+  // included a $100 deposit. The bank ultimately posted one net $260.07
+  // Best Western transaction. Represent the bank truth as one actual row;
+  // reconciliation may treat it as equivalent to the manual $360.07 charge
+  // plus $100 returned deposit in the production ledger.
+  if (
+    value < 0 &&
+    name.includes('best western') &&
+    familyFinancesAmountsEqual_(value, -260.07)
+  ) {
+    suggestion.category = 'Entertainment';
+    return suggestion;
+  }
+
   // Positive LifePoint entries are refunds in the user's ledger. Keep the
   // amount-direction guard so a future LifePoint debit is never auto-labeled
   // as a refund.
@@ -3664,5 +3678,142 @@ function repairKnownOctoberCollapsedMatches() {
     10
   );
 
+  return results;
+}
+
+
+/**
+ * One-time TEST-only repair for the verified October Best Western settlement.
+ * Production manually records -$360.07 and +$100.00; the connected bank feed
+ * posts one final -$260.07 settlement. This writes the bank-truth row in TEST
+ * and records the composite-equivalence note without fabricating a refund.
+ */
+function repairKnownOctoberBestWesternNetSettlement() {
+  const ss = familyFinancesSpreadsheet_();
+
+  if (ss.getId() !== FAMILY_FINANCES_TEST_SHEET_ID) {
+    throw new Error('Best Western net-settlement repair is TEST-only.');
+  }
+
+  const txSheet = ss.getSheetByName('Plaid_Transactions');
+  if (!txSheet || txSheet.getLastRow() < 2) {
+    throw new Error('Plaid_Transactions is missing or empty.');
+  }
+
+  const rows = txSheet
+    .getRange(2, 1, txSheet.getLastRow() - 1, 11)
+    .getValues();
+
+  const results = [];
+
+  rows.forEach(function(row, index) {
+    const transactionId = String(row[0] || '').trim();
+    const dateValue = row[1];
+    const merchant = String(row[2] || '').trim();
+    const amount = Number(row[3]);
+    const bank = String(row[4] || '').trim();
+    const pending = familyFinancesIsPending_(row[6]);
+    const status = String(row[7] || '').trim().toUpperCase();
+    const notes = String(row[10] || '');
+    const sheetRow = index + 2;
+
+    if (
+      !transactionId ||
+      pending ||
+      !(dateValue instanceof Date) ||
+      isNaN(dateValue.getTime()) ||
+      !familyFinancesNorm_(merchant).includes('best western') ||
+      !familyFinancesAmountsEqual_(amount, -260.07) ||
+      familyFinancesNorm_(bank) !== familyFinancesNorm_('Cap1')
+    ) {
+      return;
+    }
+
+    const monthlyTab = familyFinancesMonthTabName_(dateValue);
+    if (monthlyTab !== '10-October 2026') return;
+
+    const monthSheet = ss.getSheetByName(monthlyTab);
+    if (!monthSheet) {
+      throw new Error(monthlyTab + ' is missing.');
+    }
+
+    const marker = 'PLAID_TX:' + transactionId;
+    const markerRows = monthSheet
+      .getRange(1, 9, monthSheet.getLastRow(), 1)
+      .getValues();
+
+    let existingRow = 0;
+    markerRows.some(function(r, idx) {
+      if (String(r[0] || '').includes(marker)) {
+        existingRow = idx + 1;
+        return true;
+      }
+      return false;
+    });
+
+    if (existingRow) {
+      txSheet.getRange(sheetRow, 6).setValue('Entertainment');
+      txSheet.getRange(sheetRow, 8, 1, 3).setValues([[
+        'INSERTED',
+        monthlyTab,
+        existingRow
+      ]]);
+      results.push('Best Western already represented in row ' + existingRow + '.');
+      return;
+    }
+
+    const writeResult = familyFinancesWriteMonthlyTransaction_(
+      monthSheet,
+      transactionId,
+      dateValue,
+      'Best Western',
+      amount,
+      bank,
+      'Entertainment',
+      false
+    );
+
+    if (!writeResult.inserted) {
+      throw new Error('Best Western insert failed: ' + writeResult.reason);
+    }
+
+    const monthNoteCell = monthSheet.getRange(writeResult.rowNumber, 9);
+    const monthNote = String(monthNoteCell.getValue() || '').trim();
+    const compositeNote =
+      'NET_SETTLEMENT_EQUIVALENT: PROD -360.07 + 100.00 = -260.07';
+    if (!monthNote.includes(compositeNote)) {
+      monthNoteCell.setValue(
+        monthNote ? monthNote + '; ' + compositeNote : compositeNote
+      );
+    }
+
+    txSheet.getRange(sheetRow, 3).setValue('Best Western');
+    txSheet.getRange(sheetRow, 6).setValue('Entertainment');
+    txSheet.getRange(sheetRow, 8, 1, 3).setValues([[
+      'INSERTED',
+      monthlyTab,
+      writeResult.rowNumber
+    ]]);
+    txSheet.getRange(sheetRow, 11).setValue(
+      familyFinancesAppendMarker_(
+        notes,
+        'Best Western October net-settlement repair complete; bank posted -260.07, equivalent to production -360.07 original charge plus 100.00 returned deposit. No synthetic refund row was created.'
+      )
+    );
+
+    results.push(
+      'Inserted Best Western net settlement in ' +
+      monthlyTab +
+      ' row ' +
+      writeResult.rowNumber +
+      '.'
+    );
+  });
+
+  if (!results.length) {
+    results.push('No eligible posted Best Western -260.07 TEST transaction found.');
+  }
+
+  Logger.log(results.join(' '));
   return results;
 }
