@@ -189,6 +189,13 @@ function familyFinancesIsSafeMixedPosted_(merchant, amount, category) {
     normalizedCategory === 'shopping'
   ) return true;
 
+  if (
+    name.includes('zelle') &&
+    name.includes('raylene') &&
+    familyFinancesAmountsEqual_(value, -3000) &&
+    normalizedCategory === 'transfer between banks'
+  ) return true;
+
   return false;
 }
 
@@ -210,15 +217,29 @@ function familyFinancesShouldAutoInsert_(
     !familyFinancesIsSafeMixedPosted_(merchant, numericAmount, category)
   ) return false;
 
+  const normalizedMerchant = familyFinancesNorm_(merchant);
+  const isVerifiedTransfer =
+    (
+      numericAmount > 0 &&
+      familyFinancesAmountsEqual_(numericAmount, 265) &&
+      normalizedCategory === 'transfer from savings to chkg' &&
+      normalizedMerchant.includes('deposit from 360 performance savings')
+    ) ||
+    (
+      numericAmount < 0 &&
+      familyFinancesAmountsEqual_(numericAmount, -3000) &&
+      normalizedCategory === 'transfer between banks' &&
+      normalizedMerchant.includes('zelle') &&
+      normalizedMerchant.includes('raylene')
+    );
+
   if (numericAmount < 0) {
-    if (!familyFinancesIsAutoInsertCategory_(category)) return false;
+    if (!familyFinancesIsAutoInsertCategory_(category) && !isVerifiedTransfer) return false;
   } else {
-    // Positive transactions are only safe unattended inserts when their
-    // accounting meaning is explicit. Transfers and ambiguous deposits stay
-    // in Review.
     if (
       normalizedCategory !== 'refund/credit' &&
-      normalizedCategory !== 'income/paycheck'
+      normalizedCategory !== 'income/paycheck' &&
+      !isVerifiedTransfer
     ) {
       return false;
     }
@@ -683,6 +704,44 @@ function familyFinancesSafePostedSuggestion_(merchant, amount, currentSuggestion
     familyFinancesAmountsEqual_(value, 300)
   ) {
     suggestion.category = 'Refund/Credit';
+    return suggestion;
+  }
+
+  if (
+    value > 0 &&
+    name === 'steven colburn' &&
+    familyFinancesAmountsEqual_(value, 400)
+  ) {
+    suggestion.category = 'Refund/Credit';
+    return suggestion;
+  }
+
+  if (
+    value > 0 &&
+    name.includes('deposit from 360 performance savings') &&
+    familyFinancesAmountsEqual_(value, 265)
+  ) {
+    suggestion.category = 'Transfer from Savings to CHKG';
+    return suggestion;
+  }
+
+  if (
+    value < 0 &&
+    name.includes('zelle') &&
+    name.includes('raylene') &&
+    familyFinancesAmountsEqual_(value, -3000)
+  ) {
+    suggestion.category = 'Transfer Between Banks';
+    return suggestion;
+  }
+
+  if (value < 0 && name.includes('aquarius cafe')) {
+    suggestion.category = 'Dining';
+    return suggestion;
+  }
+
+  if (value < 0 && name.includes('clean freak')) {
+    suggestion.category = 'Subscriptions';
     return suggestion;
   }
 
