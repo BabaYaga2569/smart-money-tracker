@@ -23,11 +23,124 @@ const FAMILY_FINANCES_SYNC_BUTTON_SHEET = 'Safe to Spend';
 const FAMILY_FINANCES_SYNC_BUTTON_CELL = 'C34';
 const FAMILY_FINANCES_REFRESH_BUTTON_CELL = 'C35';
 const FAMILY_FINANCES_REFRESH_ENDPOINT = 'https://smart-money-tracker-09ks.onrender.com/api/plaid/sheets_force_refresh';
+const FAMILY_FINANCES_MONTHLY_NOTES_COLUMN = 9;
+const FAMILY_FINANCES_MONTHLY_METADATA_COLUMN = 22;
+const FAMILY_FINANCES_MONTHLY_METADATA_HEADER = 'Automation Metadata';
 
 function familyFinancesSpreadsheet_() {
   const active = SpreadsheetApp.getActiveSpreadsheet();
   if (active && active.getId() === FAMILY_FINANCES_TEST_SHEET_ID) return active;
   return SpreadsheetApp.openById(FAMILY_FINANCES_TEST_SHEET_ID);
+}
+
+function familyFinancesEnsureMonthlyMetadataColumn_(monthSheet) {
+  if (!monthSheet) return;
+
+  const maxColumns = monthSheet.getMaxColumns();
+  if (maxColumns < FAMILY_FINANCES_MONTHLY_METADATA_COLUMN) {
+    monthSheet.insertColumnsAfter(
+      maxColumns,
+      FAMILY_FINANCES_MONTHLY_METADATA_COLUMN - maxColumns
+    );
+  }
+
+  const headerCell = monthSheet.getRange(
+    1,
+    FAMILY_FINANCES_MONTHLY_METADATA_COLUMN
+  );
+
+  if (
+    String(headerCell.getValue() || '').trim() !==
+    FAMILY_FINANCES_MONTHLY_METADATA_HEADER
+  ) {
+    headerCell.setValue(FAMILY_FINANCES_MONTHLY_METADATA_HEADER);
+  }
+
+  if (!monthSheet.isColumnHiddenByUser(FAMILY_FINANCES_MONTHLY_METADATA_COLUMN)) {
+    monthSheet.hideColumns(FAMILY_FINANCES_MONTHLY_METADATA_COLUMN);
+  }
+}
+
+function familyFinancesMonthlyMetadataFromRow_(row) {
+  const current = String(
+    row && row[FAMILY_FINANCES_MONTHLY_METADATA_COLUMN - 1] || ''
+  ).trim();
+  const legacy = String(
+    row && row[FAMILY_FINANCES_MONTHLY_NOTES_COLUMN - 1] || ''
+  ).trim();
+
+  if (!current) return legacy;
+  if (!legacy) return current;
+  return current + '; ' + legacy;
+}
+
+function familyFinancesMonthlyMetadataAtRow_(monthSheet, rowNumber) {
+  if (!monthSheet || !rowNumber) return '';
+
+  const current =
+    monthSheet.getMaxColumns() >= FAMILY_FINANCES_MONTHLY_METADATA_COLUMN
+      ? String(
+          monthSheet
+            .getRange(rowNumber, FAMILY_FINANCES_MONTHLY_METADATA_COLUMN)
+            .getValue() || ''
+        ).trim()
+      : '';
+
+  const legacy = String(
+    monthSheet
+      .getRange(rowNumber, FAMILY_FINANCES_MONTHLY_NOTES_COLUMN)
+      .getValue() || ''
+  ).trim();
+
+  if (!current) return legacy;
+  if (!legacy) return current;
+  return current + '; ' + legacy;
+}
+
+function familyFinancesAppendMonthlyMetadata_(monthSheet, rowNumber, marker) {
+  if (!monthSheet || !rowNumber || !marker) return;
+
+  familyFinancesEnsureMonthlyMetadataColumn_(monthSheet);
+
+  const cell = monthSheet.getRange(
+    rowNumber,
+    FAMILY_FINANCES_MONTHLY_METADATA_COLUMN
+  );
+  const current = String(cell.getValue() || '').trim();
+
+  if (!current.includes(marker)) {
+    cell.setValue(current ? current + '; ' + marker : marker);
+  }
+}
+
+function familyFinancesRemoveMonthlyMarker_(monthSheet, rowNumber, marker) {
+  if (!monthSheet || !rowNumber || !marker) return false;
+
+  let changed = false;
+
+  [
+    FAMILY_FINANCES_MONTHLY_METADATA_COLUMN,
+    FAMILY_FINANCES_MONTHLY_NOTES_COLUMN
+  ].forEach(function(columnNumber) {
+    if (columnNumber > monthSheet.getMaxColumns()) return;
+
+    const cell = monthSheet.getRange(rowNumber, columnNumber);
+    const current = String(cell.getValue() || '').trim();
+    if (!current) return;
+
+    const parts = current
+      .split(';')
+      .map(function(part) { return String(part || '').trim(); })
+      .filter(function(part) { return part && part !== marker; });
+
+    const next = parts.join('; ');
+    if (next !== current) {
+      cell.setValue(next);
+      changed = true;
+    }
+  });
+
+  return changed;
 }
 
 function familyFinancesSetting_(settingName, fallbackValue) {
@@ -388,7 +501,9 @@ function familyFinancesFindExactBankAmountDateCandidate_(monthSheet, txDate, amo
     return { status: 'NONE', candidates: [] };
   }
 
-  const rows = monthSheet.getRange(2, 1, monthSheet.getLastRow() - 1, 9).getValues();
+  const rows = monthSheet
+    .getRange(2, 1, monthSheet.getLastRow() - 1, FAMILY_FINANCES_MONTHLY_METADATA_COLUMN)
+    .getValues();
   const candidates = [];
   const wantedBank = familyFinancesNorm_(bank);
   const ownMarker = transactionId ? 'PLAID_TX:' + String(transactionId).trim() : '';
@@ -397,7 +512,7 @@ function familyFinancesFindExactBankAmountDateCandidate_(monthSheet, txDate, amo
     const rowDate = row[0];
     const rowActual = row[3];
     const rowBank = row[4];
-    const rowMarkers = String(row[8] || '');
+    const rowMarkers = familyFinancesMonthlyMetadataFromRow_(row);
 
     if (!(rowDate instanceof Date) || isNaN(rowDate.getTime())) return;
     if (rowActual === '' || rowActual === null || !Number.isFinite(Number(rowActual))) return;
@@ -975,13 +1090,15 @@ function familyFinancesFindPendingForecastRow_(monthSheet, transactionId, amount
 
   const marker = 'PLAID_PENDING:' + String(transactionId);
   const rowCount = monthSheet.getLastRow() - 1;
-  const values = monthSheet.getRange(2, 3, rowCount, 7).getValues();
+  const values = monthSheet
+    .getRange(2, 1, rowCount, FAMILY_FINANCES_MONTHLY_METADATA_COLUMN)
+    .getValues();
 
   for (let i = 0; i < values.length; i++) {
-    const forecast = values[i][0]; // Column C
-    const notes = values[i][6];    // Column I
+    const forecast = values[i][2]; // Column C
+    const metadata = familyFinancesMonthlyMetadataFromRow_(values[i]);
 
-    if (!String(notes || '').includes(marker)) continue;
+    if (!metadata.includes(marker)) continue;
     if (!familyFinancesAmountsEqual_(forecast, amount)) continue;
 
     return i + 2;
@@ -991,13 +1108,8 @@ function familyFinancesFindPendingForecastRow_(monthSheet, transactionId, amount
 }
 
 function familyFinancesTagPendingRow_(monthSheet, rowNumber, transactionId) {
-  const noteCell = monthSheet.getRange(rowNumber, 9);
-  const current = String(noteCell.getValue() || '').trim();
   const marker = 'PLAID_PENDING:' + String(transactionId);
-
-  if (!current.includes(marker)) {
-    noteCell.setValue(current ? current + '; ' + marker : marker);
-  }
+  familyFinancesAppendMonthlyMetadata_(monthSheet, rowNumber, marker);
 }
 
 function familyFinancesPendingAmountMayVary_(merchant, category) {
@@ -1267,7 +1379,7 @@ function familyFinancesWriteMonthlyTransaction_(
   ]]);
 
   const marker = (pending ? 'PLAID_PENDING:' : 'PLAID_TX:') + String(transactionId);
-  monthSheet.getRange(targetRow, 9).setValue(marker);
+  familyFinancesAppendMonthlyMetadata_(monthSheet, targetRow, marker);
 
   return {
     inserted: true,
@@ -1469,20 +1581,8 @@ function familyFinancesFindExistingPendingCandidate_(
 
 
 function familyFinancesRemovePendingMarker_(monthSheet, rowNumber, transactionId) {
-  const cell = monthSheet.getRange(rowNumber, 9);
-  const current = String(cell.getValue() || '').trim();
-  if (!current) return false;
-
   const marker = 'PLAID_PENDING:' + String(transactionId);
-  const parts = current
-    .split(';')
-    .map(function(part) { return String(part || '').trim(); })
-    .filter(function(part) { return part && part !== marker; });
-
-  if (parts.join('; ') === current) return false;
-
-  cell.setValue(parts.join('; '));
-  return true;
+  return familyFinancesRemoveMonthlyMarker_(monthSheet, rowNumber, marker);
 }
 
 function familyFinancesRepairPendingMarkerCollisions_(ss, txSheet) {
@@ -1524,11 +1624,13 @@ function familyFinancesRepairPendingMarkerCollisions_(ss, txSheet) {
     const rowCount = Math.max(0, monthSheet.getLastRow() - 1);
 
     if (rowCount > 0) {
-      const monthly = monthSheet.getRange(2, 3, rowCount, 7).getValues();
+      const monthly = monthSheet
+        .getRange(2, 1, rowCount, FAMILY_FINANCES_MONTHLY_METADATA_COLUMN)
+        .getValues();
 
       monthly.forEach(function(monthRow, monthIndex) {
-        const forecast = monthRow[0];
-        const markerCell = String(monthRow[6] || '');
+        const forecast = monthRow[2];
+        const markerCell = familyFinancesMonthlyMetadataFromRow_(monthRow);
 
         if (!markerCell.includes(marker)) return;
         if (familyFinancesAmountsEqual_(forecast, amount)) return;
@@ -1818,7 +1920,12 @@ function familyFinancesFindPendingMarkerCandidate_(
   const marker = 'PLAID_PENDING:' + String(pendingTransactionId);
   const wantedBank = familyFinancesNorm_(bank);
   const rows = monthSheet
-    .getRange(2, 1, monthSheet.getLastRow() - 1, 9)
+    .getRange(
+      2,
+      1,
+      monthSheet.getLastRow() - 1,
+      FAMILY_FINANCES_MONTHLY_METADATA_COLUMN
+    )
     .getValues();
 
   const candidates = [];
@@ -1827,9 +1934,9 @@ function familyFinancesFindPendingMarkerCandidate_(
     const forecast = row[2];
     const actual = row[3];
     const rowBank = row[4];
-    const notes = String(row[8] || '');
+    const metadata = familyFinancesMonthlyMetadataFromRow_(row);
 
-    if (!notes.includes(marker)) return;
+    if (!metadata.includes(marker)) return;
     if (!familyFinancesAmountsEqual_(forecast, amount)) return;
 
     const rowBankNorm = familyFinancesNorm_(rowBank);
@@ -1896,13 +2003,8 @@ function familyFinancesResolvePostedFromPending_(
     monthSheet.getRange(rowNumber, 6).setValue(category);
   }
 
-  const noteCell = monthSheet.getRange(rowNumber, 9);
-  const current = String(noteCell.getValue() || '').trim();
   const postedMarker = 'PLAID_TX:' + String(postedTransactionId);
-
-  if (!current.includes(postedMarker)) {
-    noteCell.setValue(current ? current + '; ' + postedMarker : postedMarker);
-  }
+  familyFinancesAppendMonthlyMetadata_(monthSheet, rowNumber, postedMarker);
 
   return {
     status: 'ONE',
@@ -2104,12 +2206,8 @@ function familyFinancesRecoverExactForecastReviews_(ss, txSheet) {
       monthSheet.getRange(rowNumber, 6).setValue(category);
     }
 
-    const noteCell = monthSheet.getRange(rowNumber, 9);
-    const current = String(noteCell.getValue() || '').trim();
     const postedMarker = 'PLAID_TX:' + transactionId;
-    if (!current.includes(postedMarker)) {
-      noteCell.setValue(current ? current + '; ' + postedMarker : postedMarker);
-    }
+    familyFinancesAppendMonthlyMetadata_(monthSheet, rowNumber, postedMarker);
 
     txSheet.getRange(sheetRow, 8, 1, 3).setValues([[
       'MATCH_FOUND',
@@ -2166,7 +2264,7 @@ function familyFinancesRecoverCollapsedPostedMatches_(ss, txSheet) {
     const monthSheet = ss.getSheetByName(monthlyTab);
     if (!monthSheet || matchedRow > monthSheet.getLastRow()) return;
 
-    const marker = String(monthSheet.getRange(matchedRow, 9).getValue() || '');
+    const marker = familyFinancesMonthlyMetadataAtRow_(monthSheet, matchedRow);
     const ownMarker = 'PLAID_TX:' + transactionId;
 
     if (!marker.includes('PLAID_TX:') || marker.includes(ownMarker)) {
@@ -3122,14 +3220,12 @@ function runFamilyFinancesSheetSync(processReviewQueue) {
             txSheet.getRange(sheetRow, 6).setValue(suggestion.category);
           }
 
-          const markerCell = monthSheet.getRange(candidate.rowNumber, 9);
-          const currentMarker = String(markerCell.getValue() || '').trim();
           const postedMarker = 'PLAID_TX:' + transactionId;
-          if (!currentMarker.includes(postedMarker)) {
-            markerCell.setValue(
-              currentMarker ? currentMarker + '; ' + postedMarker : postedMarker
-            );
-          }
+          familyFinancesAppendMonthlyMetadata_(
+            monthSheet,
+            candidate.rowNumber,
+            postedMarker
+          );
 
           txSheet.getRange(sheetRow, 8, 1, 3).setValues([[
             'MATCH_FOUND',
@@ -3701,13 +3797,14 @@ function repairKnownOctoberCollapsedMatches() {
     }
 
     const marker = 'PLAID_TX:' + transactionId;
-    const markerValues = monthSheet
-      .getRange(1, 9, monthSheet.getLastRow(), 1)
-      .getValues();
+    let alreadyExists = false;
 
-    const alreadyExists = markerValues.some(function(r) {
-      return String(r[0] || '').includes(marker);
-    });
+    for (let monthlyRow = 1; monthlyRow <= monthSheet.getLastRow(); monthlyRow++) {
+      if (familyFinancesMonthlyMetadataAtRow_(monthSheet, monthlyRow).includes(marker)) {
+        alreadyExists = true;
+        break;
+      }
+    }
 
     if (alreadyExists) {
       results.push(transactionId + ': already repaired');
@@ -3814,18 +3911,14 @@ function repairKnownOctoberBestWesternNetSettlement() {
     }
 
     const marker = 'PLAID_TX:' + transactionId;
-    const markerRows = monthSheet
-      .getRange(1, 9, monthSheet.getLastRow(), 1)
-      .getValues();
-
     let existingRow = 0;
-    markerRows.some(function(r, idx) {
-      if (String(r[0] || '').includes(marker)) {
-        existingRow = idx + 1;
-        return true;
+
+    for (let monthlyRow = 1; monthlyRow <= monthSheet.getLastRow(); monthlyRow++) {
+      if (familyFinancesMonthlyMetadataAtRow_(monthSheet, monthlyRow).includes(marker)) {
+        existingRow = monthlyRow;
+        break;
       }
-      return false;
-    });
+    }
 
     if (existingRow) {
       txSheet.getRange(sheetRow, 6).setValue('Entertainment');
@@ -3853,14 +3946,20 @@ function repairKnownOctoberBestWesternNetSettlement() {
       throw new Error('Best Western insert failed: ' + writeResult.reason);
     }
 
-    const monthNoteCell = monthSheet.getRange(writeResult.rowNumber, 9);
-    const monthNote = String(monthNoteCell.getValue() || '').trim();
     const compositeNote =
       'NET_SETTLEMENT_EQUIVALENT: PROD -360.07 + 100.00 = -260.07';
-    if (!monthNote.includes(compositeNote)) {
-      monthNoteCell.setValue(
-        monthNote ? monthNote + '; ' + compositeNote : compositeNote
-      );
+    familyFinancesAppendMonthlyMetadata_(
+      monthSheet,
+      writeResult.rowNumber,
+      compositeNote
+    );
+
+    const visibleNoteCell = monthSheet.getRange(
+      writeResult.rowNumber,
+      FAMILY_FINANCES_MONTHLY_NOTES_COLUMN
+    );
+    if (!String(visibleNoteCell.getValue() || '').trim()) {
+      visibleNoteCell.setValue('Final bank settlement after $100 deposit return.');
     }
 
     txSheet.getRange(sheetRow, 3).setValue('Best Western');
