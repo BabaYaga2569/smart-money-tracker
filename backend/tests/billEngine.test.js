@@ -40,16 +40,18 @@ function createCollection(snapshotDocs, name = '') {
   };
 }
 
-function createDb({ bills = [], transactions = [], patterns = [] } = {}) {
+function createDb({ bills = [], transactions = [], patterns = [], payments = [] } = {}) {
   const financialEvents = createCollection(bills, 'financialEvents');
   const txCollection = createCollection(transactions, 'transactions');
   const recurringPatterns = createCollection(patterns, 'recurringPatterns');
+  const billPayments = createCollection(payments, 'bill_payments');
 
   const userDoc = {
     collection(name) {
       if (name === 'financialEvents') return financialEvents;
       if (name === 'transactions') return txCollection;
       if (name === 'recurringPatterns') return recurringPatterns;
+      if (name === 'bill_payments') return billPayments;
       throw new Error(`Unexpected collection: ${name}`);
     }
   };
@@ -80,7 +82,8 @@ function createDb({ bills = [], transactions = [], patterns = [] } = {}) {
     },
     financialEvents,
     txCollection,
-    recurringPatterns
+    recurringPatterns,
+    billPayments
   };
 }
 
@@ -304,6 +307,49 @@ test('ambiguous duplicate legacy bills block new occurrence seeding', async () =
   assert.equal(result.ambiguousLegacy, 1);
   assert.equal(result.bills.length, 2);
   assert.equal(db.financialEvents.writes.length, 0);
+});
+
+
+test('canonical bill engine excludes a transaction already used by a prior bill payment', async () => {
+  const db = createDb({
+    bills: [doc('bill-week-2', {
+      type: 'bill',
+      isPaid: false,
+      name: 'Daycare',
+      amount: 200,
+      dueDate: '2026-10-14'
+    })],
+    transactions: [doc('tx-daycare', {
+      date: '2026-10-10',
+      name: 'Daycare',
+      amount: -200,
+      source: 'plaid'
+    })],
+    patterns: [],
+    payments: [doc('payment-week-1', {
+      paidDate: '2026-10-10',
+      linkedTransactionId: 'tx-daycare',
+      amount: 200
+    })]
+  });
+
+  let receivedTransactions = null;
+  const matcher = async (_db, _userId, transactions) => {
+    receivedTransactions = transactions;
+    return { success: true, cleared: 0, advanced: 0, generated: 0 };
+  };
+
+  const result = await runCanonicalBillEngine({
+    db,
+    userId: 'user-1',
+    matcher
+  });
+
+  assert.deepEqual(receivedTransactions, null);
+  assert.equal(result.success, true);
+  assert.equal(result.usedTransactionsSkipped, 1);
+  assert.equal(result.transactionsScanned, 0);
+  assert.deepEqual(db.billPayments.filters[0], ['paidDate', '>=', db.txCollection.filters[0][2]]);
 });
 
 
