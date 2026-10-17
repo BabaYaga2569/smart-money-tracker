@@ -244,10 +244,26 @@ function isDateMatch(txDate, billDueDate, daysTolerance = DATE_TOLERANCE_DAYS) {
   return daysDiff <= daysTolerance;
 }
 
+function isEligibleBillPaymentTransaction(transaction) {
+  const source = String(transaction?.source || '').toLowerCase();
+  const amount = Number(transaction?.amount);
+
+  // Canonical Plaid storage uses negative numbers for money leaving the
+  // household and positive numbers for refunds/income. Never let an incoming
+  // Plaid credit satisfy, protect, or review-match a bill.
+  if (source === 'plaid' && Number.isFinite(amount) && amount >= 0) {
+    return false;
+  }
+
+  return true;
+}
+
 /**
  * Match a single transaction to a single bill
  */
 function matchTransactionToBill(transaction, bill) {
+  if (!isEligibleBillPaymentTransaction(transaction)) return null;
+
   const txName = transaction.name || '';
   const txMerchantName = transaction.merchant_name || transaction.merchantName || '';
   const txAmount = Math.abs(parseFloat(transaction.amount) || 0);
@@ -401,6 +417,7 @@ export function matchChangedAmountTransactionsToBills(transactions, bills) {
     for (const transaction of transactions) {
       const txId = transaction.id || transaction.transaction_id;
       if (!txId || usedTransactions.has(txId)) continue;
+      if (!isEligibleBillPaymentTransaction(transaction)) continue;
       if (isAmbiguousChangedAmountMerchant(transaction, bill)) continue;
 
       const txName = transaction.name || '';
