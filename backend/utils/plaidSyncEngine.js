@@ -524,6 +524,17 @@ export async function syncPlaidItemTransactions({
     transactionData.lastSyncedAt = serverTimestamp;
     transactionData.synced_at = serverTimestamp;
 
+    // The posted transaction replaces its pending predecessor under a new ID
+    // and the predecessor document is deleted below. Carry any bill claim
+    // forward so the same money cannot be matched again as a "new" charge.
+    if (predecessor?.linkedEventId && !currentExisting?.linkedEventId) {
+      transactionData.linkedEventId = predecessor.linkedEventId;
+      transactionData.linkedPaymentRecordId = predecessor.linkedPaymentRecordId || null;
+      transactionData.linkedAt = predecessor.linkedAt || serverTimestamp;
+      transactionData.linkedFromPendingTransactionId =
+        predecessor.transaction_id || predecessor.id || null;
+    }
+
     group.push({
       type: "set",
       ref: transactionsRef.doc(plaidTx.transaction_id),

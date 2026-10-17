@@ -809,6 +809,109 @@ function deterministicNextBillId(patternId, nextOccurrence) {
   return `bill_${patternId}_${nextOccurrence}`;
 }
 
+function isPendingTransaction(transaction) {
+  return transaction?.pending === true ||
+    transaction?.pending === 'true' ||
+    String(transaction?.status || '').toLowerCase() === 'pending';
+}
+
+async function findPaymentForOtherBill(firestoreTransaction, userRef, transactionId, billId) {
+  const snapshot = await firestoreTransaction.get(
+    userRef.collection('bill_payments').where('linkedTransactionId', '==', transactionId)
+  );
+  const other = snapshot.docs.find(doc => doc.data()?.billId !== billId);
+  return other ? { paymentRecordId: other.id, billId: other.data()?.billId || null } : null;
+}
+
+/**
+ * Validate that a bank transaction may be claimed by this bill. Returns a
+ * refusal result, or null when the claim is allowed. Reads only; the caller
+ * writes the claim onto the transaction document in the same transaction.
+ *
+ * A transaction is already consumed when any of these point at another bill:
+ * - transactions.linkedEventId (current links and legacy manual links)
+ * - a bill_payments record with linkedTransactionId (current and legacy
+ *   automatic matches, including payments recorded before linkedEventId
+ *   was written for automatic matches)
+ * - the same evidence on the pending transaction this posted one replaced
+ */
+async function checkTransactionClaim(firestoreTransaction, { userRef, transactionRef, transactionId, billId }) {
+  const transactionSnapshot = await firestoreTransaction.get(transactionRef);
+  if (!transactionSnapshot.exists) {
+    return { success: false, skipped: true, reason: 'TRANSACTION_NOT_FOUND' };
+  }
+
+  const liveTransaction = transactionSnapshot.data() || {};
+
+  // A pending charge can change amount or disappear, and posts under a new
+  // transaction ID. It can only protect a bill (pendingPayment), never pay it.
+  if (isPendingTransaction(liveTransaction)) {
+    return { success: false, skipped: true, reason: 'TRANSACTION_PENDING' };
+  }
+
+  if (!isEligibleBillPaymentTransaction(liveTransaction)) {
+    return { success: false, skipped: true, reason: 'TRANSACTION_NOT_OUTFLOW' };
+  }
+
+  const existingLink = liveTransaction.linkedEventId || null;
+  if (existingLink && existingLink !== billId) {
+    return {
+      success: false,
+      skipped: true,
+      reason: 'TRANSACTION_ALREADY_LINKED',
+      linkedEventId: existingLink
+    };
+  }
+
+  const priorPayment = await findPaymentForOtherBill(
+    firestoreTransaction, userRef, transactionId, billId
+  );
+  if (priorPayment) {
+    return {
+      success: false,
+      skipped: true,
+      reason: 'TRANSACTION_ALREADY_USED',
+      linkedEventId: priorPayment.billId,
+      paymentRecordId: priorPayment.paymentRecordId
+    };
+  }
+
+  const pendingId = liveTransaction.pending_transaction_id || null;
+  if (pendingId && pendingId !== transactionId) {
+    const pendingSnapshot = await firestoreTransaction.get(
+      userRef.collection('transactions').doc(pendingId)
+    );
+    const pendingLink = pendingSnapshot.exists
+      ? pendingSnapshot.data()?.linkedEventId || null
+      : null;
+    if (pendingLink && pendingLink !== billId) {
+      return {
+        success: false,
+        skipped: true,
+        reason: 'TRANSACTION_ALREADY_LINKED',
+        linkedEventId: pendingLink,
+        viaPendingTransactionId: pendingId
+      };
+    }
+
+    const pendingPayment = await findPaymentForOtherBill(
+      firestoreTransaction, userRef, pendingId, billId
+    );
+    if (pendingPayment) {
+      return {
+        success: false,
+        skipped: true,
+        reason: 'TRANSACTION_ALREADY_USED',
+        linkedEventId: pendingPayment.billId,
+        paymentRecordId: pendingPayment.paymentRecordId,
+        viaPendingTransactionId: pendingId
+      };
+    }
+  }
+
+  return null;
+}
+
 /**
  * Atomically apply one matched transaction to one canonical bill occurrence.
  *
@@ -825,7 +928,6 @@ async function applyBillPaymentLifecycle(db, userId, billId, payment) {
     paymentMethod,
     markedBy,
     markedVia,
-    linkTransactionRecord = false,
     requiredReviewTransactionId = null
   } = payment;
 
@@ -848,22 +950,19 @@ async function applyBillPaymentLifecycle(db, userId, billId, payment) {
     : null;
 
   return db.runTransaction(async firestoreTransaction => {
-    let transactionSnapshot = null;
-    if (linkTransactionRecord && transactionRef) {
-      transactionSnapshot = await firestoreTransaction.get(transactionRef);
-      if (!transactionSnapshot.exists) {
-        return { success: false, skipped: true, reason: 'TRANSACTION_NOT_FOUND' };
-      }
-
-      const existingLink = transactionSnapshot.data()?.linkedEventId || null;
-      if (existingLink && existingLink !== billId) {
-        return {
-          success: false,
-          skipped: true,
-          reason: 'TRANSACTION_ALREADY_LINKED',
-          linkedEventId: existingLink
-        };
-      }
+    // Every transaction-backed payment (automatic, manual link, review
+    // acceptance) claims the bank transaction inside this Firestore
+    // transaction. Reading and then writing the transaction document makes
+    // concurrent claims conflict, so a losing run re-reads the claim and is
+    // refused instead of paying a second bill.
+    if (transactionRef) {
+      const claim = await checkTransactionClaim(firestoreTransaction, {
+        userRef,
+        transactionRef,
+        transactionId,
+        billId
+      });
+      if (claim) return claim;
     }
 
     const billSnapshot = await firestoreTransaction.get(billRef);
@@ -1022,7 +1121,7 @@ async function applyBillPaymentLifecycle(db, userId, billId, payment) {
       updatedAt: FieldValue.serverTimestamp()
     });
 
-    if (linkTransactionRecord && transactionRef) {
+    if (transactionRef) {
       firestoreTransaction.update(transactionRef, {
         linkedEventId: billId,
         linkedAt: FieldValue.serverTimestamp(),
@@ -1195,8 +1294,7 @@ export async function applyLinkedBillPayment(db, userId, billId, transaction, op
     paymentRecordId: `link_${billId}_${transactionId}`,
     paymentMethod: options.paymentMethod || 'Linked Bank Transaction',
     markedBy: options.markedBy || 'user',
-    markedVia: 'manual-transaction-link',
-    linkTransactionRecord: true
+    markedVia: 'manual-transaction-link'
   });
 }
 
@@ -1227,7 +1325,6 @@ export async function applyReviewCandidateBillPayment(db, userId, billId, transa
     paymentMethod: options.paymentMethod || 'Accepted Changed Bank Amount',
     markedBy: options.markedBy || 'user',
     markedVia: 'changed-amount-review',
-    linkTransactionRecord: true,
     requiredReviewTransactionId: transactionId
   });
 }
@@ -1275,6 +1372,17 @@ async function reverseCanonicalBillPayment(db, userId, billId, expectedMarkedVia
 
     const paymentRef = userRef.collection('bill_payments').doc(liveBill.paymentRecordId);
     const paidArchiveRef = userRef.collection('paidBills').doc(liveBill.paymentRecordId);
+
+    // Release the bank-transaction claim made by this payment so a corrected
+    // payment can use it. Only a claim pointing at this bill is released.
+    let linkedTransactionRef = null;
+    if (liveBill.linkedTransactionId) {
+      const candidateRef = userRef.collection('transactions').doc(liveBill.linkedTransactionId);
+      const linkedSnapshot = await firestoreTransaction.get(candidateRef);
+      if (linkedSnapshot.exists && linkedSnapshot.data()?.linkedEventId === billId) {
+        linkedTransactionRef = candidateRef;
+      }
+    }
 
     let patternRef = null;
     let nextBillRef = null;
@@ -1360,6 +1468,14 @@ async function reverseCanonicalBillPayment(db, userId, billId, expectedMarkedVia
       lifecycleNextBillId: null,
       updatedAt: FieldValue.serverTimestamp()
     });
+
+    if (linkedTransactionRef) {
+      firestoreTransaction.update(linkedTransactionRef, {
+        linkedEventId: FieldValue.delete(),
+        linkedAt: FieldValue.delete(),
+        linkedPaymentRecordId: FieldValue.delete()
+      });
+    }
 
     firestoreTransaction.delete(paymentRef);
     firestoreTransaction.delete(paidArchiveRef);
