@@ -848,6 +848,14 @@ const refreshPlaidTransactions = async () => {
       return;
     }
 
+    if (bill.paymentReviewPending === true) {
+      NotificationManager.showError(
+        'Bank debit still pending',
+        'This charge has not posted yet. It can be accepted once the bank posts it.'
+      );
+      return;
+    }
+
     const actualAmount = Number(bill.paymentReviewActualAmount);
     const expectedAmount = Number(bill.paymentReviewExpectedAmount ?? bill.amount ?? bill.cost);
 

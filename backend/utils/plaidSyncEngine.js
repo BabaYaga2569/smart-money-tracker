@@ -9,6 +9,18 @@
 const MAX_BATCH_WRITES = 450;
 const MAX_PAGINATION_RETRIES = 2;
 
+// Bill-payment claim fields on a transaction document. They are owned by the
+// bill payment lifecycle, which reads and writes them inside a Firestore
+// transaction. Plaid sync must never write them from its earlier snapshot:
+// ordinary updates leave them untouched (merge writes without these keys),
+// and the pending -> posted carry-forward is a conditional transaction.
+const CLAIM_FIELDS = [
+  "linkedEventId",
+  "linkedPaymentRecordId",
+  "linkedAt",
+  "linkedFromPendingTransactionId"
+];
+
 function toMoney(value) {
   const number = Number(value);
   if (!Number.isFinite(number)) return 0;
@@ -195,10 +207,60 @@ async function fetchPlaidChanges({ plaidClient, item }) {
   throw new Error("Plaid pagination retry limit exceeded");
 }
 
+/**
+ * Write a posted transaction that replaces a claimed pending predecessor.
+ * The claim is carried forward only if the posted document still has no
+ * claim when read inside this transaction, so a payment committed after the
+ * sync snapshot is never overwritten.
+ */
+async function commitClaimCarryGroup(db, group) {
+  let conflict = false;
+
+  await db.runTransaction(async firestoreTransaction => {
+    const postedOperation = group.find(operation => operation.carryClaimFrom);
+    const postedSnapshot = await firestoreTransaction.get(postedOperation.ref);
+    const liveClaim = postedSnapshot.exists
+      ? postedSnapshot.data()?.linkedEventId || null
+      : null;
+    const pendingClaim = postedOperation.carryClaimFrom;
+
+    const data = { ...postedOperation.data };
+    conflict = false;
+
+    if (!liveClaim) {
+      data.linkedEventId = pendingClaim.linkedEventId;
+      data.linkedPaymentRecordId = pendingClaim.linkedPaymentRecordId || null;
+      data.linkedAt = pendingClaim.linkedAt || postedOperation.claimTimestamp;
+      data.linkedFromPendingTransactionId = pendingClaim.pendingTransactionId;
+    } else if (liveClaim !== pendingClaim.linkedEventId) {
+      // Two bills point at the same money. Keep the committed claim and leave
+      // an audit marker instead of silently choosing one.
+      conflict = true;
+      data.pendingClaimConflict = {
+        linkedEventId: pendingClaim.linkedEventId,
+        pendingTransactionId: pendingClaim.pendingTransactionId
+      };
+    }
+
+    for (const operation of group) {
+      if (operation.type === "delete") {
+        firestoreTransaction.delete(operation.ref);
+      } else if (operation === postedOperation) {
+        firestoreTransaction.set(operation.ref, data, { merge: true });
+      } else {
+        firestoreTransaction.set(operation.ref, operation.data, { merge: true });
+      }
+    }
+  });
+
+  return { writes: group.length, conflict };
+}
+
 async function commitOperationGroups(db, operationGroups) {
   let batch = db.batch();
   let batchWrites = 0;
   let committedWrites = 0;
+  let claimConflicts = 0;
 
   const commitCurrentBatch = async () => {
     if (batchWrites === 0) return;
@@ -209,6 +271,14 @@ async function commitOperationGroups(db, operationGroups) {
   };
 
   for (const group of operationGroups) {
+    if (group.some(operation => operation.carryClaimFrom)) {
+      await commitCurrentBatch();
+      const result = await commitClaimCarryGroup(db, group);
+      committedWrites += result.writes;
+      if (result.conflict) claimConflicts++;
+      continue;
+    }
+
     if (group.length > MAX_BATCH_WRITES) {
       throw new Error("A Plaid reconciliation group exceeded the Firestore batch limit");
     }
@@ -228,7 +298,7 @@ async function commitOperationGroups(db, operationGroups) {
   }
 
   await commitCurrentBatch();
-  return committedWrites;
+  return { committedWrites, claimConflicts };
 }
 
 async function getTransactionsByIds(db, transactionsRef, ids) {
@@ -524,11 +594,29 @@ export async function syncPlaidItemTransactions({
     transactionData.lastSyncedAt = serverTimestamp;
     transactionData.synced_at = serverTimestamp;
 
-    group.push({
+    for (const field of CLAIM_FIELDS) delete transactionData[field];
+
+    const postedOperation = {
       type: "set",
       ref: transactionsRef.doc(plaidTx.transaction_id),
       data: transactionData
-    });
+    };
+
+    // The posted transaction replaces its pending predecessor under a new ID
+    // and the predecessor is deleted in the same write. Carry its bill claim
+    // forward, conditionally and atomically, so the same money cannot be
+    // matched again as a "new" charge.
+    if (predecessor?.linkedEventId) {
+      postedOperation.carryClaimFrom = {
+        linkedEventId: predecessor.linkedEventId,
+        linkedPaymentRecordId: predecessor.linkedPaymentRecordId || null,
+        linkedAt: predecessor.linkedAt || null,
+        pendingTransactionId: predecessor.transaction_id || predecessor.id || null
+      };
+      postedOperation.claimTimestamp = serverTimestamp;
+    }
+
+    group.push(postedOperation);
 
     operationGroups.push(group);
 
@@ -562,7 +650,7 @@ export async function syncPlaidItemTransactions({
     removed++;
   }
 
-  const committedWrites = await commitOperationGroups(db, operationGroups);
+  const { committedWrites, claimConflicts } = await commitOperationGroups(db, operationGroups);
 
   const itemRef = db.collection("users")
     .doc(userId)
@@ -588,6 +676,7 @@ export async function syncPlaidItemTransactions({
     pending_replaced: pendingReplaced,
     skipped,
     committed_writes: committedWrites,
+    pending_claim_conflicts: claimConflicts,
     cursor_advanced: cursorAdvanced,
     reconciliation_documents_read: existingLoad.readCount,
     direct_ids_requested: existingLoad.requestedDirectIds,
@@ -603,6 +692,7 @@ export async function syncPlaidItemTransactions({
     pendingReplaced,
     skipped,
     committedWrites,
+    claimConflicts,
     cursorAdvanced,
     nextCursor: changes.nextCursor,
     reconciliationReadCount: existingLoad.readCount

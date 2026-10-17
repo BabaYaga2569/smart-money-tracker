@@ -244,6 +244,19 @@ export async function runCanonicalBillEngine({
       ...doc.data()
     }))
     .filter(transaction => {
+      // Legacy manual links wrote only transactions.linkedEventId, with no
+      // bill_payments record. Treat that link as consumed too.
+      if (transaction.linkedEventId) return false;
+
+      // A posted transaction replaces its pending predecessor under a new ID.
+      // If the pending ID was already used, the posted one is the same money.
+      if (
+        transaction.pending_transaction_id &&
+        usedTransactionIds.has(transaction.pending_transaction_id)
+      ) {
+        return false;
+      }
+
       const transactionId = transaction.id || transaction.transaction_id;
       return !transactionId || !usedTransactionIds.has(transactionId);
     });
