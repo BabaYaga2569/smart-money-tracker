@@ -824,7 +824,8 @@ async function applyBillPaymentLifecycle(db, userId, billId, payment) {
     paymentRecordId,
     paymentMethod,
     markedBy,
-    markedVia
+    markedVia,
+    linkTransactionRecord = false
   } = payment;
 
   if (!billId) {
@@ -841,8 +842,29 @@ async function applyBillPaymentLifecycle(db, userId, billId, payment) {
   const billRef = userRef.collection('financialEvents').doc(billId);
   const paymentRef = userRef.collection('bill_payments').doc(paymentRecordId);
   const paidArchiveRef = userRef.collection('paidBills').doc(paymentRecordId);
+  const transactionRef = transactionId
+    ? userRef.collection('transactions').doc(transactionId)
+    : null;
 
   return db.runTransaction(async firestoreTransaction => {
+    let transactionSnapshot = null;
+    if (linkTransactionRecord && transactionRef) {
+      transactionSnapshot = await firestoreTransaction.get(transactionRef);
+      if (!transactionSnapshot.exists) {
+        return { success: false, skipped: true, reason: 'TRANSACTION_NOT_FOUND' };
+      }
+
+      const existingLink = transactionSnapshot.data()?.linkedEventId || null;
+      if (existingLink && existingLink !== billId) {
+        return {
+          success: false,
+          skipped: true,
+          reason: 'TRANSACTION_ALREADY_LINKED',
+          linkedEventId: existingLink
+        };
+      }
+    }
+
     const billSnapshot = await firestoreTransaction.get(billRef);
     if (!billSnapshot.exists) {
       return { success: false, skipped: true, reason: 'BILL_NOT_FOUND' };
@@ -974,6 +996,14 @@ async function applyBillPaymentLifecycle(db, userId, billId, payment) {
       pendingPaymentMatchedAt: FieldValue.delete(),
       updatedAt: FieldValue.serverTimestamp()
     });
+
+    if (linkTransactionRecord && transactionRef) {
+      firestoreTransaction.update(transactionRef, {
+        linkedEventId: billId,
+        linkedAt: FieldValue.serverTimestamp(),
+        linkedPaymentRecordId: paymentRecordId
+      });
+    }
 
     firestoreTransaction.set(paymentRef, {
       billId: liveBill.id,
@@ -1111,6 +1141,37 @@ export async function applyMatchedBillPayment(db, userId, bill, transaction) {
     paymentMethod: 'Auto (Plaid)',
     markedBy: 'canonical-bill-engine',
     markedVia: 'auto-plaid-match'
+  });
+}
+
+export async function applyLinkedBillPayment(db, userId, billId, transaction, options = {}) {
+  const transactionId = transaction?.id || transaction?.transaction_id;
+  if (!transactionId) {
+    return { success: false, skipped: true, reason: 'MISSING_TRANSACTION_ID' };
+  }
+
+  const amount = Number(transaction?.amount);
+  if (
+    String(transaction?.source || '').toLowerCase() === 'plaid' &&
+    Number.isFinite(amount) &&
+    amount >= 0
+  ) {
+    return { success: false, skipped: true, reason: 'TRANSACTION_NOT_OUTFLOW' };
+  }
+
+  if (!transaction?.date) {
+    return { success: false, skipped: true, reason: 'MISSING_TRANSACTION_DATE' };
+  }
+
+  return applyBillPaymentLifecycle(db, userId, billId, {
+    paidDate: transaction.date,
+    amount: transaction.amount,
+    transactionId,
+    paymentRecordId: `link_${billId}_${transactionId}`,
+    paymentMethod: options.paymentMethod || 'Linked Bank Transaction',
+    markedBy: options.markedBy || 'user',
+    markedVia: 'manual-transaction-link',
+    linkTransactionRecord: true
   });
 }
 
