@@ -10,6 +10,7 @@ import { useTransactionsQuery } from '../hooks/useFirebaseQuery';
 import { getVisiblePlaidAccounts, isDepositoryAccount } from '../utils/accountVisibility';
 import { visibleBillOccurrences } from '../utils/billVisibility';
 import { SettingsSchemaManager } from '../utils/SettingsSchemaManager';
+import { getBillReserveAmount } from '../utils/spendabilityReconciliation';
 import {
   buildHouseholdPayEvents,
   summarizeNextHouseholdRefill,
@@ -276,8 +277,7 @@ try {
     const visibleUnpaidBills = visibleBillOccurrences(bills)
       .filter(bill =>
         bill.status !== 'skipped' &&
-        bill.pendingPayment !== true &&
-        bill.paymentReviewCandidate !== true
+        bill.pendingPayment !== true
       );
 
     const billsDueBeforeRefill = visibleUnpaidBills.filter(bill => {
@@ -286,7 +286,7 @@ try {
     });
 
     const totalBillsDue = billsDueBeforeRefill.reduce(
-      (sum, bill) => sum + (parseFloat(bill.amount || bill.cost) || 0),
+      (sum, bill) => sum + getBillReserveAmount(bill),
       0
     );
 
