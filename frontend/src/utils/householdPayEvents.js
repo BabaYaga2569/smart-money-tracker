@@ -194,6 +194,14 @@ export function summarizeNextHouseholdRefill(events = []) {
   };
 }
 
+export function summarizeNextFutureHouseholdRefill(events = [], today) {
+  const todayDate = String(today || '').slice(0, 10);
+  if (!todayDate) return summarizeNextHouseholdRefill(events);
+
+  const futureEvents = events.filter(event => String(event.date || '').slice(0, 10) > todayDate);
+  return summarizeNextHouseholdRefill(futureEvents);
+}
+
 export function eventsThroughDate(events = [], inclusiveDate) {
   if (!inclusiveDate) return [];
   return events.filter(event => event.date <= inclusiveDate);

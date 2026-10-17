@@ -1,7 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import {
   buildHouseholdPayEvents,
-  summarizeNextHouseholdRefill
+  summarizeNextHouseholdRefill,
+  summarizeNextFutureHouseholdRefill
 } from './householdPayEvents';
 
 const settings = {
@@ -67,5 +68,22 @@ describe('canonical household pay events', () => {
     expect(refill.date).toBe('2026-10-15');
     expect(refill.amount).toBeCloseTo(2292.26, 2);
     expect(refill.events).toHaveLength(2);
+  });
+});
+
+
+describe('summarizeNextFutureHouseholdRefill', () => {
+  it('skips deposits that occur today and chooses the next actual household refill', () => {
+    const events = [
+      { id: 'steve-main', date: '2026-10-23', amount: 1545.17, owner: 'yours', type: 'main' },
+      { id: 'tanci-main', date: '2026-10-30', amount: 1892.26, owner: 'spouse', type: 'spouse' },
+      { id: 'steve-early', date: '2026-11-05', amount: 400, owner: 'yours', type: 'early' }
+    ];
+
+    expect(summarizeNextFutureHouseholdRefill(events, '2026-10-23')).toEqual({
+      date: '2026-10-30',
+      amount: 1892.26,
+      events: [events[1]]
+    });
   });
 });

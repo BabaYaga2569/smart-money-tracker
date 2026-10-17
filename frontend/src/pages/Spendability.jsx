@@ -12,6 +12,7 @@ import { visibleBillOccurrences } from '../utils/billVisibility';
 import {
   buildHouseholdPayEvents,
   summarizeNextHouseholdRefill,
+  summarizeNextFutureHouseholdRefill,
   nextMainPaydayDate
 } from '../utils/householdPayEvents';
 import { buildSpendabilityReconciliation } from '../utils/spendabilityReconciliation';
@@ -455,16 +456,11 @@ console.log('🔍 PAYDAY CALCULATION DEBUG:', {
       // bank balance, so only strictly-future pay events can end the cycle.
       const todayStrProj = formatDateForInput(getPacificTime());
 
-      const futureRefillDates = (paydays || [])
-        .map(p => String(p.date || '').slice(0, 10))
-        .filter(date => date && date > todayStrProj)
-        .sort();
-
-      const nextRefillDate =
-        futureRefillDates[0] ||
-        (String(nextPayday || '').slice(0, 10) > todayStrProj
-          ? String(nextPayday).slice(0, 10)
-          : null);
+      const nextFutureRefill = summarizeNextFutureHouseholdRefill(
+        householdPayEvents,
+        todayStrProj
+      );
+      const nextRefillDate = nextFutureRefill.date;
 
       const cycleEndStr = nextRefillDate
         ? addDays(nextRefillDate, -1)

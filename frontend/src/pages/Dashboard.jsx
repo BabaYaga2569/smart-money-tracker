@@ -12,7 +12,8 @@ import { visibleBillOccurrences } from '../utils/billVisibility';
 import { SettingsSchemaManager } from '../utils/SettingsSchemaManager';
 import {
   buildHouseholdPayEvents,
-  summarizeNextHouseholdRefill
+  summarizeNextHouseholdRefill,
+  summarizeNextFutureHouseholdRefill
 } from '../utils/householdPayEvents';
 
 
@@ -259,16 +260,25 @@ try {
 let calculatedSafeToSpend = null;
 let calculatedDaysUntilPayday = null;
 try {
-  const { getDaysUntilDateInPacific } = await import('../utils/DateUtils');
+  const { getDaysUntilDateInPacific, formatDateForInput } = await import('../utils/DateUtils');
+  const { getPacificTime } = await import('../utils/timezoneHelpers');
   const householdPayEvents = buildHouseholdPayEvents(data, { horizonDays: 45 });
-  const nextRefill = summarizeNextHouseholdRefill(householdPayEvents);
-  const nextRefillDate = nextRefill.date;
+  const displayRefill = summarizeNextHouseholdRefill(householdPayEvents);
+  const todayStr = formatDateForInput(getPacificTime());
+  const reserveRefill = summarizeNextFutureHouseholdRefill(householdPayEvents, todayStr);
+  const nextRefillDate = reserveRefill.date;
+
+  if (displayRefill.date) {
+    calculatedDaysUntilPayday = getDaysUntilDateInPacific(displayRefill.date);
+  }
 
   if (nextRefillDate) {
-    calculatedDaysUntilPayday = getDaysUntilDateInPacific(nextRefillDate);
-
     const visibleUnpaidBills = visibleBillOccurrences(bills)
-      .filter(bill => bill.status !== 'skipped' && bill.pendingPayment !== true);
+      .filter(bill =>
+        bill.status !== 'skipped' &&
+        bill.pendingPayment !== true &&
+        bill.paymentReviewCandidate !== true
+      );
 
     const billsDueBeforeRefill = visibleUnpaidBills.filter(bill => {
       const due = String(bill.dueDate || bill.nextDueDate || '').slice(0, 10);
