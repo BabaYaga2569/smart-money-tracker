@@ -1,9 +1,22 @@
 const dateOnly = (value) => String(value || '').slice(0, 10);
 
-const amountOf = (item) => {
-  const value = Number(item?.amount ?? item?.cost);
-  return Number.isFinite(value) ? Math.abs(value) : 0;
+export const getBillReserveAmount = (item) => {
+  const expected = Number(item?.amount ?? item?.cost);
+  const expectedAmount = Number.isFinite(expected) ? Math.abs(expected) : 0;
+
+  if (item?.paymentReviewCandidate !== true) {
+    return expectedAmount;
+  }
+
+  const reviewed = Number(item?.paymentReviewActualAmount);
+  const reviewedAmount = Number.isFinite(reviewed) ? Math.abs(reviewed) : 0;
+
+  // Until the user explicitly accepts the reviewed bank debit, reserve the
+  // more conservative of the expected obligation and the detected debit.
+  return Math.max(expectedAmount, reviewedAmount);
 };
+
+const amountOf = (item) => getBillReserveAmount(item);
 
 export function buildSpendabilityReconciliation({
   recurringPatterns = [],
@@ -65,7 +78,7 @@ export function buildSpendabilityReconciliation({
 
   const reservedTotal = reservedBills.reduce((sum, bill) => sum + amountOf(bill), 0);
   const pendingExcludedTotal = pendingPaymentBills.reduce((sum, bill) => sum + amountOf(bill), 0);
-  const reviewExcludedTotal = reviewCandidateBills.reduce((sum, bill) => sum + amountOf(bill), 0);
+  const reviewReservedTotal = reviewCandidateBills.reduce((sum, bill) => sum + amountOf(bill), 0);
 
   return {
     todayStr,
@@ -73,11 +86,11 @@ export function buildSpendabilityReconciliation({
     totalAvailable: Number(totalAvailable) || 0,
     reservedTotal,
     pendingExcludedTotal,
-    reviewExcludedTotal,
+    reviewReservedTotal,
     safeToSpend: Number(safeToSpend) || 0,
     reservedCount: reservedBills.length,
     pendingExcludedCount: pendingPaymentBills.length,
-    reviewExcludedCount: reviewCandidateBills.length,
+    reviewReservedCount: reviewCandidateBills.length,
     expectedPatternCount: expectedPatterns.length,
     missingOccurrences,
     unlinkedOccurrences,

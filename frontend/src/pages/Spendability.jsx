@@ -15,7 +15,7 @@ import {
   summarizeNextFutureHouseholdRefill,
   nextMainPaydayDate
 } from '../utils/householdPayEvents';
-import { buildSpendabilityReconciliation } from '../utils/spendabilityReconciliation';
+import { buildSpendabilityReconciliation, getBillReserveAmount } from '../utils/spendabilityReconciliation';
 import './Spendability.css';
 import { useAuth } from '../contexts/AuthContext';
 // Force rebuild 2025-11-12 v2 - Fix spendability issues
@@ -526,14 +526,14 @@ console.log('🔍 PAYDAY CALCULATION DEBUG:', {
         bill => bill.pendingPayment !== true && bill.paymentReviewCandidate === true
       );
       const unpaidBillsBeforePayday = billsDueBeforePayday.filter(
-        bill => bill.pendingPayment !== true && bill.paymentReviewCandidate !== true
+        bill => bill.pendingPayment !== true
       );
       const unpaidBillsAfterPayday = billsDueAfterPayday.filter(
-        bill => bill.pendingPayment !== true && bill.paymentReviewCandidate !== true
+        bill => bill.pendingPayment !== true
       );
 
       const totalUnpaidBills = unpaidBillsBeforePayday.reduce((sum, bill) => {
-        return sum + (Number(bill.amount ?? bill.cost) || 0);
+        return sum + getBillReserveAmount(bill);
       }, 0);
 
       const totalBillsDue = totalUnpaidBills;
@@ -557,7 +557,10 @@ console.log('🔍 PAYDAY CALCULATION DEBUG:', {
       const allUnpaidCycleBills = [
         ...(unpaidBillsBeforePayday || []),
         ...(unpaidBillsAfterPayday || []),
-      ];
+      ].map(bill => ({
+        ...bill,
+        amount: getBillReserveAmount(bill)
+      }));
 
       const projection = projectCashFlow({
         startingBalance: totalAvailable,
@@ -1208,14 +1211,14 @@ console.log('🔍 PAYDAY CALCULATION DEBUG:', {
                 <div className="calc-note">
                   <small>These remain officially unpaid until posted, but are not reserved again because the bank available balance already reflects them.</small>
                 </div>
-                {financialData.reconciliation.reviewExcludedCount > 0 && (
+                {financialData.reconciliation.reviewReservedCount > 0 && (
                   <>
-                    <div className="calc-item" style={{ marginTop: '8px' }}>
-                      <span>Changed-amount bank debits awaiting review ({financialData.reconciliation.reviewExcludedCount})</span>
-                      <span>{formatCurrency(financialData.reconciliation.reviewExcludedTotal)}</span>
+                    <div className="calc-item negative" style={{ marginTop: '8px' }}>
+                      <span>Changed-amount bills still reserved ({financialData.reconciliation.reviewReservedCount})</span>
+                      <span>-{formatCurrency(financialData.reconciliation.reviewReservedTotal)}</span>
                     </div>
                     <div className="calc-note">
-                      <small>Same merchant and due window, different amount. These are not marked paid automatically and do not change the recurring template.</small>
+                      <small>These stay in the reserve until you accept the bank debit. We reserve the larger of the expected bill amount and detected bank amount.</small>
                     </div>
                   </>
                 )}

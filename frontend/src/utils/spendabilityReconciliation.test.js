@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { buildSpendabilityReconciliation } from './spendabilityReconciliation';
+import { buildSpendabilityReconciliation, getBillReserveAmount } from './spendabilityReconciliation';
 
 describe('Spendability reconciliation audit', () => {
   it('flags expected recurring patterns with no current-cycle occurrence', () => {
@@ -52,5 +52,50 @@ describe('Spendability reconciliation audit', () => {
     expect(report.reservedTotal).toBe(30);
     expect(report.pendingExcludedTotal).toBe(5);
     expect(report.safeToSpend).toBe(70);
+  });
+});
+
+
+describe('review candidate reserve safety', () => {
+  it('reserves the larger of expected and reviewed bank amount', () => {
+    expect(getBillReserveAmount({
+      amount: 80,
+      paymentReviewCandidate: true,
+      paymentReviewActualAmount: 70
+    })).toBe(80);
+
+    expect(getBillReserveAmount({
+      amount: 80,
+      paymentReviewCandidate: true,
+      paymentReviewActualAmount: 95
+    })).toBe(95);
+  });
+
+  it('reports review candidates as reserved, not excluded', () => {
+    const reviewBill = {
+      id: 'optimum-review',
+      name: 'Optimum',
+      amount: 80,
+      dueDate: '2026-10-10',
+      paymentReviewCandidate: true,
+      paymentReviewActualAmount: 70
+    };
+
+    const report = buildSpendabilityReconciliation({
+      recurringPatterns: [],
+      currentCycleBills: [reviewBill],
+      reservedBills: [reviewBill],
+      pendingPaymentBills: [],
+      reviewCandidateBills: [reviewBill],
+      todayStr: '2026-10-07',
+      cycleEndStr: '2026-10-14',
+      totalAvailable: 100,
+      safeToSpend: 20
+    });
+
+    expect(report.reservedTotal).toBe(80);
+    expect(report.reviewReservedCount).toBe(1);
+    expect(report.reviewReservedTotal).toBe(80);
+    expect(report.safeToSpend).toBe(20);
   });
 });
