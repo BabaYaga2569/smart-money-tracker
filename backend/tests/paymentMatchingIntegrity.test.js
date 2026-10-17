@@ -54,7 +54,8 @@ function createDb(initial = {}) {
   }
 
   function snapshot(path) {
-    const data = read(path);
+    const stored = read(path);
+    const data = stored === undefined ? undefined : structuredClone(stored);
     return {
       id: path.split('/').at(-1),
       exists: data !== undefined,
@@ -118,7 +119,7 @@ function createDb(initial = {}) {
     }
   }
 
-  return {
+  const db = {
     store,
     read,
     get transactionAttempts() {
@@ -149,7 +150,11 @@ function createDb(initial = {}) {
               return runQuery(ref.path, ref.filters);
             }
             docReads.set(ref.path, store.get(ref.path)?.version || 0);
-            return snapshot(ref.path);
+            const readResult = snapshot(ref.path);
+            // Test hook: commit a concurrent write after this read and
+            // before this transaction commits.
+            if (db.afterTransactionRead) await db.afterTransactionRead(ref.path);
+            return readResult;
           },
           update: (ref, data) => writes.push({ type: 'update', path: ref.path, data }),
           set: (ref, data, options) => writes.push({ type: 'set', path: ref.path, data, options }),
@@ -171,6 +176,7 @@ function createDb(initial = {}) {
       throw new Error('Transaction retry limit exceeded');
     }
   };
+  return db;
 }
 
 // ---------------------------------------------------------------------------
@@ -645,4 +651,227 @@ test('review approval on a posted transaction records the bank amount and keeps 
   assert.equal(db.read(`${U}/recurringPatterns/p-review`).amount, 31.42);
   assert.equal(db.read(`${U}/financialEvents/bill_p-review_2026-11-10`).amount, 31.42);
   assert.equal(db.read(`${U}/transactions/tx-review`).linkedEventId, 'bill-review');
+});
+
+// ---------------------------------------------------------------------------
+// Review follow-up: Plaid sync must never clobber payment claims, and
+// payments must never be recorded from stale transaction snapshots.
+// ---------------------------------------------------------------------------
+
+const syncAdmin = { firestore: { FieldValue: { serverTimestamp: () => 'now' } } };
+
+function plaidChange(overrides = {}) {
+  return {
+    transaction_id: 'tx-1',
+    account_id: 'acct-1',
+    amount: 200, // Plaid sign: positive is money out
+    date: '2026-10-10',
+    name: 'Daycare',
+    merchant_name: 'Daycare',
+    pending: false,
+    ...overrides
+  };
+}
+
+function fakePlaidClient({ added = [], modified = [] }) {
+  return {
+    async transactionsSync() {
+      return {
+        data: { added, modified, removed: [], accounts: [], next_cursor: 'c1', has_more: false }
+      };
+    }
+  };
+}
+
+function runSync(db, plaidClient) {
+  return syncPlaidItemTransactions({
+    db,
+    admin: syncAdmin,
+    plaidClient,
+    userId,
+    item: { itemId: 'item-1', documentId: 'item-1', accessToken: 'token', cursor: 'c0' }
+  });
+}
+
+// Plaid sync reads its snapshot of existing transactions with getAll. Run
+// `between` after that snapshot is taken and before sync writes.
+function withSnapshotHook(db, between) {
+  let fired = false;
+  db.getAll = async (...refs) => {
+    const snapshots = await Promise.all(refs.map(ref => ref.get()));
+    if (!fired) {
+      fired = true;
+      await between();
+    }
+    return snapshots;
+  };
+}
+
+const claimedTx = overrides => plaidTx('tx-1', {
+  account_id: 'acct-1',
+  linkedEventId: 'bill-a',
+  linkedPaymentRecordId: 'auto_bill-a_tx-1',
+  linkedAt: 'claimed-at',
+  ...overrides
+});
+
+const itemDoc = { [`${U}/plaid_items/item-1`]: { itemId: 'item-1', accessToken: 'token', cursor: 'c0' } };
+
+test('Sync: a Plaid modification of a claimed posted transaction preserves the claim', async () => {
+  const db = createDb({ ...claimedTx(), ...itemDoc });
+  db.getAll = async (...refs) => Promise.all(refs.map(ref => ref.get()));
+
+  const result = await runSync(db, fakePlaidClient({
+    modified: [plaidChange({ name: 'DAYCARE CENTER LLC', merchant_name: 'Daycare Center' })]
+  }));
+
+  assert.equal(result.updated, 1);
+  const tx = db.read(`${U}/transactions/tx-1`);
+  assert.equal(tx.merchant_name, 'Daycare Center');
+  assert.equal(tx.linkedEventId, 'bill-a');
+  assert.equal(tx.linkedPaymentRecordId, 'auto_bill-a_tx-1');
+  assert.equal(tx.linkedAt, 'claimed-at');
+});
+
+test('Sync: a claim committed after the sync snapshot survives an ordinary update', async () => {
+  const db = createDb({ ...bill('bill-a'), ...plaidTx('tx-1', { account_id: 'acct-1' }), ...itemDoc });
+
+  // The engine claims tx-1 for bill-a after sync has read its stale snapshot.
+  withSnapshotHook(db, async () => {
+    const paid = await applyMatchedBillPayment(db, userId, { id: 'bill-a' }, txFrom(db, 'tx-1'));
+    assert.equal(paid.cleared, true);
+  });
+
+  await runSync(db, fakePlaidClient({ modified: [plaidChange({ name: 'DAYCARE LLC' })] }));
+
+  const tx = db.read(`${U}/transactions/tx-1`);
+  assert.equal(tx.name, 'DAYCARE LLC');
+  assert.equal(tx.linkedEventId, 'bill-a');
+  assert.equal(tx.linkedPaymentRecordId, 'auto_bill-a_tx-1');
+});
+
+test('Sync: pending carry-forward never overwrites a claim committed after the sync snapshot', async () => {
+  // Some banks omit pending_transaction_id, so the pending charge is matched to
+  // the posted one by date/amount/account/name. The posted row already exists
+  // unclaimed in the sync snapshot; a payment claims it before sync writes.
+  const db = createDb({
+    ...bill('bill-b'),
+    ...plaidTx('tx-pending', { account_id: 'acct-1', pending: true, linkedEventId: 'bill-old' }),
+    ...plaidTx('tx-1', { account_id: 'acct-1' }),
+    ...itemDoc
+  });
+
+  withSnapshotHook(db, async () => {
+    const paid = await applyMatchedBillPayment(db, userId, { id: 'bill-b' }, txFrom(db, 'tx-1'));
+    assert.equal(paid.cleared, true);
+  });
+
+  const result = await runSync(db, fakePlaidClient({ modified: [plaidChange()] }));
+
+  const tx = db.read(`${U}/transactions/tx-1`);
+  assert.equal(tx.linkedEventId, 'bill-b', 'committed payment claim must survive');
+  assert.equal(tx.linkedPaymentRecordId, 'auto_bill-b_tx-1');
+  assert.deepEqual(tx.pendingClaimConflict, { linkedEventId: 'bill-old', pendingTransactionId: 'tx-pending' });
+  assert.equal(result.claimConflicts, 1);
+  assert.equal(db.read(`${U}/transactions/tx-pending`), undefined);
+});
+
+test('Sync: pending carry-forward still claims an unclaimed posted replacement', async () => {
+  const db = createDb({
+    ...plaidTx('tx-pending', { account_id: 'acct-1', pending: true, linkedEventId: 'bill-old' }),
+    ...plaidTx('tx-1', { account_id: 'acct-1' }),
+    ...itemDoc
+  });
+  db.getAll = async (...refs) => Promise.all(refs.map(ref => ref.get()));
+
+  const result = await runSync(db, fakePlaidClient({ modified: [plaidChange()] }));
+
+  const tx = db.read(`${U}/transactions/tx-1`);
+  assert.equal(tx.linkedEventId, 'bill-old');
+  assert.equal(tx.linkedFromPendingTransactionId, 'tx-pending');
+  assert.equal(tx.pendingClaimConflict, undefined);
+  assert.equal(result.claimConflicts, 0);
+});
+
+test('Stale snapshot: an automatic payment is refused when Plaid changed the amount', async () => {
+  const db = createDb({ ...bill('bill-a'), ...plaidTx('tx-1', { amount: -180 }) });
+
+  // The engine matched against an older snapshot showing -200.
+  const result = await applyMatchedBillPayment(db, userId, { id: 'bill-a' }, { ...txFrom(db, 'tx-1'), amount: -200 });
+
+  assert.equal(result.success, false);
+  assert.equal(result.reason, 'TRANSACTION_CHANGED');
+  assert.equal(result.liveAmount, -180);
+  assert.deepEqual(paidBills(db), []);
+  assert.equal(db.read(`${U}/transactions/tx-1`).linkedEventId, undefined);
+});
+
+test('Stale snapshot: an automatic payment is refused when Plaid changed the date', async () => {
+  const db = createDb({ ...bill('bill-a'), ...plaidTx('tx-1', { date: '2026-10-20' }) });
+
+  const result = await applyMatchedBillPayment(db, userId, { id: 'bill-a' }, { ...txFrom(db, 'tx-1'), date: '2026-10-10' });
+
+  assert.equal(result.success, false);
+  assert.equal(result.reason, 'TRANSACTION_CHANGED');
+  assert.deepEqual(paidBills(db), []);
+});
+
+test('Stale snapshot: a sync committed during the payment transaction forces a fresh read and refusal', async () => {
+  const db = createDb({ ...bill('bill-a'), ...plaidTx('tx-1') });
+  let synced = false;
+  db.afterTransactionRead = async path => {
+    if (synced || path !== `${U}/transactions/tx-1`) return;
+    synced = true;
+    // Plaid sync lands between the payment's read and its commit.
+    const batch = db.batch();
+    batch.set(db.collection('users').doc(userId).collection('transactions').doc('tx-1'), { amount: -175 }, { merge: true });
+    await batch.commit();
+  };
+
+  const result = await applyMatchedBillPayment(db, userId, { id: 'bill-a' }, txFrom(db, 'tx-1'));
+
+  assert.equal(result.success, false);
+  assert.equal(result.reason, 'TRANSACTION_CHANGED');
+  assert.equal(result.liveAmount, -175);
+  assert.deepEqual(paidBills(db), []);
+  assert.equal(paymentsFor(db, 'tx-1').length, 0);
+});
+
+test('Payment records use the stored transaction amount and date', async () => {
+  const db = createDb({ ...bill('bill-a', { amount: 200 }), ...plaidTx('tx-1', { amount: -200.0, date: '2026-10-11' }) });
+
+  const result = await applyLinkedBillPayment(db, userId, 'bill-a', txFrom(db, 'tx-1'));
+
+  assert.equal(result.cleared, true);
+  const paid = db.read(`${U}/financialEvents/bill-a`);
+  assert.equal(paid.paidAmount, 200);
+  assert.equal(paid.paidDate, '2026-10-11');
+  const [payment] = paymentsFor(db, 'tx-1');
+  assert.equal(payment.amount, 200);
+  assert.equal(payment.paidDate, '2026-10-11');
+});
+
+test('Review approval is refused when the bank debit changed after it was reviewed', async () => {
+  const db = createDb({
+    ...bill('bill-review', {
+      name: 'Optimum',
+      amount: 80,
+      paymentReviewCandidate: true,
+      paymentReviewTransactionId: 'tx-review',
+      paymentReviewActualAmount: 95,
+      paymentReviewDate: '2026-10-10'
+    }),
+    // Plaid later adjusted the debit to $97.50.
+    ...plaidTx('tx-review', { name: 'Optimum', merchant_name: 'Optimum', amount: -97.5, date: '2026-10-10' })
+  });
+
+  const accept = await applyReviewCandidateBillPayment(db, userId, 'bill-review', txFrom(db, 'tx-review'));
+
+  assert.equal(accept.success, false);
+  assert.equal(accept.reason, 'REVIEW_AMOUNT_CHANGED');
+  assert.equal(accept.reviewedAmount, 95);
+  const reviewBill = db.read(`${U}/financialEvents/bill-review`);
+  assert.equal(reviewBill.isPaid, false);
+  assert.equal(reviewBill.paymentReviewCandidate, true);
+  assert.equal(db.read(`${U}/transactions/tx-review`).linkedEventId, undefined);
 });

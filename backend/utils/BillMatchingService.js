@@ -823,10 +823,16 @@ async function findPaymentForOtherBill(firestoreTransaction, userRef, transactio
   return other ? { paymentRecordId: other.id, billId: other.data()?.billId || null } : null;
 }
 
+function toCents(value) {
+  const number = Number(value);
+  return Number.isFinite(number) ? Math.round(number * 100) : null;
+}
+
 /**
  * Validate that a bank transaction may be claimed by this bill. Returns a
- * refusal result, or null when the claim is allowed. Reads only; the caller
- * writes the claim onto the transaction document in the same transaction.
+ * refusal result, or { liveTransaction } when the claim is allowed. Reads
+ * only; the caller writes the claim onto the transaction document in the
+ * same transaction and pays from the live amount and date.
  *
  * A transaction is already consumed when any of these point at another bill:
  * - transactions.linkedEventId (current links and legacy manual links)
@@ -835,13 +841,44 @@ async function findPaymentForOtherBill(firestoreTransaction, userRef, transactio
  *   was written for automatic matches)
  * - the same evidence on the pending transaction this posted one replaced
  */
-async function checkTransactionClaim(firestoreTransaction, { userRef, transactionRef, transactionId, billId }) {
+async function checkTransactionClaim(firestoreTransaction, {
+  userRef,
+  transactionRef,
+  transactionId,
+  billId,
+  expectedAmount,
+  expectedDate
+}) {
   const transactionSnapshot = await firestoreTransaction.get(transactionRef);
   if (!transactionSnapshot.exists) {
     return { success: false, skipped: true, reason: 'TRANSACTION_NOT_FOUND' };
   }
 
   const liveTransaction = transactionSnapshot.data() || {};
+
+  // Matching (or the user's confirmation) was based on an earlier snapshot.
+  // If Plaid changed the amount or date since, refuse rather than record a
+  // payment from stale values; the next engine run re-evaluates fresh data.
+  const liveCents = toCents(liveTransaction.amount);
+  const expectedCents = toCents(expectedAmount);
+  const liveDate = String(liveTransaction.date || '').slice(0, 10);
+  const snapshotDate = String(expectedDate || '').slice(0, 10);
+  if (
+    liveCents === null ||
+    !liveDate ||
+    (expectedCents !== null && liveCents !== expectedCents) ||
+    (snapshotDate && liveDate !== snapshotDate)
+  ) {
+    return {
+      success: false,
+      skipped: true,
+      reason: 'TRANSACTION_CHANGED',
+      expectedAmount: expectedAmount ?? null,
+      liveAmount: liveTransaction.amount ?? null,
+      expectedDate: snapshotDate || null,
+      liveDate: liveDate || null
+    };
+  }
 
   // A pending charge can change amount or disappear, and posts under a new
   // transaction ID. It can only protect a bill (pendingPayment), never pay it.
@@ -909,7 +946,7 @@ async function checkTransactionClaim(firestoreTransaction, { userRef, transactio
     }
   }
 
-  return null;
+  return { liveTransaction };
 }
 
 /**
@@ -921,8 +958,8 @@ async function checkTransactionClaim(firestoreTransaction, { userRef, transactio
  */
 async function applyBillPaymentLifecycle(db, userId, billId, payment) {
   const {
-    paidDate,
-    amount,
+    paidDate: requestedPaidDate,
+    amount: requestedAmount,
     transactionId = null,
     paymentRecordId,
     paymentMethod,
@@ -934,7 +971,7 @@ async function applyBillPaymentLifecycle(db, userId, billId, payment) {
   if (!billId) {
     return { success: false, skipped: true, reason: 'MISSING_BILL_ID' };
   }
-  if (!paidDate) {
+  if (!requestedPaidDate) {
     return { success: false, skipped: true, reason: 'MISSING_PAID_DATE' };
   }
   if (!paymentRecordId) {
@@ -950,6 +987,10 @@ async function applyBillPaymentLifecycle(db, userId, billId, payment) {
     : null;
 
   return db.runTransaction(async firestoreTransaction => {
+    let paidDate = requestedPaidDate;
+    let amount = requestedAmount;
+    let liveTransaction = null;
+
     // Every transaction-backed payment (automatic, manual link, review
     // acceptance) claims the bank transaction inside this Firestore
     // transaction. Reading and then writing the transaction document makes
@@ -960,9 +1001,17 @@ async function applyBillPaymentLifecycle(db, userId, billId, payment) {
         userRef,
         transactionRef,
         transactionId,
-        billId
+        billId,
+        expectedAmount: requestedAmount,
+        expectedDate: requestedPaidDate
       });
-      if (claim) return claim;
+      if (!claim.liveTransaction) return claim;
+
+      // Pay from the stored transaction read inside this transaction, never
+      // from the caller's snapshot.
+      liveTransaction = claim.liveTransaction;
+      paidDate = String(liveTransaction.date).slice(0, 10);
+      amount = liveTransaction.amount;
     }
 
     const billSnapshot = await firestoreTransaction.get(billRef);
@@ -983,6 +1032,26 @@ async function applyBillPaymentLifecycle(db, userId, billId, payment) {
           skipped: true,
           reason: 'REVIEW_TRANSACTION_CHANGED',
           expectedTransactionId: liveBill.paymentReviewTransactionId || null
+        };
+      }
+
+      // The user confirmed the reviewed amount and date. If Plaid has since
+      // changed the debit, fail closed so they review the new values.
+      const reviewedCents = toCents(liveBill.paymentReviewActualAmount);
+      const reviewedDate = String(liveBill.paymentReviewDate || '').slice(0, 10);
+      const liveCents = toCents(Math.abs(Number(liveTransaction?.amount)));
+      if (
+        (reviewedCents !== null && liveCents !== reviewedCents) ||
+        (reviewedDate && reviewedDate !== paidDate)
+      ) {
+        return {
+          success: false,
+          skipped: true,
+          reason: 'REVIEW_AMOUNT_CHANGED',
+          reviewedAmount: liveBill.paymentReviewActualAmount ?? null,
+          liveAmount: liveTransaction?.amount ?? null,
+          reviewedDate: reviewedDate || null,
+          liveDate: paidDate
         };
       }
     }
