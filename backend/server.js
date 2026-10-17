@@ -10,7 +10,7 @@ import performanceTracker from './middleware/performanceTracker.js';
 import logger from './utils/logger.js';
 import { atomicTransaction, createOperation } from './utils/atomicTransaction.js';
 import { validateAccount as validateAccountConsistency, validateTransaction as validateTransactionConsistency, validateBalanceConsistency, checkDuplicateTransaction } from './utils/consistencyValidators.js';
-import { runBillMatching, applyManualBillPayment, unmarkManualBillPayment, reverseIncorrectAutoBillMatch } from './utils/BillMatchingService.js';
+import { runBillMatching, applyManualBillPayment, applyLinkedBillPayment, unmarkManualBillPayment, reverseIncorrectAutoBillMatch } from './utils/BillMatchingService.js';
 import { runCanonicalBillEngine } from './utils/billEngine.js';
 import { findPlaidItemDocument, syncPlaidItemTransactions } from './utils/plaidSyncEngine.js';
 import {
@@ -1879,6 +1879,58 @@ app.post("/api/plaid/sync_transactions", async (req, res, next) => {
     if (syncLockAcquired && userId) {
       activePlaidSyncUsers.delete(userId);
     }
+  }
+});
+
+// Link a real transaction to a bill through the canonical atomic lifecycle.
+app.post("/api/bills/:billId/link-transaction", async (req, res, next) => {
+  const endpoint = "/api/bills/:billId/link-transaction";
+  try {
+    const { userId, transactionId } = req.body || {};
+    const { billId } = req.params;
+
+    if (!userId) throw createError.badRequest('userId is required', 'MISSING_USER_ID');
+    if (!billId) throw createError.badRequest('billId is required', 'MISSING_BILL_ID');
+    if (!transactionId) throw createError.badRequest('transactionId is required', 'MISSING_TRANSACTION_ID');
+
+    validators.validateUserId(userId);
+
+    const transactionRef = db.collection('users').doc(userId)
+      .collection('transactions').doc(transactionId);
+    const transactionSnapshot = await transactionRef.get();
+
+    if (!transactionSnapshot.exists) {
+      return res.status(404).json({
+        success: false,
+        skipped: true,
+        reason: 'TRANSACTION_NOT_FOUND'
+      });
+    }
+
+    const transaction = {
+      id: transactionSnapshot.id,
+      ...transactionSnapshot.data()
+    };
+
+    const result = await applyLinkedBillPayment(db, userId, billId, transaction, {
+      markedBy: req.authUid || 'user'
+    });
+
+    if (!result.success) {
+      const status =
+        result.reason === 'TRANSACTION_NOT_FOUND' || result.reason === 'BILL_NOT_FOUND'
+          ? 404
+          : 409;
+      return res.status(status).json(result);
+    }
+
+    logDiagnostic.response(endpoint, 200, result);
+    res.json(result);
+  } catch (error) {
+    logger.error('BILL_PAYMENT', 'Transaction-backed bill link failed', error, {
+      billId: req.params.billId
+    });
+    next(error.statusCode ? error : createError.internal(error.message || 'Failed to link transaction to bill'));
   }
 });
 
