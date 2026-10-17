@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
-import { collection, query, where, getDocs, doc, updateDoc, addDoc, serverTimestamp } from 'firebase/firestore';
+import { collection, query, where, getDocs, addDoc, serverTimestamp } from 'firebase/firestore';
 import { db } from '../firebase';
 import { useAuth } from '../contexts/AuthContext';
 import './BillTransactionLinker.css';
@@ -133,33 +133,26 @@ export default function BillTransactionLinker({ bill, onLink, onClose }) {
       setSaving(true);
       setError(null);
 
-      const eventRef = doc(db, 'users', currentUser.uid, 'financialEvents', bill.id);
-      const txRef = doc(db, 'users', currentUser.uid, 'transactions', selectedTransaction.id);
+      const apiUrl =
+        import.meta.env.VITE_API_URL ||
+        'https://smart-money-tracker-09ks.onrender.com';
 
-      // Update bill with transaction link and audit trail
-      await updateDoc(eventRef, {
-        linkedTransactionId: selectedTransaction.id,
-        linkedAt: serverTimestamp(),
-        linkConfidence: 0.95,
-        linkStrategy: 'manual',
-        // Mark bill as paid when linking transaction
-        isPaid: true,
-        status: 'paid',
-        paidDate: selectedTransaction.date,
-        paidAmount: Math.abs(parseFloat(selectedTransaction.amount)),
-        // Audit trail fields
-        markedBy: 'manual-link',
-        markedAt: serverTimestamp(),
-        markedVia: 'link-transaction',
-        canBeUnmarked: true,
-        updatedAt: serverTimestamp()
-      });
+      const response = await fetch(
+        `${apiUrl}/api/bills/${bill.id}/link-transaction`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            userId: currentUser.uid,
+            transactionId: selectedTransaction.id
+          })
+        }
+      );
 
-      // Update transaction with bill link
-      await updateDoc(txRef, {
-        linkedEventId: bill.id,
-        linkedAt: serverTimestamp()
-      });
+      const result = await response.json();
+      if (!response.ok || !result.success) {
+        throw new Error(result.reason || result.error || 'Unable to link transaction safely');
+      }
 
       // Create payment rule if requested
       if (createRule) {
