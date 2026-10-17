@@ -202,7 +202,8 @@ export async function runCanonicalBillEngine({
 
   const userRef = db.collection('users').doc(userId);
 
-  const [billsSnapshot, txSnapshot, patternsSnapshot] = await Promise.all([
+  const cutoffDate = isoDateDaysAgo(lookbackDays);
+  const [billsSnapshot, txSnapshot, patternsSnapshot, paymentsSnapshot] = await Promise.all([
     userRef
       .collection('financialEvents')
       .where('type', '==', 'bill')
@@ -210,10 +211,14 @@ export async function runCanonicalBillEngine({
       .get(),
     userRef
       .collection('transactions')
-      .where('date', '>=', isoDateDaysAgo(lookbackDays))
+      .where('date', '>=', cutoffDate)
       .get(),
     userRef
       .collection('recurringPatterns')
+      .get(),
+    userRef
+      .collection('bill_payments')
+      .where('paidDate', '>=', cutoffDate)
       .get()
   ]);
 
@@ -227,10 +232,28 @@ export async function runCanonicalBillEngine({
     ...doc.data()
   }));
 
-  const transactions = txSnapshot.docs.map(doc => ({
-    id: doc.id,
-    ...doc.data()
-  }));
+  const usedTransactionIds = new Set(
+    paymentsSnapshot.docs
+      .map(doc => doc.data()?.linkedTransactionId)
+      .filter(Boolean)
+  );
+
+  const transactions = txSnapshot.docs
+    .map(doc => ({
+      id: doc.id,
+      ...doc.data()
+    }))
+    .filter(transaction => {
+      const transactionId = transaction.id || transaction.transaction_id;
+      return !transactionId || !usedTransactionIds.has(transactionId);
+    });
+
+  const excludedUsedTransactions = txSnapshot.docs.length - transactions.length;
+  if (excludedUsedTransactions > 0) {
+    log?.info?.(
+      `[BILL_ENGINE] Excluded ${excludedUsedTransactions} transaction(s) already linked to prior bill payments`
+    );
+  }
 
   const occurrenceResult = await ensureCurrentBillOccurrences({
     db,
@@ -254,6 +277,7 @@ export async function runCanonicalBillEngine({
       ambiguousLegacy: occurrenceResult.ambiguousLegacy,
       billsScanned: unpaidBills.length,
       transactionsScanned: transactions.length,
+      usedTransactionsSkipped: excludedUsedTransactions,
       patternsScanned: patterns.length
     };
   }
@@ -282,6 +306,7 @@ export async function runCanonicalBillEngine({
     ambiguousLegacy: occurrenceResult.ambiguousLegacy,
     billsScanned: unpaidBills.length,
     transactionsScanned: transactions.length,
+    usedTransactionsSkipped: excludedUsedTransactions,
     patternsScanned: patterns.length
   };
 }
