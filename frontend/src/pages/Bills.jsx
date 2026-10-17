@@ -841,6 +841,62 @@ const refreshPlaidTransactions = async () => {
     await loadBills();
   };
   
+  const handleAcceptReviewAmount = async (bill) => {
+    const transactionId = bill?.paymentReviewTransactionId;
+    if (!transactionId) {
+      NotificationManager.showError('Unable to accept bank amount', 'The reviewed transaction is no longer available.');
+      return;
+    }
+
+    const actualAmount = Number(bill.paymentReviewActualAmount);
+    const expectedAmount = Number(bill.paymentReviewExpectedAmount ?? bill.amount ?? bill.cost);
+
+    const confirmed = window.confirm(
+      `Accept this bank debit as payment?\n\n` +
+      `${bill.name}\n` +
+      `Expected: ${formatCurrency(expectedAmount)}\n` +
+      `Bank debit: ${formatCurrency(actualAmount)}\n` +
+      `Bank date: ${bill.paymentReviewDate || 'Unknown'}\n\n` +
+      `This records the actual bank amount and advances the bill. The recurring template amount will NOT be changed.`
+    );
+
+    if (!confirmed) return;
+
+    setPayingBill(bill.name);
+    const loadingNotificationId = NotificationManager.showLoading('Accepting reviewed bank payment...');
+
+    try {
+      const apiUrl = import.meta.env.VITE_API_URL || 'https://smart-money-tracker-09ks.onrender.com';
+      const response = await fetch(`${apiUrl}/api/bills/${bill.id}/accept-review`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          userId: currentUser.uid,
+          transactionId
+        })
+      });
+
+      const result = await response.json();
+      if (!response.ok || !result.success) {
+        throw new Error(result.reason || result.error || 'Unable to accept reviewed bank payment');
+      }
+
+      NotificationManager.removeNotification(loadingNotificationId);
+      NotificationManager.showSuccess(
+        `Accepted ${formatCurrency(actualAmount)} bank payment for ${bill.name}. Recurring template unchanged.`
+      );
+
+      await loadBills();
+      await loadPaidThisMonth();
+    } catch (error) {
+      console.error('Error accepting changed bank amount:', error);
+      NotificationManager.removeNotification(loadingNotificationId);
+      NotificationManager.showError('Unable to accept bank amount', error.message);
+    } finally {
+      setPayingBill(null);
+    }
+  };
+
   const processBillPaymentInternal = async (bill, paymentData = {}) => {
     const paidDate = paymentData.paidDate || getPacificTime();
     const paidDateStr = formatDateForInput(paidDate);
@@ -1797,14 +1853,26 @@ const refreshPlaidTransactions = async () => {
 {/* Manual Mark as Paid Button */}
 {bill.status !== 'paid' && bill.status !== 'skipped' && (
   <div className="bill-card-actions">
-    <button
-      type="button"
-      className="bill-card-action bill-card-action-paid"
-      onClick={() => handleMarkAsPaid(bill)}
-      disabled={payingBill === bill.name}
-    >
-      {payingBill === bill.name ? '⏳ Processing...' : '💳 Mark as Paid'}
-    </button>
+    {bill.paymentReviewCandidate === true ? (
+      <button
+        type="button"
+        className="bill-card-action bill-card-action-paid"
+        onClick={() => handleAcceptReviewAmount(bill)}
+        disabled={payingBill === bill.name}
+        title="Record the reviewed bank debit as this bill payment without changing the recurring template amount"
+      >
+        {payingBill === bill.name ? '⏳ Processing...' : `✅ Accept Bank ${formatCurrency(bill.paymentReviewActualAmount)}`}
+      </button>
+    ) : (
+      <button
+        type="button"
+        className="bill-card-action bill-card-action-paid"
+        onClick={() => handleMarkAsPaid(bill)}
+        disabled={payingBill === bill.name}
+      >
+        {payingBill === bill.name ? '⏳ Processing...' : '💳 Mark as Paid'}
+      </button>
+    )}
     
     {/* Link Transaction Button */}
     {!bill.linkedTransactionId && (

@@ -825,7 +825,8 @@ async function applyBillPaymentLifecycle(db, userId, billId, payment) {
     paymentMethod,
     markedBy,
     markedVia,
-    linkTransactionRecord = false
+    linkTransactionRecord = false,
+    requiredReviewTransactionId = null
   } = payment;
 
   if (!billId) {
@@ -871,6 +872,21 @@ async function applyBillPaymentLifecycle(db, userId, billId, payment) {
     }
 
     const liveBill = { id: billSnapshot.id, ...billSnapshot.data() };
+
+    if (requiredReviewTransactionId) {
+      if (liveBill.paymentReviewCandidate !== true) {
+        return { success: false, skipped: true, reason: 'REVIEW_CANDIDATE_NOT_ACTIVE' };
+      }
+
+      if (liveBill.paymentReviewTransactionId !== requiredReviewTransactionId) {
+        return {
+          success: false,
+          skipped: true,
+          reason: 'REVIEW_TRANSACTION_CHANGED',
+          expectedTransactionId: liveBill.paymentReviewTransactionId || null
+        };
+      }
+    }
 
     if (liveBill.isPaid || liveBill.status === 'paid') {
       if (liveBill.paymentRecordId === paymentRecordId ||
@@ -994,6 +1010,15 @@ async function applyBillPaymentLifecycle(db, userId, billId, payment) {
       pendingPaymentName: FieldValue.delete(),
       pendingPaymentConfidence: FieldValue.delete(),
       pendingPaymentMatchedAt: FieldValue.delete(),
+      paymentReviewCandidate: FieldValue.delete(),
+      paymentReviewTransactionId: FieldValue.delete(),
+      paymentReviewDate: FieldValue.delete(),
+      paymentReviewExpectedAmount: FieldValue.delete(),
+      paymentReviewActualAmount: FieldValue.delete(),
+      paymentReviewName: FieldValue.delete(),
+      paymentReviewPending: FieldValue.delete(),
+      paymentReviewReason: FieldValue.delete(),
+      paymentReviewDetectedAt: FieldValue.delete(),
       updatedAt: FieldValue.serverTimestamp()
     });
 
@@ -1172,6 +1197,38 @@ export async function applyLinkedBillPayment(db, userId, billId, transaction, op
     markedBy: options.markedBy || 'user',
     markedVia: 'manual-transaction-link',
     linkTransactionRecord: true
+  });
+}
+
+export async function applyReviewCandidateBillPayment(db, userId, billId, transaction, options = {}) {
+  const transactionId = transaction?.id || transaction?.transaction_id;
+  if (!transactionId) {
+    return { success: false, skipped: true, reason: 'MISSING_TRANSACTION_ID' };
+  }
+
+  const amount = Number(transaction?.amount);
+  if (
+    String(transaction?.source || '').toLowerCase() === 'plaid' &&
+    Number.isFinite(amount) &&
+    amount >= 0
+  ) {
+    return { success: false, skipped: true, reason: 'TRANSACTION_NOT_OUTFLOW' };
+  }
+
+  if (!transaction?.date) {
+    return { success: false, skipped: true, reason: 'MISSING_TRANSACTION_DATE' };
+  }
+
+  return applyBillPaymentLifecycle(db, userId, billId, {
+    paidDate: transaction.date,
+    amount: transaction.amount,
+    transactionId,
+    paymentRecordId: `review_${billId}_${transactionId}`,
+    paymentMethod: options.paymentMethod || 'Accepted Changed Bank Amount',
+    markedBy: options.markedBy || 'user',
+    markedVia: 'changed-amount-review',
+    linkTransactionRecord: true,
+    requiredReviewTransactionId: transactionId
   });
 }
 
