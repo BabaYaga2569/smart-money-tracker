@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { applyMatchedBillPayment, applyManualBillPayment, unmarkManualBillPayment } from '../utils/BillMatchingService.js';
+import { applyMatchedBillPayment, applyManualBillPayment, applyLinkedBillPayment, unmarkManualBillPayment } from '../utils/BillMatchingService.js';
 
 function pathJoin(...parts) {
   return parts.filter(Boolean).join('/');
@@ -666,4 +666,129 @@ test('recurring payment omits undefined installment fields from Firestore update
     Object.prototype.hasOwnProperty.call(pattern, 'remainingBalance'),
     false
   );
+});
+
+
+test('manual transaction link uses canonical lifecycle and consumes the transaction atomically', async () => {
+  const txPath = `users/${userId}/transactions/tx-link`;
+  const patternPath = `users/${userId}/recurringPatterns/pattern-link`;
+  const db = createDb({
+    [billPath]: {
+      type: 'bill',
+      name: 'Internet',
+      amount: 80,
+      dueDate: '2026-10-15',
+      isPaid: false,
+      status: 'pending',
+      recurrence: 'monthly',
+      recurringPatternId: 'pattern-link'
+    },
+    [patternPath]: {
+      name: 'Internet',
+      amount: 80,
+      frequency: 'monthly',
+      nextOccurrence: '2026-10-15'
+    },
+    [txPath]: {
+      source: 'plaid',
+      name: 'OPTIMUM',
+      amount: -79.42,
+      date: '2026-10-15',
+      pending: false
+    }
+  });
+
+  const result = await applyLinkedBillPayment(
+    db,
+    userId,
+    'bill-1',
+    {
+      id: 'tx-link',
+      source: 'plaid',
+      name: 'OPTIMUM',
+      amount: -79.42,
+      date: '2026-10-15'
+    }
+  );
+
+  assert.equal(result.success, true);
+  assert.equal(result.cleared, true);
+  assert.equal(result.advanced, true);
+  assert.equal(db.store.get(billPath).paidAmount, 79.42);
+  assert.equal(db.store.get(billPath).linkedTransactionId, 'tx-link');
+  assert.equal(db.store.get(txPath).linkedEventId, 'bill-1');
+  assert.equal(db.store.get(patternPath).nextOccurrence, '2026-11-15');
+
+  const payment = db.store.get(
+    `users/${userId}/bill_payments/link_bill-1_tx-link`
+  );
+  assert.equal(payment.linkedTransactionId, 'tx-link');
+  assert.equal(payment.amount, 79.42);
+});
+
+test('manual transaction link refuses a transaction already linked to another bill', async () => {
+  const txPath = `users/${userId}/transactions/tx-link`;
+  const db = createDb({
+    [billPath]: {
+      type: 'bill',
+      name: 'Internet',
+      amount: 80,
+      dueDate: '2026-10-15',
+      isPaid: false,
+      status: 'pending'
+    },
+    [txPath]: {
+      source: 'plaid',
+      name: 'OPTIMUM',
+      amount: -80,
+      date: '2026-10-15',
+      linkedEventId: 'different-bill'
+    }
+  });
+
+  const before = new Map(db.store);
+  const result = await applyLinkedBillPayment(
+    db,
+    userId,
+    'bill-1',
+    {
+      id: 'tx-link',
+      source: 'plaid',
+      amount: -80,
+      date: '2026-10-15'
+    }
+  );
+
+  assert.equal(result.success, false);
+  assert.equal(result.reason, 'TRANSACTION_ALREADY_LINKED');
+  assert.deepEqual([...db.store.entries()], [...before.entries()]);
+});
+
+test('manual transaction link refuses incoming Plaid credit', async () => {
+  const db = createDb({
+    [billPath]: {
+      type: 'bill',
+      name: 'Internet',
+      amount: 80,
+      dueDate: '2026-10-15',
+      isPaid: false,
+      status: 'pending'
+    }
+  });
+
+  const result = await applyLinkedBillPayment(
+    db,
+    userId,
+    'bill-1',
+    {
+      id: 'tx-credit',
+      source: 'plaid',
+      amount: 80,
+      date: '2026-10-15'
+    }
+  );
+
+  assert.equal(result.success, false);
+  assert.equal(result.reason, 'TRANSACTION_NOT_OUTFLOW');
+  assert.equal(db.store.get(billPath).isPaid, false);
 });
