@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { applyMatchedBillPayment, applyManualBillPayment, applyLinkedBillPayment, unmarkManualBillPayment } from '../utils/BillMatchingService.js';
+import { applyMatchedBillPayment, applyManualBillPayment, applyLinkedBillPayment, applyReviewCandidateBillPayment, unmarkManualBillPayment } from '../utils/BillMatchingService.js';
 
 function pathJoin(...parts) {
   return parts.filter(Boolean).join('/');
@@ -791,4 +791,102 @@ test('manual transaction link refuses incoming Plaid credit', async () => {
   assert.equal(result.success, false);
   assert.equal(result.reason, 'TRANSACTION_NOT_OUTFLOW');
   assert.equal(db.store.get(billPath).isPaid, false);
+});
+
+
+test('accepting changed bank amount records actual debit and preserves recurring template amount', async () => {
+  const patternPath = `users/${userId}/recurringPatterns/pattern-review`;
+  const txPath = `users/${userId}/transactions/tx-review`;
+  const reviewBillPath = `users/${userId}/financialEvents/bill-review`;
+  const db = createDb({
+    [reviewBillPath]: {
+      type: 'bill',
+      name: 'GEICO SXS',
+      amount: 31.42,
+      dueDate: '2026-10-10',
+      isPaid: false,
+      status: 'pending',
+      recurrence: 'monthly',
+      recurringPatternId: 'pattern-review',
+      paymentReviewCandidate: true,
+      paymentReviewTransactionId: 'tx-review',
+      paymentReviewActualAmount: 28.23,
+      paymentReviewExpectedAmount: 31.42,
+      paymentReviewDate: '2026-10-10'
+    },
+    [patternPath]: {
+      name: 'GEICO SXS',
+      amount: 31.42,
+      frequency: 'monthly',
+      nextOccurrence: '2026-10-10',
+      status: 'active'
+    },
+    [txPath]: {
+      id: 'tx-review',
+      transaction_id: 'tx-review',
+      source: 'plaid',
+      name: 'GEICO',
+      amount: -28.23,
+      date: '2026-10-10',
+      pending: false
+    }
+  });
+
+  const tx = { id: 'tx-review', ...db.store.get(txPath) };
+  const result = await applyReviewCandidateBillPayment(
+    db,
+    userId,
+    'bill-review',
+    tx
+  );
+
+  assert.equal(result.success, true);
+  assert.equal(result.cleared, true);
+  assert.equal(db.store.get(reviewBillPath).paidAmount, 28.23);
+  assert.equal(db.store.get(reviewBillPath).paymentReviewCandidate, undefined);
+  assert.equal(db.store.get(patternPath).amount, 31.42);
+  assert.equal(db.store.get(patternPath).nextOccurrence, '2026-11-10');
+
+  const nextBill = db.store.get(
+    `users/${userId}/financialEvents/bill_pattern-review_2026-11-10`
+  );
+  assert.equal(nextBill.amount, 31.42);
+  assert.equal(db.store.get(txPath).linkedEventId, 'bill-review');
+});
+
+test('changed-amount acceptance refuses a stale or different review transaction', async () => {
+  const reviewBillPath = `users/${userId}/financialEvents/bill-review-stale`;
+  const txPath = `users/${userId}/transactions/tx-new`;
+  const db = createDb({
+    [reviewBillPath]: {
+      type: 'bill',
+      name: 'GEICO',
+      amount: 100,
+      dueDate: '2026-10-10',
+      isPaid: false,
+      status: 'pending',
+      paymentReviewCandidate: true,
+      paymentReviewTransactionId: 'tx-old'
+    },
+    [txPath]: {
+      id: 'tx-new',
+      transaction_id: 'tx-new',
+      source: 'plaid',
+      name: 'GEICO',
+      amount: -95,
+      date: '2026-10-10'
+    }
+  });
+
+  const before = new Map(db.store);
+  const result = await applyReviewCandidateBillPayment(
+    db,
+    userId,
+    'bill-review-stale',
+    { id: 'tx-new', ...db.store.get(txPath) }
+  );
+
+  assert.equal(result.success, false);
+  assert.equal(result.reason, 'REVIEW_TRANSACTION_CHANGED');
+  assert.deepEqual([...db.store.entries()], [...before.entries()]);
 });
