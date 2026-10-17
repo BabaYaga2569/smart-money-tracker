@@ -9,6 +9,7 @@ function doc(id, data) {
 function createCollection(snapshotDocs, name = '') {
   const filters = [];
   const writes = [];
+  const existingIds = new Set(snapshotDocs.map(item => item.id));
   return {
     name,
     filters,
@@ -21,7 +22,20 @@ function createCollection(snapshotDocs, name = '') {
       return { docs: snapshotDocs };
     },
     doc(id) {
-      return { id, path: `${name}/${id}` };
+      const ref = {
+        id,
+        path: `${name}/${id}`,
+        async create(data) {
+          if (existingIds.has(id)) {
+            const error = new Error('Document already exists');
+            error.code = 6;
+            throw error;
+          }
+          existingIds.add(id);
+          writes.push({ ref, data, operation: 'create' });
+        }
+      };
+      return ref;
     }
   };
 }
@@ -336,4 +350,45 @@ test('canonical bill engine excludes a transaction already used by a prior bill 
   assert.equal(result.usedTransactionsSkipped, 1);
   assert.equal(result.transactionsScanned, 0);
   assert.deepEqual(db.billPayments.filters[0], ['paidDate', '>=', db.txCollection.filters[0][2]]);
+});
+
+
+test('occurrence seeding never overwrites an existing paid deterministic bill', async () => {
+  const paidId = 'bill_pattern-1_2026-10-06';
+  const db = createDb({
+    bills: [doc(paidId, {
+      type: 'bill',
+      name: 'Pierce Prime Platinum Movies',
+      amount: 37.45,
+      dueDate: '2026-10-06',
+      isPaid: true,
+      status: 'paid',
+      recurringPatternId: 'pattern-1',
+      paidDate: '2026-10-06',
+      linkedTransactionId: 'tx-paid'
+    })]
+  });
+
+  const result = await ensureCurrentBillOccurrences({
+    db,
+    userId: 'user-1',
+    patterns: [{
+      id: 'pattern-1',
+      name: 'Pierce Prime Platinum Movies',
+      amount: 37.45,
+      type: 'expense',
+      status: 'active',
+      frequency: 'monthly',
+      nextOccurrence: '2026-10-06'
+    }],
+    unpaidBills: [],
+    log: { warn() {}, info() {} }
+  });
+
+  assert.equal(result.seeded, 0);
+  assert.equal(result.bills.length, 0);
+  assert.equal(
+    db.financialEvents.writes.filter(write => write.operation === 'create').length,
+    0
+  );
 });
