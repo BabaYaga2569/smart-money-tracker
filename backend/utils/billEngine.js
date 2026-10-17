@@ -53,7 +53,7 @@ export async function ensureCurrentBillOccurrences({
   );
 
   const batch = db.batch();
-  let writes = 0;
+  let batchWrites = 0;
   let seeded = 0;
   let linked = 0;
   let skippedNoAmount = 0;
@@ -93,7 +93,7 @@ export async function ensureCurrentBillOccurrences({
       legacy.merchantNames = pattern.merchantNames || legacy.merchantNames || [];
       existingKeys.add(key);
       linked += 1;
-      writes += 1;
+      batchWrites += 1;
       continue;
     }
 
@@ -134,14 +134,32 @@ export async function ensureCurrentBillOccurrences({
       createdFrom: 'canonical-bill-engine-seed'
     };
 
-    batch.set(ref, bill, { merge: false });
-    bills.push(bill);
-    existingKeys.add(key);
-    seeded += 1;
-    writes += 1;
+    try {
+      // Create-only is intentional: a deterministic occurrence ID may already
+      // belong to a paid bill. Never replace an existing occurrence with a
+      // fresh unpaid seed, even if two engine runs race.
+      await ref.create(bill);
+      bills.push(bill);
+      existingKeys.add(key);
+      seeded += 1;
+    } catch (error) {
+      const alreadyExists =
+        error?.code === 6 ||
+        error?.code === 'already-exists' ||
+        String(error?.message || '').toLowerCase().includes('already exists');
+
+      if (!alreadyExists) throw error;
+
+      log?.warn?.('[BILL_ENGINE] Deterministic bill occurrence already exists; refusing to overwrite', {
+        recurringPatternId: pattern.id,
+        patternName: pattern.name,
+        dueDate,
+        billId: id
+      });
+    }
   }
 
-  if (writes > 0) {
+  if (batchWrites > 0) {
     await batch.commit();
     log?.info?.('[BILL_ENGINE] Ensured current recurring bill occurrences', {
       seeded,
