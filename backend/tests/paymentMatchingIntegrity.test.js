@@ -793,6 +793,74 @@ test('Sync: pending carry-forward still claims an unclaimed posted replacement',
   assert.equal(result.claimConflicts, 0);
 });
 
+test('Sync: carry-forward skips a stale pending claim released by a concurrent reversal', async () => {
+  // bill-a was paid using tx-pending (legacy pre-P4 data). The user is
+  // reversing that incorrect auto-match at the same time Plaid reports
+  // tx-pending has posted as tx-posted.
+  //
+  // Race: the sync snapshot captures tx-pending with linkedEventId:'bill-a',
+  // but reverseIncorrectAutoBillMatch fires between the carry-forward
+  // transaction's read of tx-posted and its new live read of tx-pending.
+  // Without the fix, the stale claim would be copied to tx-posted.
+  const db = createDb({
+    ...bill('bill-a', {
+      isPaid: true,
+      status: 'paid',
+      linkedTransactionId: 'tx-pending',
+      paymentRecordId: 'auto_bill-a_tx-pending',
+      markedVia: 'auto-plaid-match'
+    }),
+    ...plaidTx('tx-pending', {
+      account_id: 'acct-1',
+      pending: true,
+      linkedEventId: 'bill-a',
+      linkedPaymentRecordId: 'auto_bill-a_tx-pending',
+      linkedAt: 'earlier'
+    }),
+    [`${U}/bill_payments/auto_bill-a_tx-pending`]: {
+      billId: 'bill-a', linkedTransactionId: 'tx-pending', paidDate: '2026-10-09'
+    },
+    ...itemDoc
+  });
+  db.getAll = async (...refs) => Promise.all(refs.map(ref => ref.get()));
+
+  // Fire the reversal after the carry-forward transaction has read tx-posted
+  // (finding no live claim) but before it reads the predecessor. This is the
+  // exact window where the stale snapshot claim would have been carried.
+  let reversed = false;
+  db.afterTransactionRead = async path => {
+    if (reversed || !path.endsWith('/tx-posted')) return;
+    reversed = true;
+    const result = await reverseIncorrectAutoBillMatch(db, userId, 'bill-a');
+    assert.equal(result.unmarked, true, 'reversal must succeed in the race window');
+  };
+
+  const syncResult = await runSync(db, fakePlaidClient({
+    added: [{
+      transaction_id: 'tx-posted',
+      pending_transaction_id: 'tx-pending',
+      account_id: 'acct-1',
+      amount: 200,
+      date: '2026-10-10',
+      name: 'Daycare',
+      merchant_name: 'Daycare',
+      pending: false
+    }]
+  }));
+
+  assert.equal(syncResult.pendingReplaced, 1, 'pending predecessor must be replaced');
+  assert.equal(db.read(`${U}/transactions/tx-pending`), undefined, 'pending tx must be deleted');
+  const posted = db.read(`${U}/transactions/tx-posted`);
+  assert.ok(posted, 'posted transaction must be written');
+  assert.equal(
+    posted.linkedEventId, undefined,
+    'stale pending claim must not be carried to posted tx after reversal'
+  );
+  assert.equal(posted.linkedFromPendingTransactionId, undefined);
+  // The reversal's intent is preserved: bill-a is unpaid.
+  assert.equal(db.read(`${U}/financialEvents/bill-a`).isPaid, false);
+});
+
 test('Stale snapshot: an automatic payment is refused when Plaid changed the amount', async () => {
   const db = createDb({ ...bill('bill-a'), ...plaidTx('tx-1', { amount: -180 }) });
 

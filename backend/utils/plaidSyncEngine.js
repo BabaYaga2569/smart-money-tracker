@@ -209,9 +209,18 @@ async function fetchPlaidChanges({ plaidClient, item }) {
 
 /**
  * Write a posted transaction that replaces a claimed pending predecessor.
- * The claim is carried forward only if the posted document still has no
- * claim when read inside this transaction, so a payment committed after the
- * sync snapshot is never overwritten.
+ * Two separate conditions must both be true before the pending claim is
+ * carried forward:
+ *
+ *   1. The posted document has no claim when read inside the transaction
+ *      (a payment committed after the sync snapshot is never overwritten).
+ *   2. The pending predecessor still carries the same claim when read inside
+ *      the transaction (a reversal that cleared the pending claim between the
+ *      initial sync snapshot and now must not propagate a stale claim).
+ *
+ * When condition 2 fails the carry-forward is skipped; the predecessor is
+ * still deleted and the posted document is still written, just without any
+ * claim fields.
  */
 async function commitClaimCarryGroup(db, group) {
   let conflict = false;
@@ -224,15 +233,34 @@ async function commitClaimCarryGroup(db, group) {
       : null;
     const pendingClaim = postedOperation.carryClaimFrom;
 
+    // Re-read the pending predecessor inside this transaction so a reversal
+    // that released the pending claim between the sync snapshot and now is
+    // detected before the carry-forward writes anything.
+    let pendingClaimStillValid = false;
+    if (postedOperation.predecessorRef) {
+      const predecessorSnapshot = await firestoreTransaction.get(
+        postedOperation.predecessorRef
+      );
+      if (predecessorSnapshot.exists) {
+        const livePendingLinked =
+          predecessorSnapshot.data()?.linkedEventId || null;
+        pendingClaimStillValid =
+          livePendingLinked === pendingClaim.linkedEventId;
+      }
+      // If the predecessor no longer exists (deleted by a concurrent reversal
+      // or an earlier sync run) pendingClaimStillValid stays false and the
+      // carry-forward is skipped conservatively.
+    }
+
     const data = { ...postedOperation.data };
     conflict = false;
 
-    if (!liveClaim) {
+    if (!liveClaim && pendingClaimStillValid) {
       data.linkedEventId = pendingClaim.linkedEventId;
       data.linkedPaymentRecordId = pendingClaim.linkedPaymentRecordId || null;
       data.linkedAt = pendingClaim.linkedAt || postedOperation.claimTimestamp;
       data.linkedFromPendingTransactionId = pendingClaim.pendingTransactionId;
-    } else if (liveClaim !== pendingClaim.linkedEventId) {
+    } else if (liveClaim && liveClaim !== pendingClaim.linkedEventId) {
       // Two bills point at the same money. Keep the committed claim and leave
       // an audit marker instead of silently choosing one.
       conflict = true;
@@ -241,6 +269,8 @@ async function commitClaimCarryGroup(db, group) {
         pendingTransactionId: pendingClaim.pendingTransactionId
       };
     }
+    // liveClaim === pendingClaim.linkedEventId → already correct, nothing to add.
+    // !liveClaim && !pendingClaimStillValid → pending claim released; skip carry-forward.
 
     for (const operation of group) {
       if (operation.type === "delete") {
@@ -607,12 +637,18 @@ export async function syncPlaidItemTransactions({
     // forward, conditionally and atomically, so the same money cannot be
     // matched again as a "new" charge.
     if (predecessor?.linkedEventId) {
+      const predecessorId = predecessor.transaction_id || predecessor.id || null;
       postedOperation.carryClaimFrom = {
         linkedEventId: predecessor.linkedEventId,
         linkedPaymentRecordId: predecessor.linkedPaymentRecordId || null,
         linkedAt: predecessor.linkedAt || null,
-        pendingTransactionId: predecessor.transaction_id || predecessor.id || null
+        pendingTransactionId: predecessorId
       };
+      // Stored so commitClaimCarryGroup can re-read the predecessor live inside
+      // its Firestore transaction and verify the claim is still there.
+      postedOperation.predecessorRef = predecessorId
+        ? transactionsRef.doc(predecessorId)
+        : null;
       postedOperation.claimTimestamp = serverTimestamp;
     }
 
