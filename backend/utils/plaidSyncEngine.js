@@ -9,6 +9,18 @@
 const MAX_BATCH_WRITES = 450;
 const MAX_PAGINATION_RETRIES = 2;
 
+// Bill-payment claim fields on a transaction document. They are owned by the
+// bill payment lifecycle, which reads and writes them inside a Firestore
+// transaction. Plaid sync must never write them from its earlier snapshot:
+// ordinary updates leave them untouched (merge writes without these keys),
+// and the pending -> posted carry-forward is a conditional transaction.
+const CLAIM_FIELDS = [
+  "linkedEventId",
+  "linkedPaymentRecordId",
+  "linkedAt",
+  "linkedFromPendingTransactionId"
+];
+
 function toMoney(value) {
   const number = Number(value);
   if (!Number.isFinite(number)) return 0;
@@ -195,10 +207,90 @@ async function fetchPlaidChanges({ plaidClient, item }) {
   throw new Error("Plaid pagination retry limit exceeded");
 }
 
+/**
+ * Write a posted transaction that replaces a claimed pending predecessor.
+ * Two separate conditions must both be true before the pending claim is
+ * carried forward:
+ *
+ *   1. The posted document has no claim when read inside the transaction
+ *      (a payment committed after the sync snapshot is never overwritten).
+ *   2. The pending predecessor still carries the same claim when read inside
+ *      the transaction (a reversal that cleared the pending claim between the
+ *      initial sync snapshot and now must not propagate a stale claim).
+ *
+ * When condition 2 fails the carry-forward is skipped; the predecessor is
+ * still deleted and the posted document is still written, just without any
+ * claim fields.
+ */
+async function commitClaimCarryGroup(db, group) {
+  let conflict = false;
+
+  await db.runTransaction(async firestoreTransaction => {
+    const postedOperation = group.find(operation => operation.carryClaimFrom);
+    const postedSnapshot = await firestoreTransaction.get(postedOperation.ref);
+    const liveClaim = postedSnapshot.exists
+      ? postedSnapshot.data()?.linkedEventId || null
+      : null;
+    const pendingClaim = postedOperation.carryClaimFrom;
+
+    // Re-read the pending predecessor inside this transaction so a reversal
+    // that released the pending claim between the sync snapshot and now is
+    // detected before the carry-forward writes anything.
+    let pendingClaimStillValid = false;
+    if (postedOperation.predecessorRef) {
+      const predecessorSnapshot = await firestoreTransaction.get(
+        postedOperation.predecessorRef
+      );
+      if (predecessorSnapshot.exists) {
+        const livePendingLinked =
+          predecessorSnapshot.data()?.linkedEventId || null;
+        pendingClaimStillValid =
+          livePendingLinked === pendingClaim.linkedEventId;
+      }
+      // If the predecessor no longer exists (deleted by a concurrent reversal
+      // or an earlier sync run) pendingClaimStillValid stays false and the
+      // carry-forward is skipped conservatively.
+    }
+
+    const data = { ...postedOperation.data };
+    conflict = false;
+
+    if (!liveClaim && pendingClaimStillValid) {
+      data.linkedEventId = pendingClaim.linkedEventId;
+      data.linkedPaymentRecordId = pendingClaim.linkedPaymentRecordId || null;
+      data.linkedAt = pendingClaim.linkedAt || postedOperation.claimTimestamp;
+      data.linkedFromPendingTransactionId = pendingClaim.pendingTransactionId;
+    } else if (liveClaim && liveClaim !== pendingClaim.linkedEventId) {
+      // Two bills point at the same money. Keep the committed claim and leave
+      // an audit marker instead of silently choosing one.
+      conflict = true;
+      data.pendingClaimConflict = {
+        linkedEventId: pendingClaim.linkedEventId,
+        pendingTransactionId: pendingClaim.pendingTransactionId
+      };
+    }
+    // liveClaim === pendingClaim.linkedEventId → already correct, nothing to add.
+    // !liveClaim && !pendingClaimStillValid → pending claim released; skip carry-forward.
+
+    for (const operation of group) {
+      if (operation.type === "delete") {
+        firestoreTransaction.delete(operation.ref);
+      } else if (operation === postedOperation) {
+        firestoreTransaction.set(operation.ref, data, { merge: true });
+      } else {
+        firestoreTransaction.set(operation.ref, operation.data, { merge: true });
+      }
+    }
+  });
+
+  return { writes: group.length, conflict };
+}
+
 async function commitOperationGroups(db, operationGroups) {
   let batch = db.batch();
   let batchWrites = 0;
   let committedWrites = 0;
+  let claimConflicts = 0;
 
   const commitCurrentBatch = async () => {
     if (batchWrites === 0) return;
@@ -209,6 +301,14 @@ async function commitOperationGroups(db, operationGroups) {
   };
 
   for (const group of operationGroups) {
+    if (group.some(operation => operation.carryClaimFrom)) {
+      await commitCurrentBatch();
+      const result = await commitClaimCarryGroup(db, group);
+      committedWrites += result.writes;
+      if (result.conflict) claimConflicts++;
+      continue;
+    }
+
     if (group.length > MAX_BATCH_WRITES) {
       throw new Error("A Plaid reconciliation group exceeded the Firestore batch limit");
     }
@@ -228,7 +328,7 @@ async function commitOperationGroups(db, operationGroups) {
   }
 
   await commitCurrentBatch();
-  return committedWrites;
+  return { committedWrites, claimConflicts };
 }
 
 async function getTransactionsByIds(db, transactionsRef, ids) {
@@ -524,11 +624,35 @@ export async function syncPlaidItemTransactions({
     transactionData.lastSyncedAt = serverTimestamp;
     transactionData.synced_at = serverTimestamp;
 
-    group.push({
+    for (const field of CLAIM_FIELDS) delete transactionData[field];
+
+    const postedOperation = {
       type: "set",
       ref: transactionsRef.doc(plaidTx.transaction_id),
       data: transactionData
-    });
+    };
+
+    // The posted transaction replaces its pending predecessor under a new ID
+    // and the predecessor is deleted in the same write. Carry its bill claim
+    // forward, conditionally and atomically, so the same money cannot be
+    // matched again as a "new" charge.
+    if (predecessor?.linkedEventId) {
+      const predecessorId = predecessor.transaction_id || predecessor.id || null;
+      postedOperation.carryClaimFrom = {
+        linkedEventId: predecessor.linkedEventId,
+        linkedPaymentRecordId: predecessor.linkedPaymentRecordId || null,
+        linkedAt: predecessor.linkedAt || null,
+        pendingTransactionId: predecessorId
+      };
+      // Stored so commitClaimCarryGroup can re-read the predecessor live inside
+      // its Firestore transaction and verify the claim is still there.
+      postedOperation.predecessorRef = predecessorId
+        ? transactionsRef.doc(predecessorId)
+        : null;
+      postedOperation.claimTimestamp = serverTimestamp;
+    }
+
+    group.push(postedOperation);
 
     operationGroups.push(group);
 
@@ -562,7 +686,7 @@ export async function syncPlaidItemTransactions({
     removed++;
   }
 
-  const committedWrites = await commitOperationGroups(db, operationGroups);
+  const { committedWrites, claimConflicts } = await commitOperationGroups(db, operationGroups);
 
   const itemRef = db.collection("users")
     .doc(userId)
@@ -588,6 +712,7 @@ export async function syncPlaidItemTransactions({
     pending_replaced: pendingReplaced,
     skipped,
     committed_writes: committedWrites,
+    pending_claim_conflicts: claimConflicts,
     cursor_advanced: cursorAdvanced,
     reconciliation_documents_read: existingLoad.readCount,
     direct_ids_requested: existingLoad.requestedDirectIds,
@@ -603,6 +728,7 @@ export async function syncPlaidItemTransactions({
     pendingReplaced,
     skipped,
     committedWrites,
+    claimConflicts,
     cursorAdvanced,
     nextCursor: changes.nextCursor,
     reconciliationReadCount: existingLoad.readCount

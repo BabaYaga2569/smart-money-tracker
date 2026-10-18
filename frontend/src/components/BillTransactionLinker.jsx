@@ -53,7 +53,8 @@ export default function BillTransactionLinker({ bill, onLink, onClose }) {
           ...doc.data()
         }))
         .filter(tx => 
-          !tx.linkedEventId && 
+          !tx.linkedEventId &&
+          tx.pending !== true && // Pending charges cannot pay a bill until posted
           parseFloat(tx.amount) < 0 // Only expenses
         );
 

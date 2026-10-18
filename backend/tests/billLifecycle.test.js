@@ -21,8 +21,31 @@ function createCollection(store, path) {
     path,
     doc(id) {
       return createRef(store, pathJoin(path, id));
+    },
+    where(field, op, value) {
+      if (op !== '==') throw new Error(`Unsupported query operator: ${op}`);
+      return { isQuery: true, path, field, value };
     }
   };
+}
+
+function isDirectChild(collectionPath, docPath) {
+  return docPath.startsWith(`${collectionPath}/`) &&
+    !docPath.slice(collectionPath.length + 1).includes('/');
+}
+
+function querySnapshot(store, query) {
+  const docs = [...store.entries()]
+    .filter(([path, value]) => isDirectChild(query.path, path) && value?.[query.field] === query.value)
+    .map(([path, value]) => snapshot(createRef(store, path), value));
+  return { docs, empty: docs.length === 0, size: docs.length };
+}
+
+function applyFieldDeletes(data) {
+  // Mirror Firestore: FieldValue.delete() removes the field.
+  return Object.fromEntries(
+    Object.entries(data).filter(([, value]) => value?.constructor?.name !== 'DeleteTransform')
+  );
 }
 
 function snapshot(ref, value) {
@@ -45,6 +68,7 @@ function createDb(initial = {}) {
       const writes = [];
       const tx = {
         async get(ref) {
+          if (ref.isQuery) return querySnapshot(store, ref);
           return snapshot(ref, store.get(ref.path));
         },
         update(ref, data) {
@@ -64,9 +88,9 @@ function createDb(initial = {}) {
         const existing = store.get(write.ref.path);
         if (write.type === 'update') {
           if (existing === undefined) throw new Error(`Missing document: ${write.ref.path}`);
-          store.set(write.ref.path, { ...existing, ...write.data });
+          store.set(write.ref.path, applyFieldDeletes({ ...existing, ...write.data }));
         } else if (write.options?.merge && existing !== undefined) {
-          store.set(write.ref.path, { ...existing, ...write.data });
+          store.set(write.ref.path, applyFieldDeletes({ ...existing, ...write.data }));
         } else if (write.type === 'delete') {
           store.delete(write.ref.path);
         } else {
@@ -93,8 +117,16 @@ function transaction(overrides = {}) {
   };
 }
 
+// Transaction-backed payments claim the stored bank transaction, so the
+// transaction document must exist like it does after a Plaid sync.
+function transactionDoc(overrides = {}) {
+  const tx = transaction(overrides);
+  return { [`users/${userId}/transactions/${tx.id}`]: { source: 'plaid', ...tx } };
+}
+
 test('non-recurring payment commits bill state and deterministic history together', async () => {
   const db = createDb({
+    ...transactionDoc(),
     [billPath]: {
       type: 'bill',
       name: 'Power',
@@ -131,6 +163,7 @@ test('non-recurring payment commits bill state and deterministic history togethe
 test('recurring payment advances pattern and creates next occurrence in same transaction', async () => {
   const patternPath = `users/${userId}/recurringPatterns/pattern-1`;
   const db = createDb({
+    ...transactionDoc(),
     [billPath]: {
       type: 'bill',
       name: 'Rent',
@@ -173,6 +206,7 @@ test('recurring payment advances pattern and creates next occurrence in same tra
 
 test('reprocessing the same matched transaction is idempotent', async () => {
   const db = createDb({
+    ...transactionDoc(),
     [billPath]: {
       type: 'bill',
       name: 'Power',
@@ -197,6 +231,7 @@ test('reprocessing the same matched transaction is idempotent', async () => {
 test('out-of-sync recurring pattern is refused without partial writes', async () => {
   const patternPath = `users/${userId}/recurringPatterns/pattern-1`;
   const db = createDb({
+    ...transactionDoc(),
     [billPath]: {
       type: 'bill',
       name: 'Rent',
@@ -355,6 +390,7 @@ test('manual unmark refuses to reverse after the recurring chain has moved forwa
 
 test('auto/Plaid payments cannot be unmarked through the manual reversal endpoint', async () => {
   const db = createDb({
+    ...transactionDoc(),
     [billPath]: {
       type: 'bill',
       name: 'Power',
@@ -622,6 +658,7 @@ test('recurring payment omits undefined installment fields from Firestore update
   const patternPath = `users/${userId}/recurringPatterns/pattern-plain`;
   const recurringBillPath = `users/${userId}/financialEvents/bill-plain`;
   const db = createDb({
+    ...transactionDoc({ id: 'tx-water', transaction_id: 'tx-water', date: '2026-10-07', amount: -26.30 }),
     [recurringBillPath]: {
       type: 'bill',
       name: 'Las Vegas Valley Water Bill',
