@@ -1091,6 +1091,9 @@ test('Sync: explicit pending ID carry does not overwrite a competing posted bill
   assert.equal(result.claimConflicts,1);
   assert.equal(db.read(`${U}/transactions/pending-old`),undefined);
   assert.equal(db.read(`${U}/financialEvents/bill-new`).isPaid,true);
+  assert.equal(paymentsFor(db,'posted-new').length,1, 'the concurrent claim must create only one payment record');
+  assert.equal(paymentsFor(db,'pending-old').length,0, 'the old pending claim must not create a new payment');
+  assert.equal(db.read(`${U}/financialEvents/bill-new`).linkedTransactionId,'posted-new');
 });
 
 test('Sync: explicit pending ID with changed amount carries existing claim once', async () => {
