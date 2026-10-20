@@ -1069,3 +1069,45 @@ test('Concurrency: two overlapping sync attempts converge on one posted transact
   assert.equal(db.read(`${U}/transactions/posted-new`).pending,false);
   assert.equal(db.read(`${U}/plaid_items/item-1`).cursor,'c1');
 });
+
+test('Sync: explicit pending ID carry does not overwrite a competing posted bill claim', async () => {
+  const db=createDb({
+    ...bill('bill-new'),
+    ...plaidTx('pending-old',{account_id:'acct-1',pending:true,linkedEventId:'bill-original',linkedPaymentRecordId:'link_bill-original_pending-old',linkedAt:'earlier'}),
+    ...plaidTx('posted-new',{account_id:'acct-1',pending:false}),
+    ...itemDoc
+  });
+  withSnapshotHook(db,async()=>{
+    const claimed=await applyMatchedBillPayment(db,userId,{id:'bill-new'},txFrom(db,'posted-new'));
+    assert.equal(claimed.cleared,true);
+  });
+  const result=await runSync(db,fakePlaidClient({modified:[plaidChange({
+    transaction_id:'posted-new',pending_transaction_id:'pending-old',account_id:'acct-1'
+  })]}));
+  const posted=db.read(`${U}/transactions/posted-new`);
+  assert.equal(posted.linkedEventId,'bill-new');
+  assert.equal(posted.linkedPaymentRecordId,'auto_bill-new_posted-new');
+  assert.deepEqual(posted.pendingClaimConflict,{linkedEventId:'bill-original',pendingTransactionId:'pending-old'});
+  assert.equal(result.claimConflicts,1);
+  assert.equal(db.read(`${U}/transactions/pending-old`),undefined);
+  assert.equal(db.read(`${U}/financialEvents/bill-new`).isPaid,true);
+});
+
+test('Sync: explicit pending ID with changed amount carries existing claim once', async () => {
+  const db=createDb({
+    ...plaidTx('pending-old',{account_id:'acct-1',pending:true,amount:-19.75,linkedEventId:'bill-original',linkedPaymentRecordId:'link_bill-original_pending-old',linkedAt:'earlier'}),
+    ...itemDoc
+  });
+  db.getAll=async (...refs)=>Promise.all(refs.map(ref=>ref.get()));
+  const incoming=plaidChange({transaction_id:'posted-new',pending_transaction_id:'pending-old',account_id:'acct-1',amount:22.10,merchant_name:'FINAL MERCHANT'});
+  const first=await runSync(db,fakePlaidClient({added:[incoming]}));
+  const second=await runSync(db,fakePlaidClient({added:[incoming]}));
+  assert.equal(first.pendingReplaced,1);
+  assert.equal(second.pendingReplaced,0);
+  assert.equal(db.read(`${U}/transactions/pending-old`),undefined);
+  const posted=db.read(`${U}/transactions/posted-new`);
+  assert.equal(posted.linkedEventId,'bill-original');
+  assert.equal(posted.linkedPaymentRecordId,'link_bill-original_pending-old');
+  assert.equal(posted.linkedFromPendingTransactionId,'pending-old');
+  assert.equal(posted.amount,-22.10);
+});
