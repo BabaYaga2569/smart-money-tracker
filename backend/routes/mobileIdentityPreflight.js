@@ -13,10 +13,12 @@ export function registerMobileIdentityPreflight(app,{verifyGoogle,findFirebaseUs
    const email=String(google.email||'').trim().toLowerCase();
    if(google.aud!==clientId||(google.email_verified!==true&&google.email_verified!=='true')||!email||!Number.isFinite(Number(google.exp))||Number(google.exp)*1000<=Date.now()||!google.sub||google.iss!=='https://accounts.google.com'&&google.iss!=='accounts.google.com')return res.status(403).json({ready:false,reason:'Google identity not verified for mobile app'});
    const firebase=await findFirebaseUser(email);
-   if(!firebase||firebase.disabled||firebase.emailVerified!==true||String(firebase.email||'').toLowerCase()!==email)return res.status(403).json({ready:false,reason:'Verified Firebase account mapping not established'});
+   if(!firebase||String(firebase.email||'').toLowerCase()!==email)return res.status(403).json({ready:false,code:'FIREBASE_MAPPING_MISMATCH'});
+   if(firebase.disabled)return res.status(403).json({ready:false,code:'FIREBASE_ACCOUNT_DISABLED'});
+   if(firebase.emailVerified!==true)return res.status(403).json({ready:false,code:'FIREBASE_EMAIL_NOT_VERIFIED'});
    return res.status(200).json({ready:true,mode:'IDENTITY_ONLY',identityMatched:true});
   }catch(e){
-   if(e?.code==='auth/user-not-found')return res.status(403).json({ready:false,reason:'No linked Firebase user'});
+   if(e?.code==='auth/user-not-found')return res.status(403).json({ready:false,code:'FIREBASE_USER_NOT_FOUND'});
    return res.status(503).json({ready:false,reason:'Identity verification unavailable'});
   }
  });
