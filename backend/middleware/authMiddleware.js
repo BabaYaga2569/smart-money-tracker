@@ -27,6 +27,9 @@ const EXEMPT_PATHS = new Set([
   '/api/plaid/health',
   '/api/plaid/webhook',
   '/api/plaid/sheets_force_refresh',
+  // These routes independently validate signed Google ID tokens and fail closed.
+  '/api/mobile-reconciliation/identity-check',
+  '/api/mobile-reconciliation/google-snapshot',
 ]);
 
 const mode = () => (process.env.AUTH_MODE || 'log').toLowerCase();
