@@ -14,3 +14,6 @@ test('wrong Google audience denied',async()=>enabled(async()=>assert.equal((awai
 test('unverified Firebase account denied',async()=>enabled(async()=>assert.equal((await harness({firebase:{emailVerified:false}})('good')).status,403)));
 test('Google and Firebase email mismatch denied',async()=>enabled(async()=>assert.equal((await harness({firebase:{email:'another@example.com'}})('good')).status,403)));
 test('disabled Firebase user denied',async()=>enabled(async()=>assert.equal((await harness({firebase:{disabled:true}})('good')).status,403)));
+
+test('rejects spoofed Google token issuer',async()=>enabled(async()=>assert.equal((await harness({google:{iss:'https://evil.example'}})('good')).status,403)));
+test('rejects expired Google token',async()=>enabled(async()=>assert.equal((await harness({google:{exp:1}})('good')).status,403)));
