@@ -413,7 +413,7 @@ test('auto/Plaid payments cannot be unmarked through the manual reversal endpoin
   assert.equal(result.success, false);
   assert.equal(result.reason, 'PAYMENT_REVERSAL_MARKED_VIA_MISMATCH');
   assert.equal(result.expectedMarkedVia, 'manual-payment');
-  assert.equal(result.actualMarkedVia, 'plaid');
+  assert.equal(result.actualMarkedVia, 'auto-plaid-match');
 });
 
 
