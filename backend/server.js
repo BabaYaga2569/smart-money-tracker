@@ -5,6 +5,7 @@ import admin from "firebase-admin";
 import { errorHandler, createError } from './middleware/errorHandler.js';
 import authMiddleware from './middleware/authMiddleware.js';
 import { registerMobileReconciliationReadRoute } from './routes/mobileReconciliationRead.js';
+import { registerMobileIdentityPreflight } from './routes/mobileIdentityPreflight.js';
 import validators from './utils/validators.js';
 import healthMonitor from './utils/healthMonitor.js';
 import performanceTracker from './middleware/performanceTracker.js';
@@ -288,6 +289,10 @@ if (!admin.apps.length) {
 
 const db = admin.firestore();
 registerMobileReconciliationReadRoute(app, db);
+registerMobileIdentityPreflight(app,{
+ verifyGoogle:async token=>{const r=await fetch('https://oauth2.googleapis.com/tokeninfo?id_token='+encodeURIComponent(token),{signal:AbortSignal.timeout(8000)});if(!r.ok)throw Error('Google token rejected');return r.json()},
+ findFirebaseUser:email=>admin.auth().getUserByEmail(email)
+});
 
 // ============================================================================
 // SECURE PLAID CREDENTIAL STORAGE HELPERS
