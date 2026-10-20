@@ -943,3 +943,36 @@ test('Review approval is refused when the bank debit changed after it was review
   assert.equal(reviewBill.paymentReviewCandidate, true);
   assert.equal(db.read(`${U}/transactions/tx-review`).linkedEventId, undefined);
 });
+
+test('Sync: changed merchant and amount still replace explicitly linked pending charge', async () => {
+  const db=createDb({
+    ...plaidTx('pending-original',{account_id:'acct-1',pending:true,amount:-19.75,date:'2026-10-18',name:'TEMP AUTH',merchant_name:'TEMP AUTH'}),
+    ...itemDoc
+  });
+  db.getAll=async (...refs)=>Promise.all(refs.map(ref=>ref.get()));
+  const incoming=plaidChange({
+    transaction_id:'posted-final',pending_transaction_id:'pending-original',
+    account_id:'acct-1',amount:22.10,date:'2026-10-20',
+    name:'STORE FINAL',merchant_name:'STORE FINAL',pending:false
+  });
+  const result=await runSync(db,fakePlaidClient({added:[incoming]}));
+  assert.equal(result.pendingReplaced,1);
+  assert.equal(db.read(`${U}/transactions/pending-original`),undefined);
+  const posted=db.read(`${U}/transactions/posted-final`);
+  assert.equal(posted.pending,false);
+  assert.equal(posted.amount,-22.10);
+  assert.equal(posted.pending_transaction_id,'pending-original');
+});
+
+test('Sync: repeated identical Plaid addition is idempotent and does not recreate predecessor', async () => {
+  const db=createDb({...plaidTx('pending-old',{account_id:'acct-1',pending:true}),...itemDoc});
+  db.getAll=async (...refs)=>Promise.all(refs.map(ref=>ref.get()));
+  const incoming=plaidChange({transaction_id:'posted-new',pending_transaction_id:'pending-old'});
+  await runSync(db,fakePlaidClient({added:[incoming]}));
+  const second=await runSync(db,fakePlaidClient({added:[incoming]}));
+  assert.equal(db.read(`${U}/transactions/pending-old`),undefined);
+  assert.ok(db.read(`${U}/transactions/posted-new`));
+  const matching=[...db.store.keys()].filter(path=>path.startsWith(`${U}/transactions/`)&&path.endsWith('posted-new'));
+  assert.equal(matching.length,1);
+  assert.equal(second.pendingReplaced,0);
+});
