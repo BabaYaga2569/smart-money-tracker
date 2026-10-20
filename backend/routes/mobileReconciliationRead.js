@@ -2,13 +2,13 @@ import admin from 'firebase-admin';
 
 // Dedicated strict-auth read endpoint, independent of the backend's AUTH_MODE.
 // Read-only view of the authenticated owner's Plaid transaction identities.
-export function registerMobileReconciliationReadRoute(app, db) {
+export function registerMobileReconciliationReadRoute(app, db, verifyToken=(token)=>admin.auth().verifyIdToken(token,true)) {
  app.get('/api/mobile-reconciliation/transactions', async (req,res)=>{
   res.set('Cache-Control','no-store');
   try {
    const match=String(req.headers.authorization||'').match(/^Bearer (\S+)$/);
    if(!match)return res.status(401).json({error:'Firebase sign-in required'});
-   const identity=await admin.auth().verifyIdToken(match[1],true);
+   const identity=await verifyToken(match[1]);
    if(!identity?.uid)return res.status(401).json({error:'Invalid identity'});
    const requestedDays=Number(req.query.days||14);
    if(!Number.isInteger(requestedDays)||requestedDays<1||requestedDays>31)return res.status(422).json({error:'days must be 1 through 31'});
