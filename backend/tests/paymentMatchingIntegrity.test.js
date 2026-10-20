@@ -976,3 +976,50 @@ test('Sync: repeated identical Plaid addition is idempotent and does not recreat
   assert.equal(matching.length,1);
   assert.equal(second.pendingReplaced,0);
 });
+
+test('Recovery: failed transaction batch does not advance cursor and retry succeeds once', async () => {
+  const db=createDb({...plaidTx('pending-old',{account_id:'acct-1',pending:true}),...itemDoc});
+  db.getAll=async (...refs)=>Promise.all(refs.map(ref=>ref.get()));
+  const originalBatch=db.batch.bind(db);
+  let failOnce=true;
+  db.batch=()=>{
+    const batch=originalBatch();
+    const commit=batch.commit.bind(batch);
+    batch.commit=async()=>{
+      if(failOnce){failOnce=false;throw new Error('SIMULATED_WRITE_INTERRUPTION');}
+      return commit();
+    };
+    return batch;
+  };
+  const incoming=plaidChange({transaction_id:'posted-new',pending_transaction_id:'pending-old'});
+  await assert.rejects(runSync(db,fakePlaidClient({added:[incoming]})),/SIMULATED_WRITE_INTERRUPTION/);
+  assert.equal(db.read(`${U}/plaid_items/item-1`).cursor,'c0');
+  assert.ok(db.read(`${U}/transactions/pending-old`));
+  assert.equal(db.read(`${U}/transactions/posted-new`),undefined);
+  const result=await runSync(db,fakePlaidClient({added:[incoming]}));
+  assert.equal(result.pendingReplaced,1);
+  assert.equal(db.read(`${U}/transactions/pending-old`),undefined);
+  assert.equal(db.read(`${U}/transactions/posted-new`).pending,false);
+  assert.equal(db.read(`${U}/plaid_items/item-1`).cursor,'c1');
+});
+
+test('Recovery: cursor update failure after writes can replay without duplicates', async () => {
+  const db=createDb({...plaidTx('pending-old',{account_id:'acct-1',pending:true}),...itemDoc});
+  db.getAll=async (...refs)=>Promise.all(refs.map(ref=>ref.get()));
+  const originalTransaction=db.runTransaction.bind(db);
+  let failOnce=true;
+  db.runTransaction=async callback=>{
+    if(failOnce){failOnce=false;throw new Error('SIMULATED_CURSOR_INTERRUPTION');}
+    return originalTransaction(callback);
+  };
+  const incoming=plaidChange({transaction_id:'posted-new',pending_transaction_id:'pending-old'});
+  await assert.rejects(runSync(db,fakePlaidClient({added:[incoming]})),/SIMULATED_CURSOR_INTERRUPTION/);
+  assert.equal(db.read(`${U}/plaid_items/item-1`).cursor,'c0');
+  assert.equal(db.read(`${U}/transactions/pending-old`),undefined);
+  assert.ok(db.read(`${U}/transactions/posted-new`));
+  const result=await runSync(db,fakePlaidClient({added:[incoming]}));
+  assert.equal(result.pendingReplaced,0);
+  assert.equal(db.read(`${U}/plaid_items/item-1`).cursor,'c1');
+  const ids=[...db.store.keys()].filter(key=>key.startsWith(`${U}/transactions/`));
+  assert.deepEqual(ids,[`${U}/transactions/posted-new`]);
+});
