@@ -1,0 +1,26 @@
+name: Mobile reconciliation endpoint tests
+on:
+  push:
+    paths:
+      - 'backend/routes/mobileReconciliationRead.js'
+      - 'backend/tests/mobileReconciliationRead.test.js'
+      - '.github/workflows/mobile-reconciliation-read.yml'
+  pull_request:
+    paths:
+      - 'backend/routes/mobileReconciliationRead.js'
+      - 'backend/tests/mobileReconciliationRead.test.js'
+jobs:
+  read-only-endpoint:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+          cache-dependency-path: backend/package-lock.json
+      - run: npm ci --ignore-scripts
+      - run: node --test tests/mobileReconciliationRead.test.js
