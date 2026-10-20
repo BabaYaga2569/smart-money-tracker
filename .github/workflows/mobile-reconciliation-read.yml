@@ -4,6 +4,8 @@ on:
     paths:
       - 'backend/routes/mobileReconciliationRead.js'
       - 'backend/tests/mobileReconciliationRead.test.js'
+      - 'backend/routes/mobileIdentityPreflight.js'
+      - 'backend/tests/mobileIdentityPreflight.test.js'
       - '.github/workflows/mobile-reconciliation-read.yml'
   pull_request:
     paths:
@@ -23,4 +25,4 @@ jobs:
           cache: 'npm'
           cache-dependency-path: backend/package-lock.json
       - run: npm ci --ignore-scripts
-      - run: node --test tests/mobileReconciliationRead.test.js
+      - run: node --test tests/mobileReconciliationRead.test.js tests/mobileIdentityPreflight.test.js
