@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import {registerMobileIdentityPreflight} from '../routes/mobileIdentityPreflight.js';
 function harness({google={},firebase={}}={}){
  let handler;const app={get:(path,fn)=>{assert.equal(path,'/api/mobile-reconciliation/identity-check');handler=fn;}};
- registerMobileIdentityPreflight(app,{verifyGoogle:async token=>{if(token!=='good')throw Error('invalid');return{aud:'test-client',email:'person@example.com',email_verified:'true',exp:Math.floor(Date.now()/1000)+3600,...google}},findFirebaseUser:async()=>({email:'person@example.com',emailVerified:true,disabled:false,...firebase})});
+ registerMobileIdentityPreflight(app,{verifyGoogle:async token=>{if(token!=='good')throw Error('invalid');return{aud:'test-client',sub:'google-user-123',iss:'https://accounts.google.com',email:'person@example.com',email_verified:'true',exp:Math.floor(Date.now()/1000)+3600,...google}},findFirebaseUser:async()=>({email:'person@example.com',emailVerified:true,disabled:false,...firebase})});
  return async token=>{let status=200;const res={set:()=>res,status:n=>{status=n;return res},json:data=>data};const data=await handler({headers:token?{authorization:'Bearer '+token}:{}},res);return{status,data}};
 }
 async function enabled(callback){const oldFlag=process.env.MOBILE_GOOGLE_IDENTITY_CHECK_ENABLED,oldId=process.env.MOBILE_GOOGLE_CLIENT_ID;process.env.MOBILE_GOOGLE_IDENTITY_CHECK_ENABLED='YES_READ_ONLY';process.env.MOBILE_GOOGLE_CLIENT_ID='test-client';try{await callback()}finally{if(oldFlag===undefined)delete process.env.MOBILE_GOOGLE_IDENTITY_CHECK_ENABLED;else process.env.MOBILE_GOOGLE_IDENTITY_CHECK_ENABLED=oldFlag;if(oldId===undefined)delete process.env.MOBILE_GOOGLE_CLIENT_ID;else process.env.MOBILE_GOOGLE_CLIENT_ID=oldId}}
