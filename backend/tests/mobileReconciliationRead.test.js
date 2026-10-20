@@ -5,7 +5,20 @@ import {registerMobileReconciliationReadRoute} from '../routes/mobileReconciliat
 function harness({uid='owner-123',records=[]}={}){
  let route,readUid=null;
  const app={get(path,handler){assert.equal(path,'/api/mobile-reconciliation/transactions');route=handler;}};
- const db={collection(name){assert.equal(name,'users');return{doc(id){readUid=id;return{collection(c){assert.equal(c,'transactions');return{where(){return{limit(){return{get:async()=>({size:records.length,docs:records.map(data=>({data:()=>data}))})}}}}}}}}}}};
+ const db={collection(name){
+  assert.equal(name,'users');
+  return {doc(id){
+   readUid=id;
+   return {collection(c){
+    assert.equal(c,'transactions');
+    return {where(){
+     return {limit(){
+      return {get:async()=>({size:records.length,docs:records.map(data=>({data:()=>data}))})};
+     }};
+    }};
+   }};
+  }};
+ }};
  registerMobileReconciliationReadRoute(app,db,async token=>{if(token==='valid')return {uid};throw {code:'auth/id-token-expired'};});
  async function call({token,query={}}={}){let status=200,cache=null;
   const req={headers:token?{authorization:'Bearer '+token}:{},query};
