@@ -1023,3 +1023,36 @@ test('Recovery: cursor update failure after writes can replay without duplicates
   const ids=[...db.store.keys()].filter(key=>key.startsWith(`${U}/transactions/`));
   assert.deepEqual(ids,[`${U}/transactions/posted-new`]);
 });
+
+test('Recovery: a later batch failure leaves cursor behind and a replay converges', async () => {
+  const db=createDb({...itemDoc});
+  db.getAll=async (...refs)=>Promise.all(refs.map(ref=>ref.get()));
+  const originalBatch=db.batch.bind(db);
+  let commits=0;
+  let failSecond=true;
+  db.batch=()=>{
+    const batch=originalBatch();
+    const commit=batch.commit.bind(batch);
+    batch.commit=async()=>{
+      commits++;
+      if(failSecond&&commits===2){failSecond=false;throw new Error('SIMULATED_SECOND_BATCH_FAILURE');}
+      return commit();
+    };
+    return batch;
+  };
+  const added=Array.from({length:460},(_,i)=>plaidChange({
+    transaction_id:'batch-tx-'+i,
+    account_id:'acct-1',
+    amount:10+i/100,
+    pending:false
+  }));
+  await assert.rejects(runSync(db,fakePlaidClient({added})),/SIMULATED_SECOND_BATCH_FAILURE/);
+  assert.equal(db.read(`${U}/plaid_items/item-1`).cursor,'c0');
+  const partial=[...db.store.keys()].filter(p=>p.startsWith(`${U}/transactions/`));
+  assert.ok(partial.length>0&&partial.length<460);
+  await runSync(db,fakePlaidClient({added}));
+  const full=[...db.store.keys()].filter(p=>p.startsWith(`${U}/transactions/`));
+  assert.equal(full.length,460);
+  assert.equal(new Set(full).size,460);
+  assert.equal(db.read(`${U}/plaid_items/item-1`).cursor,'c1');
+});
