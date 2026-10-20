@@ -411,7 +411,9 @@ test('auto/Plaid payments cannot be unmarked through the manual reversal endpoin
 
   const result = await unmarkManualBillPayment(db, userId, 'bill-1');
   assert.equal(result.success, false);
-  assert.equal(result.reason, 'ONLY_CANONICAL_MANUAL_PAYMENTS_CAN_BE_UNMARKED');
+  assert.equal(result.reason, 'PAYMENT_REVERSAL_MARKED_VIA_MISMATCH');
+  assert.equal(result.expectedMarkedVia, 'manual-payment');
+  assert.equal(result.actualMarkedVia, 'plaid');
 });
 
 
