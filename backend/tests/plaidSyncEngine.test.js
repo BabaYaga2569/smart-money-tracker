@@ -155,3 +155,27 @@ test("reconciliation planner reads only changed, predecessor, and removed transa
 test("reconciliation planner performs no transaction document reads when Plaid returns no changes", () => {
   assert.deepEqual(collectRelevantTransactionIds([], []), []);
 });
+
+test("explicit Plaid link replaces pending even when posted amount, date, and merchant differ", () => {
+  const existing=[{transaction_id:"pending-original",account_id:"account-a",pending:true,source:"plaid",amount:-19.75,date:"2026-10-18",merchant_name:"STORE AUTHORIZATION"}];
+  const posted={transaction_id:"posted-final",pending_transaction_id:"pending-original",account_id:"account-a",pending:false,amount:22.10,date:"2026-10-20",merchant_name:"STORE #123"};
+  assert.equal(findPendingReplacement(posted,existing)?.transaction_id,"pending-original");
+});
+
+test("explicit pending link cannot replace a pending transaction from another account", () => {
+  const existing=[{transaction_id:"pending-original",account_id:"account-a",pending:true,amount:-19.75,date:"2026-10-18",merchant_name:"STORE AUTHORIZATION"}];
+  const posted={transaction_id:"posted-final",pending_transaction_id:"pending-original",account_id:"account-b",pending:false,amount:22.10,date:"2026-10-20",merchant_name:"STORE #123"};
+  assert.equal(findPendingReplacement(posted,existing),null);
+});
+
+test("pending replacement refuses an already posted predecessor even with matching transaction ID", () => {
+  const existing=[{transaction_id:"pending-original",account_id:"account-a",pending:false,amount:-19.75,date:"2026-10-18",merchant_name:"STORE AUTHORIZATION"}];
+  const posted={transaction_id:"posted-final",pending_transaction_id:"pending-original",account_id:"account-a",pending:false,amount:22.10,date:"2026-10-20",merchant_name:"STORE #123"};
+  assert.equal(findPendingReplacement(posted,existing),null);
+});
+
+test("identical purchases with distinct IDs remain distinct posted entries", () => {
+  const existing=[{transaction_id:"posted-first",account_id:"account-a",pending:false,amount:-12.50,date:"2026-10-20",merchant_name:"Coffee Shop"}];
+  const second={transaction_id:"posted-second",account_id:"account-a",pending:false,amount:12.50,date:"2026-10-20",merchant_name:"Coffee Shop"};
+  assert.equal(findPendingReplacement(second,existing),null);
+});
