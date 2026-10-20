@@ -16,7 +16,7 @@ export function registerMobileReconciliationReadRoute(app, db, verifyToken=(toke
    const snap=await db.collection('users').doc(identity.uid).collection('transactions').where('date','>=',since).limit(500).get();
    const items=snap.docs.map(doc=>{
     const t=doc.data(),n=Number(t.amount);
-    if(t.source!=='plaid'||!t.transaction_id||!t.account_id||!Number.isFinite(n)||!/^\d{4}-\d{2}-\d{2}$/.test(String(t.date||'')))return null;
+    if(t.source!=='plaid'||!t.transaction_id||!t.account_id||!Number.isFinite(n)||n>=0||!/^\d{4}-\d{2}-\d{2}$/.test(String(t.date||'')))return null;
     return {transactionId:String(t.transaction_id),pendingTransactionId:t.pending_transaction_id?String(t.pending_transaction_id):null,accountId:String(t.account_id),amountCents:Math.round(Math.abs(n)*100),date:t.date,pending:t.pending===true,description:String(t.merchant_name||t.name||'').slice(0,160)};
    }).filter(Boolean);
    return res.status(200).json({mode:'READ_ONLY',items,limited:snap.size===500});
