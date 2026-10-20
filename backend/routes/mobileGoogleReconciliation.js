@@ -36,7 +36,7 @@ export function registerMobileGoogleSnapshot(app,{verifyGoogle,findFirebaseUser,
    const accounts=(settings.exists&&Array.isArray(settings.data()?.plaidAccounts)?settings.data().plaidAccounts:[]).map(a=>{
     const id=a.account_id||a.accountId||a.id;
     if(!id)return null;
-    return{accountId:String(id),name:String(a.name||a.official_name||'').slice(0,80),institution:String(a.institution_name||a.institutionName||'').slice(0,80),mask:String(a.mask||'').slice(-4)};
+    return{accountId:String(id),name:String(a.name||a.official_name||'').slice(0,80),institution:String(a.institution_name||a.institutionName||'').slice(0,80),type:String(a.subtype||a.type||'').slice(0,35),mask:String(a.mask||'').slice(-4)};
    }).filter(Boolean);
    return res.status(200).json({ready:true,mode:'READ_ONLY',transactions,accounts,limited:snapshot.size===300});
   }catch(e){
