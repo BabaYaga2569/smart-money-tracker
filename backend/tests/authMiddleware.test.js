@@ -9,6 +9,8 @@ import {
 test("Sheets refresh and Plaid webhook are exempt from Firebase user auth", () => {
   assert.equal(isAuthExemptPath("/api/plaid/sheets_force_refresh"), true);
   assert.equal(isAuthExemptPath("/api/plaid/webhook"), true);
+  assert.equal(isAuthExemptPath("/api/mobile-reconciliation/identity-check"), true);
+  assert.equal(isAuthExemptPath("/api/mobile-reconciliation/google-snapshot"), true);
   assert.equal(isAuthExemptPath("/api/accounts"), false);
 });
 
