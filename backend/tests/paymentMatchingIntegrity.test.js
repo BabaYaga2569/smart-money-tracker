@@ -1056,3 +1056,16 @@ test('Recovery: a later batch failure leaves cursor behind and a replay converge
   assert.equal(new Set(full).size,460);
   assert.equal(db.read(`${U}/plaid_items/item-1`).cursor,'c1');
 });
+
+test('Concurrency: two overlapping sync attempts converge on one posted transaction and stable cursor', async () => {
+  const db=createDb({...plaidTx('pending-old',{account_id:'acct-1',pending:true}),...itemDoc});
+  db.getAll=async (...refs)=>Promise.all(refs.map(ref=>ref.get()));
+  const incoming=plaidChange({transaction_id:'posted-new',pending_transaction_id:'pending-old'});
+  const client=fakePlaidClient({added:[incoming]});
+  await Promise.all([runSync(db,client),runSync(db,client)]);
+  const docs=[...db.store.keys()].filter(key=>key.startsWith(`${U}/transactions/`));
+  assert.deepEqual(docs,[`${U}/transactions/posted-new`]);
+  assert.equal(db.read(`${U}/transactions/pending-old`),undefined);
+  assert.equal(db.read(`${U}/transactions/posted-new`).pending,false);
+  assert.equal(db.read(`${U}/plaid_items/item-1`).cursor,'c1');
+});
