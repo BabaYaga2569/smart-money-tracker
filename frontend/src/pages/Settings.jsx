@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { doc, getDoc, setDoc } from 'firebase/firestore';
 import { db } from '../firebase';
+import { sendEmailVerification, reload } from 'firebase/auth';
 import { PayCycleCalculator } from '../utils/PayCycleCalculator';
 import { getDaysUntilDateInPacific } from '../utils/DateUtils';
 import { Link } from 'react-router-dom';
@@ -14,6 +15,9 @@ import ThemePicker from '../components/ThemePicker';
 const Settings = () => {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [verificationBusy, setVerificationBusy] = useState(false);
+  const [verificationMessage, setVerificationMessage] = useState('');
+  const [emailVerified, setEmailVerified] = useState(false);
   const [message, setMessage] = useState('');
   const { currentUser } = useAuth();
   
@@ -413,6 +417,32 @@ const Settings = () => {
     await loadSettings();
   };
 
+  const refreshEmailVerification = async () => {
+    if (!currentUser) return;
+    setVerificationBusy(true);
+    try {
+      await reload(currentUser);
+      setEmailVerified(currentUser.emailVerified === true);
+      setVerificationMessage(currentUser.emailVerified ? 'Your Firebase email is verified.' : 'Your Firebase email is still unverified. After using the email link, check again.');
+    } catch {
+      setVerificationMessage('Could not refresh verification status. Please try again later.');
+    } finally { setVerificationBusy(false); }
+  };
+
+  const requestEmailVerification = async () => {
+    if (!currentUser || currentUser.emailVerified) return;
+    setVerificationBusy(true);
+    setVerificationMessage('');
+    try {
+      await sendEmailVerification(currentUser);
+      setVerificationMessage('Firebase verification email requested. Check your inbox and spam folder. Your password does not change.');
+    } catch (e) {
+      setVerificationMessage(e?.code === 'auth/too-many-requests'
+        ? 'Firebase is limiting requests. Please wait before trying again.'
+        : 'Unable to send verification email right now. Please try again later.');
+    } finally { setVerificationBusy(false); }
+  };
+
   if (loading) {
     return (
       <div className="settings-container">
@@ -437,6 +467,17 @@ const Settings = () => {
       </div>
 
       <div className="settings-tiles-grid">
+        <div className="settings-tile">
+          <h3>✉️ Firebase Email Verification</h3>
+          <div className="tile-content">
+            <p>Your existing Smart Money Tracker sign-in email: <strong>{currentUser?.email || 'Unavailable'}</strong></p>
+            <p>Status: <strong>{(emailVerified || currentUser?.emailVerified) ? 'Verified' : 'Not verified'}</strong></p>
+            <p>This verifies ownership of your existing Firebase login email. It will not change your password, bank connections, or financial data.</p>
+            {!(emailVerified || currentUser?.emailVerified) && <button type="button" className="btn btn-primary" disabled={verificationBusy} onClick={requestEmailVerification}>Send Verification Email</button>}
+            <button type="button" className="btn btn-secondary" disabled={verificationBusy} onClick={refreshEmailVerification}>Check Verification Status</button>
+            {verificationMessage && <p role="status">{verificationMessage}</p>}
+          </div>
+        </div>
         <ThemePicker />
         
         {/* Tile 1: Personal Information */}
