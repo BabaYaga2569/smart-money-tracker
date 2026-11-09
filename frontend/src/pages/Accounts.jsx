@@ -95,10 +95,7 @@ const Accounts = () => {
   
  useEffect(() => {
   // Keep transaction syncing, but use cached balances instead of paid Balance calls
-  const loadWithFreshBalances = async () => {
-      // Clear session sync flag to force fresh balance check
-      sessionStorage.removeItem(`autoSync_${currentUser?.uid}`);
-      
+  const loadWithCachedBalances = async () => {
       // Check if we need to refresh (only if data is >10 minutes old)
       const lastRefreshTime = localStorage.getItem(`lastPlaidRefresh_${currentUser?.uid}`);
       const now = Date.now();
@@ -110,12 +107,12 @@ const Accounts = () => {
         
         const apiUrl = import.meta.env.VITE_API_URL || 'https://smart-money-tracker-09ks.onrender.com';
         
-        // Fire BOTH refresh requests in parallel (don't wait for them)
+        // Read cached balances and sync transactions without paid Balance calls
         Promise.all([
           // Refresh account display from cached data (free)
           fetch(`${apiUrl}/api/accounts?userId=${currentUser.uid}&_t=${Date.now()}`)
-            .then(() => console.log('[REFRESH] ✅ Balance refresh sent'))
-            .catch(err => console.log('[REFRESH] ❌ Balance refresh failed:', err)),
+            .then(() => console.log('[REFRESH] ✅ Cached balance fetch complete'))
+            .catch(err => console.log('[REFRESH] ❌ Cached balance fetch failed:', err)),
           
           // Refresh transactions
           fetch(`${apiUrl}/api/plaid/sync_transactions`, {
@@ -138,7 +135,7 @@ const Accounts = () => {
       }
     };
   
-  loadWithFreshBalances();
+  loadWithCachedBalances();
   
   // Check Plaid in background (non-blocking)
   checkPlaidConnection().catch(err => {
