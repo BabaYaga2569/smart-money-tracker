@@ -8,7 +8,6 @@ import { calculateTotalProjectedBalance, getBalanceDifference, formatBalanceDiff
 import PlaidConnectionManager from '../utils/PlaidConnectionManager';
 import './Accounts.css';
 import { useAuth } from '../contexts/AuthContext';
-import { useSmartBalanceSync } from '../hooks/useSmartBalanceSync';
 import { ensureSettingsDocument } from '../utils/settingsUtils';
 import {
   getCanonicalDisplayBalance,
@@ -22,8 +21,7 @@ const Accounts = () => {
   const { currentUser } = useAuth();
   const navigate = useNavigate();
   
-  // Smart background balance sync (runs automatically)
-  useSmartBalanceSync(currentUser?.uid);
+  // Automatic live Balance polling disabled to prevent per-Item Plaid charges.
   
   const [loading, setLoading] = useState(true);
 
@@ -96,7 +94,7 @@ const Accounts = () => {
 
   
  useEffect(() => {
-  // ✅ FIX: Force fresh balances on page load
+  // Keep transaction syncing, but use cached balances instead of paid Balance calls
   const loadWithFreshBalances = async () => {
       // Clear session sync flag to force fresh balance check
       sessionStorage.removeItem(`autoSync_${currentUser?.uid}`);
@@ -108,14 +106,14 @@ const Accounts = () => {
       const needsRefresh = !lastRefreshTime || (now - parseInt(lastRefreshTime)) > TEN_MINUTES;
       
       if (needsRefresh && currentUser) {
-        console.log('[REFRESH] Data is stale (>10 min), refreshing BOTH balances and transactions...');
+        console.log('[REFRESH] Data is stale (>10 min), syncing transactions and loading cached balances...');
         
         const apiUrl = import.meta.env.VITE_API_URL || 'https://smart-money-tracker-09ks.onrender.com';
         
         // Fire BOTH refresh requests in parallel (don't wait for them)
         Promise.all([
-          // Refresh balances
-          fetch(`${apiUrl}/api/accounts?userId=${currentUser.uid}&refresh=true&_t=${Date.now()}`)
+          // Refresh account display from cached data (free)
+          fetch(`${apiUrl}/api/accounts?userId=${currentUser.uid}&_t=${Date.now()}`)
             .then(() => console.log('[REFRESH] ✅ Balance refresh sent'))
             .catch(err => console.log('[REFRESH] ❌ Balance refresh failed:', err)),
           
