@@ -1001,9 +1001,9 @@ app.post("/api/plaid/exchange_token", async (req, res, next) => {
 
     // Get account balances with 15-second timeout
     const balanceResponse = await withTimeout(
-      plaidClient.accountsBalanceGet({ access_token: accessToken }),
+      plaidClient.accountsGet({ access_token: accessToken }),
       15000,
-      'Plaid accountsBalanceGet'
+      'Plaid accountsGet'
     );
     
     // Validate each account before saving
@@ -1100,7 +1100,7 @@ app.post("/api/plaid/get_balances", async (req, res, next) => {
 
     for (const item of items) {
       try {
-        const balanceResponse = await plaidClient.accountsBalanceGet({
+        const balanceResponse = await plaidClient.accountsGet({
           access_token: item.accessToken
         });
 
@@ -1170,7 +1170,7 @@ app.post("/api/plaid/get_balances", async (req, res, next) => {
   }
 });
 
-// Get accounts - cached canonical registry by default; live Plaid refresh only on demand.
+// Get accounts - cached canonical registry by default; free cached Plaid refresh only on demand.
 app.get("/api/accounts", async (req, res, next) => {
   try {
     const userId = req.authUid || req.query.userId || req.headers['x-user-id'];
@@ -1233,8 +1233,8 @@ app.get("/api/accounts", async (req, res, next) => {
       });
     }
 
-    // A live Plaid call is reserved for explicit refresh=true or first-time
-    // migration when no canonical account registry exists yet.
+    // A free cached Plaid call is used for explicit refresh=true or first-time
+    // migration when no canonical account registry exists yet; never paid Balance calls.
     const items = await getAllPlaidItems(userId);
     if (!items || items.length === 0) {
       return res.status(200).json({
@@ -1251,9 +1251,7 @@ app.get("/api/accounts", async (req, res, next) => {
 
     for (const item of items) {
       try {
-        const accountResponse = forceBalanceRefresh
-          ? await plaidClient.accountsBalanceGet({ access_token: item.accessToken })
-          : await plaidClient.accountsGet({ access_token: item.accessToken });
+        const accountResponse = await plaidClient.accountsGet({ access_token: item.accessToken });
 
         for (const account of accountResponse.data.accounts || []) {
           validators.validateAccount(account);
@@ -1314,7 +1312,7 @@ app.get("/api/accounts", async (req, res, next) => {
       partial: successfulItems !== items.length,
       visibility_schema: updateResult.visibilitySchemaVersion,
       last_updated: new Date().toISOString(),
-      source: 'plaid_refresh'
+      source: 'plaid_cached_refresh'
     });
   } catch (error) {
     logger.error('GET_ACCOUNTS', 'Failed to get accounts', error, {});
